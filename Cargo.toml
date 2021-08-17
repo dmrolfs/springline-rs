@@ -1,0 +1,37 @@
+[package]
+name = "springline"
+version = "0.1.0"
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+proctor = { git = "https://github.com/dmrolfs/proctor-rs" }
+anyhow = "*"
+approx = "*"
+async-trait = "*"
+chrono = "*"
+dashmap = "*"
+enum-display-derive = "*"
+itertools = "*"
+lazy_static = "*"
+maplit = "*"
+nalgebra = ">=0.27.1"
+num-traits = "*"
+oso = "*"
+polar-core = "*"
+serde = "*"
+serde_json = "*"
+serde_with = { version = "*", features = ["chrono", "json", "macros"] }
+splines = "*"
+tokio = { version = "*", features = ["full"] }
+tracing = "*"
+tracing-futures = "*"
+
+[dev-dependencies]
+pretty_assertions = "*"
+claim = "*"
+mockall = "*"
+tokio-test = "*"
+serde_test = "*"
+fake = { version = "*", features = ["chrono"] }
