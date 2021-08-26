@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use super::{WorkloadForecast, WorkloadForecastBuilder, WorkloadMeasurement};
-use proctor::elements::{RecordsPerSecond, TimestampSeconds};
+use proctor::elements::{RecordsPerSecond, Timestamp};
 use proctor::error::PlanError;
 
 #[derive(Debug, Clone)]
@@ -77,7 +77,7 @@ impl<F: WorkloadForecastBuilder> ForecastCalculator<F> {
     )]
     pub fn calculate_target_rate(
         &mut self,
-        trigger: TimestampSeconds,
+        trigger: Timestamp,
         buffered_records: f64,
     ) -> Result<RecordsPerSecond, PlanError> {
         let recovery = self.calculate_recovery_timestamp_from(trigger);
@@ -105,22 +105,19 @@ impl<F: WorkloadForecastBuilder> ForecastCalculator<F> {
         Ok(target_rate)
     }
 
-    fn calculate_recovery_timestamp_from(&self, timestamp: TimestampSeconds) -> TimestampSeconds {
+    fn calculate_recovery_timestamp_from(&self, timestamp: Timestamp) -> Timestamp {
         timestamp + self.restart + self.max_catch_up
     }
 
-    fn calculate_valid_timestamp_after_recovery(
-        &self,
-        recovery: TimestampSeconds,
-    ) -> TimestampSeconds {
+    fn calculate_valid_timestamp_after_recovery(&self, recovery: Timestamp) -> Timestamp {
         recovery + self.valid_offset
     }
 
     fn total_records_between(
         &self,
         forecast: &Box<dyn WorkloadForecast>,
-        start: TimestampSeconds,
-        end: TimestampSeconds,
+        start: Timestamp,
+        end: Timestamp,
     ) -> Result<f64, PlanError> {
         let total = forecast.total_records_between(start, end)?;
         tracing::debug!("total records between [{}, {}] = {}", start, end, total);
@@ -140,7 +137,7 @@ mod tests {
 
     use super::*;
     use crate::phases::plan::forecast::*;
-    use chrono::Utc;
+    use chrono::{Utc, TimeZone};
 
     #[test]
     fn test_creation() {
@@ -238,11 +235,13 @@ mod tests {
             max_catch_up,
             valid_offset
         ));
-        let ts: TimestampSeconds = Utc::now().into();
-        let incr = (5. * 60. * 1_000. + 750.) / 1_000.;
+        let now = Utc::now();
+        let secs = now.timestamp() + 5 * 60;
+        let nsecs = now.timestamp_subsec_nanos() + 750 * 1_000_000;
+        let ts: Timestamp = now.into();
         assert_relative_eq!(
             c1.calculate_valid_timestamp_after_recovery(ts),
-            TimestampSeconds::new_precise(ts.as_f64() + incr),
+            Timestamp::new(secs, nsecs),
             epsilon = 1.0e-10
         );
     }
@@ -258,11 +257,13 @@ mod tests {
             max_catch_up,
             valid_offset
         ));
-        let ts: TimestampSeconds = Utc::now().into();
-        let incr = 2. * 60. + ((13. * 60. * 1_000.) + 400.) / 1_000.;
+        let now = Utc::now();
+        let secs = now.timestamp() + (2 * 60) + (13 * 60);
+        let nsecs = now.timestamp_subsec_nanos() + 400 * 1_000_000;
+        let ts: Timestamp = now.into();
         assert_relative_eq!(
             c1.calculate_recovery_timestamp_from(ts),
-            TimestampSeconds::new_precise(ts.as_f64() + incr),
+            Timestamp::new(secs, nsecs),
             epsilon = 1.0e-10
         );
     }

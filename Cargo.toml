@@ -11,6 +11,8 @@ anyhow = "*"
 approx = "*"
 async-trait = "*"
 chrono = "*"
+clap = { version = "3.0.0-beta.4", features = ["yaml"] }
+config = { version = "*", default-features = false, features = ["toml", "hjson"] }
 dashmap = "*"
 enum-display-derive = "*"
 itertools = "*"
@@ -18,8 +20,12 @@ lazy_static = "*"
 maplit = "*"
 nalgebra = ">=0.27.1"
 num-traits = "*"
+num_cpus = "*"
 oso = "*"
 polar-core = "*"
+reqwest = { version = "0.11", features = ["json", "multipart"] }
+reqwest-middleware = "*"
+reqwest-retry = "*"
 serde = "*"
 serde_json = "*"
 serde_with = { version = "*", features = ["chrono", "json", "macros"] }

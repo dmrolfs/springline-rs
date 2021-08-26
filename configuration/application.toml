@@ -1,0 +1,6 @@
+[sources.flink_task]
+type = "RestApi"
+interval_secs = 60
+method = "GET"
+url = "http://localhost:80/taskmanagers/metrics/get=numRecordsInPerSecond,numRecordsOutPerSecond"
+url = "http://localhost:80/taskmanagers/metrics/sum=

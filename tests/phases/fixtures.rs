@@ -44,23 +44,3 @@ pub fn make_test_item_padding() -> Telemetry {
 
     padding
 }
-
-pub struct TestSettings {
-    pub required_subscription_fields: HashSet<String>,
-    pub optional_subscription_fields: HashSet<String>,
-    pub source: PolicySource,
-}
-
-impl PolicySettings for TestSettings {
-    fn required_subscription_fields(&self) -> HashSet<String> {
-        self.required_subscription_fields.clone()
-    }
-
-    fn optional_subscription_fields(&self) -> HashSet<String> {
-        self.optional_subscription_fields.clone()
-    }
-
-    fn source(&self) -> PolicySource {
-        self.source.clone()
-    }
-}

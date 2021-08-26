@@ -6,6 +6,7 @@ use oso::PolarClass;
 use serde::{Deserialize, Serialize};
 
 use proctor::elements::telemetry;
+use proctor::phases::collection::SubscriptionRequirements;
 use proctor::ProctorContext;
 
 #[derive(PolarClass, Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -23,15 +24,17 @@ pub struct FlinkEligibilityContext {
     pub custom: telemetry::Table,
 }
 
-impl ProctorContext for FlinkEligibilityContext {
-    fn required_context_fields() -> HashSet<&'static str> {
+impl SubscriptionRequirements for FlinkEligibilityContext {
+    fn required_fields() -> HashSet<&'static str> {
         maplit::hashset! {
             "task.last_failure",
             "cluster.is_deploying",
             "cluster.last_deployment",
         }
     }
+}
 
+impl ProctorContext for FlinkEligibilityContext {
     fn custom(&self) -> telemetry::Table {
         self.custom.clone()
     }
@@ -42,8 +45,8 @@ pub struct TaskStatus {
     #[serde(default)]
     #[serde(
         rename = "task.last_failure",
-        serialize_with = "proctor::serde::serialize_optional_datetime",
-        deserialize_with = "proctor::serde::deserialize_optional_datetime"
+        serialize_with = "proctor::serde::date::serialize_optional_datetime_map",
+        deserialize_with = "proctor::serde::date::deserialize_optional_datetime"
     )]
     pub last_failure: Option<DateTime<Utc>>,
 }
@@ -78,13 +81,13 @@ impl ClusterStatus {
 
 #[cfg(test)]
 mod tests {
-    use chrono::{DateTime, Utc};
+    use chrono::{DateTime, Utc, TimeZone};
     use lazy_static::lazy_static;
     use serde_test::{assert_tokens, Token};
 
     use super::*;
     use proctor::elements::telemetry::ToTelemetry;
-    use proctor::elements::Telemetry;
+    use proctor::elements::{Telemetry, SECS_KEY, NSECS_KEY};
 
     lazy_static! {
         static ref DT_1: DateTime<Utc> = Utc::now();
@@ -113,11 +116,21 @@ mod tests {
             Token::Map { len: None },
             Token::Str("task.last_failure"),
             Token::Some,
-            Token::Str(&DT_1_STR),
+            Token::Map { len: Some(2), },
+            Token::Str(SECS_KEY),
+            Token::I64(DT_1.timestamp()),
+            Token::Str(NSECS_KEY),
+            Token::I64(DT_1.timestamp_subsec_nanos() as i64),
+            Token::MapEnd,
             Token::Str("cluster.is_deploying"),
             Token::Bool(false),
             Token::Str("cluster.last_deployment"),
-            Token::Str(&DT_2_STR),
+            Token::Map { len: Some(2), },
+            Token::Str(SECS_KEY),
+            Token::I64(DT_2.timestamp()),
+            Token::Str(NSECS_KEY),
+            Token::I64(DT_2.timestamp_subsec_nanos() as i64),
+            Token::MapEnd,
             Token::Str("custom_foo"),
             Token::Str("fred flintstone"),
             Token::Str("custom_bar"),
@@ -125,14 +138,36 @@ mod tests {
             Token::MapEnd,
         ];
 
-        let result = std::panic::catch_unwind(|| {
+        let mut result = std::panic::catch_unwind(|| {
             assert_tokens(&context, expected.as_slice());
         });
 
         if result.is_err() {
-            expected.swap(8, 10);
-            expected.swap(9, 11);
-            assert_tokens(&context, expected.as_slice());
+            expected.swap(4, 6);
+            expected.swap(5, 7);
+            result = std::panic::catch_unwind(|| {
+                assert_tokens(&context, expected.as_slice());
+            })
+        }
+
+        if result.is_err() {
+            expected.swap(13, 15);
+            expected.swap(14, 16);
+            result = std::panic::catch_unwind(|| {
+                assert_tokens(&context, expected.as_slice());
+            })
+        }
+
+        if result.is_err() {
+            expected.swap(4, 6);
+            expected.swap(5,7);
+            result = std::panic::catch_unwind(|| {
+                assert_tokens(&context, expected.as_slice());
+            })
+        }
+
+        if result.is_err() {
+            panic!("{:?}", result);
         }
     }
 

@@ -4,9 +4,7 @@ use std::time::Duration;
 use oso::ToPolar;
 use pretty_assertions::assert_eq;
 use proctor::elements;
-use proctor::elements::{
-    PolicyOutcome, PolicySource, PolicySubscription, Telemetry, TelemetryValue, ToTelemetry,
-};
+use proctor::elements::{PolicyOutcome, PolicySource, PolicySubscription, Telemetry, TelemetryValue, ToTelemetry, PolicySettings};
 use proctor::graph::stage::{self, ThroughStage, WithApi, WithMonitor};
 use proctor::graph::{Connect, Graph, Inlet, SinkShape, SourceShape, UniformFanInShape};
 use proctor::phases::collection;
@@ -270,7 +268,7 @@ async fn test_decision_carry_policy_result() -> anyhow::Result<()> {
             "nr_task_managers",
         });
 
-    let policy = FlinkDecisionPolicy::new(&TestSettings {
+    let policy = FlinkDecisionPolicy::new(&PolicySettings {
         required_subscription_fields: HashSet::new(),
         optional_subscription_fields: HashSet::new(),
         source: PolicySource::String(
@@ -384,7 +382,7 @@ async fn test_decision_common() -> anyhow::Result<()> {
             "all_sinks_healthy",
         });
 
-    let policy = FlinkDecisionPolicy::new(&TestSettings {
+    let policy = FlinkDecisionPolicy::new(&PolicySettings {
         required_subscription_fields: HashSet::new(),
         optional_subscription_fields: HashSet::new(),
         source: PolicySource::String(

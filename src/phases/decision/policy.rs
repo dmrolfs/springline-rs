@@ -15,29 +15,25 @@ use proctor::ProctorContext;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FlinkDecisionPolicy {
-    required_subscription_fields: HashSet<String>,
-    optional_subscription_fields: HashSet<String>,
-    policy_source: PolicySource,
+    settings: PolicySettings,
 }
 
 impl FlinkDecisionPolicy {
-    pub fn new(settings: &impl PolicySettings) -> Self {
+    pub fn new(settings: &PolicySettings) -> Self {
         Self {
-            required_subscription_fields: settings.required_subscription_fields(),
-            optional_subscription_fields: settings.optional_subscription_fields(),
-            policy_source: settings.source(),
+            settings: settings.clone(),
         }
     }
 }
 
 impl PolicySubscription for FlinkDecisionPolicy {
-    type Context = FlinkDecisionContext;
+    type Requirements = FlinkDecisionContext;
 
-    fn do_extend_subscription(&self, subscription: TelemetrySubscription) -> TelemetrySubscription {
-        subscription
-            .with_required_fields(self.required_subscription_fields.clone())
-            .with_optional_fields(self.optional_subscription_fields.clone())
-    }
+    // fn do_extend_subscription(&self, subscription: TelemetrySubscription) -> TelemetrySubscription {
+    //     subscription
+    //         .with_required_fields(self.required_subscription_fields.clone())
+    //         .with_optional_fields(self.optional_subscription_fields.clone())
+    // }
 }
 
 impl QueryPolicy for FlinkDecisionPolicy {
@@ -47,7 +43,7 @@ impl QueryPolicy for FlinkDecisionPolicy {
 
     fn load_policy_engine(&self, engine: &mut Oso) -> Result<(), PolicyError> {
         engine.load_str(DECISION_POLICY_PREAMBLE)?;
-        self.policy_source.load_into(engine)?;
+        self.settings.source.load_into(engine)?;
         Ok(())
     }
 

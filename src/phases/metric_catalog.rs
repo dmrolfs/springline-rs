@@ -9,7 +9,7 @@ use lazy_static::lazy_static;
 use oso::PolarClass;
 use serde::{Deserialize, Serialize};
 
-use proctor::elements::{telemetry, TelemetryValue, TimestampSeconds};
+use proctor::elements::{telemetry, TelemetryValue, Timestamp};
 use proctor::error::TelemetryError;
 
 // todo: replace this with reflection approach if one identified.
@@ -24,23 +24,23 @@ lazy_static! {
         "records_in_per_sec",
         "records_out_per_sec",
         "input_consumer_lag",
-        "max_message_latency",
-        "net_in_utilization",
-        "net_out_utilization",
-        "sink_health_metrics",
+        // "max_message_latency",
+        // "net_in_utilization",
+        // "net_out_utilization",
+        // "sink_health_metrics",
 
         // ClusterMetrics
         "nr_task_managers",
         "task_cpu_load",
         "network_io_utilization",
-    };
+    };//.iter().map(|rep| rep.to_string()).collect();
 }
 
 // #[serde_as]
 #[derive(PolarClass, Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct MetricCatalog {
     #[polar(attribute)]
-    pub timestamp: TimestampSeconds,
+    pub timestamp: Timestamp,
 
     #[polar(attribute)]
     #[serde(flatten)] // current subscription mechanism only supports flatten keys
@@ -71,18 +71,17 @@ pub struct FlowMetrics {
 
     #[polar(attribute)]
     pub input_consumer_lag: f64,
+    // #[polar(attribute)]
+    // pub max_message_latency: f64,
 
-    #[polar(attribute)]
-    pub max_message_latency: f64,
+    // #[polar(attribute)]
+    // pub net_in_utilization: f64,
 
-    #[polar(attribute)]
-    pub net_in_utilization: f64,
+    // #[polar(attribute)]
+    // pub net_out_utilization: f64,
 
-    #[polar(attribute)]
-    pub net_out_utilization: f64,
-
-    #[polar(attribute)]
-    pub sink_health_metrics: f64,
+    // #[polar(attribute)]
+    // pub sink_health_metrics: f64,
 }
 
 #[derive(PolarClass, Debug, Default, PartialEq, Clone, Serialize, Deserialize)]
@@ -98,7 +97,7 @@ pub struct ClusterMetrics {
 }
 
 impl MetricCatalog {
-    pub fn for_timestamp(timestamp: TimestampSeconds, custom: telemetry::Table) -> Self {
+    pub fn for_timestamp(timestamp: Timestamp, custom: telemetry::Table) -> Self {
         Self {
             timestamp,
             flow: FlowMetrics::default(),
@@ -242,17 +241,18 @@ mod tests {
 
     #[test]
     fn test_metric_catalog_serde() {
-        let ts = Utc.ymd(1988, 5, 30).and_hms(9, 1, 17).into();
+        let ts: Timestamp = Utc.ymd(1988, 5, 30).and_hms(9, 1, 17).into();
+        let (ts_secs, ts_nsecs) = ts.as_pair();
         let metrics = MetricCatalog {
             timestamp: ts,
             flow: FlowMetrics {
                 records_in_per_sec: 17.,
                 input_consumer_lag: 3.14,
                 records_out_per_sec: 0.0,
-                max_message_latency: 0.0,
-                net_in_utilization: 0.0,
-                net_out_utilization: 0.0,
-                sink_health_metrics: 0.0,
+                // max_message_latency: 0.0,
+                // net_in_utilization: 0.0,
+                // net_out_utilization: 0.0,
+                // sink_health_metrics: 0.0,
             },
             cluster: ClusterMetrics {
                 nr_task_managers: 4,
@@ -269,24 +269,24 @@ mod tests {
             &vec![
                 Token::Map { len: None },
                 Token::Str("timestamp"),
-                Token::NewtypeStruct {
-                    name: "TimestampSeconds",
-                },
-                Token::F64(ts.into()),
+                Token::TupleStruct { name: "Timestamp", len: 2, },
+                Token::I64(ts_secs),
+                Token::U32(ts_nsecs),
+                Token::TupleStructEnd,
                 Token::Str("records_in_per_sec"),
                 Token::F64(17.),
                 Token::Str("records_out_per_sec"),
                 Token::F64(0.),
                 Token::Str("input_consumer_lag"),
                 Token::F64(3.14),
-                Token::Str("max_message_latency"),
-                Token::F64(0.),
-                Token::Str("net_in_utilization"),
-                Token::F64(0.),
-                Token::Str("net_out_utilization"),
-                Token::F64(0.),
-                Token::Str("sink_health_metrics"),
-                Token::F64(0.),
+                // Token::Str("max_message_latency"),
+                // Token::F64(0.),
+                // Token::Str("net_in_utilization"),
+                // Token::F64(0.),
+                // Token::Str("net_out_utilization"),
+                // Token::F64(0.),
+                // Token::Str("sink_health_metrics"),
+                // Token::F64(0.),
                 Token::Str("nr_task_managers"),
                 Token::U16(4),
                 Token::Str("task_cpu_load"),
@@ -313,10 +313,10 @@ mod tests {
                 records_in_per_sec: 17.,
                 input_consumer_lag: 3.14,
                 records_out_per_sec: 0.0,
-                max_message_latency: 0.0,
-                net_in_utilization: 0.0,
-                net_out_utilization: 0.0,
-                sink_health_metrics: 0.0,
+                // max_message_latency: 0.0,
+                // net_in_utilization: 0.0,
+                // net_out_utilization: 0.0,
+                // sink_health_metrics: 0.0,
             },
             cluster: ClusterMetrics {
                 nr_task_managers: 4,
@@ -330,17 +330,19 @@ mod tests {
         };
 
         let telemetry = Telemetry::try_from(&metrics)?;
+        let (ts_secs, ts_nsecs) = ts.as_pair();
+
         assert_eq!(
             telemetry,
             TelemetryValue::Table(maplit::hashmap! {
-                "timestamp".to_string() => ts.to_telemetry(),
+                "timestamp".to_string() => TelemetryValue::Seq(vec![ts_secs.to_telemetry(), ts_nsecs.to_telemetry(),]),
                 "records_in_per_sec".to_string() => (17.).to_telemetry(),
                 "records_out_per_sec".to_string() => (0.).to_telemetry(),
                 "input_consumer_lag".to_string() => 3.14.to_telemetry(),
-                "max_message_latency".to_string() => (0.).to_telemetry(),
-                "net_in_utilization".to_string() => (0.).to_telemetry(),
-                "net_out_utilization".to_string() => (0.).to_telemetry(),
-                "sink_health_metrics".to_string() => (0.).to_telemetry(),
+                // "max_message_latency".to_string() => (0.).to_telemetry(),
+                // "net_in_utilization".to_string() => (0.).to_telemetry(),
+                // "net_out_utilization".to_string() => (0.).to_telemetry(),
+                // "sink_health_metrics".to_string() => (0.).to_telemetry(),
                 "nr_task_managers".to_string() => 4.to_telemetry(),
                 "task_cpu_load".to_string() => (0.).to_telemetry(),
                 "network_io_utilization".to_string() => (0.).to_telemetry(),

@@ -4,7 +4,7 @@ use nalgebra::{Matrix3, Matrix3x1};
 use num_traits::pow;
 
 use crate::phases::plan::WorkloadForecast;
-use proctor::elements::{Point, RecordsPerSecond, TimestampSeconds};
+use proctor::elements::{Point, RecordsPerSecond, Timestamp};
 use proctor::error::PlanError;
 
 #[derive(Debug)]
@@ -53,16 +53,12 @@ impl WorkloadForecast for LinearRegression {
         "LinearRegression"
     }
 
-    fn workload_at(&self, timestamp: TimestampSeconds) -> Result<RecordsPerSecond, PlanError> {
+    fn workload_at(&self, timestamp: Timestamp) -> Result<RecordsPerSecond, PlanError> {
         let x: f64 = timestamp.into();
         Ok(RecordsPerSecond::new(self.slope * x + self.y_intercept).into())
     }
 
-    fn total_records_between(
-        &self,
-        start: TimestampSeconds,
-        end: TimestampSeconds,
-    ) -> Result<f64, PlanError> {
+    fn total_records_between(&self, start: Timestamp, end: Timestamp) -> Result<f64, PlanError> {
         let integral = |x: f64| (self.slope / 2.) * pow(x, 2) + self.y_intercept * x;
         Ok(integral(end.into()) - integral(start.into()))
     }
@@ -156,18 +152,14 @@ impl WorkloadForecast for QuadraticRegression {
         "QuadraticRegression"
     }
 
-    fn workload_at(&self, timestamp: TimestampSeconds) -> Result<RecordsPerSecond, PlanError> {
+    fn workload_at(&self, timestamp: Timestamp) -> Result<RecordsPerSecond, PlanError> {
         let x: f64 = timestamp.into();
         Ok(RecordsPerSecond::new(
             self.a * pow(x, 2) + self.b * x + self.c,
         ))
     }
 
-    fn total_records_between(
-        &self,
-        start: TimestampSeconds,
-        end: TimestampSeconds,
-    ) -> Result<f64, PlanError> {
+    fn total_records_between(&self, start: Timestamp, end: Timestamp) -> Result<f64, PlanError> {
         let integral = |x: f64| self.a / 3. * pow(x, 3) + self.b / 2. * pow(x, 2) + self.c * x;
         Ok(integral(end.into()) - integral(start.into()))
     }
@@ -249,7 +241,7 @@ mod tests {
         let data = vec![(1., 1.), (2., 3.), (3., 2.), (4., 3.), (5., 5.)];
         let regression = LinearRegression::from_data(&data);
         let actual = regression.total_records_between(1.25.into(), 4.89.into())?;
-        assert_relative_eq!(actual, 10.395_84, epsilon = 1.0e-10);
+        assert_relative_eq!(actual, 10.395_84, epsilon = 1.0e-5);
         Ok(())
     }
 }

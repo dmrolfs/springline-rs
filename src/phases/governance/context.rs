@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use proctor::elements::telemetry;
 use proctor::elements::telemetry::Table;
+use proctor::phases::collection::SubscriptionRequirements;
 use proctor::ProctorContext;
 
 #[derive(PolarClass, Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -24,15 +25,17 @@ pub struct FlinkGovernanceContext {
     pub custom: telemetry::Table,
 }
 
-impl ProctorContext for FlinkGovernanceContext {
-    fn required_context_fields() -> HashSet<&'static str> {
+impl SubscriptionRequirements for FlinkGovernanceContext {
+    fn required_fields() -> HashSet<&'static str> {
         maplit::hashset! {
             "min_cluster_size",
             "max_cluster_size",
             "max_scaling_step",
         }
     }
+}
 
+impl ProctorContext for FlinkGovernanceContext {
     fn custom(&self) -> Table {
         self.custom.clone()
     }

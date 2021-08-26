@@ -5,6 +5,7 @@ use oso::PolarClass;
 use serde::{Deserialize, Serialize};
 
 use proctor::elements::telemetry;
+use proctor::phases::collection::SubscriptionRequirements;
 use proctor::ProctorContext;
 
 #[derive(PolarClass, Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -20,14 +21,16 @@ pub struct FlinkDecisionContext {
     pub custom: telemetry::Table,
 }
 
-impl ProctorContext for FlinkDecisionContext {
-    fn required_context_fields() -> HashSet<&'static str> {
+impl SubscriptionRequirements for FlinkDecisionContext {
+    fn required_fields() -> HashSet<&'static str> {
         maplit::hashset! {
             "all_sinks_healthy",
             "nr_task_managers",
         }
     }
+}
 
+impl ProctorContext for FlinkDecisionContext {
     fn custom(&self) -> telemetry::Table {
         self.custom.clone()
     }

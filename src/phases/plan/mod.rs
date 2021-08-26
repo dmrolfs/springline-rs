@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::phases::decision::result::DecisionResult;
 use crate::phases::MetricCatalog;
-use proctor::elements::TimestampSeconds;
+use proctor::elements::Timestamp;
 
 mod benchmark;
 pub mod forecast;
@@ -24,7 +24,7 @@ const MINIMAL_CLUSTER_SIZE: u16 = 1;
 #[derive(PolarClass, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FlinkScalePlan {
     #[polar(attribute)]
-    pub timestamp: TimestampSeconds,
+    pub timestamp: Timestamp,
 
     #[polar(attribute)]
     pub target_nr_task_managers: u16,

@@ -7,7 +7,7 @@ use fake::Fake;
 use lazy_static::lazy_static;
 use pretty_assertions::assert_eq;
 use proctor::elements::telemetry;
-use proctor::elements::TimestampSeconds;
+use proctor::elements::Timestamp;
 use proctor::graph::stage::{self, WithApi, WithMonitor};
 use proctor::graph::{Connect, Graph, SinkShape, SourceShape};
 use proctor::phases::plan::Plan;
@@ -176,13 +176,13 @@ const STEP: i64 = 15;
 
 #[tracing::instrument(level = "info")]
 fn make_test_data(
-    start: TimestampSeconds,
+    start: Timestamp,
     tick: i64,
     nr_task_managers: u16,
     input_consumer_lag: f64,
     records_per_sec: f64,
 ) -> InData {
-    let timestamp = Utc.timestamp(start.as_i64() + tick * STEP, 0).into();
+    let timestamp = Utc.timestamp(start.as_secs() + tick * STEP, 0).into();
 
     MetricCatalog {
         timestamp,
@@ -190,10 +190,10 @@ fn make_test_data(
             records_in_per_sec: records_per_sec,
             records_out_per_sec: records_per_sec,
             input_consumer_lag,
-            max_message_latency: 0.,
-            net_in_utilization: 0.,
-            net_out_utilization: 0.,
-            sink_health_metrics: 0.,
+            // max_message_latency: 0.,
+            // net_in_utilization: 0.,
+            // net_out_utilization: 0.,
+            // sink_health_metrics: 0.,
         },
         cluster: ClusterMetrics {
             nr_task_managers,
@@ -205,7 +205,7 @@ fn make_test_data(
 }
 
 fn make_test_data_series(
-    start: TimestampSeconds,
+    start: Timestamp,
     nr_task_managers: u16,
     input_consumer_lag: f64,
     mut gen: impl FnMut(i64) -> f64,
@@ -230,7 +230,7 @@ enum DecisionType {
 #[tracing::instrument(level = "info")]
 fn make_decision(
     decision: DecisionType,
-    start: TimestampSeconds,
+    start: Timestamp,
     tick: i64,
     nr_task_managers: u16,
     input_consumer_lag: f64,

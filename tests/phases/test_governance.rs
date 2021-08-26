@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use claim::*;
 use pretty_assertions::assert_eq;
-use proctor::elements::{self, PolicyFilterEvent, PolicySource, TimestampSeconds};
+use proctor::elements::{self, PolicyFilterEvent, PolicySource, Timestamp, PolicySettings};
 use proctor::graph::stage::{self, WithApi, WithMonitor};
 use proctor::graph::{Connect, Graph, SinkShape, SourceShape};
 use proctor::phases::governance::Governance;
@@ -13,8 +13,6 @@ use springline::phases::governance::{
 use springline::phases::plan::FlinkScalePlan;
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
-
-use crate::fixtures::TestSettings;
 
 type Data = FlinkScalePlan;
 type Context = FlinkGovernanceContext;
@@ -282,7 +280,7 @@ async fn test_flink_governance_flow_simple_and_happy() -> anyhow::Result<()> {
     let main_span = tracing::info_span!("test_flink_governance_flow_simple_and_happy");
     let _ = main_span.enter();
 
-    let policy = FlinkGovernancePolicy::new(&TestSettings {
+    let policy = FlinkGovernancePolicy::new(&PolicySettings {
         required_subscription_fields: HashSet::new(),
         optional_subscription_fields: HashSet::new(),
         source: PolicySource::NoPolicy,
@@ -313,7 +311,7 @@ async fn test_flink_governance_flow_simple_and_happy() -> anyhow::Result<()> {
     tracing::info!(?event, "received policy event.");
     claim::assert_matches!(event, elements::PolicyFilterEvent::ContextChanged(_));
 
-    let timestamp = TimestampSeconds::new_secs(*super::fixtures::DT_1_TS);
+    let timestamp = Timestamp::new_secs(*super::fixtures::DT_1_TS);
     assert_ok!(
         flow.check_scenario(
             "happy_1",
@@ -340,7 +338,7 @@ async fn test_flink_governance_flow_simple_below_min_cluster_size() -> anyhow::R
     let main_span = tracing::info_span!("test_flink_governance_flow_simple_below_min_cluster_size");
     let _ = main_span.enter();
 
-    let policy = FlinkGovernancePolicy::new(&TestSettings {
+    let policy = FlinkGovernancePolicy::new(&PolicySettings {
         required_subscription_fields: HashSet::new(),
         optional_subscription_fields: HashSet::new(),
         source: PolicySource::NoPolicy,
@@ -371,7 +369,7 @@ async fn test_flink_governance_flow_simple_below_min_cluster_size() -> anyhow::R
     tracing::info!(?event, "received policy event.");
     claim::assert_matches!(event, elements::PolicyFilterEvent::ContextChanged(_));
 
-    let timestamp = TimestampSeconds::new_secs(*super::fixtures::DT_1_TS);
+    let timestamp = Timestamp::new_secs(*super::fixtures::DT_1_TS);
     assert_ok!(
         flow.check_scenario(
             "below min cluster size",
@@ -398,7 +396,7 @@ async fn test_flink_governance_flow_simple_above_max_cluster_size() -> anyhow::R
     let main_span = tracing::info_span!("test_flink_governance_flow_simple_above_max_cluster_size");
     let _ = main_span.enter();
 
-    let policy = FlinkGovernancePolicy::new(&TestSettings {
+    let policy = FlinkGovernancePolicy::new(&PolicySettings {
         required_subscription_fields: HashSet::new(),
         optional_subscription_fields: HashSet::new(),
         source: PolicySource::NoPolicy,
@@ -429,7 +427,7 @@ async fn test_flink_governance_flow_simple_above_max_cluster_size() -> anyhow::R
     tracing::info!(?event, "received policy event.");
     claim::assert_matches!(event, elements::PolicyFilterEvent::ContextChanged(_));
 
-    let timestamp = TimestampSeconds::new_secs(*super::fixtures::DT_1_TS);
+    let timestamp = Timestamp::new_secs(*super::fixtures::DT_1_TS);
     assert_ok!(
         flow.check_scenario(
             "above max cluster size",
@@ -456,7 +454,7 @@ async fn test_flink_governance_flow_simple_step_up_too_big() -> anyhow::Result<(
     let main_span = tracing::info_span!("test_flink_governance_flow_simple_step_up_too_big");
     let _ = main_span.enter();
 
-    let policy = FlinkGovernancePolicy::new(&TestSettings {
+    let policy = FlinkGovernancePolicy::new(&PolicySettings {
         required_subscription_fields: HashSet::new(),
         optional_subscription_fields: HashSet::new(),
         source: PolicySource::NoPolicy,
@@ -487,7 +485,7 @@ async fn test_flink_governance_flow_simple_step_up_too_big() -> anyhow::Result<(
     tracing::info!(?event, "received policy event.");
     claim::assert_matches!(event, elements::PolicyFilterEvent::ContextChanged(_));
 
-    let timestamp = TimestampSeconds::new_secs(*super::fixtures::DT_1_TS);
+    let timestamp = Timestamp::new_secs(*super::fixtures::DT_1_TS);
     assert_ok!(
         flow.check_scenario(
             "too big a scale up step",
@@ -514,7 +512,7 @@ async fn test_flink_governance_flow_simple_step_down_too_big() -> anyhow::Result
     let main_span = tracing::info_span!("test_flink_governance_flow_simple_step_down_too_big");
     let _ = main_span.enter();
 
-    let policy = FlinkGovernancePolicy::new(&TestSettings {
+    let policy = FlinkGovernancePolicy::new(&PolicySettings {
         required_subscription_fields: HashSet::new(),
         optional_subscription_fields: HashSet::new(),
         source: PolicySource::NoPolicy,
@@ -545,7 +543,7 @@ async fn test_flink_governance_flow_simple_step_down_too_big() -> anyhow::Result
     tracing::info!(?event, "received policy event.");
     claim::assert_matches!(event, elements::PolicyFilterEvent::ContextChanged(_));
 
-    let timestamp = TimestampSeconds::new_secs(*super::fixtures::DT_1_TS);
+    let timestamp = Timestamp::new_secs(*super::fixtures::DT_1_TS);
     assert_ok!(
         flow.check_scenario(
             "too big a scale down step",
@@ -575,7 +573,7 @@ async fn test_flink_governance_flow_simple_step_up_before_max() -> anyhow::Resul
     let main_span = tracing::info_span!("test_flink_governance_flow_simple_step_up_before_max");
     let _ = main_span.enter();
 
-    let policy = FlinkGovernancePolicy::new(&TestSettings {
+    let policy = FlinkGovernancePolicy::new(&PolicySettings {
         required_subscription_fields: HashSet::new(),
         optional_subscription_fields: HashSet::new(),
         source: PolicySource::NoPolicy,
@@ -606,7 +604,7 @@ async fn test_flink_governance_flow_simple_step_up_before_max() -> anyhow::Resul
     tracing::info!(?event, "received policy event.");
     claim::assert_matches!(event, elements::PolicyFilterEvent::ContextChanged(_));
 
-    let timestamp = TimestampSeconds::new_secs(*super::fixtures::DT_1_TS);
+    let timestamp = Timestamp::new_secs(*super::fixtures::DT_1_TS);
     assert_ok!(
         flow.check_scenario(
             "too big a scale up step before max",
@@ -633,7 +631,7 @@ async fn test_flink_governance_flow_simple_step_down_before_min() -> anyhow::Res
     let main_span = tracing::info_span!("test_flink_governance_flow_simple_step_down_before_min");
     let _ = main_span.enter();
 
-    let policy = FlinkGovernancePolicy::new(&TestSettings {
+    let policy = FlinkGovernancePolicy::new(&PolicySettings {
         required_subscription_fields: HashSet::new(),
         optional_subscription_fields: HashSet::new(),
         source: PolicySource::NoPolicy,
@@ -664,7 +662,7 @@ async fn test_flink_governance_flow_simple_step_down_before_min() -> anyhow::Res
     tracing::info!(?event, "received policy event.");
     claim::assert_matches!(event, elements::PolicyFilterEvent::ContextChanged(_));
 
-    let timestamp = TimestampSeconds::new_secs(*super::fixtures::DT_1_TS);
+    let timestamp = Timestamp::new_secs(*super::fixtures::DT_1_TS);
     assert_ok!(
         flow.check_scenario(
             "too big a scale down step before min",

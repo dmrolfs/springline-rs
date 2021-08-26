@@ -15,7 +15,7 @@ pub use least_squares::{LeastSquaresWorkloadForecastBuilder, SpikeSettings};
 use mockall::{automock, predicate::*};
 use serde::{Deserialize, Serialize};
 
-use proctor::elements::{Point, RecordsPerSecond, TimestampSeconds};
+use proctor::elements::{Point, RecordsPerSecond, Timestamp};
 
 #[cfg_attr(test, automock)]
 pub trait WorkloadForecastBuilder: Debug + Sync + Send {
@@ -28,12 +28,8 @@ pub trait WorkloadForecastBuilder: Debug + Sync + Send {
 #[cfg_attr(test, automock)]
 pub trait WorkloadForecast: Debug {
     fn name(&self) -> &'static str;
-    fn workload_at(&self, timestamp: TimestampSeconds) -> Result<RecordsPerSecond, PlanError>;
-    fn total_records_between(
-        &self,
-        start: TimestampSeconds,
-        end: TimestampSeconds,
-    ) -> Result<f64, PlanError>;
+    fn workload_at(&self, timestamp: Timestamp) -> Result<RecordsPerSecond, PlanError>;
+    fn total_records_between(&self, start: Timestamp, end: Timestamp) -> Result<f64, PlanError>;
     fn correlation_coefficient(&self) -> f64;
 }
 
