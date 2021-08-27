@@ -269,7 +269,10 @@ mod tests {
             &vec![
                 Token::Map { len: None },
                 Token::Str("timestamp"),
-                Token::TupleStruct { name: "Timestamp", len: 2, },
+                Token::TupleStruct {
+                    name: "Timestamp",
+                    len: 2,
+                },
                 Token::I64(ts_secs),
                 Token::U32(ts_nsecs),
                 Token::TupleStructEnd,

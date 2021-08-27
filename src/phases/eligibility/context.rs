@@ -81,13 +81,13 @@ impl ClusterStatus {
 
 #[cfg(test)]
 mod tests {
-    use chrono::{DateTime, Utc, TimeZone};
+    use chrono::{DateTime, TimeZone, Utc};
     use lazy_static::lazy_static;
     use serde_test::{assert_tokens, Token};
 
     use super::*;
     use proctor::elements::telemetry::ToTelemetry;
-    use proctor::elements::{Telemetry, SECS_KEY, NSECS_KEY};
+    use proctor::elements::{Telemetry, NSECS_KEY, SECS_KEY};
 
     lazy_static! {
         static ref DT_1: DateTime<Utc> = Utc::now();
@@ -97,6 +97,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn test_serde_flink_eligibility_context() {
         let context = FlinkEligibilityContext {
             task_status: TaskStatus {
@@ -116,7 +117,7 @@ mod tests {
             Token::Map { len: None },
             Token::Str("task.last_failure"),
             Token::Some,
-            Token::Map { len: Some(2), },
+            Token::Map { len: Some(2) },
             Token::Str(SECS_KEY),
             Token::I64(DT_1.timestamp()),
             Token::Str(NSECS_KEY),
@@ -125,7 +126,7 @@ mod tests {
             Token::Str("cluster.is_deploying"),
             Token::Bool(false),
             Token::Str("cluster.last_deployment"),
-            Token::Map { len: Some(2), },
+            Token::Map { len: Some(2) },
             Token::Str(SECS_KEY),
             Token::I64(DT_2.timestamp()),
             Token::Str(NSECS_KEY),
@@ -160,7 +161,7 @@ mod tests {
 
         if result.is_err() {
             expected.swap(4, 6);
-            expected.swap(5,7);
+            expected.swap(5, 7);
             result = std::panic::catch_unwind(|| {
                 assert_tokens(&context, expected.as_slice());
             })

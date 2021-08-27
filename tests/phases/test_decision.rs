@@ -315,7 +315,7 @@ async fn test_decision_carry_policy_result() -> anyhow::Result<()> {
     flow.push_telemetry(padding).await?;
 
     let ts = *DT_1 + chrono::Duration::hours(1);
-    let item = make_test_item(ts, std::f64::consts::PI, 1.0);
+    let item = make_test_item(&ts, std::f64::consts::PI, 1.0);
     tracing::warn!(?item, "DMR-A.1: created item to push.");
     flow.push_telemetry(item).await?;
     let event = flow.recv_policy_event().await?;
@@ -326,14 +326,14 @@ async fn test_decision_carry_policy_result() -> anyhow::Result<()> {
             .await?
     );
 
-    let item = make_test_item(ts, std::f64::consts::E, 2.0);
+    let item = make_test_item(&ts, std::f64::consts::E, 2.0);
     // let telemetry = Telemetry::try_from(&item);
     flow.push_telemetry(item).await?;
     let event = flow.recv_policy_event().await?;
     claim::assert_matches!(event, elements::PolicyFilterEvent::ItemBlocked(_));
     tracing::warn!(?event, "DMR-C: item dropped confirmed");
 
-    let item = make_test_item(ts, std::f64::consts::LN_2, 1.0);
+    let item = make_test_item(&ts, std::f64::consts::LN_2, 1.0);
     tracing::warn!(?item, "DMR-D.1: created item to push.");
     flow.push_telemetry(item).await?;
     tracing::info!("waiting for item to reach sink...");
@@ -435,7 +435,7 @@ async fn test_decision_common() -> anyhow::Result<()> {
     flow.push_telemetry(make_test_item_padding()).await?;
 
     let ts = *DT_1 + chrono::Duration::hours(1);
-    let item = make_test_item(ts, std::f64::consts::PI, 1.0);
+    let item = make_test_item(&ts, std::f64::consts::PI, 1.0);
     tracing::warn!(?item, "DMR-A.1: created item to push.");
 
     flow.push_telemetry(item).await?;
@@ -447,14 +447,14 @@ async fn test_decision_common() -> anyhow::Result<()> {
             .await?
     );
 
-    let item = make_test_item(ts, std::f64::consts::E, 2.0);
+    let item = make_test_item(&ts, std::f64::consts::E, 2.0);
     flow.push_telemetry(item).await?;
     let event = flow.recv_policy_event().await?;
     tracing::info!(?event, "DMR-2: TESTING policy event for blockage");
     claim::assert_matches!(event, elements::PolicyFilterEvent::ItemBlocked(_));
     tracing::warn!(?event, "DMR-C: item dropped confirmed");
 
-    let item = make_test_item(ts, std::f64::consts::LN_2, 1.0);
+    let item = make_test_item(&ts, std::f64::consts::LN_2, 1.0);
     tracing::warn!(?item, "DMR-D.1: created item to push.");
     flow.push_telemetry(item).await?;
     tracing::info!("waiting for item to reach sink...");

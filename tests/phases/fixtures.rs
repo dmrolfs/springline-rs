@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use chrono::{DateTime, Utc};
 use lazy_static::lazy_static;
-use proctor::elements::{PolicySettings, PolicySource, Telemetry};
+use proctor::elements::{PolicySettings, PolicySource, Telemetry, Timestamp};
 
 lazy_static! {
     pub static ref DT_1: DateTime<Utc> =
@@ -14,12 +14,12 @@ lazy_static! {
 }
 
 pub fn make_test_item(
-    timestamp: DateTime<Utc>,
+    timestamp: &DateTime<Utc>,
     records_in_per_sec: f64,
     inbox_lag: f64,
 ) -> Telemetry {
     let item = maplit::hashmap! {
-        "timestamp".to_string() => timestamp.timestamp().into(),
+        "timestamp".to_string() => Timestamp::from_datetime(&timestamp).into(),
         "records_in_per_sec".to_string() => records_in_per_sec.into(),
         "input_consumer_lag".to_string() => inbox_lag.into(),
     }
