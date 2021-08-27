@@ -1,5 +1,6 @@
 use crate::phases::{MetricCatalog, METRIC_CATALOG_REQ_SUBSCRIPTION_FIELDS};
 use crate::settings::Settings;
+use crate::Result;
 use context::FlinkEligibilityContext;
 use policy::EligibilityPolicy;
 use proctor::elements::{PolicyOutcome, PolicySettings, PolicySubscription};
@@ -19,7 +20,7 @@ pub type EligibilityOutcome = PolicyOutcome<MetricCatalog, FlinkEligibilityConte
 pub async fn make_eligibility_phase(
     settings: &Settings,
     tx_clearinghouse_api: &ClearinghouseApi,
-) -> anyhow::Result<Box<dyn ThroughStage<MetricCatalog, EligibilityOutcome>>> {
+) -> Result<Box<dyn ThroughStage<MetricCatalog, EligibilityOutcome>>> {
     let name = "eligibility";
     let data_channel = do_connect_eligibility_data_channel(name, tx_clearinghouse_api).await?;
     let (policy, context_channel) =
@@ -39,7 +40,7 @@ pub async fn make_eligibility_phase(
 async fn do_connect_eligibility_data_channel(
     channel_name: &str,
     tx_clearinghouse_api: &ClearinghouseApi,
-) -> anyhow::Result<SubscriptionChannel<MetricCatalog>> {
+) -> Result<SubscriptionChannel<MetricCatalog>> {
     let channel = SubscriptionChannel::new(channel_name).await?;
     let subscription = TelemetrySubscription::new(channel_name)
         .with_required_fields(METRIC_CATALOG_REQ_SUBSCRIPTION_FIELDS.clone());
@@ -56,7 +57,7 @@ async fn do_connect_eligibility_context(
     context_name: &str,
     policy_settings: &PolicySettings,
     tx_clearinghouse_api: &ClearinghouseApi,
-) -> anyhow::Result<(
+) -> Result<(
     EligibilityPolicy,
     SubscriptionChannel<FlinkEligibilityContext>,
 )> {

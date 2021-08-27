@@ -13,6 +13,7 @@ use crate::phases::decision::result::DecisionResult;
 use crate::phases::decision::DecisionOutcome;
 use crate::phases::MetricCatalog;
 use crate::settings::Settings;
+use crate::Result;
 use proctor::elements::Timestamp;
 use proctor::graph::stage::ThroughStage;
 
@@ -27,7 +28,7 @@ pub type PlanningOutcome = FlinkScalePlan;
 #[tracing::instrument(level = "info", skip(_settings))]
 pub async fn make_plan_phase(
     _settings: &Settings,
-) -> anyhow::Result<Box<dyn ThroughStage<DecisionOutcome, PlanningOutcome>>> {
+) -> Result<Box<dyn ThroughStage<DecisionOutcome, PlanningOutcome>>> {
     todo!()
 }
 

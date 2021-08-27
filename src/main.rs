@@ -7,9 +7,10 @@ use springline::phases::execution::make_execution_phase;
 use springline::phases::governance::make_governance_phase;
 use springline::phases::plan::make_plan_phase;
 use springline::settings::{CliOptions, Settings};
+use springline::Result;
 use std::future::Future;
 
-fn main() -> anyhow::Result<()> {
+fn main() -> Result<()> {
     let subscriber = get_subscriber("springline", "trace");
     init_subscriber(subscriber);
 
@@ -33,9 +34,9 @@ fn main() -> anyhow::Result<()> {
 }
 
 #[tracing::instrument(level="info", skip(future), fields(worker_threads=num_cpus::get()))]
-fn start_pipeline<F>(future: F) -> anyhow::Result<()>
+fn start_pipeline<F>(future: F) -> Result<()>
 where
-    F: Future<Output = anyhow::Result<()>>,
+    F: Future<Output = Result<()>>,
 {
     let worker_threads = num_cpus::get();
     tokio::runtime::Builder::new_multi_thread()
