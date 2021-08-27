@@ -24,7 +24,7 @@ fn main() -> Result<()> {
     start_pipeline(async move {
         let (_collection, tx_clearinghouse_api) = make_collection_phase(&settings).await?;
         let _eligibility = make_eligibility_phase(&settings, &tx_clearinghouse_api).await?;
-        let _decision = make_decision_phase(&settings).await?;
+        let _decision = make_decision_phase(&settings, &tx_clearinghouse_api).await?;
         let _plan = make_plan_phase(&settings).await?;
         let _governance = make_governance_phase(&settings).await?;
         let _execution = make_execution_phase(&settings).await?;

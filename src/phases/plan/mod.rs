@@ -12,25 +12,18 @@ use serde::{Deserialize, Serialize};
 use crate::phases::decision::result::DecisionResult;
 use crate::phases::decision::DecisionOutcome;
 use crate::phases::MetricCatalog;
-use crate::settings::Settings;
+use crate::settings::{Settings, PlanSettings};
 use crate::Result;
 use proctor::elements::Timestamp;
 use proctor::graph::stage::ThroughStage;
+use proctor::phases::plan::{Planning, Plan};
+use proctor::phases::collection::{ClearinghouseApi, SubscriptionChannel, TelemetrySubscription, ClearinghouseCmd};
 
 mod benchmark;
 pub mod forecast;
 mod performance_history;
 mod performance_repository;
 mod planning;
-
-pub type PlanningOutcome = FlinkScalePlan;
-
-#[tracing::instrument(level = "info", skip(_settings))]
-pub async fn make_plan_phase(
-    _settings: &Settings,
-) -> Result<Box<dyn ThroughStage<DecisionOutcome, PlanningOutcome>>> {
-    todo!()
-}
 
 const MINIMAL_CLUSTER_SIZE: u16 = 1;
 
@@ -108,4 +101,40 @@ impl FlinkScalePlan {
             (DR::NoAction(_), _) => None,
         }
     }
+}
+
+
+pub type PlanningOutcome = FlinkScalePlan;
+
+#[tracing::instrument(level = "info", skip(settings, tx_clearinghouse_api))]
+pub async fn make_plan_phase(
+    settings: &Settings,
+    tx_clearinghouse_api: &ClearinghouseApi,
+) -> Result<Box<dyn ThroughStage<DecisionOutcome, PlanningOutcome>>> {
+    let name = "autoscale_planning";
+    let plan_settings = &settings.plan;
+
+    let flink_planning = do_make_flink_planning(&settings.plan).await?;
+    let planning = Plan::new(name, flink_planning);
+
+}
+
+// #[tracing::instrument(level="info", skip(tx_clearinghouse_api))]
+// async fn do_connect_planning_data_channel(
+//     channel_name: &str,
+//     tx_clearinghouse_api: &ClearinghouseApi,
+// ) -> Result<SubscriptionChannel<MetricCatalog>> {
+//     let channel = SubscriptionChannel::new(channel_name).await?;
+//     let subscription = TelemetrySubscription::new(channel_name)
+//         .with_required_fields(METRIC_CATALOG_REQ_SUBSCRIPTION_FIELDS.clone());
+//
+//     let (subscribe_cmd, rx_subscribe_ack) = ClearinghouseCmd::subscribe(subscription, channel.subscription_receiver.clone());
+//     tx_clearinghouse_api.send(subscribe_cmd)?;
+//     rx_subscribe_ack.await?;
+//     Ok(channel)
+// }
+
+#[tracing::instrument(level="info", skip(settings))]
+async fn do_make_flink_planning(settings: &PlanSettings) -> Result<impl Planning> {
+    todo!()
 }

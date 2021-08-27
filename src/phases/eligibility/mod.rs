@@ -16,13 +16,13 @@ pub mod policy;
 
 pub type EligibilityOutcome = PolicyOutcome<MetricCatalog, FlinkEligibilityContext>;
 
-#[tracing::instrument(level = "info", skip(settings))]
+#[tracing::instrument(level = "info", skip(settings, tx_clearinghouse_api))]
 pub async fn make_eligibility_phase(
     settings: &Settings,
     tx_clearinghouse_api: &ClearinghouseApi,
 ) -> Result<Box<dyn ThroughStage<MetricCatalog, EligibilityOutcome>>> {
     let name = "eligibility";
-    let data_channel = do_connect_eligibility_data_channel(name, tx_clearinghouse_api).await?;
+    let data_channel = MetricCatalog::connect_channel(name, tx_clearinghouse_api).await?;
     let (policy, context_channel) =
         do_connect_eligibility_context(name, &settings.eligibility_policy, tx_clearinghouse_api)
             .await?;
@@ -36,23 +36,7 @@ pub async fn make_eligibility_phase(
     Ok(phase)
 }
 
-#[tracing::instrument(level = "info", skip())]
-async fn do_connect_eligibility_data_channel(
-    channel_name: &str,
-    tx_clearinghouse_api: &ClearinghouseApi,
-) -> Result<SubscriptionChannel<MetricCatalog>> {
-    let channel = SubscriptionChannel::new(channel_name).await?;
-    let subscription = TelemetrySubscription::new(channel_name)
-        .with_required_fields(METRIC_CATALOG_REQ_SUBSCRIPTION_FIELDS.clone());
-
-    let (subscribe_cmd, rx_subscribe_ack) =
-        ClearinghouseCmd::subscribe(subscription, channel.subscription_receiver.clone());
-    tx_clearinghouse_api.send(subscribe_cmd)?;
-    rx_subscribe_ack.await?;
-    Ok(channel)
-}
-
-#[tracing::instrument(level = "info", skip())]
+#[tracing::instrument(level = "info", skip(tx_clearinghouse_api))]
 async fn do_connect_eligibility_context(
     context_name: &str,
     policy_settings: &PolicySettings,

@@ -9,26 +9,16 @@ use proctor::ProctorContext;
 // todo draft policy preample and/or default policy
 
 #[derive(Debug)]
-pub struct EligibilityPolicy {
-    settings: PolicySettings,
-}
+pub struct EligibilityPolicy(PolicySettings);
 
 impl EligibilityPolicy {
     pub fn new(settings: &PolicySettings) -> Self {
-        Self {
-            settings: settings.clone(),
-        }
+        Self(settings.clone())
     }
 }
 
 impl PolicySubscription for EligibilityPolicy {
     type Requirements = FlinkEligibilityContext;
-
-    // fn do_extend_subscription(&self, subscription: TelemetrySubscription) -> TelemetrySubscription {
-    //     subscription
-    //         .with_required_fields(self.required_subscription_fields.clone())
-    //         .with_optional_fields(self.optional_subscription_fields.clone())
-    // }
 }
 
 impl QueryPolicy for EligibilityPolicy {
@@ -37,7 +27,7 @@ impl QueryPolicy for EligibilityPolicy {
     type Item = MetricCatalog;
 
     fn load_policy_engine(&self, oso: &mut Oso) -> Result<(), PolicyError> {
-        self.settings.source.load_into(oso)
+        self.0.source.load_into(oso)
     }
 
     fn initialize_policy_engine(&mut self, oso: &mut Oso) -> Result<(), PolicyError> {

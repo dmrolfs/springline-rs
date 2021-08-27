@@ -10,7 +10,8 @@ use oso::PolarClass;
 use serde::{Deserialize, Serialize};
 
 use proctor::elements::{telemetry, TelemetryValue, Timestamp};
-use proctor::error::TelemetryError;
+use proctor::error::{TelemetryError, CollectionError};
+use proctor::phases::collection::{ClearinghouseApi, SubscriptionChannel, TelemetrySubscription, ClearinghouseCmd};
 
 // todo: replace this with reflection approach if one identified.
 // tried serde-reflection, which failed since serde identifiers (flatten) et.al., are not supported.
@@ -123,6 +124,30 @@ impl MetricCatalog {
             let value = T::try_from(telemetry.clone())?;
             Ok(value)
         })
+    }
+}
+
+impl MetricCatalog {
+    #[tracing::instrument(
+        level="info",
+        skip(channel_name, tx_clearinghouse_api),
+        fields(channel_name=%channel_name.as_ref()),
+    )]
+    pub async fn connect_channel(
+        channel_name: impl AsRef<str>,
+        tx_clearinghouse_api: &ClearinghouseApi
+    ) -> Result<SubscriptionChannel<MetricCatalog>, CollectionError> {
+        let channel = SubscriptionChannel::new(channel_name).await?;
+        let subscription = TelemetrySubscription::new(channel_name.as_ref())
+            .with_required_fields(METRIC_CATALOG_REQ_SUBSCRIPTION_FIELDS.clone());
+
+        let (subscribe_cmd, rx_subscribe_ack) = ClearinghouseCmd::subscribe(
+            subscription,
+            channel.subscription_receiver.clone()
+        );
+        tx_clearinghouse_api.send(subscribe_cmd)?;
+        rx_subscribe_ack.await?;
+        Ok(channel)
     }
 }
 
