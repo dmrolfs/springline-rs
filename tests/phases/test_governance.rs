@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use claim::*;
 use pretty_assertions::assert_eq;
-use proctor::elements::{self, PolicyFilterEvent, PolicySource, Timestamp, PolicySettings};
+use proctor::elements::{self, PolicyFilterEvent, PolicySettings, PolicySource, Timestamp};
 use proctor::graph::stage::{self, WithApi, WithMonitor};
 use proctor::graph::{Connect, Graph, SinkShape, SourceShape};
 use proctor::phases::governance::Governance;

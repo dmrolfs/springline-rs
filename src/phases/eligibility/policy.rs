@@ -1,14 +1,9 @@
-use std::collections::HashSet;
-
 use oso::{Oso, PolarClass};
 
 use super::context::{ClusterStatus, FlinkEligibilityContext, TaskStatus};
 use crate::phases::MetricCatalog;
-use proctor::elements::{
-    PolicySettings, PolicySource, PolicySubscription, QueryPolicy, QueryResult, Telemetry,
-};
+use proctor::elements::{PolicySettings, PolicySubscription, QueryPolicy, QueryResult, Telemetry};
 use proctor::error::PolicyError;
-use proctor::phases::collection::TelemetrySubscription;
 use proctor::ProctorContext;
 
 // todo draft policy preample and/or default policy

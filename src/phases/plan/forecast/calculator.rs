@@ -137,7 +137,7 @@ mod tests {
 
     use super::*;
     use crate::phases::plan::forecast::*;
-    use chrono::{TimeZone, Utc};
+    use chrono::Utc;
 
     #[test]
     fn test_creation() {

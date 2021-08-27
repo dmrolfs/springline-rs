@@ -1,15 +1,10 @@
-use std::collections::HashSet;
-
 use oso::{Oso, PolarClass, PolarValue};
 use serde::{Deserialize, Serialize};
 
 use super::context::FlinkDecisionContext;
 use crate::phases::MetricCatalog;
-use proctor::elements::{
-    PolicySettings, PolicySource, PolicySubscription, QueryPolicy, QueryResult, Telemetry,
-};
+use proctor::elements::{PolicySettings, PolicySubscription, QueryPolicy, QueryResult, Telemetry};
 use proctor::error::PolicyError;
-use proctor::phases::collection::TelemetrySubscription;
 use proctor::phases::decision::DECISION_POLICY_PREAMBLE;
 use proctor::ProctorContext;
 

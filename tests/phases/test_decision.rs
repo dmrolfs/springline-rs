@@ -4,7 +4,10 @@ use std::time::Duration;
 use oso::ToPolar;
 use pretty_assertions::assert_eq;
 use proctor::elements;
-use proctor::elements::{PolicyOutcome, PolicySource, PolicySubscription, Telemetry, TelemetryValue, ToTelemetry, PolicySettings};
+use proctor::elements::{
+    PolicyOutcome, PolicySettings, PolicySource, PolicySubscription, Telemetry, TelemetryValue,
+    ToTelemetry,
+};
 use proctor::graph::stage::{self, ThroughStage, WithApi, WithMonitor};
 use proctor::graph::{Connect, Graph, Inlet, SinkShape, SourceShape, UniformFanInShape};
 use proctor::phases::collection;

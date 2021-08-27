@@ -1,8 +1,6 @@
-use std::collections::HashSet;
-
 use chrono::{DateTime, Utc};
 use lazy_static::lazy_static;
-use proctor::elements::{PolicySettings, PolicySource, Telemetry, Timestamp};
+use proctor::elements::{Telemetry, Timestamp};
 
 lazy_static! {
     pub static ref DT_1: DateTime<Utc> =
