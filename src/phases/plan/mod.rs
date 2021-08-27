@@ -10,14 +10,26 @@ pub use planning::FlinkPlanning;
 use serde::{Deserialize, Serialize};
 
 use crate::phases::decision::result::DecisionResult;
+use crate::phases::decision::DecisionOutcome;
 use crate::phases::MetricCatalog;
+use crate::settings::Settings;
 use proctor::elements::Timestamp;
+use proctor::graph::stage::ThroughStage;
 
 mod benchmark;
 pub mod forecast;
 mod performance_history;
 mod performance_repository;
 mod planning;
+
+pub type PlanningOutcome = FlinkScalePlan;
+
+#[tracing::instrument(level = "info", skip(_settings))]
+pub async fn make_plan_phase(
+    _settings: &Settings,
+) -> anyhow::Result<Box<dyn ThroughStage<DecisionOutcome, PlanningOutcome>>> {
+    todo!()
+}
 
 const MINIMAL_CLUSTER_SIZE: u16 = 1;
 
