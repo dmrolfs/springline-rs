@@ -156,8 +156,8 @@ impl<F: WorkloadForecastBuilder> FlinkPlanning<F> {
 
 #[async_trait]
 impl<F: WorkloadForecastBuilder> Planning for FlinkPlanning<F> {
-    type Decision = DecisionResult<MetricCatalog>;
     type Observation = MetricCatalog;
+    type Decision = DecisionResult<MetricCatalog>;
     type Out = FlinkScalePlan;
 
     fn set_outlet(&mut self, outlet: Outlet<Self::Out>) {
@@ -531,7 +531,7 @@ mod tests {
             min_scaling_step: 2,
             forecast_calculator: calc,
             performance_history: PerformanceHistory::default(),
-            performance_repository: make_performance_repository(PerformanceRepositorySettings {
+            performance_repository: make_performance_repository(&PerformanceRepositorySettings {
                 storage: PerformanceRepositoryType::Memory,
                 storage_path: None,
             })?,

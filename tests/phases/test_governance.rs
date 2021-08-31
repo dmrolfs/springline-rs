@@ -1,4 +1,3 @@
-use std::collections::HashSet;
 use std::time::Duration;
 
 use claim::*;
@@ -6,16 +5,22 @@ use pretty_assertions::assert_eq;
 use proctor::elements::{self, PolicyFilterEvent, PolicySettings, PolicySource, Timestamp};
 use proctor::graph::stage::{self, WithApi, WithMonitor};
 use proctor::graph::{Connect, Graph, SinkShape, SourceShape};
-use proctor::phases::governance::Governance;
+use proctor::phases::policy_phase::PolicyPhase;
 use springline::phases::governance::{
     make_governance_transform, FlinkGovernanceContext, FlinkGovernancePolicy,
 };
 use springline::phases::plan::FlinkScalePlan;
+use std::path::PathBuf;
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
 type Data = FlinkScalePlan;
 type Context = FlinkGovernanceContext;
+
+lazy_static::lazy_static! {
+    static ref GOVERNANCE_PREAMBLE: PolicySource = PolicySource::File(PathBuf::from("./resources/governance_preamble.polar"));
+    static ref POLICY_SETTINGS: PolicySettings = PolicySettings::default().with_source(GOVERNANCE_PREAMBLE.clone());
+}
 
 #[allow(dead_code)]
 struct TestFlow {
@@ -29,7 +34,7 @@ struct TestFlow {
 }
 
 impl TestFlow {
-    pub async fn new(governance_stage: Governance<Data, Data, Context>) -> anyhow::Result<Self> {
+    pub async fn new(governance_stage: PolicyPhase<Data, Data, Context>) -> anyhow::Result<Self> {
         let data_source: stage::ActorSource<Data> = stage::ActorSource::new("plan_source");
         let tx_data_source_api = data_source.tx_api();
 
@@ -280,13 +285,9 @@ async fn test_flink_governance_flow_simple_and_happy() -> anyhow::Result<()> {
     let main_span = tracing::info_span!("test_flink_governance_flow_simple_and_happy");
     let _ = main_span.enter();
 
-    let policy = FlinkGovernancePolicy::new(&PolicySettings {
-        required_subscription_fields: HashSet::new(),
-        optional_subscription_fields: HashSet::new(),
-        source: PolicySource::NoPolicy,
-    });
+    let policy = FlinkGovernancePolicy::new(&POLICY_SETTINGS);
 
-    let governance_stage = Governance::with_transform(
+    let governance_stage = PolicyPhase::with_transform(
         "test_governance",
         policy,
         make_governance_transform("common_governance_transform"),
@@ -338,13 +339,9 @@ async fn test_flink_governance_flow_simple_below_min_cluster_size() -> anyhow::R
     let main_span = tracing::info_span!("test_flink_governance_flow_simple_below_min_cluster_size");
     let _ = main_span.enter();
 
-    let policy = FlinkGovernancePolicy::new(&PolicySettings {
-        required_subscription_fields: HashSet::new(),
-        optional_subscription_fields: HashSet::new(),
-        source: PolicySource::NoPolicy,
-    });
+    let policy = FlinkGovernancePolicy::new(&POLICY_SETTINGS);
 
-    let governance_stage = Governance::with_transform(
+    let governance_stage = PolicyPhase::with_transform(
         "test_governance",
         policy,
         make_governance_transform("common_governance_transform"),
@@ -396,13 +393,9 @@ async fn test_flink_governance_flow_simple_above_max_cluster_size() -> anyhow::R
     let main_span = tracing::info_span!("test_flink_governance_flow_simple_above_max_cluster_size");
     let _ = main_span.enter();
 
-    let policy = FlinkGovernancePolicy::new(&PolicySettings {
-        required_subscription_fields: HashSet::new(),
-        optional_subscription_fields: HashSet::new(),
-        source: PolicySource::NoPolicy,
-    });
+    let policy = FlinkGovernancePolicy::new(&POLICY_SETTINGS);
 
-    let governance_stage = Governance::with_transform(
+    let governance_stage = PolicyPhase::with_transform(
         "test_governance",
         policy,
         make_governance_transform("common_governance_transform"),
@@ -454,13 +447,9 @@ async fn test_flink_governance_flow_simple_step_up_too_big() -> anyhow::Result<(
     let main_span = tracing::info_span!("test_flink_governance_flow_simple_step_up_too_big");
     let _ = main_span.enter();
 
-    let policy = FlinkGovernancePolicy::new(&PolicySettings {
-        required_subscription_fields: HashSet::new(),
-        optional_subscription_fields: HashSet::new(),
-        source: PolicySource::NoPolicy,
-    });
+    let policy = FlinkGovernancePolicy::new(&POLICY_SETTINGS);
 
-    let governance_stage = Governance::with_transform(
+    let governance_stage = PolicyPhase::with_transform(
         "test_governance",
         policy,
         make_governance_transform("common_governance_transform"),
@@ -512,13 +501,9 @@ async fn test_flink_governance_flow_simple_step_down_too_big() -> anyhow::Result
     let main_span = tracing::info_span!("test_flink_governance_flow_simple_step_down_too_big");
     let _ = main_span.enter();
 
-    let policy = FlinkGovernancePolicy::new(&PolicySettings {
-        required_subscription_fields: HashSet::new(),
-        optional_subscription_fields: HashSet::new(),
-        source: PolicySource::NoPolicy,
-    });
+    let policy = FlinkGovernancePolicy::new(&POLICY_SETTINGS);
 
-    let governance_stage = Governance::with_transform(
+    let governance_stage = PolicyPhase::with_transform(
         "test_governance",
         policy,
         make_governance_transform("common_governance_transform"),
@@ -573,13 +558,9 @@ async fn test_flink_governance_flow_simple_step_up_before_max() -> anyhow::Resul
     let main_span = tracing::info_span!("test_flink_governance_flow_simple_step_up_before_max");
     let _ = main_span.enter();
 
-    let policy = FlinkGovernancePolicy::new(&PolicySettings {
-        required_subscription_fields: HashSet::new(),
-        optional_subscription_fields: HashSet::new(),
-        source: PolicySource::NoPolicy,
-    });
+    let policy = FlinkGovernancePolicy::new(&POLICY_SETTINGS);
 
-    let governance_stage = Governance::with_transform(
+    let governance_stage = PolicyPhase::with_transform(
         "test_governance",
         policy,
         make_governance_transform("common_governance_transform"),
@@ -631,13 +612,9 @@ async fn test_flink_governance_flow_simple_step_down_before_min() -> anyhow::Res
     let main_span = tracing::info_span!("test_flink_governance_flow_simple_step_down_before_min");
     let _ = main_span.enter();
 
-    let policy = FlinkGovernancePolicy::new(&PolicySettings {
-        required_subscription_fields: HashSet::new(),
-        optional_subscription_fields: HashSet::new(),
-        source: PolicySource::NoPolicy,
-    });
+    let policy = FlinkGovernancePolicy::new(&POLICY_SETTINGS);
 
-    let governance_stage = Governance::with_transform(
+    let governance_stage = PolicyPhase::with_transform(
         "test_governance",
         policy,
         make_governance_transform("common_governance_transform"),

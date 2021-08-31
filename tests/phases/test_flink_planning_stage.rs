@@ -261,11 +261,12 @@ async fn test_flink_planning_linear() {
     let recovery_valid_offset = Duration::from_secs(5 * 60);
 
     let forecast_builder = LeastSquaresWorkloadForecastBuilder::new(20, SpikeSettings::default());
-    let performance_repository =
-        assert_ok!(make_performance_repository(PerformanceRepositorySettings {
+    let performance_repository = assert_ok!(make_performance_repository(
+        &PerformanceRepositorySettings {
             storage: PerformanceRepositoryType::Memory,
             storage_path: None,
-        }));
+        }
+    ));
 
     let mut planning = assert_ok!(
         TestPlanning::new(
@@ -383,11 +384,12 @@ async fn test_flink_planning_sine() {
     let recovery_valid_offset = Duration::from_secs(5 * 60);
 
     let forecast_builder = LeastSquaresWorkloadForecastBuilder::new(20, SpikeSettings::default());
-    let performance_repository =
-        assert_ok!(make_performance_repository(PerformanceRepositorySettings {
+    let performance_repository = assert_ok!(make_performance_repository(
+        &PerformanceRepositorySettings {
             storage: PerformanceRepositoryType::Memory,
             storage_path: None,
-        }));
+        }
+    ));
 
     let mut planning = assert_ok!(
         TestPlanning::new(

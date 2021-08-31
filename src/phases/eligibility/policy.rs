@@ -2,7 +2,9 @@ use oso::{Oso, PolarClass};
 
 use super::context::{ClusterStatus, FlinkEligibilityContext, TaskStatus};
 use crate::phases::MetricCatalog;
-use proctor::elements::{PolicySettings, PolicySubscription, QueryPolicy, QueryResult, Telemetry};
+use proctor::elements::{
+    PolicySettings, PolicySource, PolicySubscription, QueryPolicy, QueryResult, Telemetry,
+};
 use proctor::error::PolicyError;
 use proctor::ProctorContext;
 
@@ -25,10 +27,6 @@ impl QueryPolicy for EligibilityPolicy {
     type Args = (Self::Item, Self::Context);
     type Context = FlinkEligibilityContext;
     type Item = MetricCatalog;
-
-    fn load_policy_engine(&self, oso: &mut Oso) -> Result<(), PolicyError> {
-        self.0.source.load_into(oso)
-    }
 
     fn initialize_policy_engine(&mut self, oso: &mut Oso) -> Result<(), PolicyError> {
         Telemetry::initialize_policy_engine(oso)?;
@@ -66,5 +64,9 @@ impl QueryPolicy for EligibilityPolicy {
 
     fn query_policy(&self, engine: &Oso, args: Self::Args) -> Result<QueryResult, PolicyError> {
         QueryResult::from_query(engine.query_rule("eligible", args)?)
+    }
+
+    fn policy_sources(&self) -> Vec<PolicySource> {
+        self.0.sources.clone()
     }
 }

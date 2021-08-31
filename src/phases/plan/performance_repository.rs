@@ -1,4 +1,4 @@
-use std::fmt::{Debug, Display};
+use std::fmt::Debug;
 use std::fs::{File, OpenOptions};
 use std::io::{BufReader, BufWriter};
 use std::path::{Path, PathBuf};
@@ -11,32 +11,33 @@ use dashmap::DashMap;
 use mockall::{automock, predicate::*};
 use serde::{Deserialize, Serialize};
 use serde_json::error::Category;
-use serde_with::{DeserializeFromStr, SerializeDisplay};
 
 use crate::phases::plan::PerformanceHistory;
 use proctor::error::PlanError;
 
+#[tracing::instrument(level = "info")]
 pub fn make_performance_repository(
-    settings: PerformanceRepositorySettings,
+    settings: &PerformanceRepositorySettings,
 ) -> Result<Box<dyn PerformanceRepository>, PlanError> {
     match settings.storage {
         PerformanceRepositoryType::Memory => Ok(Box::new(PerformanceMemoryRepository::default())),
         PerformanceRepositoryType::File => {
             let path = settings
                 .storage_path
+                .clone()
                 .unwrap_or("performance_history.data".to_string());
             Ok(Box::new(PerformanceFileRepository::new(path)))
         }
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PerformanceRepositorySettings {
     pub storage: PerformanceRepositoryType,
     pub storage_path: Option<String>,
 }
 
-#[derive(Debug, Display, SerializeDisplay, DeserializeFromStr)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PerformanceRepositoryType {
     Memory,
     File,

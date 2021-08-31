@@ -1,4 +1,3 @@
-use std::collections::HashSet;
 use std::time::Duration;
 
 use oso::ToPolar;
@@ -12,18 +11,24 @@ use proctor::graph::stage::{self, ThroughStage, WithApi, WithMonitor};
 use proctor::graph::{Connect, Graph, Inlet, SinkShape, SourceShape, UniformFanInShape};
 use proctor::phases::collection;
 use proctor::phases::collection::TelemetrySubscription;
-use proctor::phases::decision::Decision;
 use proctor::{AppData, ProctorContext};
 use serde::de::DeserializeOwned;
-use springline::phases::decision::{
-    make_decision_transform, DecisionResult, FlinkDecisionContext, FlinkDecisionPolicy,
-    DECISION_BINDING,
-};
+use springline::phases::decision::{FlinkDecisionContext, FlinkDecisionPolicy};
 use springline::phases::MetricCatalog;
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
 use super::fixtures::*;
+use proctor::phases::policy_phase::PolicyPhase;
+use springline::phases::decision::result::{
+    make_decision_transform, DecisionResult, DECISION_BINDING,
+};
+use std::path::PathBuf;
+
+lazy_static::lazy_static! {
+    static ref DECISION_PREAMBLE: PolicySource = PolicySource::File(PathBuf::from("./resources/decision_preamble.polar"));
+    static ref POLICY_SETTINGS: PolicySettings = PolicySettings::default().with_source(DECISION_PREAMBLE.clone());
+}
 
 #[allow(dead_code)]
 struct TestFlow<In, Out, C> {
@@ -271,24 +276,19 @@ async fn test_decision_carry_policy_result() -> anyhow::Result<()> {
             "nr_task_managers",
         });
 
-    let policy = FlinkDecisionPolicy::new(&PolicySettings {
-        required_subscription_fields: HashSet::new(),
-        optional_subscription_fields: HashSet::new(),
-        source: PolicySource::String(
-            r#"scale_up(item, _context, _) if 3.0 < item.flow.records_in_per_sec;
-            scale_down(item, _context, _) if item.flow.records_in_per_sec < 1.0;"#
-                .to_string(),
-        ),
-    });
+    let policy = FlinkDecisionPolicy::new(
+        &POLICY_SETTINGS.clone().with_source(PolicySource::String(
+            r###"
+                scale_up(item, _context, _) if 3.0 < item.flow.records_in_per_sec;
+                scale_down(item, _context, _) if item.flow.records_in_per_sec < 1.0;
+            "###
+            .to_string(),
+        )),
+    );
 
     let context_subscription = policy.subscription("decision_context");
 
-    let decision_stage = Decision::<
-        MetricCatalog,
-        PolicyOutcome<MetricCatalog, FlinkDecisionContext>,
-        FlinkDecisionContext,
-    >::carry_policy_result("carry_policy_decision", policy)
-    .await;
+    let decision_stage = PolicyPhase::carry_policy_outcome("carry_policy_decision", policy).await;
     let decision_context_inlet = decision_stage.context_inlet();
     let tx_decision_api: elements::PolicyFilterApi<FlinkDecisionContext> = decision_stage.tx_api();
     let rx_decision_monitor: elements::PolicyFilterMonitor<MetricCatalog, FlinkDecisionContext> =
@@ -385,23 +385,19 @@ async fn test_decision_common() -> anyhow::Result<()> {
             "all_sinks_healthy",
         });
 
-    let policy = FlinkDecisionPolicy::new(&PolicySettings {
-        required_subscription_fields: HashSet::new(),
-        optional_subscription_fields: HashSet::new(),
-        source: PolicySource::String(
-            r#"scale_up(item, _context, _) if 3.0 < item.flow.records_in_per_sec;
-            scale_down(item, _context, _) if item.flow.records_in_per_sec < 1.0;"#
-                .to_string(),
-        ),
-    });
+    let policy = FlinkDecisionPolicy::new(
+        &POLICY_SETTINGS.clone().with_source(PolicySource::String(
+            r###"
+                scale_up(item, _context, _) if 3.0 < item.flow.records_in_per_sec;
+                scale_down(item, _context, _) if item.flow.records_in_per_sec < 1.0;
+                "###
+            .to_string(),
+        )),
+    );
 
     let context_subscription = policy.subscription("decision_context");
 
-    let decision_stage = Decision::<
-        MetricCatalog,
-        DecisionResult<MetricCatalog>,
-        FlinkDecisionContext,
-    >::with_transform(
+    let decision_stage = PolicyPhase::with_transform(
         "common_decision",
         policy,
         make_decision_transform("common_decision_transform"),

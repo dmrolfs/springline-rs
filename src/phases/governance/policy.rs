@@ -3,109 +3,96 @@ use serde::{Deserialize, Serialize};
 
 use super::context::FlinkGovernanceContext;
 use crate::phases::plan::FlinkScalePlan;
-use proctor::elements::{PolicySettings, PolicySubscription, QueryPolicy, QueryResult, Telemetry};
+use proctor::elements::{
+    PolicySettings, PolicySource, PolicySubscription, QueryPolicy, QueryResult, Telemetry,
+};
 use proctor::error::PolicyError;
 use proctor::ProctorContext;
 
 pub const ADJUSTED_TARGET: &'static str = "adjusted_target";
 
-pub const GOVERNANCE_POLICY_PREAMBLE: &'static str = r#"
-    accept(plan, context, adjusted_target)
-        if accept_scale_up(plan, context, adjusted_target)
-        or accept_scale_down(plan, context, adjusted_target);
-
-
-    accept_scale_up(plan, context, adjusted_target)
-        if check_scale_up(plan, context, adjusted)
-        and context.max_cluster_size < adjusted
-        and adjusted_target = context.max_cluster_size
-        and cut;
-
-    accept_scale_up(plan, context, adjusted_target)
-        if check_scale_up(plan, context, adjusted_target)
-        and cut;
-
-    check_scale_up(plan, context, adjusted_target)
-        if not veto(plan, context)
-        and accept_step_up(plan, context, adjusted_target);
-
-
-    accept_scale_down(plan, context, adjusted_target)
-        if check_scale_down(plan, context, adjusted)
-        and adjusted < context.min_cluster_size
-        and adjusted_target = context.min_cluster_size
-        and cut;
-
-    accept_scale_down(plan, context, adjusted_target)
-        if check_scale_down(plan, context, adjusted_target)
-        and cut;
-
-    check_scale_down(plan, context, adjusted_target)
-        if not veto(plan, context)
-        and accept_step_down(plan, context, adjusted_target);
-
-
-    accept_step_up(plan, context, adjusted_target)
-        if scale_up(plan)
-        and (plan.target_nr_task_managers - plan.current_nr_task_managers) <= context.max_scaling_step
-        and adjusted_target = plan.target_nr_task_managers;
-
-    accept_step_up(plan, context, adjusted_target)
-        if scale_up(plan)
-        and context.max_scaling_step < (plan.target_nr_task_managers - plan.current_nr_task_managers)
-        and adjusted_target = plan.current_nr_task_managers + context.max_scaling_step;
-
-
-    accept_step_down(plan, context, adjusted_target)
-        if scale_down(plan)
-        and (plan.current_nr_task_managers - plan.target_nr_task_managers) <= context.max_scaling_step
-        and adjusted_target = plan.target_nr_task_managers;
-
-    accept_step_down(plan, context, adjusted_target)
-        if scale_down(plan)
-        and context.max_scaling_step < (plan.current_nr_task_managers - plan.target_nr_task_managers)
-        and adjusted_target = plan.current_nr_task_managers - context.max_scaling_step;
-
-
-    scale_up(plan) if plan.current_nr_task_managers < plan.target_nr_task_managers;
-    scale_down(plan) if plan.target_nr_task_managers < plan.current_nr_task_managers;
-
-
-    veto(plan, _context) if not scale_up(plan) and not scale_down(plan);
-    "#;
+// pub const GOVERNANCE_POLICY_PREAMBLE: &'static str = r#"
+//     accept(plan, context, adjusted_target)
+//         if accept_scale_up(plan, context, adjusted_target)
+//         or accept_scale_down(plan, context, adjusted_target);
+//
+//
+//     accept_scale_up(plan, context, adjusted_target)
+//         if check_scale_up(plan, context, adjusted)
+//         and context.max_cluster_size < adjusted
+//         and adjusted_target = context.max_cluster_size
+//         and cut;
+//
+//     accept_scale_up(plan, context, adjusted_target)
+//         if check_scale_up(plan, context, adjusted_target)
+//         and cut;
+//
+//     check_scale_up(plan, context, adjusted_target)
+//         if not veto(plan, context)
+//         and accept_step_up(plan, context, adjusted_target);
+//
+//
+//     accept_scale_down(plan, context, adjusted_target)
+//         if check_scale_down(plan, context, adjusted)
+//         and adjusted < context.min_cluster_size
+//         and adjusted_target = context.min_cluster_size
+//         and cut;
+//
+//     accept_scale_down(plan, context, adjusted_target)
+//         if check_scale_down(plan, context, adjusted_target)
+//         and cut;
+//
+//     check_scale_down(plan, context, adjusted_target)
+//         if not veto(plan, context)
+//         and accept_step_down(plan, context, adjusted_target);
+//
+//
+//     accept_step_up(plan, context, adjusted_target)
+//         if scale_up(plan)
+//         and (plan.target_nr_task_managers - plan.current_nr_task_managers) <= context.max_scaling_step
+//         and adjusted_target = plan.target_nr_task_managers;
+//
+//     accept_step_up(plan, context, adjusted_target)
+//         if scale_up(plan)
+//         and context.max_scaling_step < (plan.target_nr_task_managers - plan.current_nr_task_managers)
+//         and adjusted_target = plan.current_nr_task_managers + context.max_scaling_step;
+//
+//
+//     accept_step_down(plan, context, adjusted_target)
+//         if scale_down(plan)
+//         and (plan.current_nr_task_managers - plan.target_nr_task_managers) <= context.max_scaling_step
+//         and adjusted_target = plan.target_nr_task_managers;
+//
+//     accept_step_down(plan, context, adjusted_target)
+//         if scale_down(plan)
+//         and context.max_scaling_step < (plan.current_nr_task_managers - plan.target_nr_task_managers)
+//         and adjusted_target = plan.current_nr_task_managers - context.max_scaling_step;
+//
+//
+//     scale_up(plan) if plan.current_nr_task_managers < plan.target_nr_task_managers;
+//     scale_down(plan) if plan.target_nr_task_managers < plan.current_nr_task_managers;
+//
+//
+//     veto(plan, _context) if not scale_up(plan) and not scale_down(plan);
+// "#;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct FlinkGovernancePolicy {
-    settings: PolicySettings,
-}
+pub struct FlinkGovernancePolicy(PolicySettings);
 
 impl FlinkGovernancePolicy {
     pub fn new(settings: &PolicySettings) -> Self {
-        Self {
-            settings: settings.clone(),
-        }
+        Self(settings.clone())
     }
 }
 
 impl PolicySubscription for FlinkGovernancePolicy {
     type Requirements = FlinkGovernanceContext;
-
-    // fn do_extend_subscription(&self, subscription: TelemetrySubscription) -> TelemetrySubscription {
-    //     subscription
-    //         .with_required_fields(self.required_subscription_fields.clone())
-    //         .with_optional_fields(self.optional_subscription_fields.clone())
-    // }
 }
 
 impl QueryPolicy for FlinkGovernancePolicy {
     type Args = (Self::Item, Self::Context, PolarValue);
     type Context = FlinkGovernanceContext;
     type Item = FlinkScalePlan;
-
-    fn load_policy_engine(&self, engine: &mut Oso) -> Result<(), PolicyError> {
-        engine.load_str(GOVERNANCE_POLICY_PREAMBLE)?;
-        self.settings.source.load_into(engine)
-    }
 
     fn initialize_policy_engine(&mut self, engine: &mut Oso) -> Result<(), PolicyError> {
         Telemetry::initialize_policy_engine(engine)?;
@@ -129,5 +116,9 @@ impl QueryPolicy for FlinkGovernancePolicy {
 
     fn query_policy(&self, engine: &Oso, args: Self::Args) -> Result<QueryResult, PolicyError> {
         QueryResult::from_query(engine.query_rule("accept", args)?)
+    }
+
+    fn policy_sources(&self) -> Vec<PolicySource> {
+        self.0.sources.clone()
     }
 }

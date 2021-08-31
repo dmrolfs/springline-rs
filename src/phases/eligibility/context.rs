@@ -6,6 +6,7 @@ use oso::PolarClass;
 use serde::{Deserialize, Serialize};
 
 use proctor::elements::telemetry;
+use proctor::error::EligibilityError;
 use proctor::phases::collection::SubscriptionRequirements;
 use proctor::ProctorContext;
 
@@ -35,6 +36,8 @@ impl SubscriptionRequirements for FlinkEligibilityContext {
 }
 
 impl ProctorContext for FlinkEligibilityContext {
+    type Error = EligibilityError;
+
     fn custom(&self) -> telemetry::Table {
         self.custom.clone()
     }

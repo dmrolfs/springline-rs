@@ -4,8 +4,8 @@ use std::fmt::Debug;
 use oso::PolarClass;
 use serde::{Deserialize, Serialize};
 
-use proctor::elements::telemetry;
-use proctor::elements::telemetry::Table;
+use proctor::elements::telemetry::{self, Table};
+use proctor::error::GovernanceError;
 use proctor::phases::collection::SubscriptionRequirements;
 use proctor::ProctorContext;
 
@@ -36,6 +36,8 @@ impl SubscriptionRequirements for FlinkGovernanceContext {
 }
 
 impl ProctorContext for FlinkGovernanceContext {
+    type Error = GovernanceError;
+
     fn custom(&self) -> Table {
         self.custom.clone()
     }

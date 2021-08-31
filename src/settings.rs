@@ -1,5 +1,5 @@
-mod sources;
 pub mod plan_settings;
+mod sources;
 pub use plan_settings::*;
 
 use clap::Clap;
@@ -12,9 +12,8 @@ use std::collections::HashMap;
 use std::convert::{TryFrom, TryInto};
 use std::fmt::Display;
 use std::path::PathBuf;
-use enum_display_derive;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Settings {
     pub collection_sources: HashMap<String, SourceSetting>,
     pub eligibility_policy: PolicySettings,

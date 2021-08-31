@@ -3,21 +3,19 @@ pub use forecast::*;
 use oso::PolarClass;
 pub use performance_history::PerformanceHistory;
 pub use performance_repository::{
-    make_performance_repository, PerformanceMemoryRepository, PerformanceRepository,
-    PerformanceRepositorySettings, PerformanceRepositoryType,
+    make_performance_repository, PerformanceFileRepository, PerformanceMemoryRepository,
+    PerformanceRepository, PerformanceRepositorySettings, PerformanceRepositoryType,
 };
 pub use planning::FlinkPlanning;
 use serde::{Deserialize, Serialize};
 
 use crate::phases::decision::result::DecisionResult;
-use crate::phases::decision::DecisionOutcome;
 use crate::phases::MetricCatalog;
-use crate::settings::{Settings, PlanSettings};
+use crate::settings::{PlanSettings, Settings};
 use crate::Result;
 use proctor::elements::Timestamp;
 use proctor::graph::stage::ThroughStage;
-use proctor::phases::plan::{Planning, Plan};
-use proctor::phases::collection::{ClearinghouseApi, SubscriptionChannel, TelemetrySubscription, ClearinghouseCmd};
+use proctor::phases::plan::{Plan, Planning};
 
 mod benchmark;
 pub mod forecast;
@@ -103,38 +101,37 @@ impl FlinkScalePlan {
     }
 }
 
+pub type PlanningStrategy = FlinkPlanning<LeastSquaresWorkloadForecastBuilder>;
+pub type PlanningOutcome = <PlanningStrategy as Planning>::Out;
+pub type PlanningPhase = Box<
+    dyn ThroughStage<
+        <PlanningStrategy as Planning>::Observation,
+        <PlanningStrategy as Planning>::Out,
+    >,
+>;
 
-pub type PlanningOutcome = FlinkScalePlan;
-
-#[tracing::instrument(level = "info", skip(settings, tx_clearinghouse_api))]
-pub async fn make_plan_phase(
-    settings: &Settings,
-    tx_clearinghouse_api: &ClearinghouseApi,
-) -> Result<Box<dyn ThroughStage<DecisionOutcome, PlanningOutcome>>> {
+#[tracing::instrument(level = "info", skip(settings,))]
+pub async fn make_plan_phase(settings: &Settings) -> Result<PlanningPhase> {
     let name = "autoscale_planning";
-    let plan_settings = &settings.plan;
-
-    let flink_planning = do_make_flink_planning(&settings.plan).await?;
-    let planning = Plan::new(name, flink_planning);
-
+    let flink_planning = do_make_planning_strategy(name, &settings.plan).await?;
+    let plan: PlanningPhase = Box::new(Plan::new(name, flink_planning));
+    Ok(plan)
 }
 
-// #[tracing::instrument(level="info", skip(tx_clearinghouse_api))]
-// async fn do_connect_planning_data_channel(
-//     channel_name: &str,
-//     tx_clearinghouse_api: &ClearinghouseApi,
-// ) -> Result<SubscriptionChannel<MetricCatalog>> {
-//     let channel = SubscriptionChannel::new(channel_name).await?;
-//     let subscription = TelemetrySubscription::new(channel_name)
-//         .with_required_fields(METRIC_CATALOG_REQ_SUBSCRIPTION_FIELDS.clone());
-//
-//     let (subscribe_cmd, rx_subscribe_ack) = ClearinghouseCmd::subscribe(subscription, channel.subscription_receiver.clone());
-//     tx_clearinghouse_api.send(subscribe_cmd)?;
-//     rx_subscribe_ack.await?;
-//     Ok(channel)
-// }
-
-#[tracing::instrument(level="info", skip(settings))]
-async fn do_make_flink_planning(settings: &PlanSettings) -> Result<impl Planning> {
-    todo!()
+#[tracing::instrument(level = "info", skip())]
+async fn do_make_planning_strategy(
+    name: &str,
+    plan_settings: &PlanSettings,
+) -> Result<PlanningStrategy> {
+    let planning = PlanningStrategy::new(
+        name,
+        plan_settings.min_scaling_step,
+        plan_settings.restart,
+        plan_settings.max_catch_up,
+        plan_settings.recovery_valid,
+        LeastSquaresWorkloadForecastBuilder::new(plan_settings.window, plan_settings.spike),
+        make_performance_repository(&plan_settings.performance_repository)?,
+    )
+    .await?;
+    Ok(planning)
 }

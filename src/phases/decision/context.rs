@@ -5,6 +5,7 @@ use oso::PolarClass;
 use serde::{Deserialize, Serialize};
 
 use proctor::elements::telemetry;
+use proctor::error::DecisionError;
 use proctor::phases::collection::SubscriptionRequirements;
 use proctor::ProctorContext;
 
@@ -31,6 +32,8 @@ impl SubscriptionRequirements for FlinkDecisionContext {
 }
 
 impl ProctorContext for FlinkDecisionContext {
+    type Error = DecisionError;
+
     fn custom(&self) -> telemetry::Table {
         self.custom.clone()
     }
