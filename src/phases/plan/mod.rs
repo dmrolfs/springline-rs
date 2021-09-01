@@ -14,7 +14,8 @@ use crate::phases::MetricCatalog;
 use crate::settings::{PlanSettings, Settings};
 use crate::Result;
 use proctor::elements::Timestamp;
-use proctor::graph::stage::ThroughStage;
+use proctor::graph::{Connect, SinkShape, SourceShape};
+use proctor::phases::collection::{ClearinghouseApi, SubscriptionChannel};
 use proctor::phases::plan::{Plan, Planning};
 
 mod benchmark;
@@ -103,19 +104,29 @@ impl ScalePlan {
 
 pub type PlanningStrategy = FlinkPlanning<LeastSquaresWorkloadForecastBuilder>;
 pub type PlanningOutcome = <PlanningStrategy as Planning>::Out;
-pub type PlanningPhase = Box<
-    dyn ThroughStage<
-        <PlanningStrategy as Planning>::Observation,
-        <PlanningStrategy as Planning>::Out,
-    >,
->;
+pub type PlanningPhase = Box<Plan<PlanningStrategy>>;
 
-#[tracing::instrument(level = "info", skip(settings,))]
-pub async fn make_plan_phase(settings: &Settings) -> Result<PlanningPhase> {
+#[tracing::instrument(level = "info", skip(settings, tx_clearinghouse_api,))]
+pub async fn make_plan_phase(
+    settings: &Settings,
+    tx_clearinghouse_api: &ClearinghouseApi,
+) -> Result<PlanningPhase> {
     let name = "autoscale_planning";
+    let data_channel = do_connect_plan_data(name, tx_clearinghouse_api).await?;
     let flink_planning = do_make_planning_strategy(name, &settings.plan).await?;
     let plan: PlanningPhase = Box::new(Plan::new(name, flink_planning));
+
+    (data_channel.outlet(), plan.inlet()).connect().await;
     Ok(plan)
+}
+
+#[tracing::instrument(level = "info", skip(tx_clearinghouse_api,))]
+async fn do_connect_plan_data(
+    name: &str,
+    tx_clearinghouse_api: &ClearinghouseApi,
+) -> Result<SubscriptionChannel<MetricCatalog>> {
+    let channel = MetricCatalog::connect_channel(name, tx_clearinghouse_api).await?;
+    Ok(channel)
 }
 
 #[tracing::instrument(level = "info", skip())]

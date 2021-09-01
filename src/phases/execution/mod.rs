@@ -7,5 +7,7 @@ use proctor::graph::stage::SinkStage;
 pub async fn make_execution_phase(
     _settings: &Settings,
 ) -> Result<Box<dyn SinkStage<GovernanceOutcome>>> {
-    todo!()
+    let logged = proctor::graph::stage::LoggedSink::new("execution");
+    let execution: Box<dyn SinkStage<GovernanceOutcome>> = Box::new(logged);
+    Ok(execution)
 }

@@ -10,8 +10,6 @@ use crate::Result;
 pub use context::*;
 pub use policy::*;
 
-use proctor::graph::stage::ThroughStage;
-
 use proctor::elements::{PolicySettings, PolicySubscription};
 use proctor::graph::{Connect, SourceShape};
 use proctor::phases::collection::{ClearinghouseApi, ClearinghouseCmd, SubscriptionChannel};
@@ -22,7 +20,7 @@ pub type DecisionOutcome = DecisionResult<MetricCatalog>;
 pub type DecisionApi = proctor::elements::PolicyFilterApi<DecisionContext>;
 pub type DecisionMonitor = proctor::elements::PolicyFilterMonitor<MetricCatalog, DecisionContext>;
 
-pub type DecisionPhase = Box<dyn ThroughStage<EligibilityOutcome, DecisionOutcome>>;
+pub type DecisionPhase = Box<PolicyPhase<EligibilityOutcome, DecisionOutcome, DecisionContext>>;
 
 #[tracing::instrument(level = "info", skip(settings, tx_clearinghouse_api))]
 pub async fn make_decision_phase(

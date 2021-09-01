@@ -9,18 +9,15 @@ use crate::Result;
 pub use context::*;
 pub use policy::*;
 use proctor::elements::{PolicySettings, PolicySubscription};
-use proctor::graph::stage::ThroughStage;
 use proctor::graph::{Connect, SourceShape};
-use proctor::phases::collection::{
-    Clearinghouse, ClearinghouseApi, ClearinghouseCmd, SubscriptionChannel,
-};
+use proctor::phases::collection::{ClearinghouseApi, ClearinghouseCmd, SubscriptionChannel};
 use proctor::phases::policy_phase::PolicyPhase;
 pub use result::*;
 
 pub type GovernanceOutcome = PlanningOutcome;
 pub type GovernanceApi = proctor::elements::PolicyFilterApi<GovernanceContext>;
 pub type GovernanceMonitor = proctor::elements::PolicyFilterMonitor<ScalePlan, GovernanceContext>;
-pub type GovernancePhase = Box<dyn ThroughStage<PlanningOutcome, GovernanceOutcome>>;
+pub type GovernancePhase = Box<PolicyPhase<PlanningOutcome, GovernanceOutcome, GovernanceContext>>;
 
 #[tracing::instrument(level = "info", skip(settings, tx_clearinghouse_api))]
 pub async fn make_governance_phase(

@@ -1,11 +1,11 @@
+use cast_trait_object::DynCastExt;
 use clap::Clap;
+use proctor::graph::stage::WithMonitor;
+use proctor::graph::{Connect, Graph, SinkShape, SourceShape};
 use proctor::tracing::{get_subscriber, init_subscriber};
 use springline::phases::collection::make_collection_phase;
-use springline::phases::decision::result::make_decision_transform;
-use springline::phases::decision::{
-    make_decision_phase, DecisionContext, DecisionOutcome, DecisionPolicy,
-};
-use springline::phases::eligibility::{make_eligibility_phase, EligibilityOutcome};
+use springline::phases::decision::make_decision_phase;
+use springline::phases::eligibility::make_eligibility_phase;
 use springline::phases::execution::make_execution_phase;
 use springline::phases::governance::make_governance_phase;
 use springline::phases::plan::make_plan_phase;
@@ -25,13 +25,39 @@ fn main() -> Result<()> {
 
     //todo assemble and start pipeline in entry
     start_pipeline(async move {
-        let (_collection, tx_clearinghouse_api) = make_collection_phase(&settings).await?;
-        let _eligibility = make_eligibility_phase(&settings, &tx_clearinghouse_api).await?;
-        let _decision = make_decision_phase(&settings, &tx_clearinghouse_api).await?;
-        let _plan = make_plan_phase(&settings).await?;
-        let _governance = make_governance_phase(&settings, &tx_clearinghouse_api).await?;
-        let _execution = make_execution_phase(&settings).await?;
+        let (collection, tx_clearinghouse_api) = make_collection_phase(&settings).await?;
+
+        let eligibility = make_eligibility_phase(&settings, &tx_clearinghouse_api).await?;
+        let _eligibility_monitor = eligibility.rx_monitor();
+
+        let decision = make_decision_phase(&settings, &tx_clearinghouse_api).await?;
+        let _decision_monitor = decision.rx_monitor();
+
+        let plan = make_plan_phase(&settings, &tx_clearinghouse_api).await?;
+        let _plan_monitor = plan.rx_monitor();
+
+        let governance = make_governance_phase(&settings, &tx_clearinghouse_api).await?;
+        let _governance_monitor = governance.rx_monitor();
+
+        let execution = make_execution_phase(&settings).await?;
         println!("Hello World! num worker threads:{}", num_cpus::get());
+
+        (collection.outlet(), eligibility.inlet()).connect().await;
+        (eligibility.outlet(), decision.inlet()).connect().await;
+        (decision.outlet(), plan.decision_inlet()).connect().await;
+        (plan.outlet(), governance.inlet()).connect().await;
+        (governance.outlet(), execution.inlet()).connect().await;
+
+        let mut g = Graph::default();
+        g.push_back(collection.dyn_upcast()).await;
+        g.push_back(eligibility).await;
+        g.push_back(decision).await;
+        g.push_back(plan).await;
+        g.push_back(governance).await;
+        g.push_back(execution.dyn_upcast()).await;
+
+        g.run().await?;
+
         Ok(())
     })
 }

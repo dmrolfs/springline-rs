@@ -4,7 +4,6 @@ use crate::Result;
 use context::EligibilityContext;
 use policy::EligibilityPolicy;
 use proctor::elements::{PolicySettings, PolicySubscription};
-use proctor::graph::stage::ThroughStage;
 use proctor::graph::{Connect, SinkShape, SourceShape};
 use proctor::phases::collection::{ClearinghouseApi, ClearinghouseCmd, SubscriptionChannel};
 use proctor::phases::policy_phase::PolicyPhase;
@@ -16,7 +15,7 @@ pub type EligibilityOutcome = MetricCatalog;
 pub type EligibilityApi = proctor::elements::PolicyFilterApi<EligibilityContext>;
 pub type EligibilityMonitor =
     proctor::elements::PolicyFilterMonitor<MetricCatalog, EligibilityContext>;
-pub type EligibilityPhase = Box<dyn ThroughStage<MetricCatalog, EligibilityOutcome>>;
+pub type EligibilityPhase = Box<PolicyPhase<MetricCatalog, EligibilityOutcome, EligibilityContext>>;
 
 #[tracing::instrument(level = "info", skip(settings, tx_clearinghouse_api))]
 pub async fn make_eligibility_phase(

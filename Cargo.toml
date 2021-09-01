@@ -10,6 +10,7 @@ proctor = { git = "https://github.com/dmrolfs/proctor-rs" }
 anyhow = "*"
 approx = "*"
 async-trait = "*"
+cast_trait_object = "*"
 chrono = "*"
 clap = { version = "3.0.0-beta.4", features = ["yaml"] }
 config = { version = "*", default-features = false, features = ["toml", "hjson"] }

@@ -1,5 +1,4 @@
 pub use metric_catalog::*;
-use proctor::graph::stage::ThroughStage;
 
 pub mod collection;
 pub mod decision;
@@ -8,11 +7,6 @@ pub mod execution;
 pub mod governance;
 pub mod metric_catalog;
 pub mod plan;
-
-use crate::Result;
-use proctor::elements::{Policy, PolicyOutcome, PolicySettings, PolicySubscription, QueryPolicy};
-use proctor::phases::collection::{ClearinghouseApi, ClearinghouseCmd, SubscriptionChannel};
-use proctor::phases::policy_phase::PolicyPhase;
 
 // pub type PhaseStage<In, Out> = Box<dyn ThroughStage<In, Out>>;
 //
