@@ -1,8 +1,8 @@
 use oso::{Oso, PolarClass, PolarValue};
 use serde::{Deserialize, Serialize};
 
-use super::context::FlinkGovernanceContext;
-use crate::phases::plan::FlinkScalePlan;
+use super::context::GovernanceContext;
+use crate::phases::plan::ScalePlan;
 use proctor::elements::{
     PolicySettings, PolicySource, PolicySubscription, QueryPolicy, QueryResult, Telemetry,
 };
@@ -77,28 +77,28 @@ pub const ADJUSTED_TARGET: &'static str = "adjusted_target";
 // "#;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct FlinkGovernancePolicy(PolicySettings);
+pub struct GovernancePolicy(PolicySettings);
 
-impl FlinkGovernancePolicy {
+impl GovernancePolicy {
     pub fn new(settings: &PolicySettings) -> Self {
         Self(settings.clone())
     }
 }
 
-impl PolicySubscription for FlinkGovernancePolicy {
-    type Requirements = FlinkGovernanceContext;
+impl PolicySubscription for GovernancePolicy {
+    type Requirements = GovernanceContext;
 }
 
-impl QueryPolicy for FlinkGovernancePolicy {
+impl QueryPolicy for GovernancePolicy {
     type Args = (Self::Item, Self::Context, PolarValue);
-    type Context = FlinkGovernanceContext;
-    type Item = FlinkScalePlan;
+    type Context = GovernanceContext;
+    type Item = ScalePlan;
 
     fn initialize_policy_engine(&mut self, engine: &mut Oso) -> Result<(), PolicyError> {
         Telemetry::initialize_policy_engine(engine)?;
 
         engine.register_class(
-            FlinkGovernanceContext::get_polar_class_builder()
+            GovernanceContext::get_polar_class_builder()
                 .add_method("custom", ProctorContext::custom)
                 .build(),
         )?;

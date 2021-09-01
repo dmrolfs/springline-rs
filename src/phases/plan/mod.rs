@@ -26,7 +26,7 @@ mod planning;
 const MINIMAL_CLUSTER_SIZE: u16 = 1;
 
 #[derive(PolarClass, Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct FlinkScalePlan {
+pub struct ScalePlan {
     #[polar(attribute)]
     pub timestamp: Timestamp,
 
@@ -37,7 +37,7 @@ pub struct FlinkScalePlan {
     pub current_nr_task_managers: u16,
 }
 
-impl FlinkScalePlan {
+impl ScalePlan {
     pub fn new(
         decision: DecisionResult<MetricCatalog>,
         calculated_nr_task_managers: Option<u16>,
@@ -48,7 +48,7 @@ impl FlinkScalePlan {
         let current_nr_task_managers = decision.item().cluster.nr_task_managers;
         let timestamp = decision.item().timestamp;
         let scale_plan_for = |target_nr_task_managers: u16| {
-            Some(FlinkScalePlan {
+            Some(ScalePlan {
                 timestamp,
                 target_nr_task_managers,
                 current_nr_task_managers,

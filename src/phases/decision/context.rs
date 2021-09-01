@@ -10,7 +10,7 @@ use proctor::phases::collection::SubscriptionRequirements;
 use proctor::ProctorContext;
 
 #[derive(PolarClass, Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct FlinkDecisionContext {
+pub struct DecisionContext {
     #[polar(attribute)]
     pub all_sinks_healthy: bool,
 
@@ -22,7 +22,7 @@ pub struct FlinkDecisionContext {
     pub custom: telemetry::Table,
 }
 
-impl SubscriptionRequirements for FlinkDecisionContext {
+impl SubscriptionRequirements for DecisionContext {
     fn required_fields() -> HashSet<&'static str> {
         maplit::hashset! {
             "all_sinks_healthy",
@@ -31,7 +31,7 @@ impl SubscriptionRequirements for FlinkDecisionContext {
     }
 }
 
-impl ProctorContext for FlinkDecisionContext {
+impl ProctorContext for DecisionContext {
     type Error = DecisionError;
 
     fn custom(&self) -> telemetry::Table {
@@ -53,7 +53,7 @@ mod tests {
 
     #[test]
     fn test_serde_flink_decision_context() {
-        let context = FlinkDecisionContext {
+        let context = DecisionContext {
             all_sinks_healthy: true,
             nr_task_managers: 4,
             custom: maplit::hashmap! {
@@ -100,9 +100,9 @@ mod tests {
 
         tracing::info!(telemetry=?data, "created telemetry");
 
-        let actual = data.try_into::<FlinkDecisionContext>();
+        let actual = data.try_into::<DecisionContext>();
         tracing::info!(?actual, "converted into FlinkDecisionContext");
-        let expected = FlinkDecisionContext {
+        let expected = DecisionContext {
             all_sinks_healthy: false,
             nr_task_managers: 4,
             custom: maplit::hashmap! {"foo".to_string() => "bar".into(),},

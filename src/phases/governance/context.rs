@@ -10,7 +10,7 @@ use proctor::phases::collection::SubscriptionRequirements;
 use proctor::ProctorContext;
 
 #[derive(PolarClass, Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct FlinkGovernanceContext {
+pub struct GovernanceContext {
     #[polar(attribute)]
     pub min_cluster_size: u16,
 
@@ -25,7 +25,7 @@ pub struct FlinkGovernanceContext {
     pub custom: telemetry::Table,
 }
 
-impl SubscriptionRequirements for FlinkGovernanceContext {
+impl SubscriptionRequirements for GovernanceContext {
     fn required_fields() -> HashSet<&'static str> {
         maplit::hashset! {
             "min_cluster_size",
@@ -35,7 +35,7 @@ impl SubscriptionRequirements for FlinkGovernanceContext {
     }
 }
 
-impl ProctorContext for FlinkGovernanceContext {
+impl ProctorContext for GovernanceContext {
     type Error = GovernanceError;
 
     fn custom(&self) -> Table {
@@ -65,7 +65,7 @@ mod tests {
         let custom_prop_a = std::f64::consts::SQRT_2;
         let custom_prop_b = 242;
 
-        let context = FlinkGovernanceContext {
+        let context = GovernanceContext {
             min_cluster_size,
             max_cluster_size,
             max_scaling_step,
@@ -128,9 +128,9 @@ mod tests {
 
         tracing::info!(telemetry=?data, "created telemetry");
 
-        let actual = data.try_into::<FlinkGovernanceContext>();
+        let actual = data.try_into::<GovernanceContext>();
         tracing::info!(?actual, "converted into FlinkGovernanceContext");
-        let expected = FlinkGovernanceContext {
+        let expected = GovernanceContext {
             min_cluster_size,
             max_cluster_size,
             max_scaling_step,

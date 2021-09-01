@@ -1,12 +1,12 @@
 use super::policy::ADJUSTED_TARGET;
-use crate::phases::governance::context::FlinkGovernanceContext;
-use crate::phases::plan::FlinkScalePlan;
+use crate::phases::governance::context::GovernanceContext;
+use crate::phases::plan::ScalePlan;
 use proctor::elements::PolicyOutcome;
 use proctor::graph::stage;
 use proctor::graph::stage::ThroughStage;
 
-type Item = FlinkScalePlan;
-type Context = FlinkGovernanceContext;
+type Item = ScalePlan;
+type Context = GovernanceContext;
 
 pub fn make_governance_transform(
     name: impl AsRef<str>,
@@ -53,7 +53,7 @@ pub fn make_governance_transform(
 
                 (Ok(Some(adjusted)), _current, _target) => {
                     tracing::warn!("governance accepted plan with adjustment.");
-                    Some(FlinkScalePlan {
+                    Some(ScalePlan {
                         target_nr_task_managers: adjusted,
                         ..outcome.item
                     })

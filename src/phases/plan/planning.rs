@@ -5,7 +5,7 @@ use async_trait::async_trait;
 
 use crate::phases::decision::result::DecisionResult;
 use crate::phases::plan::{
-    FlinkScalePlan, ForecastCalculator, PerformanceHistory, PerformanceRepository,
+    ForecastCalculator, PerformanceHistory, PerformanceRepository, ScalePlan,
     WorkloadForecastBuilder,
 };
 use crate::phases::MetricCatalog;
@@ -29,7 +29,7 @@ pub struct FlinkPlanning<F: WorkloadForecastBuilder> {
     forecast_calculator: ForecastCalculator<F>,
     performance_history: PerformanceHistory,
     performance_repository: Box<dyn PerformanceRepository>,
-    outlet: Option<Outlet<FlinkScalePlan>>,
+    outlet: Option<Outlet<ScalePlan>>,
     /* todo: tx_api: mpsc::UnboundedSender<FlinkPlanningCmd>,
      * todo: rx_api: mpsc::UnboundedReceiver<FlinkPlanningCmd>, */
 }
@@ -99,7 +99,7 @@ impl<F: WorkloadForecastBuilder> FlinkPlanning<F> {
     fn handle_do_not_scale_decision(
         &mut self,
         _metrics: &MetricCatalog,
-    ) -> Result<Option<FlinkScalePlan>, PlanError> {
+    ) -> Result<Option<ScalePlan>, PlanError> {
         tracing::debug!("Decision made not scale cluster up or down.");
         Ok(None)
     }
@@ -112,7 +112,7 @@ impl<F: WorkloadForecastBuilder> FlinkPlanning<F> {
     async fn handle_scale_decision(
         &mut self,
         decision: DecisionResult<MetricCatalog>,
-    ) -> Result<Option<FlinkScalePlan>, PlanError> {
+    ) -> Result<Option<ScalePlan>, PlanError> {
         let plan = if self.forecast_calculator.have_enough_data() {
             let history = &self.performance_history;
             let current_nr_task_managers = decision.item().cluster.nr_task_managers;
@@ -123,7 +123,7 @@ impl<F: WorkloadForecastBuilder> FlinkPlanning<F> {
             let required_nr_task_managers = history.cluster_size_for_workload(anticipated_workload);
 
             if let Some(plan) =
-                FlinkScalePlan::new(decision, required_nr_task_managers, self.min_scaling_step)
+                ScalePlan::new(decision, required_nr_task_managers, self.min_scaling_step)
             {
                 if let Some(ref mut outlet) = self.outlet {
                     tracing::info!(?plan, "pushing scale plan.");
@@ -158,7 +158,7 @@ impl<F: WorkloadForecastBuilder> FlinkPlanning<F> {
 impl<F: WorkloadForecastBuilder> Planning for FlinkPlanning<F> {
     type Observation = MetricCatalog;
     type Decision = DecisionResult<MetricCatalog>;
-    type Out = FlinkScalePlan;
+    type Out = ScalePlan;
 
     fn set_outlet(&mut self, outlet: Outlet<Self::Out>) {
         self.outlet = Some(outlet);
@@ -172,7 +172,7 @@ impl<F: WorkloadForecastBuilder> Planning for FlinkPlanning<F> {
     async fn handle_decision(
         &mut self,
         decision: Self::Decision,
-    ) -> Result<Option<FlinkScalePlan>, PlanError> {
+    ) -> Result<Option<ScalePlan>, PlanError> {
         self.update_performance_history(&decision).await?;
 
         let plan = if let DecisionResult::NoAction(ref metrics) = decision {
@@ -476,7 +476,7 @@ mod tests {
 
     async fn setup_planning(
         planning_name: &str,
-        outlet: Outlet<FlinkScalePlan>,
+        outlet: Outlet<ScalePlan>,
         signal_type: SignalType,
     ) -> anyhow::Result<Arc<Mutex<TestPlanning>>> {
         let mut calc = ForecastCalculator::new(
@@ -550,9 +550,9 @@ mod tests {
         // calculator: Arc<Mutex<ForecastCalculator<LeastSquaresWorkloadForecastBuilder>>>,
         // history: PerformanceHistory,
         // outlet: Outlet<FlinkScalePlan>,
-        probe_rx: &mut Receiver<FlinkScalePlan>,
+        probe_rx: &mut Receiver<ScalePlan>,
         // min_step: u16,
-        expected: FlinkScalePlan,
+        expected: ScalePlan,
     ) -> anyhow::Result<()> {
         tracing::warn!("DMR - testing {}...", label);
 
@@ -601,7 +601,7 @@ mod tests {
                     &SCALE_UP,
                     Arc::clone(&planning),
                     &mut probe_rx,
-                    FlinkScalePlan {
+                    ScalePlan {
                         timestamp,
                         target_nr_task_managers: min_step + METRICS.cluster.nr_task_managers,
                         current_nr_task_managers: METRICS.cluster.nr_task_managers,
@@ -616,7 +616,7 @@ mod tests {
                     &SCALE_DOWN,
                     Arc::clone(&planning),
                     &mut probe_rx,
-                    FlinkScalePlan {
+                    ScalePlan {
                         timestamp,
                         target_nr_task_managers: METRICS.cluster.nr_task_managers - min_step,
                         current_nr_task_managers: METRICS.cluster.nr_task_managers,
@@ -633,7 +633,7 @@ mod tests {
                     &SCALE_DOWN,
                     Arc::clone(&planning),
                     &mut probe_rx,
-                    FlinkScalePlan {
+                    ScalePlan {
                         timestamp,
                         target_nr_task_managers: MINIMAL_CLUSTER_SIZE,
                         current_nr_task_managers: METRICS.cluster.nr_task_managers,
@@ -679,7 +679,7 @@ mod tests {
                     &SCALE_UP,
                     Arc::clone(&planning),
                     &mut probe_rx,
-                    FlinkScalePlan {
+                    ScalePlan {
                         timestamp,
                         target_nr_task_managers: 16,
                         current_nr_task_managers: METRICS.cluster.nr_task_managers,

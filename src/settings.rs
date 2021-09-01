@@ -16,9 +16,10 @@ use std::path::PathBuf;
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Settings {
     pub collection_sources: HashMap<String, SourceSetting>,
-    pub eligibility_policy: PolicySettings,
-    pub decision_policy: PolicySettings,
+    pub eligibility: PolicySettings,
+    pub decision: PolicySettings,
     pub plan: PlanSettings,
+    pub governance: PolicySettings,
 }
 
 #[allow(dead_code)]

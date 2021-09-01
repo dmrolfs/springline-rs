@@ -14,9 +14,8 @@ use proctor::phases::plan::Plan;
 use proctor::ProctorResult;
 use springline::phases::decision::result::DecisionResult;
 use springline::phases::plan::{
-    make_performance_repository, FlinkPlanning, FlinkScalePlan,
-    LeastSquaresWorkloadForecastBuilder, PerformanceRepositorySettings, PerformanceRepositoryType,
-    SpikeSettings,
+    make_performance_repository, FlinkPlanning, LeastSquaresWorkloadForecastBuilder,
+    PerformanceRepositorySettings, PerformanceRepositoryType, ScalePlan, SpikeSettings,
 };
 use springline::phases::{ClusterMetrics, FlowMetrics, MetricCatalog};
 use tokio::sync::oneshot;
@@ -24,7 +23,7 @@ use tokio::task::JoinHandle;
 
 type InData = MetricCatalog;
 type InDecision = DecisionResult<MetricCatalog>;
-type Out = FlinkScalePlan;
+type Out = ScalePlan;
 #[allow(dead_code)]
 type ForecastBuilder = LeastSquaresWorkloadForecastBuilder;
 type TestPlanning = FlinkPlanning<LeastSquaresWorkloadForecastBuilder>;
@@ -362,7 +361,7 @@ async fn test_flink_planning_linear() {
     let actual = assert_ok!(flow.close().await);
     assert_eq!(
         actual,
-        vec![FlinkScalePlan {
+        vec![ScalePlan {
             timestamp,
             target_nr_task_managers: 6,
             current_nr_task_managers: 2,
@@ -487,7 +486,7 @@ async fn test_flink_planning_sine() {
     let actual = assert_ok!(flow.close().await);
     assert_eq!(
         actual,
-        vec![FlinkScalePlan {
+        vec![ScalePlan {
             timestamp,
             target_nr_task_managers: 8,
             current_nr_task_managers: 2,

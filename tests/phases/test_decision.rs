@@ -13,7 +13,7 @@ use proctor::phases::collection;
 use proctor::phases::collection::TelemetrySubscription;
 use proctor::{AppData, ProctorContext};
 use serde::de::DeserializeOwned;
-use springline::phases::decision::{FlinkDecisionContext, FlinkDecisionPolicy};
+use springline::phases::decision::{DecisionContext, DecisionPolicy};
 use springline::phases::MetricCatalog;
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
@@ -276,7 +276,7 @@ async fn test_decision_carry_policy_result() -> anyhow::Result<()> {
             "nr_task_managers",
         });
 
-    let policy = FlinkDecisionPolicy::new(
+    let policy = DecisionPolicy::new(
         &POLICY_SETTINGS.clone().with_source(PolicySource::String(
             r###"
                 scale_up(item, _context, _) if 3.0 < item.flow.records_in_per_sec;
@@ -290,8 +290,8 @@ async fn test_decision_carry_policy_result() -> anyhow::Result<()> {
 
     let decision_stage = PolicyPhase::carry_policy_outcome("carry_policy_decision", policy).await;
     let decision_context_inlet = decision_stage.context_inlet();
-    let tx_decision_api: elements::PolicyFilterApi<FlinkDecisionContext> = decision_stage.tx_api();
-    let rx_decision_monitor: elements::PolicyFilterMonitor<MetricCatalog, FlinkDecisionContext> =
+    let tx_decision_api: elements::PolicyFilterApi<DecisionContext> = decision_stage.tx_api();
+    let rx_decision_monitor: elements::PolicyFilterMonitor<MetricCatalog, DecisionContext> =
         decision_stage.rx_monitor();
 
     let mut flow = TestFlow::new(
@@ -345,7 +345,7 @@ async fn test_decision_carry_policy_result() -> anyhow::Result<()> {
             .await?
     );
 
-    let actual: Vec<PolicyOutcome<MetricCatalog, FlinkDecisionContext>> = flow.close().await?;
+    let actual: Vec<PolicyOutcome<MetricCatalog, DecisionContext>> = flow.close().await?;
     tracing::warn!(?actual, "DMR: 08. Verify final accumulation...");
     let actual_vals: Vec<(f64, Option<String>)> = actual
         .into_iter()
@@ -385,7 +385,7 @@ async fn test_decision_common() -> anyhow::Result<()> {
             "all_sinks_healthy",
         });
 
-    let policy = FlinkDecisionPolicy::new(
+    let policy = DecisionPolicy::new(
         &POLICY_SETTINGS.clone().with_source(PolicySource::String(
             r###"
                 scale_up(item, _context, _) if 3.0 < item.flow.records_in_per_sec;
@@ -404,8 +404,8 @@ async fn test_decision_common() -> anyhow::Result<()> {
     )
     .await;
     let decision_context_inlet = decision_stage.context_inlet();
-    let tx_decision_api: elements::PolicyFilterApi<FlinkDecisionContext> = decision_stage.tx_api();
-    let rx_decision_monitor: elements::PolicyFilterMonitor<MetricCatalog, FlinkDecisionContext> =
+    let tx_decision_api: elements::PolicyFilterApi<DecisionContext> = decision_stage.tx_api();
+    let rx_decision_monitor: elements::PolicyFilterMonitor<MetricCatalog, DecisionContext> =
         decision_stage.rx_monitor();
 
     let mut flow = TestFlow::new(

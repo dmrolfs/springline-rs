@@ -1,6 +1,6 @@
 use oso::{Oso, PolarClass};
 
-use super::context::{ClusterStatus, FlinkEligibilityContext, TaskStatus};
+use super::context::{ClusterStatus, EligibilityContext, TaskStatus};
 use crate::phases::MetricCatalog;
 use proctor::elements::{
     PolicySettings, PolicySource, PolicySubscription, QueryPolicy, QueryResult, Telemetry,
@@ -20,19 +20,19 @@ impl EligibilityPolicy {
 }
 
 impl PolicySubscription for EligibilityPolicy {
-    type Requirements = FlinkEligibilityContext;
+    type Requirements = EligibilityContext;
 }
 
 impl QueryPolicy for EligibilityPolicy {
     type Args = (Self::Item, Self::Context);
-    type Context = FlinkEligibilityContext;
+    type Context = EligibilityContext;
     type Item = MetricCatalog;
 
     fn initialize_policy_engine(&mut self, oso: &mut Oso) -> Result<(), PolicyError> {
         Telemetry::initialize_policy_engine(oso)?;
 
         oso.register_class(
-            FlinkEligibilityContext::get_polar_class_builder()
+            EligibilityContext::get_polar_class_builder()
                 .add_method("custom", ProctorContext::custom)
                 .build(),
         )?;

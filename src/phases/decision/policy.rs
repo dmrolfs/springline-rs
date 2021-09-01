@@ -1,7 +1,8 @@
 use oso::{Oso, PolarClass, PolarValue};
 use serde::{Deserialize, Serialize};
 
-use super::context::FlinkDecisionContext;
+use super::context::DecisionContext;
+use crate::phases::decision::result::DECISION_BINDING;
 use crate::phases::MetricCatalog;
 use proctor::elements::{
     PolicySettings, PolicySource, PolicySubscription, QueryPolicy, QueryResult, Telemetry,
@@ -10,28 +11,28 @@ use proctor::error::PolicyError;
 use proctor::ProctorContext;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct FlinkDecisionPolicy(PolicySettings);
+pub struct DecisionPolicy(PolicySettings);
 
-impl FlinkDecisionPolicy {
+impl DecisionPolicy {
     pub fn new(settings: &PolicySettings) -> Self {
         Self(settings.clone())
     }
 }
 
-impl PolicySubscription for FlinkDecisionPolicy {
-    type Requirements = FlinkDecisionContext;
+impl PolicySubscription for DecisionPolicy {
+    type Requirements = DecisionContext;
 }
 
-impl QueryPolicy for FlinkDecisionPolicy {
+impl QueryPolicy for DecisionPolicy {
     type Args = (Self::Item, Self::Context, PolarValue);
-    type Context = FlinkDecisionContext;
+    type Context = DecisionContext;
     type Item = MetricCatalog;
 
     fn initialize_policy_engine(&mut self, engine: &mut Oso) -> Result<(), PolicyError> {
         Telemetry::initialize_policy_engine(engine)?;
 
         engine.register_class(
-            FlinkDecisionContext::get_polar_class_builder()
+            DecisionContext::get_polar_class_builder()
                 .add_method("custom", ProctorContext::custom)
                 .build(),
         )?;
@@ -43,7 +44,7 @@ impl QueryPolicy for FlinkDecisionPolicy {
         (
             item.clone(),
             context.clone(),
-            PolarValue::Variable("direction".to_string()),
+            PolarValue::Variable(DECISION_BINDING.to_string()),
         )
     }
 

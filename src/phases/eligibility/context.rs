@@ -11,7 +11,7 @@ use proctor::phases::collection::SubscriptionRequirements;
 use proctor::ProctorContext;
 
 #[derive(PolarClass, Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct FlinkEligibilityContext {
+pub struct EligibilityContext {
     #[polar(attribute)]
     #[serde(flatten)] // current subscription mechanism only supports flatten keys
     pub task_status: TaskStatus,
@@ -25,7 +25,7 @@ pub struct FlinkEligibilityContext {
     pub custom: telemetry::Table,
 }
 
-impl SubscriptionRequirements for FlinkEligibilityContext {
+impl SubscriptionRequirements for EligibilityContext {
     fn required_fields() -> HashSet<&'static str> {
         maplit::hashset! {
             "task.last_failure",
@@ -35,7 +35,7 @@ impl SubscriptionRequirements for FlinkEligibilityContext {
     }
 }
 
-impl ProctorContext for FlinkEligibilityContext {
+impl ProctorContext for EligibilityContext {
     type Error = EligibilityError;
 
     fn custom(&self) -> telemetry::Table {
@@ -102,7 +102,7 @@ mod tests {
     #[test]
     #[ignore]
     fn test_serde_flink_eligibility_context() {
-        let context = FlinkEligibilityContext {
+        let context = EligibilityContext {
             task_status: TaskStatus {
                 last_failure: Some(DT_1.clone()),
             },
@@ -190,9 +190,9 @@ mod tests {
 
         tracing::info!(telemetry=?data, "created telemetry");
 
-        let actual = data.try_into::<FlinkEligibilityContext>();
+        let actual = data.try_into::<EligibilityContext>();
         tracing::info!(?actual, "converted into FlinkEligibilityContext");
-        let expected = FlinkEligibilityContext {
+        let expected = EligibilityContext {
             task_status: TaskStatus {
                 last_failure: Some(DT_1.clone()),
             },

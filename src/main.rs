@@ -1,8 +1,11 @@
 use clap::Clap;
 use proctor::tracing::{get_subscriber, init_subscriber};
 use springline::phases::collection::make_collection_phase;
-use springline::phases::decision::make_decision_phase;
-use springline::phases::eligibility::make_eligibility_phase;
+use springline::phases::decision::result::make_decision_transform;
+use springline::phases::decision::{
+    make_decision_phase, DecisionContext, DecisionOutcome, DecisionPolicy,
+};
+use springline::phases::eligibility::{make_eligibility_phase, EligibilityOutcome};
 use springline::phases::execution::make_execution_phase;
 use springline::phases::governance::make_governance_phase;
 use springline::phases::plan::make_plan_phase;
@@ -26,7 +29,7 @@ fn main() -> Result<()> {
         let _eligibility = make_eligibility_phase(&settings, &tx_clearinghouse_api).await?;
         let _decision = make_decision_phase(&settings, &tx_clearinghouse_api).await?;
         let _plan = make_plan_phase(&settings).await?;
-        let _governance = make_governance_phase(&settings).await?;
+        let _governance = make_governance_phase(&settings, &tx_clearinghouse_api).await?;
         let _execution = make_execution_phase(&settings).await?;
         println!("Hello World! num worker threads:{}", num_cpus::get());
         Ok(())

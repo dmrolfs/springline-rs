@@ -7,15 +7,15 @@ use proctor::graph::stage::{self, WithApi, WithMonitor};
 use proctor::graph::{Connect, Graph, SinkShape, SourceShape};
 use proctor::phases::policy_phase::PolicyPhase;
 use springline::phases::governance::{
-    make_governance_transform, FlinkGovernanceContext, FlinkGovernancePolicy,
+    make_governance_transform, GovernanceContext, GovernancePolicy,
 };
-use springline::phases::plan::FlinkScalePlan;
+use springline::phases::plan::ScalePlan;
 use std::path::PathBuf;
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
-type Data = FlinkScalePlan;
-type Context = FlinkGovernanceContext;
+type Data = ScalePlan;
+type Context = GovernanceContext;
 
 lazy_static::lazy_static! {
     static ref GOVERNANCE_PREAMBLE: PolicySource = PolicySource::File(PathBuf::from("./resources/governance_preamble.polar"));
@@ -150,8 +150,8 @@ impl TestFlow {
     pub async fn check_scenario(
         &mut self,
         label: &str,
-        data: FlinkScalePlan,
-        expectation: Vec<FlinkScalePlan>,
+        data: ScalePlan,
+        expectation: Vec<ScalePlan>,
     ) -> anyhow::Result<()> {
         let scenario_span =
             tracing::info_span!("DMR check scenario", %label, ?data, ?expectation, );
@@ -285,7 +285,7 @@ async fn test_flink_governance_flow_simple_and_happy() -> anyhow::Result<()> {
     let main_span = tracing::info_span!("test_flink_governance_flow_simple_and_happy");
     let _ = main_span.enter();
 
-    let policy = FlinkGovernancePolicy::new(&POLICY_SETTINGS);
+    let policy = GovernancePolicy::new(&POLICY_SETTINGS);
 
     let governance_stage = PolicyPhase::with_transform(
         "test_governance",
@@ -299,7 +299,7 @@ async fn test_flink_governance_flow_simple_and_happy() -> anyhow::Result<()> {
     let min_cluster_size = 2;
     let max_cluster_size = 10;
     let max_scaling_step = 5;
-    let context = FlinkGovernanceContext {
+    let context = GovernanceContext {
         min_cluster_size,
         max_cluster_size,
         max_scaling_step,
@@ -316,12 +316,12 @@ async fn test_flink_governance_flow_simple_and_happy() -> anyhow::Result<()> {
     assert_ok!(
         flow.check_scenario(
             "happy_1",
-            FlinkScalePlan {
+            ScalePlan {
                 timestamp,
                 target_nr_task_managers: 8,
                 current_nr_task_managers: 4
             },
-            vec![FlinkScalePlan {
+            vec![ScalePlan {
                 timestamp,
                 target_nr_task_managers: 8,
                 current_nr_task_managers: 4
@@ -339,7 +339,7 @@ async fn test_flink_governance_flow_simple_below_min_cluster_size() -> anyhow::R
     let main_span = tracing::info_span!("test_flink_governance_flow_simple_below_min_cluster_size");
     let _ = main_span.enter();
 
-    let policy = FlinkGovernancePolicy::new(&POLICY_SETTINGS);
+    let policy = GovernancePolicy::new(&POLICY_SETTINGS);
 
     let governance_stage = PolicyPhase::with_transform(
         "test_governance",
@@ -353,7 +353,7 @@ async fn test_flink_governance_flow_simple_below_min_cluster_size() -> anyhow::R
     let min_cluster_size = 2;
     let max_cluster_size = 10;
     let max_scaling_step = 5;
-    let context = FlinkGovernanceContext {
+    let context = GovernanceContext {
         min_cluster_size,
         max_cluster_size,
         max_scaling_step,
@@ -370,12 +370,12 @@ async fn test_flink_governance_flow_simple_below_min_cluster_size() -> anyhow::R
     assert_ok!(
         flow.check_scenario(
             "below min cluster size",
-            FlinkScalePlan {
+            ScalePlan {
                 timestamp,
                 target_nr_task_managers: 0,
                 current_nr_task_managers: 4
             },
-            vec![FlinkScalePlan {
+            vec![ScalePlan {
                 timestamp,
                 target_nr_task_managers: min_cluster_size,
                 current_nr_task_managers: 4
@@ -393,7 +393,7 @@ async fn test_flink_governance_flow_simple_above_max_cluster_size() -> anyhow::R
     let main_span = tracing::info_span!("test_flink_governance_flow_simple_above_max_cluster_size");
     let _ = main_span.enter();
 
-    let policy = FlinkGovernancePolicy::new(&POLICY_SETTINGS);
+    let policy = GovernancePolicy::new(&POLICY_SETTINGS);
 
     let governance_stage = PolicyPhase::with_transform(
         "test_governance",
@@ -407,7 +407,7 @@ async fn test_flink_governance_flow_simple_above_max_cluster_size() -> anyhow::R
     let min_cluster_size = 2;
     let max_cluster_size = 10;
     let max_scaling_step = 5;
-    let context = FlinkGovernanceContext {
+    let context = GovernanceContext {
         min_cluster_size,
         max_cluster_size,
         max_scaling_step,
@@ -424,12 +424,12 @@ async fn test_flink_governance_flow_simple_above_max_cluster_size() -> anyhow::R
     assert_ok!(
         flow.check_scenario(
             "above max cluster size",
-            FlinkScalePlan {
+            ScalePlan {
                 timestamp,
                 target_nr_task_managers: 999,
                 current_nr_task_managers: 6
             },
-            vec![FlinkScalePlan {
+            vec![ScalePlan {
                 timestamp,
                 target_nr_task_managers: max_cluster_size,
                 current_nr_task_managers: 6
@@ -447,7 +447,7 @@ async fn test_flink_governance_flow_simple_step_up_too_big() -> anyhow::Result<(
     let main_span = tracing::info_span!("test_flink_governance_flow_simple_step_up_too_big");
     let _ = main_span.enter();
 
-    let policy = FlinkGovernancePolicy::new(&POLICY_SETTINGS);
+    let policy = GovernancePolicy::new(&POLICY_SETTINGS);
 
     let governance_stage = PolicyPhase::with_transform(
         "test_governance",
@@ -461,7 +461,7 @@ async fn test_flink_governance_flow_simple_step_up_too_big() -> anyhow::Result<(
     let min_cluster_size = 2;
     let max_cluster_size = 10;
     let max_scaling_step = 5;
-    let context = FlinkGovernanceContext {
+    let context = GovernanceContext {
         min_cluster_size,
         max_cluster_size,
         max_scaling_step,
@@ -478,12 +478,12 @@ async fn test_flink_governance_flow_simple_step_up_too_big() -> anyhow::Result<(
     assert_ok!(
         flow.check_scenario(
             "too big a scale up step",
-            FlinkScalePlan {
+            ScalePlan {
                 timestamp,
                 target_nr_task_managers: 9,
                 current_nr_task_managers: 0
             },
-            vec![FlinkScalePlan {
+            vec![ScalePlan {
                 timestamp,
                 target_nr_task_managers: max_scaling_step,
                 current_nr_task_managers: 0
@@ -501,7 +501,7 @@ async fn test_flink_governance_flow_simple_step_down_too_big() -> anyhow::Result
     let main_span = tracing::info_span!("test_flink_governance_flow_simple_step_down_too_big");
     let _ = main_span.enter();
 
-    let policy = FlinkGovernancePolicy::new(&POLICY_SETTINGS);
+    let policy = GovernancePolicy::new(&POLICY_SETTINGS);
 
     let governance_stage = PolicyPhase::with_transform(
         "test_governance",
@@ -515,7 +515,7 @@ async fn test_flink_governance_flow_simple_step_down_too_big() -> anyhow::Result
     let min_cluster_size = 2;
     let max_cluster_size = 10;
     let max_scaling_step = 5;
-    let context = FlinkGovernanceContext {
+    let context = GovernanceContext {
         min_cluster_size,
         max_cluster_size,
         max_scaling_step,
@@ -532,12 +532,12 @@ async fn test_flink_governance_flow_simple_step_down_too_big() -> anyhow::Result
     assert_ok!(
         flow.check_scenario(
             "too big a scale down step",
-            FlinkScalePlan {
+            ScalePlan {
                 timestamp,
                 target_nr_task_managers: min_cluster_size,
                 current_nr_task_managers: max_cluster_size
             },
-            vec![FlinkScalePlan {
+            vec![ScalePlan {
                 timestamp,
                 target_nr_task_managers: max_cluster_size - max_scaling_step,
                 current_nr_task_managers: max_cluster_size
@@ -558,7 +558,7 @@ async fn test_flink_governance_flow_simple_step_up_before_max() -> anyhow::Resul
     let main_span = tracing::info_span!("test_flink_governance_flow_simple_step_up_before_max");
     let _ = main_span.enter();
 
-    let policy = FlinkGovernancePolicy::new(&POLICY_SETTINGS);
+    let policy = GovernancePolicy::new(&POLICY_SETTINGS);
 
     let governance_stage = PolicyPhase::with_transform(
         "test_governance",
@@ -572,7 +572,7 @@ async fn test_flink_governance_flow_simple_step_up_before_max() -> anyhow::Resul
     let min_cluster_size = 2;
     let max_cluster_size = 10;
     let max_scaling_step = 5;
-    let context = FlinkGovernanceContext {
+    let context = GovernanceContext {
         min_cluster_size,
         max_cluster_size,
         max_scaling_step,
@@ -589,12 +589,12 @@ async fn test_flink_governance_flow_simple_step_up_before_max() -> anyhow::Resul
     assert_ok!(
         flow.check_scenario(
             "too big a scale up step before max",
-            FlinkScalePlan {
+            ScalePlan {
                 timestamp,
                 target_nr_task_managers: 999,
                 current_nr_task_managers: 0
             },
-            vec![FlinkScalePlan {
+            vec![ScalePlan {
                 timestamp,
                 target_nr_task_managers: max_scaling_step,
                 current_nr_task_managers: 0
@@ -612,7 +612,7 @@ async fn test_flink_governance_flow_simple_step_down_before_min() -> anyhow::Res
     let main_span = tracing::info_span!("test_flink_governance_flow_simple_step_down_before_min");
     let _ = main_span.enter();
 
-    let policy = FlinkGovernancePolicy::new(&POLICY_SETTINGS);
+    let policy = GovernancePolicy::new(&POLICY_SETTINGS);
 
     let governance_stage = PolicyPhase::with_transform(
         "test_governance",
@@ -626,7 +626,7 @@ async fn test_flink_governance_flow_simple_step_down_before_min() -> anyhow::Res
     let min_cluster_size = 2;
     let max_cluster_size = 10;
     let max_scaling_step = 5;
-    let context = FlinkGovernanceContext {
+    let context = GovernanceContext {
         min_cluster_size,
         max_cluster_size,
         max_scaling_step,
@@ -643,12 +643,12 @@ async fn test_flink_governance_flow_simple_step_down_before_min() -> anyhow::Res
     assert_ok!(
         flow.check_scenario(
             "too big a scale down step before min",
-            FlinkScalePlan {
+            ScalePlan {
                 timestamp,
                 target_nr_task_managers: 0,
                 current_nr_task_managers: max_cluster_size
             },
-            vec![FlinkScalePlan {
+            vec![ScalePlan {
                 timestamp,
                 target_nr_task_managers: max_cluster_size - max_scaling_step,
                 current_nr_task_managers: max_cluster_size
