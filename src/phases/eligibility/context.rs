@@ -90,7 +90,7 @@ mod tests {
 
     use super::*;
     use proctor::elements::telemetry::ToTelemetry;
-    use proctor::elements::{Telemetry, NSECS_KEY, SECS_KEY};
+    use proctor::elements::{Telemetry, NANOS_KEY, SECS_KEY};
 
     lazy_static! {
         static ref DT_1: DateTime<Utc> = Utc::now();
@@ -123,7 +123,7 @@ mod tests {
             Token::Map { len: Some(2) },
             Token::Str(SECS_KEY),
             Token::I64(DT_1.timestamp()),
-            Token::Str(NSECS_KEY),
+            Token::Str(NANOS_KEY),
             Token::I64(DT_1.timestamp_subsec_nanos() as i64),
             Token::MapEnd,
             Token::Str("cluster.is_deploying"),
@@ -132,7 +132,7 @@ mod tests {
             Token::Map { len: Some(2) },
             Token::Str(SECS_KEY),
             Token::I64(DT_2.timestamp()),
-            Token::Str(NSECS_KEY),
+            Token::Str(NANOS_KEY),
             Token::I64(DT_2.timestamp_subsec_nanos() as i64),
             Token::MapEnd,
             Token::Str("custom_foo"),

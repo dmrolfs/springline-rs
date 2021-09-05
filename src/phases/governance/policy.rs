@@ -119,6 +119,6 @@ impl QueryPolicy for GovernancePolicy {
     }
 
     fn policy_sources(&self) -> Vec<PolicySource> {
-        self.0.sources.clone()
+        self.0.policies.clone()
     }
 }

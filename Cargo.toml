@@ -13,7 +13,9 @@ async-trait = "*"
 cast_trait_object = "*"
 chrono = "*"
 clap = { version = "3.0.0-beta.4", features = ["yaml"] }
-config = { version = "*", default-features = false, features = ["toml", "hjson"] }
+#config = { version = "^0.11.0", default_features = true, features = ["ron"] }
+#config = { version = "^0.11.0" }
+config = { git = "https://github.com/dmrolfs/config-rs" }
 dashmap = "*"
 enum-display-derive = "*"
 itertools = "*"
@@ -27,10 +29,13 @@ polar-core = "*"
 reqwest = { version = "0.11", features = ["json", "multipart"] }
 reqwest-middleware = "*"
 reqwest-retry = "*"
+ron = "*"
 serde = "*"
 serde_json = "*"
+serde_repr = "*"
 serde_with = { version = "*", features = ["chrono", "json", "macros"] }
 splines = "*"
+thiserror = "*"
 tokio = { version = "*", features = ["full"] }
 tracing = "*"
 tracing-futures = "*"

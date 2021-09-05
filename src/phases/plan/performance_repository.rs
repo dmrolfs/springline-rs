@@ -34,10 +34,12 @@ pub fn make_performance_repository(
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PerformanceRepositorySettings {
     pub storage: PerformanceRepositoryType,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub storage_path: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum PerformanceRepositoryType {
     Memory,
     File,
