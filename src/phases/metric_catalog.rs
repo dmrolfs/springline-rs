@@ -5,39 +5,12 @@ use std::ops::Add;
 
 // use ::serde_with::{serde_as, TimestampSeconds};
 use chrono::{DateTime, Utc};
-use lazy_static::lazy_static;
 use oso::PolarClass;
 use serde::{Deserialize, Serialize};
 
 use proctor::elements::{telemetry, TelemetryValue, Timestamp};
-use proctor::error::{CollectionError, TelemetryError};
-use proctor::phases::collection::{
-    ClearinghouseApi, ClearinghouseCmd, SubscriptionChannel, TelemetrySubscription,
-};
-
-// todo: replace this with reflection approach if one identified.
-// tried serde-reflection, which failed since serde identifiers (flatten) et.al., are not supported.
-// tried Oso PolarClass, but Class::attributes is private.
-// could write a rpcedural macro, but want to list effective serde names, such as for flattened.
-lazy_static! {
-    pub static ref METRIC_CATALOG_REQ_SUBSCRIPTION_FIELDS: HashSet<&'static str> = maplit::hashset! {
-        "timestamp",
-
-        // FlowMetrics
-        "records_in_per_sec",
-        "records_out_per_sec",
-        "input_consumer_lag",
-        // "max_message_latency",
-        // "net_in_utilization",
-        // "net_out_utilization",
-        // "sink_health_metrics",
-
-        // ClusterMetrics
-        "nr_task_managers",
-        "task_cpu_load",
-        "network_io_utilization",
-    };//.iter().map(|rep| rep.to_string()).collect();
-}
+use proctor::error::TelemetryError;
+use proctor::phases::collection::{Str, SubscriptionRequirements};
 
 // #[serde_as]
 #[derive(PolarClass, Debug, PartialEq, Clone, Serialize, Deserialize)]
@@ -129,32 +102,6 @@ impl MetricCatalog {
     }
 }
 
-impl MetricCatalog {
-    #[tracing::instrument(
-        level="info",
-        skip(channel_name, tx_clearinghouse_api),
-        fields(channel_name=%channel_name.as_ref()),
-    )]
-    pub async fn connect_channel(
-        channel_name: impl AsRef<str>,
-        tx_clearinghouse_api: &ClearinghouseApi,
-    ) -> Result<SubscriptionChannel<MetricCatalog>, CollectionError> {
-        let channel = SubscriptionChannel::new(channel_name.as_ref()).await?;
-        let subscription = TelemetrySubscription::new(channel_name.as_ref())
-            .with_required_fields(METRIC_CATALOG_REQ_SUBSCRIPTION_FIELDS.clone());
-
-        let (subscribe_cmd, rx_subscribe_ack) =
-            ClearinghouseCmd::subscribe(subscription, channel.subscription_receiver.clone());
-        tx_clearinghouse_api
-            .send(subscribe_cmd)
-            .map_err(|err| CollectionError::StageError(err.into()))?;
-        rx_subscribe_ack
-            .await
-            .map_err(|err| CollectionError::StageError(err.into()))?;
-        Ok(channel)
-    }
-}
-
 impl Add for MetricCatalog {
     type Output = Self;
 
@@ -177,6 +124,28 @@ impl Add<&Self> for MetricCatalog {
         Self {
             custom: lhs,
             ..self
+        }
+    }
+}
+
+impl SubscriptionRequirements for MetricCatalog {
+    fn required_fields() -> HashSet<Str> {
+        maplit::hashset! {
+            "timestamp".into(),
+
+            // FlowMetrics
+            "records_in_per_sec".into(),
+            "records_out_per_sec".into(),
+            "input_consumer_lag".into(),
+            // "max_message_latency",
+            // "net_in_utilization",
+            // "net_out_utilization",
+            // "sink_health_metrics",
+
+            // ClusterMetrics
+            "nr_task_managers".into(),
+            "task_cpu_load".into(),
+            "network_io_utilization".into(),
         }
     }
 }

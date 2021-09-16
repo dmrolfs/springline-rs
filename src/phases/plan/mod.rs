@@ -11,11 +11,13 @@ use serde::{Deserialize, Serialize};
 
 use crate::phases::decision::result::DecisionResult;
 use crate::phases::MetricCatalog;
-use crate::settings::{PlanSettings, Settings};
+use crate::settings::PlanSettings;
 use crate::Result;
 use proctor::elements::Timestamp;
 use proctor::graph::{Connect, SinkShape, SourceShape};
-use proctor::phases::collection::{ClearinghouseApi, SubscriptionChannel};
+use proctor::phases::collection::{
+    ClearinghouseSubscriptionMagnet, SubscriptionChannel, TelemetrySubscription,
+};
 use proctor::phases::plan::{Plan, Planning};
 
 mod benchmark;
@@ -106,30 +108,38 @@ pub type PlanningStrategy = FlinkPlanning<LeastSquaresWorkloadForecastBuilder>;
 pub type PlanningOutcome = <PlanningStrategy as Planning>::Out;
 pub type PlanningPhase = Box<Plan<PlanningStrategy>>;
 
-#[tracing::instrument(level = "info", skip(settings, tx_clearinghouse_api,))]
+#[tracing::instrument(level = "info", skip(settings, clearinghouse_magnet))]
 pub async fn make_plan_phase(
-    settings: &Settings,
-    tx_clearinghouse_api: &ClearinghouseApi,
+    settings: &PlanSettings,
+    clearinghouse_magnet: ClearinghouseSubscriptionMagnet<'_>,
 ) -> Result<PlanningPhase> {
     let name = "autoscale_planning";
-    let data_channel = do_connect_plan_data(name, tx_clearinghouse_api).await?;
-    let flink_planning = do_make_planning_strategy(name, &settings.plan).await?;
+    let data_channel = do_connect_plan_data(name, clearinghouse_magnet).await?;
+    let flink_planning = do_make_planning_strategy(name, settings).await?;
     let plan: PlanningPhase = Box::new(Plan::new(name, flink_planning));
 
     (data_channel.outlet(), plan.inlet()).connect().await;
     Ok(plan)
 }
 
-#[tracing::instrument(level = "info", skip(tx_clearinghouse_api,))]
+#[tracing::instrument(level = "info")]
 async fn do_connect_plan_data(
     name: &str,
-    tx_clearinghouse_api: &ClearinghouseApi,
+    mut magnet: ClearinghouseSubscriptionMagnet<'_>,
 ) -> Result<SubscriptionChannel<MetricCatalog>> {
-    let channel = MetricCatalog::connect_channel(name, tx_clearinghouse_api).await?;
+    let channel = SubscriptionChannel::new(name).await?;
+    let subscription = TelemetrySubscription::new(name).with_requirements::<MetricCatalog>();
+    magnet
+        .subscribe(subscription, channel.subscription_receiver.clone())
+        .await?;
     Ok(channel)
+
+    // WORK HERE
+    // let ch = magnet.subscribe()
+    // Ok(MetricCatalog::connect_channel(name, magnet).await?)
 }
 
-#[tracing::instrument(level = "info", skip())]
+#[tracing::instrument(level = "info")]
 async fn do_make_planning_strategy(
     name: &str,
     plan_settings: &PlanSettings,

@@ -2,15 +2,13 @@ use std::time::Duration;
 
 use oso::ToPolar;
 use pretty_assertions::assert_eq;
-use proctor::elements;
 use proctor::elements::{
-    PolicyOutcome, PolicySettings, PolicySource, PolicySubscription, Telemetry, TelemetryValue,
-    ToTelemetry,
+    self, PolicyOutcome, PolicySettings, PolicySource, PolicySubscription, Telemetry,
+    TelemetryValue, ToTelemetry,
 };
 use proctor::graph::stage::{self, ThroughStage, WithApi, WithMonitor};
-use proctor::graph::{Connect, Graph, Inlet, SinkShape, SourceShape, UniformFanInShape};
-use proctor::phases::collection;
-use proctor::phases::collection::TelemetrySubscription;
+use proctor::graph::{Connect, Graph, Inlet, SinkShape, SourceShape};
+use proctor::phases::collection::{self, Collect, SubscriptionRequirements, TelemetrySubscription};
 use proctor::{AppData, ProctorContext};
 use serde::de::DeserializeOwned;
 use springline::phases::decision::{DecisionContext, DecisionPolicy};
@@ -49,7 +47,7 @@ where
     C: ProctorContext,
 {
     pub async fn new(
-        telemetry_subscription: TelemetrySubscription,
+        collect_out_subscription: TelemetrySubscription,
         context_subscription: TelemetrySubscription,
         decision_stage: impl ThroughStage<In, Out>,
         decision_context_inlet: Inlet<C>,
@@ -62,15 +60,20 @@ where
         let ctx_source = stage::ActorSource::<Telemetry>::new("context_source");
         let tx_context_source_api = ctx_source.tx_api();
 
-        let merge = stage::MergeN::new("source_merge", 2);
+        let mut builder = Collect::builder(
+            "collection",
+            vec![Box::new(telemetry_source), Box::new(ctx_source)],
+        );
+        let tx_clearinghouse_api = builder.clearinghouse.tx_api();
 
-        let mut clearinghouse = collection::Clearinghouse::new("clearinghouse");
-        let tx_clearinghouse_api = clearinghouse.tx_api();
-
-        // let context_subscription = policy.subscription("decision_context");
-        let context_channel = collection::SubscriptionChannel::<C>::new("decision_context").await?;
-
-        let telemetry_channel = collection::SubscriptionChannel::<In>::new("data_channel").await?;
+        let context_channel = collection::SubscriptionChannel::<C>::connect_subscription(
+            context_subscription,
+            (&mut builder).into(),
+        )
+        .await?;
+        let collect = builder
+            .build_for_out_subscription(collect_out_subscription)
+            .await?;
 
         let mut sink = stage::Fold::<_, Out, _>::new("sink", Vec::new(), |mut acc, item| {
             acc.push(item);
@@ -79,44 +82,19 @@ where
         let tx_sink_api = sink.tx_api();
         let rx_sink = sink.take_final_rx();
 
-        (
-            &telemetry_source.outlet(),
-            &merge.inlets().get(0).await.unwrap(),
-        )
-            .connect()
-            .await;
-        (&ctx_source.outlet(), &merge.inlets().get(1).await.unwrap())
-            .connect()
-            .await;
-        (merge.outlet(), clearinghouse.inlet()).connect().await;
-        clearinghouse
-            .add_subscription(
-                telemetry_subscription,
-                &telemetry_channel.subscription_receiver,
-            )
-            .await;
-        clearinghouse
-            .add_subscription(context_subscription, &context_channel.subscription_receiver)
-            .await;
-        (context_channel.outlet(), decision_context_inlet.clone())
-            .connect()
-            .await;
-        (telemetry_channel.outlet(), decision_stage.inlet())
+        (collect.outlet(), decision_stage.inlet()).connect().await;
+        (context_channel.outlet(), decision_context_inlet)
             .connect()
             .await;
         (decision_stage.outlet(), sink.inlet()).connect().await;
 
-        assert!(decision_context_inlet.is_attached().await);
+        assert!(collect.outlet().is_attached().await);
         assert!(decision_stage.inlet().is_attached().await);
         assert!(decision_stage.outlet().is_attached().await);
 
         let mut graph = Graph::default();
-        graph.push_back(Box::new(telemetry_source)).await;
-        graph.push_back(Box::new(ctx_source)).await;
-        graph.push_back(Box::new(merge)).await;
-        graph.push_back(Box::new(clearinghouse)).await;
+        graph.push_back(Box::new(collect)).await;
         graph.push_back(Box::new(context_channel)).await;
-        graph.push_back(Box::new(telemetry_channel)).await;
         graph.push_back(Box::new(decision_stage)).await;
         graph.push_back(Box::new(sink)).await;
 
@@ -268,9 +246,7 @@ async fn test_decision_carry_policy_result() -> anyhow::Result<()> {
     let _ = main_span.enter();
 
     let telemetry_subscription = TelemetrySubscription::new("measurements")
-        .with_required_fields(
-            springline::phases::metric_catalog::METRIC_CATALOG_REQ_SUBSCRIPTION_FIELDS.clone(),
-        )
+        .with_required_fields(<MetricCatalog as SubscriptionRequirements>::required_fields())
         .with_optional_fields(maplit::hashset! {
             "all_sinks_healthy",
             "nr_task_managers",
@@ -378,9 +354,7 @@ async fn test_decision_common() -> anyhow::Result<()> {
     let _ = main_span.enter();
 
     let telemetry_subscription = TelemetrySubscription::new("measurements")
-        .with_required_fields(
-            springline::phases::metric_catalog::METRIC_CATALOG_REQ_SUBSCRIPTION_FIELDS.clone(),
-        )
+        .with_required_fields(<MetricCatalog as SubscriptionRequirements>::required_fields())
         .with_optional_fields(maplit::hashset! {
             "all_sinks_healthy",
         });

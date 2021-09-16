@@ -9,7 +9,7 @@ type Item = ScalePlan;
 type Context = GovernanceContext;
 
 pub fn make_governance_transform(
-    name: impl AsRef<str>,
+    name: impl Into<String>,
 ) -> impl ThroughStage<PolicyOutcome<Item, Context>, Item> {
     let stage =
         stage::FilterMap::new(name, move |outcome: PolicyOutcome<Item, Context>| {

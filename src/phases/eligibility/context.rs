@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use proctor::elements::telemetry;
 use proctor::error::EligibilityError;
-use proctor::phases::collection::SubscriptionRequirements;
+use proctor::phases::collection::{Str, SubscriptionRequirements};
 use proctor::ProctorContext;
 
 #[derive(PolarClass, Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -26,11 +26,11 @@ pub struct EligibilityContext {
 }
 
 impl SubscriptionRequirements for EligibilityContext {
-    fn required_fields() -> HashSet<&'static str> {
+    fn required_fields() -> HashSet<Str> {
         maplit::hashset! {
-            "task.last_failure",
-            "cluster.is_deploying",
-            "cluster.last_deployment",
+            "task.last_failure".into(),
+            "cluster.is_deploying".into(),
+            "cluster.last_deployment".into(),
         }
     }
 }

@@ -12,7 +12,16 @@
         optional_subscription_fields: [],
         policies: [
             (source: "file", policy: "./resources/eligibility.polar"),
-            (source: "no_policy"),
+            (
+                source: "string",
+                policy: r###"
+                    eligible(_, _context, length) if length = 13;
+                    eligible(_item, context, c) if
+                    c = context.custom() and
+                    c.cat = "Otis" and
+                    cut;
+                "###
+            ),
         ],
     ),
     decision: (

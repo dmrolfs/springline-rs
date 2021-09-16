@@ -183,11 +183,11 @@ mod tests {
         PerformanceRepositorySettings, PerformanceRepositoryType, SpikeSettings,
     };
     use claim::assert_ok;
-    use pretty_assertions::assert_eq;
-    use std::time::Duration;
-    use proctor::phases::collection::SourceSetting;
-    use proctor::elements::PolicySource;
     use config::{Config, FileFormat};
+    use pretty_assertions::assert_eq;
+    use proctor::elements::PolicySource;
+    use proctor::phases::collection::SourceSetting;
+    use std::time::Duration;
 
     #[test]
     fn test_load_eligibility_settings() -> anyhow::Result<()> {
@@ -215,7 +215,9 @@ mod tests {
         let actual: PolicySettings = assert_ok!(config.try_into());
         assert_eq!(
             actual,
-            PolicySettings::default().with_source(PolicySource::File(PathBuf::from("./resources/eligibility.polar"))),
+            PolicySettings::default().with_source(PolicySource::File(PathBuf::from(
+                "./resources/eligibility.polar"
+            ))),
         );
         Ok(())
     }
@@ -225,7 +227,6 @@ mod tests {
         lazy_static::initialize(&proctor::tracing::TEST_TRACING);
         let main_span = tracing::info_span!("test_settings_applications_load");
         let _ = main_span.enter();
-
 
         let builder = assert_ok!(Settings::load_configuration(Config::builder(), None));
         let c = assert_ok!(builder.build());
@@ -239,11 +240,26 @@ mod tests {
                 },
             },
             eligibility: PolicySettings::default()
-                .with_source(PolicySource::File(PathBuf::from("./resources/eligibility.polar")))
-                .with_source(PolicySource::NoPolicy),
+                .with_source(PolicySource::File(PathBuf::from(
+                    "./resources/eligibility.polar",
+                )))
+                .with_source(PolicySource::String(
+                    r##"
+                    eligible(_, _context, length) if length = 13;
+                    eligible(_item, context, c) if
+                    c = context.custom() and
+                    c.cat = "Otis" and
+                    cut;
+                "##
+                    .to_string(),
+                )),
             decision: PolicySettings::default()
-                .with_source(PolicySource::File(PathBuf::from("./resources/decision_preamble.polar")))
-                .with_source(PolicySource::File(PathBuf::from("./resources/decision.polar"))),
+                .with_source(PolicySource::File(PathBuf::from(
+                    "./resources/decision_preamble.polar",
+                )))
+                .with_source(PolicySource::File(PathBuf::from(
+                    "./resources/decision.polar",
+                ))),
             plan: PlanSettings {
                 min_scaling_step: 2,
                 restart: Duration::from_secs(2 * 60),
@@ -261,8 +277,12 @@ mod tests {
                 },
             },
             governance: PolicySettings::default()
-                .with_source(PolicySource::File(PathBuf::from("./resources/governance_preamble.polar")))
-                .with_source(PolicySource::File(PathBuf::from("./resources/governance.polar"))),
+                .with_source(PolicySource::File(PathBuf::from(
+                    "./resources/governance_preamble.polar",
+                )))
+                .with_source(PolicySource::File(PathBuf::from(
+                    "./resources/governance.polar",
+                ))),
             execution: ExecutionSettings,
         };
 

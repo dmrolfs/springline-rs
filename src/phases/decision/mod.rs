@@ -4,15 +4,14 @@ pub mod result;
 
 use crate::phases::eligibility::EligibilityOutcome;
 use crate::phases::MetricCatalog;
-use crate::settings::Settings;
 use crate::Result;
 
 pub use context::*;
 pub use policy::*;
 
-use proctor::elements::{PolicySettings, PolicySubscription};
+use proctor::elements::PolicySettings;
 use proctor::graph::{Connect, SourceShape};
-use proctor::phases::collection::{ClearinghouseApi, ClearinghouseCmd, SubscriptionChannel};
+use proctor::phases::collection::{ClearinghouseSubscriptionMagnet, SubscriptionChannel};
 use proctor::phases::policy_phase::PolicyPhase;
 use result::{make_decision_transform, DecisionResult};
 
@@ -22,14 +21,14 @@ pub type DecisionMonitor = proctor::elements::PolicyFilterMonitor<MetricCatalog,
 
 pub type DecisionPhase = Box<PolicyPhase<EligibilityOutcome, DecisionOutcome, DecisionContext>>;
 
-#[tracing::instrument(level = "info", skip(settings, tx_clearinghouse_api))]
+#[tracing::instrument(level = "info")]
 pub async fn make_decision_phase(
-    settings: &Settings,
-    tx_clearinghouse_api: &ClearinghouseApi,
+    settings: &PolicySettings,
+    clearinghouse_magnet: ClearinghouseSubscriptionMagnet<'_>,
 ) -> Result<DecisionPhase> {
     let name = "decision";
     let (policy, context_channel) =
-        do_connect_decision_context(name, &settings.decision, tx_clearinghouse_api).await?;
+        do_connect_decision_context(name, settings, clearinghouse_magnet).await?;
 
     let decision = PolicyPhase::with_transform(name, policy, make_decision_transform(name)).await;
 
@@ -40,19 +39,13 @@ pub async fn make_decision_phase(
     Ok(phase)
 }
 
-#[tracing::instrument(level = "info", skip(tx_clearinghouse_api))]
+#[tracing::instrument(level = "info")]
 async fn do_connect_decision_context(
     context_name: &str,
     policy_settings: &PolicySettings,
-    tx_clearinghouse_api: &ClearinghouseApi,
+    magnet: ClearinghouseSubscriptionMagnet<'_>,
 ) -> Result<(DecisionPolicy, SubscriptionChannel<DecisionContext>)> {
     let policy = DecisionPolicy::new(policy_settings);
-    let channel = SubscriptionChannel::new(context_name).await?;
-    let (subscribe_cmd, rx_subscribe_ack) = ClearinghouseCmd::subscribe(
-        policy.subscription(context_name),
-        channel.subscription_receiver.clone(),
-    );
-    tx_clearinghouse_api.send(subscribe_cmd)?;
-    rx_subscribe_ack.await?;
+    let channel = SubscriptionChannel::connect_channel(context_name, magnet).await?;
     Ok((policy, channel))
 }

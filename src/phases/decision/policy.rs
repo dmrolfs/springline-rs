@@ -55,4 +55,8 @@ impl QueryPolicy for DecisionPolicy {
     fn policy_sources(&self) -> Vec<PolicySource> {
         self.0.policies.clone()
     }
+
+    fn replace_sources(&mut self, sources: Vec<PolicySource>) {
+        self.0.policies = sources;
+    }
 }
