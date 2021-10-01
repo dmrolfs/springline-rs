@@ -1,10 +1,7 @@
 (
     collection: (
         sources: {
-            "foo": (
-                type: "csv",
-                path: "./resources/bar.toml",
-            ),
+            "foo": ( type: "csv", path: "./resources/bar.toml", ),
         }
     ),
     eligibility: (

@@ -4,6 +4,13 @@ version = "0.1.0"
 edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[[bin]]
+name = "springline"
+path = "src/main.rs"
+
+[[bin]]
+name = "transcode"
+path = "src/bin/transcode.rs"
 
 [dependencies]
 proctor = { git = "https://github.com/dmrolfs/proctor-rs" }
@@ -13,9 +20,10 @@ async-trait = "*"
 cast_trait_object = "*"
 chrono = "*"
 clap = { version = "3.0.0-beta.4", features = ["yaml"] }
-#config = { version = "^0.11.0", default_features = true, features = ["ron"] }
-#config = { version = "^0.11.0" }
-config = { git = "https://github.com/dmrolfs/config-rs" }
+# until ron feature and builder fns in *published* config-rs
+config = { git = "https://github.com/dmrolfs/config-rs" } # until ron feature and builder fns in *published* config-rs
+#config = { version = "^0.11", default_features = true, features = ["ron"] }
+#config = { version = "^0.11" }
 dashmap = "*"
 enum-display-derive = "*"
 itertools = "*"
@@ -34,6 +42,8 @@ serde = "*"
 serde_json = "*"
 serde_repr = "*"
 serde_with = { version = "*", features = ["chrono", "json", "macros"] }
+serde-transcode = "1.1"
+settings_loader = { git = "https://github.com/dmrolfs/settings-loader-rs" }
 splines = "*"
 thiserror = "*"
 tokio = { version = "*", features = ["full"] }

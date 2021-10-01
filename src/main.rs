@@ -4,9 +4,10 @@ use springline::engine::AutoscaleEngine;
 use springline::settings::{CliOptions, Settings};
 use springline::Result;
 use std::future::Future;
+use settings_loader::SettingsLoader;
 
 fn main() -> Result<()> {
-    let subscriber = get_subscriber("springline", "trace");
+    let subscriber = get_subscriber("springline", "info");
     init_subscriber(subscriber);
 
     let main_span = tracing::info_span!("main");

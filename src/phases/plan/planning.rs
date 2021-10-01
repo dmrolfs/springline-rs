@@ -459,7 +459,7 @@ mod tests {
                 nr_task_managers: 4,
                 ..ClusterMetrics::default()
             },
-            custom: telemetry::Table::default(),
+            custom: telemetry::TableType::default(),
         };
         static ref SCALE_UP: DecisionResult<MetricCatalog> =
             DecisionResult::ScaleUp(METRICS.clone());

@@ -19,7 +19,7 @@ pub struct DecisionContext {
 
     #[polar(attribute)]
     #[serde(flatten)] // flatten enables collection of extra properties
-    pub custom: telemetry::Table,
+    pub custom: telemetry::TableType,
 }
 
 impl SubscriptionRequirements for DecisionContext {
@@ -34,7 +34,7 @@ impl SubscriptionRequirements for DecisionContext {
 impl ProctorContext for DecisionContext {
     type Error = DecisionError;
 
-    fn custom(&self) -> telemetry::Table {
+    fn custom(&self) -> telemetry::TableType {
         self.custom.clone()
     }
 }

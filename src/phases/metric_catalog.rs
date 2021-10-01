@@ -28,7 +28,7 @@ pub struct MetricCatalog {
 
     #[polar(attribute)]
     #[serde(flatten)] // flatten to collect extra properties.
-    pub custom: telemetry::Table,
+    pub custom: telemetry::TableType,
 }
 
 #[derive(PolarClass, Debug, Default, PartialEq, Clone, Serialize, Deserialize)]
@@ -73,7 +73,7 @@ pub struct ClusterMetrics {
 }
 
 impl MetricCatalog {
-    pub fn for_timestamp(timestamp: Timestamp, custom: telemetry::Table) -> Self {
+    pub fn for_timestamp(timestamp: Timestamp, custom: telemetry::TableType) -> Self {
         Self {
             timestamp,
             flow: FlowMetrics::default(),
@@ -82,7 +82,7 @@ impl MetricCatalog {
         }
     }
 
-    pub fn for_datetime(timestamp: DateTime<Utc>, custom: telemetry::Table) -> Self {
+    pub fn for_datetime(timestamp: DateTime<Utc>, custom: telemetry::TableType) -> Self {
         Self::for_timestamp(timestamp.into(), custom)
     }
 
@@ -349,7 +349,7 @@ mod tests {
                 "network_io_utilization".to_string() => (0.).to_telemetry(),
                 "foo".to_string() => "David".to_telemetry(),
                 "bar".to_string() => 33.to_telemetry(),
-            })
+            }.into())
             .into()
         );
 

@@ -4,7 +4,7 @@ use std::fmt::Debug;
 use oso::PolarClass;
 use serde::{Deserialize, Serialize};
 
-use proctor::elements::telemetry::{self, Table};
+use proctor::elements::telemetry;
 use proctor::error::GovernanceError;
 use proctor::phases::collection::{Str, SubscriptionRequirements};
 use proctor::ProctorContext;
@@ -22,7 +22,7 @@ pub struct GovernanceContext {
 
     #[polar(attribute)]
     #[serde(flatten)]
-    pub custom: telemetry::Table,
+    pub custom: telemetry::TableType,
 }
 
 impl SubscriptionRequirements for GovernanceContext {
@@ -38,7 +38,7 @@ impl SubscriptionRequirements for GovernanceContext {
 impl ProctorContext for GovernanceContext {
     type Error = GovernanceError;
 
-    fn custom(&self) -> Table {
+    fn custom(&self) -> telemetry::TableType {
         self.custom.clone()
     }
 }

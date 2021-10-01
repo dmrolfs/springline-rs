@@ -199,7 +199,7 @@ fn make_test_data(
             task_cpu_load: 0.,
             network_io_utilization: 0.,
         },
-        custom: telemetry::Table::default(),
+        custom: telemetry::TableType::default(),
     }
 }
 

@@ -22,6 +22,7 @@ struct Monitor {
     rx_governance_monitor: GovernanceMonitor,
 }
 
+//todo: type with Quiescent/Ready status... offer run() in Quiescent; ???
 pub struct AutoscaleEngine {
     tx_telemetry_source_api: ActorSourceApi<Telemetry>,
     tx_clearinghouse_api: ClearinghouseApi,

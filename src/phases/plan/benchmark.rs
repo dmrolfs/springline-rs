@@ -275,7 +275,7 @@ impl From<Benchmark> for TelemetryValue {
         TelemetryValue::Table(maplit::hashmap! {
             T_NR_TASK_MANAGERS.to_string() => that.nr_task_managers.to_telemetry(),
             T_RECORDS_OUT_PER_SEC.to_string() => that.records_out_per_sec.to_telemetry(),
-        })
+        }.into())
     }
 }
 

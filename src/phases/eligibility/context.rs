@@ -22,7 +22,7 @@ pub struct EligibilityContext {
 
     #[polar(attribute)]
     #[serde(flatten)] // flatten to collect extra properties.
-    pub custom: telemetry::Table,
+    pub custom: telemetry::TableType,
 }
 
 impl SubscriptionRequirements for EligibilityContext {
@@ -38,7 +38,7 @@ impl SubscriptionRequirements for EligibilityContext {
 impl ProctorContext for EligibilityContext {
     type Error = EligibilityError;
 
-    fn custom(&self) -> telemetry::Table {
+    fn custom(&self) -> telemetry::TableType{
         self.custom.clone()
     }
 }

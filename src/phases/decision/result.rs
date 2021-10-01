@@ -136,15 +136,15 @@ where
             DecisionResult::ScaleUp(item) => TelemetryValue::Table(maplit::hashmap! {
                 T_ITEM.to_string() => item.to_telemetry(),
                 T_SCALE_DECISION.to_string() => SCALE_UP.to_telemetry(),
-            }),
+            }.into()),
             DecisionResult::ScaleDown(item) => TelemetryValue::Table(maplit::hashmap! {
                 T_ITEM.to_string() => item.to_telemetry(),
                 T_SCALE_DECISION.to_string() => SCALE_DOWN.to_telemetry(),
-            }),
+            }.into()),
             DecisionResult::NoAction(item) => TelemetryValue::Table(maplit::hashmap! {
                 T_ITEM.to_string() => item.to_telemetry(),
                 T_SCALE_DECISION.to_string() => NO_ACTION.to_telemetry(),
-            }),
+            }.into()),
         }
     }
 }

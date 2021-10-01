@@ -6,15 +6,11 @@ pub use collection_settings::*;
 pub use execution_settings::*;
 pub use plan_settings::*;
 
-use crate::error::SettingsError;
 use clap::Clap;
-use config::builder::DefaultState;
-use config::ConfigBuilder;
 use proctor::elements::PolicySettings;
 use serde::{Deserialize, Serialize};
-use std::convert::{TryFrom, TryInto};
-use std::fmt::Display;
 use std::path::PathBuf;
+use settings_loader::{SettingsLoader, LoadingOptions, SettingsError};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Settings {
@@ -26,112 +22,10 @@ pub struct Settings {
     pub execution: ExecutionSettings,
 }
 
-#[allow(dead_code)]
-const ENV_APP_ENVIRONMENT: &'static str = "APP_ENVIRONMENT";
-#[allow(dead_code)]
-const RESOURCES_DIR: &'static str = "resources";
-#[allow(dead_code)]
-const APP_CONFIG: &'static str = "application";
-
-impl Settings {
-    #[tracing::instrument(level = "info")]
-    pub fn load(options: CliOptions) -> Result<Settings, SettingsError> {
-        let mut config_builder = config::Config::builder();
-        config_builder = Self::load_configuration(config_builder, options.config.as_ref())?;
-        config_builder = Self::load_secrets(config_builder, &options)?;
-        config_builder = Self::load_environment(config_builder, &options)?;
-        let config = config_builder.build()?;
-        let settings = config.try_into()?;
-        Ok(settings)
-    }
-
-    #[tracing::instrument(level = "info", skip(config,))]
-    fn load_configuration(
-        config: ConfigBuilder<DefaultState>,
-        specific_config_path: Option<&String>,
-    ) -> Result<ConfigBuilder<DefaultState>, SettingsError> {
-        match specific_config_path {
-            Some(explicit_path) => {
-                let path = PathBuf::from(explicit_path);
-                tracing::info!("looking for specific config at: {:?}", path);
-                let config = config.add_source(config::File::from(path).required(true));
-                Ok(config)
-            }
-
-            None => {
-                let resources_path = std::env::current_dir()?.join(RESOURCES_DIR);
-                let config_path = resources_path.join(APP_CONFIG);
-                tracing::info!("looking for {} config in: {:?}", APP_CONFIG, resources_path);
-                let config = config.add_source(config::File::new(
-                    config_path.to_string_lossy().as_ref(),
-                    config::FileFormat::Ron,
-                ));
-                // config.merge(config::File::from(config_path).required(true))?;
-                // config.merge(config::File::new(config_path.to_string_lossy().as_ref(), config::FileFormat::Ron))?;
-
-                match std::env::var(ENV_APP_ENVIRONMENT) {
-                    Ok(rep) => {
-                        let environment: Environment = rep.try_into()?;
-                        tracing::info!(
-                            "looking for {} config in: {:?}",
-                            environment,
-                            resources_path
-                        );
-                        let env_config_path = resources_path.join(environment.as_ref());
-                        // config.merge(config::File::from(env_config_path).required(true))?;
-                        // config.merge(config::File::with_name(env_config_path.to_string_lossy().as_ref()).required(true))?;
-                        let config = config.add_source(
-                            config::File::with_name(env_config_path.to_string_lossy().as_ref())
-                                .required(true),
-                        );
-                        Ok(config)
-                    }
-
-                    Err(std::env::VarError::NotPresent) => {
-                        tracing::warn!(
-                            "no environment override on settings specified at env var, {}",
-                            ENV_APP_ENVIRONMENT
-                        );
-                        Ok(config)
-                    }
-
-                    Err(err) => Err(err.into()),
-                }
-            }
-        }
-    }
-
-    #[tracing::instrument(level = "info", skip(config, options))]
-    fn load_secrets(
-        config: ConfigBuilder<DefaultState>,
-        options: &CliOptions,
-    ) -> Result<ConfigBuilder<DefaultState>, SettingsError> {
-        let loaded_config = if let Some(ref secrets_path) = options.secrets {
-            let secrets_path = PathBuf::from(secrets_path);
-            tracing::info!("looking for secrets at: {:?}", secrets_path);
-            // config.merge(config::File::from(secrets_path).required(true))?;
-            config.add_source(config::File::from(secrets_path).required(true))
-        } else {
-            config
-        };
-
-        Ok(loaded_config)
-    }
-
-    #[tracing::instrument(level = "info", skip(config, _options))]
-    fn load_environment(
-        config: ConfigBuilder<DefaultState>,
-        _options: &CliOptions,
-    ) -> Result<ConfigBuilder<DefaultState>, SettingsError> {
-        let config_env = config::Environment::with_prefix("app").separator("__");
-        tracing::info!(
-            "loading environment properties with prefix: {:?}",
-            config_env
-        );
-        // config.merge(config_env)?;
-        Ok(config.add_source(config_env))
-    }
+impl SettingsLoader for Settings {
+    type Options = CliOptions;
 }
+
 
 #[derive(Clap, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[clap(version = "0.1.0", author = "Damon Rolfs")]
@@ -146,35 +40,18 @@ pub struct CliOptions {
     secrets: Option<String>,
 }
 
-#[derive(Debug, Display, PartialEq)]
-enum Environment {
-    Local,
-    Production,
-}
-
-impl AsRef<str> for Environment {
-    fn as_ref(&self) -> &str {
-        match self {
-            Environment::Local => "local",
-            Environment::Production => "production",
-        }
-    }
-}
-
-impl TryFrom<String> for Environment {
+impl LoadingOptions for CliOptions {
     type Error = SettingsError;
 
-    fn try_from(value: String) -> Result<Self, Self::Error> {
-        match value.to_lowercase().as_str() {
-            "local" => Ok(Self::Local),
-            "production" => Ok(Self::Production),
-            other => Err(SettingsError::Bootstrap {
-                message: format!("{} environment unrecognized", other),
-                setting: "environment identification".to_string(),
-            }),
-        }
+    fn config_path(&self) -> Option<PathBuf> {
+        self.config.as_ref().map(PathBuf::from)
+    }
+
+    fn secrets_path(&self) -> Option<PathBuf> {
+        self.secrets.as_ref().map(PathBuf::from)
     }
 }
+
 
 #[cfg(test)]
 mod tests {
@@ -188,6 +65,71 @@ mod tests {
     use proctor::elements::PolicySource;
     use proctor::phases::collection::SourceSetting;
     use std::time::Duration;
+    use lazy_static::lazy_static;
+    use std::env::VarError;
+    use std::panic::{RefUnwindSafe, UnwindSafe};
+    use std::sync::Mutex;
+    use std::{env, panic};
+
+    lazy_static! {
+        static ref SERIAL_TEST: Mutex<()> = Default::default();
+    }
+
+    /// Sets environment variables to the given value for the duration of the closure.
+    /// Restores the previous values when the closure completes or panics, before unwinding the panic.
+    pub fn with_env_vars<F>(label: &str, kvs: Vec<(&str, Option<&str>)>, closure: F)
+        where
+            F: Fn() + UnwindSafe + RefUnwindSafe,
+    {
+        let guard = SERIAL_TEST.lock().unwrap();
+        let mut old_kvs: Vec<(&str, Result<String, VarError>)> = Vec::new();
+        for (k, v) in kvs {
+            let old_v = env::var(k);
+            old_kvs.push((k, old_v));
+            match v {
+                None => env::remove_var(k),
+                Some(v) => env::set_var(k, v),
+            }
+        }
+        eprintln!("W_ENV[{}]: OLD_KVS: {:?}", label, old_kvs);
+        let old_kvs_2 = old_kvs.clone();
+
+        match panic::catch_unwind(|| {
+            closure();
+        }) {
+            Ok(_) => {
+                eprintln!("W_END[{}]: OK - resetting env to: {:?}", label, old_kvs);
+                for (k, v) in old_kvs {
+                    reset_env(k, v);
+                }
+            }
+            Err(err) => {
+                eprintln!("W_END[{}]: Err - resetting env to: {:?}", label, old_kvs);
+                for (k, v) in old_kvs {
+                    reset_env(k, v);
+                }
+                drop(guard);
+                panic::resume_unwind(err);
+            }
+        };
+        for (k, v) in old_kvs_2 {
+            eprintln!(
+                "W_END[{}] RESET ACTUAL: {:?}:{:?} expected:{:?}",
+                label,
+                k,
+                env::var(k),
+                v
+            );
+        }
+    }
+
+    fn reset_env(k: &str, old: Result<String, VarError>) {
+        if let Ok(v) = old {
+            env::set_var(k, v);
+        } else {
+            env::remove_var(k);
+        }
+    }
 
     #[test]
     fn test_load_eligibility_settings() -> anyhow::Result<()> {
@@ -224,69 +166,75 @@ mod tests {
 
     #[test]
     fn test_settings_applications_load() -> anyhow::Result<()> {
-        lazy_static::initialize(&proctor::tracing::TEST_TRACING);
-        let main_span = tracing::info_span!("test_settings_applications_load");
-        let _ = main_span.enter();
+        with_env_vars(
+           "test_settings_applications_load",
+            vec![],
+            ||{
+                lazy_static::initialize(&proctor::tracing::TEST_TRACING);
+                let main_span = tracing::info_span!("test_settings_applications_load");
+                let _ = main_span.enter();
 
-        let builder = assert_ok!(Settings::load_configuration(Config::builder(), None));
-        let c = assert_ok!(builder.build());
-        tracing::info!(config=?c, "loaded configuration file");
-        let actual: Settings = assert_ok!(c.try_into());
+                // let builder = assert_ok!(Settings::load(Config::builder()));
+                // let c = assert_ok!(builder.build());
+                // tracing::info!(config=?c, "loaded configuration file");
+                let actual: Settings = assert_ok!(Settings::load(CliOptions { config: None, secrets: None, }));
 
-        let expected = Settings {
-            collection: CollectionSettings {
-                sources: maplit::hashmap! {
+                let expected = Settings {
+                    collection: CollectionSettings {
+                        sources: maplit::hashmap! {
                     "foo".to_string() => SourceSetting::Csv { path: PathBuf::from("./resources/bar.toml"),},
                 },
-            },
-            eligibility: PolicySettings::default()
-                .with_source(PolicySource::File(PathBuf::from(
-                    "./resources/eligibility.polar",
-                )))
-                .with_source(PolicySource::String(
-                    r##"
+                    },
+                    eligibility: PolicySettings::default()
+                        .with_source(PolicySource::File(PathBuf::from(
+                            "./resources/eligibility.polar",
+                        )))
+                        .with_source(PolicySource::String(
+                            r##"
                     eligible(_, _context, length) if length = 13;
                     eligible(_item, context, c) if
                     c = context.custom() and
                     c.cat = "Otis" and
                     cut;
                 "##
-                    .to_string(),
-                )),
-            decision: PolicySettings::default()
-                .with_source(PolicySource::File(PathBuf::from(
-                    "./resources/decision_preamble.polar",
-                )))
-                .with_source(PolicySource::File(PathBuf::from(
-                    "./resources/decision.polar",
-                ))),
-            plan: PlanSettings {
-                min_scaling_step: 2,
-                restart: Duration::from_secs(2 * 60),
-                max_catch_up: Duration::from_secs(10 * 60),
-                recovery_valid: Duration::from_secs(5 * 60),
-                performance_repository: PerformanceRepositorySettings {
-                    storage: PerformanceRepositoryType::File,
-                    storage_path: Some("./tests/data/performance.data".to_string()),
-                },
-                window: 20,
-                spike: SpikeSettings {
-                    std_deviation_threshold: 5.,
-                    influence: 0.75,
-                    length_threshold: 3,
-                },
-            },
-            governance: PolicySettings::default()
-                .with_source(PolicySource::File(PathBuf::from(
-                    "./resources/governance_preamble.polar",
-                )))
-                .with_source(PolicySource::File(PathBuf::from(
-                    "./resources/governance.polar",
-                ))),
-            execution: ExecutionSettings,
-        };
+                                .to_string(),
+                        )),
+                    decision: PolicySettings::default()
+                        .with_source(PolicySource::File(PathBuf::from(
+                            "./resources/decision_preamble.polar",
+                        )))
+                        .with_source(PolicySource::File(PathBuf::from(
+                            "./resources/decision.polar",
+                        ))),
+                    plan: PlanSettings {
+                        min_scaling_step: 2,
+                        restart: Duration::from_secs(2 * 60),
+                        max_catch_up: Duration::from_secs(10 * 60),
+                        recovery_valid: Duration::from_secs(5 * 60),
+                        performance_repository: PerformanceRepositorySettings {
+                            storage: PerformanceRepositoryType::File,
+                            storage_path: Some("./tests/data/performance.data".to_string()),
+                        },
+                        window: 20,
+                        spike: SpikeSettings {
+                            std_deviation_threshold: 5.,
+                            influence: 0.75,
+                            length_threshold: 3,
+                        },
+                    },
+                    governance: PolicySettings::default()
+                        .with_source(PolicySource::File(PathBuf::from(
+                            "./resources/governance_preamble.polar",
+                        )))
+                        .with_source(PolicySource::File(PathBuf::from(
+                            "./resources/governance.polar",
+                        ))),
+                    execution: ExecutionSettings,
+                };
 
-        assert_eq!(actual, expected);
+                assert_eq!(actual, expected);
+            }
+        );
         Ok(())
     }
 
@@ -295,4 +243,7 @@ mod tests {
     fn test_settings_specific_load() -> anyhow::Result<()> {
         Ok(())
     }
+
+
+
 }
