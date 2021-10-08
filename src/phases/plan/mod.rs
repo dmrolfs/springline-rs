@@ -3,8 +3,8 @@ pub use forecast::*;
 use oso::PolarClass;
 pub use performance_history::PerformanceHistory;
 pub use performance_repository::{
-    make_performance_repository, PerformanceFileRepository, PerformanceMemoryRepository,
-    PerformanceRepository, PerformanceRepositorySettings, PerformanceRepositoryType,
+    make_performance_repository, PerformanceFileRepository, PerformanceMemoryRepository, PerformanceRepository,
+    PerformanceRepositorySettings, PerformanceRepositoryType,
 };
 pub use planning::FlinkPlanning;
 use serde::{Deserialize, Serialize};
@@ -15,10 +15,9 @@ use crate::settings::PlanSettings;
 use crate::Result;
 use proctor::elements::Timestamp;
 use proctor::graph::{Connect, SinkShape, SourceShape};
-use proctor::phases::collection::{
-    ClearinghouseSubscriptionMagnet, SubscriptionChannel, TelemetrySubscription,
-};
+use proctor::phases::collection::{ClearinghouseSubscriptionMagnet, SubscriptionChannel, TelemetrySubscription};
 use proctor::phases::plan::{Plan, Planning};
+use proctor::SharedString;
 
 mod benchmark;
 pub mod forecast;
@@ -42,9 +41,7 @@ pub struct ScalePlan {
 
 impl ScalePlan {
     pub fn new(
-        decision: DecisionResult<MetricCatalog>,
-        calculated_nr_task_managers: Option<u16>,
-        min_scaling_step: u16,
+        decision: DecisionResult<MetricCatalog>, calculated_nr_task_managers: Option<u16>, min_scaling_step: u16,
     ) -> Option<Self> {
         use DecisionResult as DR;
 
@@ -59,9 +56,7 @@ impl ScalePlan {
         };
 
         match (decision, calculated_nr_task_managers) {
-            (DR::ScaleUp(_), Some(calculated)) if current_nr_task_managers < calculated => {
-                scale_plan_for(calculated)
-            }
+            (DR::ScaleUp(_), Some(calculated)) if current_nr_task_managers < calculated => scale_plan_for(calculated),
 
             (DR::ScaleUp(_), _) => {
                 let corrected_nr_task_managers = current_nr_task_managers + min_scaling_step;
@@ -77,9 +72,7 @@ impl ScalePlan {
                 scale_plan_for(corrected_nr_task_managers)
             }
 
-            (DR::ScaleDown(_), Some(calculated)) if calculated < current_nr_task_managers => {
-                scale_plan_for(calculated)
-            }
+            (DR::ScaleDown(_), Some(calculated)) if calculated < current_nr_task_managers => scale_plan_for(calculated),
 
             (DR::ScaleDown(_), _) => {
                 let corrected_nr_task_managers = if min_scaling_step < current_nr_task_managers {
@@ -110,13 +103,12 @@ pub type PlanningPhase = Box<Plan<PlanningStrategy>>;
 
 #[tracing::instrument(level = "info", skip(settings, clearinghouse_magnet))]
 pub async fn make_plan_phase(
-    settings: &PlanSettings,
-    clearinghouse_magnet: ClearinghouseSubscriptionMagnet<'_>,
+    settings: &PlanSettings, clearinghouse_magnet: ClearinghouseSubscriptionMagnet<'_>,
 ) -> Result<PlanningPhase> {
-    let name = "autoscale_planning";
-    let data_channel = do_connect_plan_data(name, clearinghouse_magnet).await?;
-    let flink_planning = do_make_planning_strategy(name, settings).await?;
-    let plan: PlanningPhase = Box::new(Plan::new(name, flink_planning));
+    let name: SharedString = "autoscale_planning".into();
+    let data_channel = do_connect_plan_data(name.clone(), clearinghouse_magnet).await?;
+    let flink_planning = do_make_planning_strategy(name.as_ref(), settings).await?;
+    let plan: PlanningPhase = Box::new(Plan::new(name.into_owned(), flink_planning));
 
     (data_channel.outlet(), plan.inlet()).connect().await;
     Ok(plan)
@@ -124,26 +116,18 @@ pub async fn make_plan_phase(
 
 #[tracing::instrument(level = "info")]
 async fn do_connect_plan_data(
-    name: &str,
-    mut magnet: ClearinghouseSubscriptionMagnet<'_>,
+    name: SharedString, mut magnet: ClearinghouseSubscriptionMagnet<'_>,
 ) -> Result<SubscriptionChannel<MetricCatalog>> {
+    let subscription = TelemetrySubscription::new(name.as_ref()).with_requirements::<MetricCatalog>();
     let channel = SubscriptionChannel::new(name).await?;
-    let subscription = TelemetrySubscription::new(name).with_requirements::<MetricCatalog>();
     magnet
         .subscribe(subscription, channel.subscription_receiver.clone())
         .await?;
     Ok(channel)
-
-    // WORK HERE
-    // let ch = magnet.subscribe()
-    // Ok(MetricCatalog::connect_channel(name, magnet).await?)
 }
 
 #[tracing::instrument(level = "info")]
-async fn do_make_planning_strategy(
-    name: &str,
-    plan_settings: &PlanSettings,
-) -> Result<PlanningStrategy> {
+async fn do_make_planning_strategy(name: &str, plan_settings: &PlanSettings) -> Result<PlanningStrategy> {
     let planning = PlanningStrategy::new(
         name,
         plan_settings.min_scaling_step,

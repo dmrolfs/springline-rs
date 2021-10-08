@@ -3,16 +3,11 @@ use chrono::{DateTime, TimeZone, Utc};
 use claim::{assert_err, assert_ok};
 use proctor::elements::RecordsPerSecond;
 use proctor::error::PlanError;
-use springline::phases::plan::forecast::{
-    least_squares, LeastSquaresWorkloadForecastBuilder, WorkloadForecastBuilder,
-};
+use springline::phases::plan::forecast::{least_squares, LeastSquaresWorkloadForecastBuilder, WorkloadForecastBuilder};
 use springline::phases::plan::{SpikeSettings, WorkloadMeasurement};
 
 fn make_measurement(timestamp: DateTime<Utc>, workload: RecordsPerSecond) -> WorkloadMeasurement {
-    WorkloadMeasurement {
-        timestamp_secs: timestamp.timestamp(),
-        workload,
-    }
+    WorkloadMeasurement { timestamp_secs: timestamp.timestamp(), workload }
 }
 
 #[test]

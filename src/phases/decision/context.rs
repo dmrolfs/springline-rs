@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use proctor::elements::telemetry;
 use proctor::error::DecisionError;
-use proctor::phases::collection::{Str, SubscriptionRequirements};
+use proctor::phases::collection::SubscriptionRequirements;
 use proctor::ProctorContext;
 
 #[derive(PolarClass, Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -23,7 +23,7 @@ pub struct DecisionContext {
 }
 
 impl SubscriptionRequirements for DecisionContext {
-    fn required_fields() -> HashSet<Str> {
+    fn required_fields() -> HashSet<proctor::SharedString> {
         maplit::hashset! {
             "all_sinks_healthy".into(),
             "nr_task_managers".into(),

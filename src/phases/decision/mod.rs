@@ -23,27 +23,21 @@ pub type DecisionPhase = Box<PolicyPhase<EligibilityOutcome, DecisionOutcome, De
 
 #[tracing::instrument(level = "info")]
 pub async fn make_decision_phase(
-    settings: &PolicySettings,
-    clearinghouse_magnet: ClearinghouseSubscriptionMagnet<'_>,
+    settings: &PolicySettings, clearinghouse_magnet: ClearinghouseSubscriptionMagnet<'_>,
 ) -> Result<DecisionPhase> {
     let name = "decision";
-    let (policy, context_channel) =
-        do_connect_decision_context(name, settings, clearinghouse_magnet).await?;
+    let (policy, context_channel) = do_connect_decision_context(name, settings, clearinghouse_magnet).await?;
 
     let decision = PolicyPhase::with_transform(name, policy, make_decision_transform(name)).await;
 
-    (context_channel.outlet(), decision.context_inlet())
-        .connect()
-        .await;
+    (context_channel.outlet(), decision.context_inlet()).connect().await;
     let phase: DecisionPhase = Box::new(decision);
     Ok(phase)
 }
 
 #[tracing::instrument(level = "info")]
 async fn do_connect_decision_context(
-    context_name: &str,
-    policy_settings: &PolicySettings,
-    magnet: ClearinghouseSubscriptionMagnet<'_>,
+    context_name: &str, policy_settings: &PolicySettings, magnet: ClearinghouseSubscriptionMagnet<'_>,
 ) -> Result<(DecisionPolicy, SubscriptionChannel<DecisionContext>)> {
     let policy = DecisionPolicy::new(policy_settings);
     let channel = SubscriptionChannel::connect_channel(context_name, magnet).await?;

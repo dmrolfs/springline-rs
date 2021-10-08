@@ -11,11 +11,6 @@ mod tests {
     #[test]
     fn test_serde_execution_settings() {
         let settings = ExecutionSettings;
-        assert_tokens(
-            &settings,
-            &vec![Token::UnitStruct {
-                name: "ExecutionSettings",
-            }],
-        );
+        assert_tokens(&settings, &vec![Token::UnitStruct { name: "ExecutionSettings" }]);
     }
 }

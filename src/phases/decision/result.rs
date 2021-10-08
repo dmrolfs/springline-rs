@@ -14,9 +14,7 @@ pub const SCALE_UP: &'static str = "up";
 pub const SCALE_DOWN: &'static str = "down";
 pub const NO_ACTION: &'static str = "no action";
 
-pub fn make_decision_transform<T, C, S>(
-    name: S,
-) -> impl ThroughStage<PolicyOutcome<T, C>, DecisionResult<T>>
+pub fn make_decision_transform<T, C, S>(name: S) -> impl ThroughStage<PolicyOutcome<T, C>, DecisionResult<T>>
 where
     T: AppData + PartialEq,
     C: ProctorContext,
@@ -59,7 +57,7 @@ where
                             direction => {
                                 tracing::warn!(%direction, "unknown direction determined by policy - NoAction");
                                 DecisionResult::NoAction(outcome.item.clone())
-                            },
+                            }
                         })
                         .unwrap_or_else(|| {
                             tracing::warn!("no direction determined by policy - NoAction");
@@ -133,18 +131,27 @@ where
 {
     fn into(self) -> TelemetryValue {
         match self {
-            DecisionResult::ScaleUp(item) => TelemetryValue::Table(maplit::hashmap! {
-                T_ITEM.to_string() => item.to_telemetry(),
-                T_SCALE_DECISION.to_string() => SCALE_UP.to_telemetry(),
-            }.into()),
-            DecisionResult::ScaleDown(item) => TelemetryValue::Table(maplit::hashmap! {
-                T_ITEM.to_string() => item.to_telemetry(),
-                T_SCALE_DECISION.to_string() => SCALE_DOWN.to_telemetry(),
-            }.into()),
-            DecisionResult::NoAction(item) => TelemetryValue::Table(maplit::hashmap! {
-                T_ITEM.to_string() => item.to_telemetry(),
-                T_SCALE_DECISION.to_string() => NO_ACTION.to_telemetry(),
-            }.into()),
+            DecisionResult::ScaleUp(item) => TelemetryValue::Table(
+                maplit::hashmap! {
+                    T_ITEM.to_string() => item.to_telemetry(),
+                    T_SCALE_DECISION.to_string() => SCALE_UP.to_telemetry(),
+                }
+                .into(),
+            ),
+            DecisionResult::ScaleDown(item) => TelemetryValue::Table(
+                maplit::hashmap! {
+                    T_ITEM.to_string() => item.to_telemetry(),
+                    T_SCALE_DECISION.to_string() => SCALE_DOWN.to_telemetry(),
+                }
+                .into(),
+            ),
+            DecisionResult::NoAction(item) => TelemetryValue::Table(
+                maplit::hashmap! {
+                    T_ITEM.to_string() => item.to_telemetry(),
+                    T_SCALE_DECISION.to_string() => NO_ACTION.to_telemetry(),
+                }
+                .into(),
+            ),
         }
     }
 }

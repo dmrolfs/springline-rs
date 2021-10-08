@@ -14,8 +14,8 @@ use proctor::phases::plan::Plan;
 use proctor::ProctorResult;
 use springline::phases::decision::result::DecisionResult;
 use springline::phases::plan::{
-    make_performance_repository, FlinkPlanning, LeastSquaresWorkloadForecastBuilder,
-    PerformanceRepositorySettings, PerformanceRepositoryType, ScalePlan, SpikeSettings,
+    make_performance_repository, FlinkPlanning, LeastSquaresWorkloadForecastBuilder, PerformanceRepositorySettings,
+    PerformanceRepositoryType, ScalePlan, SpikeSettings,
 };
 use springline::phases::{ClusterMetrics, FlowMetrics, MetricCatalog};
 use tokio::sync::oneshot;
@@ -30,10 +30,9 @@ type TestPlanning = FlinkPlanning<LeastSquaresWorkloadForecastBuilder>;
 type TestStage = Plan<TestPlanning>;
 
 lazy_static! {
-    static ref DT_1: DateTime<Utc> =
-        DateTime::parse_from_str("2021-05-05T17:11:07.246310806Z", "%+")
-            .unwrap()
-            .with_timezone(&Utc);
+    static ref DT_1: DateTime<Utc> = DateTime::parse_from_str("2021-05-05T17:11:07.246310806Z", "%+")
+        .unwrap()
+        .with_timezone(&Utc);
     static ref DT_1_STR: String = format!("{}", DT_1.format("%+"));
     static ref DT_1_TS: i64 = DT_1.timestamp();
 }
@@ -52,8 +51,7 @@ impl TestFlow {
         let data_source: stage::ActorSource<InData> = stage::ActorSource::new("data_source");
         let tx_data_source_api = data_source.tx_api();
 
-        let decision_source: stage::ActorSource<InDecision> =
-            stage::ActorSource::new("decision_source");
+        let decision_source: stage::ActorSource<InDecision> = stage::ActorSource::new("decision_source");
         let tx_decision_source_api = decision_source.tx_api();
 
         let mut sink = stage::Fold::<_, Out, _>::new("sink", Vec::new(), |mut acc, item| {
@@ -63,12 +61,8 @@ impl TestFlow {
         let tx_sink_api = sink.tx_api();
         let rx_sink = sink.take_final_rx();
 
-        (data_source.outlet(), planning_stage.inlet())
-            .connect()
-            .await;
-        (decision_source.outlet(), planning_stage.decision_inlet())
-            .connect()
-            .await;
+        (data_source.outlet(), planning_stage.inlet()).connect().await;
+        (decision_source.outlet(), planning_stage.decision_inlet()).connect().await;
         (planning_stage.outlet(), sink.inlet()).connect().await;
 
         let mut graph = Graph::default();
@@ -115,10 +109,7 @@ impl TestFlow {
 
     #[tracing::instrument(level = "info", skip(self, check_size))]
     pub async fn check_sink_accumulation(
-        &self,
-        _label: &str,
-        timeout: Duration,
-        mut check_size: impl FnMut(Vec<Out>) -> bool,
+        &self, _label: &str, timeout: Duration, mut check_size: impl FnMut(Vec<Out>) -> bool,
     ) -> anyhow::Result<bool> {
         use std::time::Instant;
         let deadline = Instant::now() + timeout;
@@ -175,11 +166,7 @@ const STEP: i64 = 15;
 
 #[tracing::instrument(level = "info")]
 fn make_test_data(
-    start: Timestamp,
-    tick: i64,
-    nr_task_managers: u16,
-    input_consumer_lag: f64,
-    records_per_sec: f64,
+    start: Timestamp, tick: i64, nr_task_managers: u16, input_consumer_lag: f64, records_per_sec: f64,
 ) -> InData {
     let timestamp = Utc.timestamp(start.as_secs() + tick * STEP, 0).into();
 
@@ -204,17 +191,12 @@ fn make_test_data(
 }
 
 fn make_test_data_series(
-    start: Timestamp,
-    nr_task_managers: u16,
-    input_consumer_lag: f64,
-    mut gen: impl FnMut(i64) -> f64,
+    start: Timestamp, nr_task_managers: u16, input_consumer_lag: f64, mut gen: impl FnMut(i64) -> f64,
 ) -> Vec<InData> {
     let total = 30;
     (0..total)
         .into_iter()
-        .map(move |tick| {
-            make_test_data(start, tick, nr_task_managers, input_consumer_lag, gen(tick))
-        })
+        .map(move |tick| make_test_data(start, tick, nr_task_managers, input_consumer_lag, gen(tick)))
         .collect()
 }
 
@@ -228,20 +210,10 @@ enum DecisionType {
 
 #[tracing::instrument(level = "info")]
 fn make_decision(
-    decision: DecisionType,
-    start: Timestamp,
-    tick: i64,
-    nr_task_managers: u16,
-    input_consumer_lag: f64,
+    decision: DecisionType, start: Timestamp, tick: i64, nr_task_managers: u16, input_consumer_lag: f64,
     records_per_sec: f64,
 ) -> InDecision {
-    let data = make_test_data(
-        start,
-        tick,
-        nr_task_managers,
-        input_consumer_lag,
-        records_per_sec,
-    );
+    let data = make_test_data(start, tick, nr_task_managers, input_consumer_lag, records_per_sec);
     match decision {
         DecisionType::Up => DecisionResult::ScaleUp(data),
         DecisionType::Down => DecisionResult::ScaleDown(data),
@@ -260,12 +232,10 @@ async fn test_flink_planning_linear() {
     let recovery_valid_offset = Duration::from_secs(5 * 60);
 
     let forecast_builder = LeastSquaresWorkloadForecastBuilder::new(20, SpikeSettings::default());
-    let performance_repository = assert_ok!(make_performance_repository(
-        &PerformanceRepositorySettings {
-            storage: PerformanceRepositoryType::Memory,
-            storage_path: None,
-        }
-    ));
+    let performance_repository = assert_ok!(make_performance_repository(&PerformanceRepositorySettings {
+        storage: PerformanceRepositoryType::Memory,
+        storage_path: None,
+    }));
 
     let mut planning = assert_ok!(
         TestPlanning::new(
@@ -287,40 +257,19 @@ async fn test_flink_planning_linear() {
 
     assert_ok!(
         planning
-            .update_performance_history(&make_decision(
-                DecisionType::Up,
-                last_data.timestamp,
-                0,
-                2,
-                0.,
-                25.
-            ))
+            .update_performance_history(&make_decision(DecisionType::Up, last_data.timestamp, 0, 2, 0., 25.))
             .await
     );
     tracing::warn!("DMR: planning history = {:?}", planning);
     assert_ok!(
         planning
-            .update_performance_history(&make_decision(
-                DecisionType::Up,
-                last_data.timestamp,
-                0,
-                4,
-                0.,
-                75.
-            ))
+            .update_performance_history(&make_decision(DecisionType::Up, last_data.timestamp, 0, 4, 0., 75.))
             .await
     );
     tracing::warn!("DMR: planning history = {:?}", planning);
     assert_ok!(
         planning
-            .update_performance_history(&make_decision(
-                DecisionType::Up,
-                last_data.timestamp,
-                0,
-                10,
-                0.,
-                250.
-            ))
+            .update_performance_history(&make_decision(DecisionType::Up, last_data.timestamp, 0, 10, 0., 250.))
             .await
     );
     tracing::warn!("DMR: planning history = {:?}", planning);
@@ -383,12 +332,10 @@ async fn test_flink_planning_sine() {
     let recovery_valid_offset = Duration::from_secs(5 * 60);
 
     let forecast_builder = LeastSquaresWorkloadForecastBuilder::new(20, SpikeSettings::default());
-    let performance_repository = assert_ok!(make_performance_repository(
-        &PerformanceRepositorySettings {
-            storage: PerformanceRepositoryType::Memory,
-            storage_path: None,
-        }
-    ));
+    let performance_repository = assert_ok!(make_performance_repository(&PerformanceRepositorySettings {
+        storage: PerformanceRepositoryType::Memory,
+        storage_path: None,
+    }));
 
     let mut planning = assert_ok!(
         TestPlanning::new(
@@ -404,48 +351,25 @@ async fn test_flink_planning_sine() {
     );
 
     let start: DateTime<Utc> = fake::faker::chrono::raw::DateTimeBefore(EN, Utc::now()).fake();
-    let data = make_test_data_series(start.into(), 2, 1000., |tick| {
-        75. * ((tick as f64) / 15.).sin()
-    });
+    let data = make_test_data_series(start.into(), 2, 1000., |tick| 75. * ((tick as f64) / 15.).sin());
     let data_len = data.len();
     let last_data = assert_some!(data.last()).clone();
 
     assert_ok!(
         planning
-            .update_performance_history(&make_decision(
-                DecisionType::Up,
-                last_data.timestamp,
-                0,
-                2,
-                0.,
-                25.
-            ))
+            .update_performance_history(&make_decision(DecisionType::Up, last_data.timestamp, 0, 2, 0., 25.))
             .await
     );
     tracing::warn!("DMR: planning history = {:?}", planning);
     assert_ok!(
         planning
-            .update_performance_history(&make_decision(
-                DecisionType::Up,
-                last_data.timestamp,
-                0,
-                4,
-                0.,
-                75.
-            ))
+            .update_performance_history(&make_decision(DecisionType::Up, last_data.timestamp, 0, 4, 0., 75.))
             .await
     );
     tracing::warn!("DMR: planning history = {:?}", planning);
     assert_ok!(
         planning
-            .update_performance_history(&make_decision(
-                DecisionType::Up,
-                last_data.timestamp,
-                0,
-                10,
-                0.,
-                250.
-            ))
+            .update_performance_history(&make_decision(DecisionType::Up, last_data.timestamp, 0, 10, 0., 250.))
             .await
     );
     tracing::warn!("DMR: planning history = {:?}", planning);

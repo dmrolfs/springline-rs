@@ -11,8 +11,7 @@ pub mod flink_metrics_source;
 
 #[tracing::instrument(level = "info", skip(settings, auxiliary_source))]
 pub async fn make_collection_phase(
-    settings: &CollectionSettings,
-    auxiliary_source: Option<Box<dyn SourceStage<Telemetry>>>,
+    settings: &CollectionSettings, auxiliary_source: Option<Box<dyn SourceStage<Telemetry>>>,
 ) -> Result<CollectBuilder<MetricCatalog>> {
     let name = "collection";
     let sources = do_make_telemetry_sources(&settings.sources, auxiliary_source).await?;
@@ -21,8 +20,7 @@ pub async fn make_collection_phase(
 
 #[tracing::instrument(level = "info", skip())]
 async fn do_make_telemetry_sources(
-    settings: &HashMap<String, SourceSetting>,
-    auxiliary: Option<Box<dyn SourceStage<Telemetry>>>,
+    settings: &HashMap<String, SourceSetting>, auxiliary: Option<Box<dyn SourceStage<Telemetry>>>,
 ) -> Result<Vec<Box<dyn SourceStage<Telemetry>>>> {
     let mut sources = TelemetrySource::collect_from_settings::<MetricCatalog>(settings)
         .await?

@@ -4,9 +4,7 @@ use serde::{Deserialize, Serialize};
 use super::context::DecisionContext;
 use crate::phases::decision::result::DECISION_BINDING;
 use crate::phases::MetricCatalog;
-use proctor::elements::{
-    PolicySettings, PolicySource, PolicySubscription, QueryPolicy, QueryResult, Telemetry,
-};
+use proctor::elements::{PolicySettings, PolicySource, PolicySubscription, QueryPolicy, QueryResult, Telemetry};
 use proctor::error::PolicyError;
 use proctor::ProctorContext;
 

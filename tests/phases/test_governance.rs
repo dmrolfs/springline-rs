@@ -6,9 +6,7 @@ use proctor::elements::{self, PolicyFilterEvent, PolicySettings, PolicySource, T
 use proctor::graph::stage::{self, WithApi, WithMonitor};
 use proctor::graph::{Connect, Graph, SinkShape, SourceShape};
 use proctor::phases::policy_phase::PolicyPhase;
-use springline::phases::governance::{
-    make_governance_transform, GovernanceContext, GovernancePolicy,
-};
+use springline::phases::governance::{make_governance_transform, GovernanceContext, GovernancePolicy};
 use springline::phases::plan::ScalePlan;
 use std::path::PathBuf;
 use tokio::sync::oneshot;
@@ -51,12 +49,8 @@ impl TestFlow {
         let tx_sink_api = sink.tx_api();
         let rx_sink = sink.take_final_rx();
 
-        (data_source.outlet(), governance_stage.inlet())
-            .connect()
-            .await;
-        (context_source.outlet(), governance_stage.context_inlet())
-            .connect()
-            .await;
+        (data_source.outlet(), governance_stage.inlet()).connect().await;
+        (context_source.outlet(), governance_stage.context_inlet()).connect().await;
         (governance_stage.outlet(), sink.inlet()).connect().await;
         assert!(governance_stage.inlet().is_attached().await);
         assert!(governance_stage.context_inlet().is_attached().await);
@@ -104,26 +98,18 @@ impl TestFlow {
 
     #[allow(dead_code)]
     pub async fn tell_policy(
-        &self,
-        command_rx: (
-            elements::PolicyFilterCmd<Context>,
-            oneshot::Receiver<proctor::Ack>,
-        ),
+        &self, command_rx: (elements::PolicyFilterCmd<Context>, oneshot::Receiver<proctor::Ack>),
     ) -> anyhow::Result<proctor::Ack> {
         self.tx_governance_api.send(command_rx.0)?;
         Ok(command_rx.1.await?)
     }
 
-    pub async fn recv_policy_event(
-        &mut self,
-    ) -> anyhow::Result<elements::PolicyFilterEvent<Data, Context>> {
+    pub async fn recv_policy_event(&mut self) -> anyhow::Result<elements::PolicyFilterEvent<Data, Context>> {
         Ok(self.rx_governance_monitor.recv().await?)
     }
 
     #[allow(dead_code)]
-    pub async fn inspect_policy_context(
-        &self,
-    ) -> anyhow::Result<elements::PolicyFilterDetail<Context>> {
+    pub async fn inspect_policy_context(&self) -> anyhow::Result<elements::PolicyFilterDetail<Context>> {
         let (cmd, detail) = elements::PolicyFilterCmd::inspect();
         self.tx_governance_api.send(cmd)?;
 
@@ -148,13 +134,9 @@ impl TestFlow {
 
     #[tracing::instrument(level = "info", skip(self))]
     pub async fn check_scenario(
-        &mut self,
-        label: &str,
-        data: ScalePlan,
-        expectation: Vec<ScalePlan>,
+        &mut self, label: &str, data: ScalePlan, expectation: Vec<ScalePlan>,
     ) -> anyhow::Result<()> {
-        let scenario_span =
-            tracing::info_span!("DMR check scenario", %label, ?data, ?expectation, );
+        let scenario_span = tracing::info_span!("DMR check scenario", %label, ?data, ?expectation, );
         let _ = scenario_span.enter();
 
         let timeout = Duration::from_millis(250);
@@ -190,7 +172,7 @@ impl TestFlow {
                     Err(err) => {
                         tracing::info!(error=?err, "check accumulation failed.");
                         false
-                    },
+                    }
                 }
             })
             .await
@@ -211,10 +193,7 @@ impl TestFlow {
     #[allow(unused)]
     #[tracing::instrument(level = "info", skip(self, check_accumulation))]
     pub async fn check_sink_accumulation<F>(
-        &self,
-        label: &str,
-        timeout: Duration,
-        mut check_accumulation: F,
+        &self, label: &str, timeout: Duration, mut check_accumulation: F,
     ) -> anyhow::Result<bool>
     where
         F: FnMut(Vec<Data>) -> bool,
@@ -254,10 +233,7 @@ impl TestFlow {
                 }
             } else {
                 tracing::error!(?timeout, "check timeout exceeded - stopping check.");
-                anyhow::bail!(format!(
-                    "check {:?} timeout exceeded - stopping check.",
-                    timeout
-                ));
+                anyhow::bail!(format!("check {:?} timeout exceeded - stopping check.", timeout));
             }
         }
 

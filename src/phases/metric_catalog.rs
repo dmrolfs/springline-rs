@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use proctor::elements::{telemetry, TelemetryValue, Timestamp};
 use proctor::error::TelemetryError;
-use proctor::phases::collection::{Str, SubscriptionRequirements};
+use proctor::phases::collection::SubscriptionRequirements;
 
 // #[serde_as]
 #[derive(PolarClass, Debug, PartialEq, Clone, Serialize, Deserialize)]
@@ -87,10 +87,7 @@ impl MetricCatalog {
     }
 
     // todo limited usefulness by itself; keys? iter support for custom and for entire catalog?
-    pub fn custom<T: TryFrom<TelemetryValue>>(
-        &self,
-        metric: &str,
-    ) -> Option<Result<T, TelemetryError>>
+    pub fn custom<T: TryFrom<TelemetryValue>>(&self, metric: &str) -> Option<Result<T, TelemetryError>>
     where
         T: TryFrom<TelemetryValue>,
         TelemetryError: From<<T as TryFrom<TelemetryValue>>::Error>,
@@ -108,10 +105,7 @@ impl Add for MetricCatalog {
     fn add(self, rhs: Self) -> Self::Output {
         let mut lhs = self.custom;
         lhs.extend(rhs.custom);
-        MetricCatalog {
-            custom: lhs,
-            ..self
-        }
+        MetricCatalog { custom: lhs, ..self }
     }
 }
 
@@ -121,15 +115,12 @@ impl Add<&Self> for MetricCatalog {
     fn add(self, rhs: &Self) -> Self::Output {
         let mut lhs = self.custom;
         lhs.extend(rhs.custom.clone());
-        Self {
-            custom: lhs,
-            ..self
-        }
+        Self { custom: lhs, ..self }
     }
 }
 
 impl SubscriptionRequirements for MetricCatalog {
-    fn required_fields() -> HashSet<Str> {
+    fn required_fields() -> HashSet<proctor::SharedString> {
         maplit::hashset! {
             "timestamp".into(),
 
@@ -199,18 +190,9 @@ mod tests {
         let data = MetricCatalog::for_datetime(Utc::now(), cdata);
         assert_eq!(data.custom::<i64>("foo").unwrap().unwrap(), 17_i64);
         assert_eq!(data.custom::<f64>("foo").unwrap().unwrap(), 17.0_f64);
-        assert_eq!(
-            data.custom::<String>("otis").unwrap().unwrap(),
-            "Otis".to_string()
-        );
-        assert_eq!(
-            data.custom::<Bar>("bar").unwrap().unwrap(),
-            Bar("Neo".to_string())
-        );
-        assert_eq!(
-            data.custom::<String>("bar").unwrap().unwrap(),
-            "Neo".to_string()
-        );
+        assert_eq!(data.custom::<String>("otis").unwrap().unwrap(), "Otis".to_string());
+        assert_eq!(data.custom::<Bar>("bar").unwrap().unwrap(), Bar("Neo".to_string()));
+        assert_eq!(data.custom::<String>("bar").unwrap().unwrap(), "Neo".to_string());
         assert!(data.custom::<i64>("zed").is_none());
     }
 
@@ -267,10 +249,7 @@ mod tests {
             &vec![
                 Token::Map { len: None },
                 Token::Str("timestamp"),
-                Token::TupleStruct {
-                    name: "Timestamp",
-                    len: 2,
-                },
+                Token::TupleStruct { name: "Timestamp", len: 2 },
                 Token::I64(ts_secs),
                 Token::U32(ts_nsecs),
                 Token::TupleStructEnd,

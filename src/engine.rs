@@ -34,22 +34,18 @@ impl AutoscaleEngine {
     pub async fn new(settings: Settings) -> Result<Self> {
         let engine_source = stage::ActorSource::new("autoscale_engine_source");
         let tx_telemetry_source_api = engine_source.tx_api();
-        let mut collection_builder =
-            make_collection_phase(&settings.collection, Some(Box::new(engine_source))).await?;
+        let mut collection_builder = make_collection_phase(&settings.collection, Some(Box::new(engine_source))).await?;
 
-        let eligibility =
-            make_eligibility_phase(&settings.eligibility, (&mut collection_builder).into()).await?;
+        let eligibility = make_eligibility_phase(&settings.eligibility, (&mut collection_builder).into()).await?;
         let rx_eligibility_monitor = eligibility.rx_monitor();
 
-        let decision =
-            make_decision_phase(&settings.decision, (&mut collection_builder).into()).await?;
+        let decision = make_decision_phase(&settings.decision, (&mut collection_builder).into()).await?;
         let rx_decision_monitor = decision.rx_monitor();
 
         let plan = make_plan_phase(&settings.plan, (&mut collection_builder).into()).await?;
         let rx_plan_monitor = plan.rx_monitor();
 
-        let governance =
-            make_governance_phase(&settings.governance, (&mut collection_builder).into()).await?;
+        let governance = make_governance_phase(&settings.governance, (&mut collection_builder).into()).await?;
         let rx_governance_monitor = governance.rx_monitor();
 
         let execution = make_execution_phase(&settings.execution).await?;

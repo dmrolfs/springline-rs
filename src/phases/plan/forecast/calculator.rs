@@ -14,10 +14,7 @@ pub struct ForecastCalculator<F: WorkloadForecastBuilder> {
 
 impl<F: WorkloadForecastBuilder> ForecastCalculator<F> {
     pub fn new(
-        forecast_builder: F,
-        restart: Duration,
-        max_catch_up: Duration,
-        valid_offset: Duration,
+        forecast_builder: F, restart: Duration, max_catch_up: Duration, valid_offset: Duration,
     ) -> Result<Self, PlanError> {
         let restart = Self::check_duration("restart", restart)?;
         let max_catch_up = Self::check_duration("max_catch_up", max_catch_up)?;
@@ -32,10 +29,7 @@ impl<F: WorkloadForecastBuilder> ForecastCalculator<F> {
 
     fn check_duration(label: &str, d: Duration) -> Result<Duration, PlanError> {
         if d == Duration::ZERO {
-            return Err(PlanError::ZeroDuration(format!(
-                "workload forecast {}",
-                label
-            )));
+            return Err(PlanError::ZeroDuration(format!("workload forecast {}", label)));
         }
 
         if (f64::MAX as u128) < d.as_millis() {
@@ -55,10 +49,7 @@ impl<F: WorkloadForecastBuilder> ForecastCalculator<F> {
     }
 
     pub fn add_observation(&mut self, measurement: WorkloadMeasurement) {
-        tracing::debug!(
-            ?measurement,
-            "adding workload measurement to forecast calculator."
-        );
+        tracing::debug!(?measurement, "adding workload measurement to forecast calculator.");
         self.forecast_builder.add_observation(measurement)
     }
 
@@ -76,9 +67,7 @@ impl<F: WorkloadForecastBuilder> ForecastCalculator<F> {
         )
     )]
     pub fn calculate_target_rate(
-        &mut self,
-        trigger: Timestamp,
-        buffered_records: f64,
+        &mut self, trigger: Timestamp, buffered_records: f64,
     ) -> Result<RecordsPerSecond, PlanError> {
         let recovery = self.calculate_recovery_timestamp_from(trigger);
         let valid = self.calculate_valid_timestamp_after_recovery(recovery);
@@ -87,8 +76,7 @@ impl<F: WorkloadForecastBuilder> ForecastCalculator<F> {
         let forecast = self.forecast_builder.build_forecast()?;
         tracing::debug!(?forecast, "workload forecast model calculated.");
 
-        let total_records =
-            self.total_records_between(&forecast, trigger, recovery)? + buffered_records;
+        let total_records = self.total_records_between(&forecast, trigger, recovery)? + buffered_records;
         tracing::debug!(total_records_at_valid_time=%total_records, "estimated total records to process before valid time");
 
         let recovery_rate = self.recovery_rate(total_records);
@@ -114,10 +102,7 @@ impl<F: WorkloadForecastBuilder> ForecastCalculator<F> {
     }
 
     fn total_records_between(
-        &self,
-        forecast: &Box<dyn WorkloadForecast>,
-        start: Timestamp,
-        end: Timestamp,
+        &self, forecast: &Box<dyn WorkloadForecast>, start: Timestamp, end: Timestamp,
     ) -> Result<f64, PlanError> {
         let total = forecast.total_records_between(start, end)?;
         tracing::debug!("total records between [{}, {}] = {}", start, end, total);
@@ -145,12 +130,7 @@ mod tests {
         let d2 = Duration::from_secs(13 * 60);
         let d3 = Duration::from_secs(5 * 60);
 
-        assert_ok!(ForecastCalculator::new(
-            MockWorkloadForecastBuilder::new(),
-            d1,
-            d2,
-            d3
-        ));
+        assert_ok!(ForecastCalculator::new(MockWorkloadForecastBuilder::new(), d1, d2, d3));
         assert_ok!(ForecastCalculator::new(
             MockWorkloadForecastBuilder::new(),
             d1,
@@ -197,11 +177,7 @@ mod tests {
             RecordsPerSecond::new(0.128_205),
             epsilon = 1.0e-6
         );
-        assert_relative_eq!(
-            c1.recovery_rate(0.),
-            RecordsPerSecond::new(0.),
-            epsilon = 1.0e-6
-        );
+        assert_relative_eq!(c1.recovery_rate(0.), RecordsPerSecond::new(0.), epsilon = 1.0e-6);
 
         let c2 = assert_ok!(ForecastCalculator::new(
             MockWorkloadForecastBuilder::new(),
@@ -279,16 +255,11 @@ mod tests {
         let max_catch_up = Duration::from_secs(13 * 60);
         let valid_offset = Duration::from_secs(5 * 60);
 
-        fn mock_workload_calc_builder(
-            valid_workload: RecordsPerSecond,
-        ) -> impl WorkloadForecastBuilder {
+        fn mock_workload_calc_builder(valid_workload: RecordsPerSecond) -> impl WorkloadForecastBuilder {
             let mut builder = MockWorkloadForecastBuilder::new();
             builder.expect_build_forecast().times(1).returning(move || {
                 let mut forecast = MockWorkloadForecast::new();
-                forecast
-                    .expect_total_records_between()
-                    .times(1)
-                    .returning(|_, _| Ok(100.));
+                forecast.expect_total_records_between().times(1).returning(|_, _| Ok(100.));
                 forecast
                     .expect_workload_at()
                     .times(1)

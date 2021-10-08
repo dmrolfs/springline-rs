@@ -30,17 +30,11 @@ mod tests {
         assert_tokens(
             &settings_csv,
             &vec![
-                Token::Struct {
-                    name: "CollectionSettings",
-                    len: 1,
-                },
+                Token::Struct { name: "CollectionSettings", len: 1 },
                 Token::Str("sources"),
                 Token::Map { len: Some(1) },
                 Token::Str("foo"),
-                Token::Struct {
-                    name: "SourceSetting",
-                    len: 2,
-                },
+                Token::Struct { name: "SourceSetting", len: 2 },
                 Token::Str("type"),
                 Token::Str("csv"),
                 Token::Str("path"),
@@ -70,17 +64,11 @@ mod tests {
         assert_tokens(
             &settings_rest,
             &vec![
-                Token::Struct {
-                    name: "CollectionSettings",
-                    len: 1,
-                },
+                Token::Struct { name: "CollectionSettings", len: 1 },
                 Token::Str("sources"),
                 Token::Map { len: Some(1) },
                 Token::Str("foo"),
-                Token::Struct {
-                    name: "HttpQuery",
-                    len: 6,
-                },
+                Token::Struct { name: "HttpQuery", len: 6 },
                 Token::Str("type"),
                 Token::Str("rest_api"),
                 Token::Str("interval_secs"),

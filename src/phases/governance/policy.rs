@@ -3,9 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use super::context::GovernanceContext;
 use crate::phases::plan::ScalePlan;
-use proctor::elements::{
-    PolicySettings, PolicySource, PolicySubscription, QueryPolicy, QueryResult, Telemetry,
-};
+use proctor::elements::{PolicySettings, PolicySource, PolicySubscription, QueryPolicy, QueryResult, Telemetry};
 use proctor::error::PolicyError;
 use proctor::ProctorContext;
 

@@ -64,11 +64,7 @@ impl FromStr for PerformanceRepositoryType {
 #[async_trait]
 pub trait PerformanceRepository: Debug + Sync + Send {
     async fn load(&self, job_name: &str) -> Result<Option<PerformanceHistory>, PlanError>;
-    async fn save(
-        &mut self,
-        job_name: &str,
-        performance_history: &PerformanceHistory,
-    ) -> Result<(), PlanError>;
+    async fn save(&mut self, job_name: &str, performance_history: &PerformanceHistory) -> Result<(), PlanError>;
     async fn close(self: Box<Self>) -> Result<(), PlanError>;
 }
 
@@ -87,14 +83,8 @@ impl PerformanceRepository for PerformanceMemoryRepository {
     }
 
     #[tracing::instrument(level = "info", skip(self))]
-    async fn save(
-        &mut self,
-        job_name: &str,
-        performance_history: &PerformanceHistory,
-    ) -> Result<(), PlanError> {
-        let old = self
-            .0
-            .insert(job_name.to_string(), performance_history.clone());
+    async fn save(&mut self, job_name: &str, performance_history: &PerformanceHistory) -> Result<(), PlanError> {
+        let old = self.0.insert(job_name.to_string(), performance_history.clone());
         tracing::debug!(?old, "replacing performance history in repository.");
         Ok(())
     }
@@ -113,9 +103,7 @@ pub struct PerformanceFileRepository {
 
 impl PerformanceFileRepository {
     pub fn new(root: impl AsRef<str>) -> Self {
-        Self {
-            root_path: PathBuf::from(root.as_ref()),
-        }
+        Self { root_path: PathBuf::from(root.as_ref()) }
     }
 
     fn file_name_for(&self, job_name: &str) -> String {
@@ -155,10 +143,7 @@ impl PerformanceRepository for PerformanceFileRepository {
                 let ph = match serde_json::from_reader(reader) {
                     Ok(a) => Ok(Some(a)),
                     Err(err) if err.classify() == Category::Eof => {
-                        tracing::debug!(
-                            ?performance_history_path,
-                            "performance history empty, creating new."
-                        );
+                        tracing::debug!(?performance_history_path, "performance history empty, creating new.");
                         Ok(None)
                     }
                     Err(err) => Err(err),
@@ -173,11 +158,7 @@ impl PerformanceRepository for PerformanceFileRepository {
     }
 
     #[tracing::instrument(level = "info", skip(self))]
-    async fn save(
-        &mut self,
-        job_name: &str,
-        performance_history: &PerformanceHistory,
-    ) -> Result<(), PlanError> {
+    async fn save(&mut self, job_name: &str, performance_history: &PerformanceHistory) -> Result<(), PlanError> {
         let performance_history_path = self.path_for(self.file_name_for(job_name).as_str());
         let performance_history_file = self.file_for(performance_history_path.clone(), true)?;
         let writer = BufWriter::new(performance_history_file);
@@ -202,8 +183,7 @@ mod tests {
     use crate::phases::plan::Benchmark;
 
     async fn do_test_repository<'a>(
-        repo: &mut impl PerformanceRepository,
-        jobs_a_b: (&'a str, &'a str),
+        repo: &mut impl PerformanceRepository, jobs_a_b: (&'a str, &'a str),
     ) -> anyhow::Result<()> {
         let (name_a, name_b) = jobs_a_b;
         let actual = repo.load(name_a).await;

@@ -56,10 +56,7 @@ impl From<MetricCatalog> for WorkloadMeasurement {
 
 impl From<Point> for WorkloadMeasurement {
     fn from(pt: Point) -> Self {
-        Self {
-            timestamp_secs: pt.0 as i64,
-            workload: pt.1.into(),
-        }
+        Self { timestamp_secs: pt.0 as i64, workload: pt.1.into() }
     }
 }
 

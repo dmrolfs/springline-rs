@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use proctor::elements::telemetry;
 use proctor::error::EligibilityError;
-use proctor::phases::collection::{Str, SubscriptionRequirements};
+use proctor::phases::collection::SubscriptionRequirements;
 use proctor::ProctorContext;
 
 #[derive(PolarClass, Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -26,7 +26,7 @@ pub struct EligibilityContext {
 }
 
 impl SubscriptionRequirements for EligibilityContext {
-    fn required_fields() -> HashSet<Str> {
+    fn required_fields() -> HashSet<proctor::SharedString> {
         maplit::hashset! {
             "task.last_failure".into(),
             "cluster.is_deploying".into(),
@@ -38,7 +38,7 @@ impl SubscriptionRequirements for EligibilityContext {
 impl ProctorContext for EligibilityContext {
     type Error = EligibilityError;
 
-    fn custom(&self) -> telemetry::TableType{
+    fn custom(&self) -> telemetry::TableType {
         self.custom.clone()
     }
 }
@@ -103,13 +103,8 @@ mod tests {
     #[ignore]
     fn test_serde_flink_eligibility_context() {
         let context = EligibilityContext {
-            task_status: TaskStatus {
-                last_failure: Some(DT_1.clone()),
-            },
-            cluster_status: ClusterStatus {
-                is_deploying: false,
-                last_deployment: DT_2.clone(),
-            },
+            task_status: TaskStatus { last_failure: Some(DT_1.clone()) },
+            cluster_status: ClusterStatus { is_deploying: false, last_deployment: DT_2.clone() },
             custom: maplit::hashmap! {
                 "custom_foo".to_string() => "fred flintstone".into(),
                 "custom_bar".to_string() => "The Happy Barber".into(),
@@ -193,13 +188,8 @@ mod tests {
         let actual = data.try_into::<EligibilityContext>();
         tracing::info!(?actual, "converted into FlinkEligibilityContext");
         let expected = EligibilityContext {
-            task_status: TaskStatus {
-                last_failure: Some(DT_1.clone()),
-            },
-            cluster_status: ClusterStatus {
-                is_deploying: false,
-                last_deployment: DT_2.clone(),
-            },
+            task_status: TaskStatus { last_failure: Some(DT_1.clone()) },
+            cluster_status: ClusterStatus { is_deploying: false, last_deployment: DT_2.clone() },
             custom: maplit::hashmap! {"foo".to_string() => "bar".into(),},
         };
         tracing::info!("actual: {:?}", actual);

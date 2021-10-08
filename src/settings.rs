@@ -9,8 +9,8 @@ pub use plan_settings::*;
 use clap::Clap;
 use proctor::elements::PolicySettings;
 use serde::{Deserialize, Serialize};
+use settings_loader::{LoadingOptions, SettingsError, SettingsLoader};
 use std::path::PathBuf;
-use settings_loader::{SettingsLoader, LoadingOptions, SettingsError};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Settings {
@@ -25,7 +25,6 @@ pub struct Settings {
 impl SettingsLoader for Settings {
     type Options = CliOptions;
 }
-
 
 #[derive(Clap, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[clap(version = "0.1.0", author = "Damon Rolfs")]
@@ -52,23 +51,20 @@ impl LoadingOptions for CliOptions {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::phases::plan::{
-        PerformanceRepositorySettings, PerformanceRepositoryType, SpikeSettings,
-    };
+    use crate::phases::plan::{PerformanceRepositorySettings, PerformanceRepositoryType, SpikeSettings};
     use claim::assert_ok;
     use config::{Config, FileFormat};
+    use lazy_static::lazy_static;
     use pretty_assertions::assert_eq;
     use proctor::elements::PolicySource;
     use proctor::phases::collection::SourceSetting;
-    use std::time::Duration;
-    use lazy_static::lazy_static;
     use std::env::VarError;
     use std::panic::{RefUnwindSafe, UnwindSafe};
     use std::sync::Mutex;
+    use std::time::Duration;
     use std::{env, panic};
 
     lazy_static! {
@@ -78,8 +74,8 @@ mod tests {
     /// Sets environment variables to the given value for the duration of the closure.
     /// Restores the previous values when the closure completes or panics, before unwinding the panic.
     pub fn with_env_vars<F>(label: &str, kvs: Vec<(&str, Option<&str>)>, closure: F)
-        where
-            F: Fn() + UnwindSafe + RefUnwindSafe,
+    where
+        F: Fn() + UnwindSafe + RefUnwindSafe,
     {
         let guard = SERIAL_TEST.lock().unwrap();
         let mut old_kvs: Vec<(&str, Result<String, VarError>)> = Vec::new();
@@ -157,84 +153,70 @@ mod tests {
         let actual: PolicySettings = assert_ok!(config.try_into());
         assert_eq!(
             actual,
-            PolicySettings::default().with_source(PolicySource::File(PathBuf::from(
-                "./resources/eligibility.polar"
-            ))),
+            PolicySettings::default().with_source(PolicySource::File(PathBuf::from("./resources/eligibility.polar"))),
         );
         Ok(())
     }
 
     #[test]
     fn test_settings_applications_load() -> anyhow::Result<()> {
-        with_env_vars(
-           "test_settings_applications_load",
-            vec![],
-            ||{
-                lazy_static::initialize(&proctor::tracing::TEST_TRACING);
-                let main_span = tracing::info_span!("test_settings_applications_load");
-                let _ = main_span.enter();
+        with_env_vars("test_settings_applications_load", vec![], || {
+            lazy_static::initialize(&proctor::tracing::TEST_TRACING);
+            let main_span = tracing::info_span!("test_settings_applications_load");
+            let _ = main_span.enter();
 
-                // let builder = assert_ok!(Settings::load(Config::builder()));
-                // let c = assert_ok!(builder.build());
-                // tracing::info!(config=?c, "loaded configuration file");
-                let actual: Settings = assert_ok!(Settings::load(CliOptions { config: None, secrets: None, }));
+            // let builder = assert_ok!(Settings::load(Config::builder()));
+            // let c = assert_ok!(builder.build());
+            // tracing::info!(config=?c, "loaded configuration file");
+            let actual: Settings = assert_ok!(Settings::load(CliOptions { config: None, secrets: None }));
 
-                let expected = Settings {
-                    collection: CollectionSettings {
-                        sources: maplit::hashmap! {
-                    "foo".to_string() => SourceSetting::Csv { path: PathBuf::from("./resources/bar.toml"),},
-                },
+            let expected = Settings {
+                collection: CollectionSettings {
+                    sources: maplit::hashmap! {
+                        "foo".to_string() => SourceSetting::Csv { path: PathBuf::from("./resources/bar.toml"),},
                     },
-                    eligibility: PolicySettings::default()
-                        .with_source(PolicySource::File(PathBuf::from(
-                            "./resources/eligibility.polar",
-                        )))
-                        .with_source(PolicySource::String(
-                            r##"
+                },
+                eligibility: PolicySettings::default()
+                    .with_source(PolicySource::File(PathBuf::from("./resources/eligibility.polar")))
+                    .with_source(PolicySource::String(
+                        r##"
                     eligible(_, _context, length) if length = 13;
                     eligible(_item, context, c) if
                     c = context.custom() and
                     c.cat = "Otis" and
                     cut;
                 "##
-                                .to_string(),
-                        )),
-                    decision: PolicySettings::default()
-                        .with_source(PolicySource::File(PathBuf::from(
-                            "./resources/decision_preamble.polar",
-                        )))
-                        .with_source(PolicySource::File(PathBuf::from(
-                            "./resources/decision.polar",
-                        ))),
-                    plan: PlanSettings {
-                        min_scaling_step: 2,
-                        restart: Duration::from_secs(2 * 60),
-                        max_catch_up: Duration::from_secs(10 * 60),
-                        recovery_valid: Duration::from_secs(5 * 60),
-                        performance_repository: PerformanceRepositorySettings {
-                            storage: PerformanceRepositoryType::File,
-                            storage_path: Some("./tests/data/performance.data".to_string()),
-                        },
-                        window: 20,
-                        spike: SpikeSettings {
-                            std_deviation_threshold: 5.,
-                            influence: 0.75,
-                            length_threshold: 3,
-                        },
+                        .to_string(),
+                    )),
+                decision: PolicySettings::default()
+                    .with_source(PolicySource::File(PathBuf::from("./resources/decision_preamble.polar")))
+                    .with_source(PolicySource::File(PathBuf::from("./resources/decision.polar"))),
+                plan: PlanSettings {
+                    min_scaling_step: 2,
+                    restart: Duration::from_secs(2 * 60),
+                    max_catch_up: Duration::from_secs(10 * 60),
+                    recovery_valid: Duration::from_secs(5 * 60),
+                    performance_repository: PerformanceRepositorySettings {
+                        storage: PerformanceRepositoryType::File,
+                        storage_path: Some("./tests/data/performance.data".to_string()),
                     },
-                    governance: PolicySettings::default()
-                        .with_source(PolicySource::File(PathBuf::from(
-                            "./resources/governance_preamble.polar",
-                        )))
-                        .with_source(PolicySource::File(PathBuf::from(
-                            "./resources/governance.polar",
-                        ))),
-                    execution: ExecutionSettings,
-                };
+                    window: 20,
+                    spike: SpikeSettings {
+                        std_deviation_threshold: 5.,
+                        influence: 0.75,
+                        length_threshold: 3,
+                    },
+                },
+                governance: PolicySettings::default()
+                    .with_source(PolicySource::File(PathBuf::from(
+                        "./resources/governance_preamble.polar",
+                    )))
+                    .with_source(PolicySource::File(PathBuf::from("./resources/governance.polar"))),
+                execution: ExecutionSettings,
+            };
 
-                assert_eq!(actual, expected);
-            }
-        );
+            assert_eq!(actual, expected);
+        });
         Ok(())
     }
 
@@ -243,7 +225,4 @@ mod tests {
     fn test_settings_specific_load() -> anyhow::Result<()> {
         Ok(())
     }
-
-
-
 }

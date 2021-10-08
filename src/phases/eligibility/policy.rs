@@ -2,9 +2,7 @@ use oso::{Oso, PolarClass};
 
 use super::context::{ClusterStatus, EligibilityContext, TaskStatus};
 use crate::phases::MetricCatalog;
-use proctor::elements::{
-    PolicySettings, PolicySource, PolicySubscription, QueryPolicy, QueryResult, Telemetry,
-};
+use proctor::elements::{PolicySettings, PolicySource, PolicySubscription, QueryPolicy, QueryResult, Telemetry};
 use proctor::error::PolicyError;
 use proctor::ProctorContext;
 
@@ -39,10 +37,7 @@ impl QueryPolicy for EligibilityPolicy {
         oso.register_class(
             TaskStatus::get_polar_class_builder()
                 .name("TaskStatus")
-                .add_method(
-                    "last_failure_within_seconds",
-                    TaskStatus::last_failure_within_seconds,
-                )
+                .add_method("last_failure_within_seconds", TaskStatus::last_failure_within_seconds)
                 .build(),
         )?;
         oso.register_class(

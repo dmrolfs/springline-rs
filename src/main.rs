@@ -1,10 +1,10 @@
 use clap::Clap;
 use proctor::tracing::{get_subscriber, init_subscriber};
+use settings_loader::SettingsLoader;
 use springline::engine::AutoscaleEngine;
 use springline::settings::{CliOptions, Settings};
 use springline::Result;
 use std::future::Future;
-use settings_loader::SettingsLoader;
 
 fn main() -> Result<()> {
     let subscriber = get_subscriber("springline", "info");

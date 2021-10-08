@@ -32,16 +32,8 @@ impl BenchmarkRange {
         Self::new(b.nr_task_managers, None, Some(b.records_out_per_sec))
     }
 
-    pub fn new(
-        nr_task_managers: u16,
-        lo_rate: Option<RecordsPerSecond>,
-        hi_rate: Option<RecordsPerSecond>,
-    ) -> Self {
-        Self {
-            nr_task_managers,
-            lo_rate,
-            hi_rate,
-        }
+    pub fn new(nr_task_managers: u16, lo_rate: Option<RecordsPerSecond>, hi_rate: Option<RecordsPerSecond>) -> Self {
+        Self { nr_task_managers, lo_rate, hi_rate }
     }
 }
 
@@ -77,10 +69,7 @@ impl BenchmarkRange {
         // A BenchmarkRange may become invalid due to circumstances in the environment beyond the
         // application's control. This method helps identify circumstances where a BenchmarkRange
         // should be dropped to avoid bad cluster size estimates for workload.
-        fn check_consistency(
-            my_hi_rate: &Option<RecordsPerSecond>,
-            new_lo_rate: RecordsPerSecond,
-        ) -> bool {
+        fn check_consistency(my_hi_rate: &Option<RecordsPerSecond>, new_lo_rate: RecordsPerSecond) -> bool {
             my_hi_rate.map(|hi| new_lo_rate <= hi).unwrap_or(true)
         }
 
@@ -109,10 +98,7 @@ impl BenchmarkRange {
         /// A BenchmarkRange may become invalid due to circumstances in the environment beyond the
         /// application's control. This method helps identify circumstances where a BenchmarkRange
         /// should be dropped to avoid bad cluster size estimates for workload.
-        fn check_consistency(
-            my_lo_rate: &Option<RecordsPerSecond>,
-            new_hi_rate: RecordsPerSecond,
-        ) -> bool {
+        fn check_consistency(my_lo_rate: &Option<RecordsPerSecond>, new_hi_rate: RecordsPerSecond) -> bool {
             my_lo_rate.map(|lo| lo <= new_hi_rate).unwrap_or(true)
         }
 
@@ -144,12 +130,11 @@ impl AbsDiffEq for BenchmarkRange {
 
     fn abs_diff_eq(&self, other: &Self, epsilon: Self::Epsilon) -> bool {
         // couldn't use nested fn due to desire to use generic outer variable, epsilon.
-        let do_abs_diff_eq =
-            |lhs: Option<&RecordsPerSecond>, rhs: Option<&RecordsPerSecond>| match (lhs, rhs) {
-                (None, None) => true,
-                (Some(lhs), Some(rhs)) => lhs.abs_diff_eq(rhs, epsilon),
-                _ => false,
-            };
+        let do_abs_diff_eq = |lhs: Option<&RecordsPerSecond>, rhs: Option<&RecordsPerSecond>| match (lhs, rhs) {
+            (None, None) => true,
+            (Some(lhs), Some(rhs)) => lhs.abs_diff_eq(rhs, epsilon),
+            _ => false,
+        };
 
         (self.nr_task_managers == other.nr_task_managers)
             && do_abs_diff_eq(self.lo_rate.as_ref(), other.lo_rate.as_ref())
@@ -163,18 +148,12 @@ impl RelativeEq for BenchmarkRange {
         <Benchmark as RelativeEq>::default_max_relative()
     }
 
-    fn relative_eq(
-        &self,
-        other: &Self,
-        epsilon: Self::Epsilon,
-        max_relative: Self::Epsilon,
-    ) -> bool {
-        let do_relative_eq =
-            |lhs: Option<&RecordsPerSecond>, rhs: Option<&RecordsPerSecond>| match (lhs, rhs) {
-                (None, None) => true,
-                (Some(lhs), Some(rhs)) => lhs.relative_eq(rhs, epsilon, max_relative),
-                _ => false,
-            };
+    fn relative_eq(&self, other: &Self, epsilon: Self::Epsilon, max_relative: Self::Epsilon) -> bool {
+        let do_relative_eq = |lhs: Option<&RecordsPerSecond>, rhs: Option<&RecordsPerSecond>| match (lhs, rhs) {
+            (None, None) => true,
+            (Some(lhs), Some(rhs)) => lhs.relative_eq(rhs, epsilon, max_relative),
+            _ => false,
+        };
 
         (self.nr_task_managers == other.nr_task_managers)
             && do_relative_eq(self.lo_rate.as_ref(), other.lo_rate.as_ref())
@@ -191,20 +170,13 @@ pub struct Benchmark {
 
 impl fmt::Display for Benchmark {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "[{}:{}]",
-            self.nr_task_managers, self.records_out_per_sec
-        )
+        write!(f, "[{}:{}]", self.nr_task_managers, self.records_out_per_sec)
     }
 }
 
 impl Benchmark {
     pub fn new(nr_task_managers: u16, records_out_per_sec: RecordsPerSecond) -> Self {
-        Self {
-            nr_task_managers,
-            records_out_per_sec,
-        }
+        Self { nr_task_managers, records_out_per_sec }
     }
 }
 
@@ -240,9 +212,7 @@ impl AbsDiffEq for Benchmark {
     #[inline]
     fn abs_diff_eq(&self, other: &Self, epsilon: Self::Epsilon) -> bool {
         (self.nr_task_managers == other.nr_task_managers)
-            && (self
-                .records_out_per_sec
-                .abs_diff_eq(&other.records_out_per_sec, epsilon))
+            && (self.records_out_per_sec.abs_diff_eq(&other.records_out_per_sec, epsilon))
     }
 }
 
@@ -252,18 +222,11 @@ impl RelativeEq for Benchmark {
         <RecordsPerSecond as RelativeEq>::default_max_relative()
     }
 
-    fn relative_eq(
-        &self,
-        other: &Self,
-        epsilon: Self::Epsilon,
-        max_relative: Self::Epsilon,
-    ) -> bool {
+    fn relative_eq(&self, other: &Self, epsilon: Self::Epsilon, max_relative: Self::Epsilon) -> bool {
         (self.nr_task_managers == other.nr_task_managers)
-            && (self.records_out_per_sec.relative_eq(
-                &other.records_out_per_sec,
-                epsilon,
-                max_relative,
-            ))
+            && (self
+                .records_out_per_sec
+                .relative_eq(&other.records_out_per_sec, epsilon, max_relative))
     }
 }
 
@@ -272,10 +235,13 @@ const T_RECORDS_OUT_PER_SEC: &'static str = "records_out_per_sec";
 
 impl From<Benchmark> for TelemetryValue {
     fn from(that: Benchmark) -> Self {
-        TelemetryValue::Table(maplit::hashmap! {
-            T_NR_TASK_MANAGERS.to_string() => that.nr_task_managers.to_telemetry(),
-            T_RECORDS_OUT_PER_SEC.to_string() => that.records_out_per_sec.to_telemetry(),
-        }.into())
+        TelemetryValue::Table(
+            maplit::hashmap! {
+                T_NR_TASK_MANAGERS.to_string() => that.nr_task_managers.to_telemetry(),
+                T_RECORDS_OUT_PER_SEC.to_string() => that.records_out_per_sec.to_telemetry(),
+            }
+            .into(),
+        )
     }
 }
 
@@ -330,10 +296,7 @@ mod tests {
 
         actual.set_hi_rate(5.0.into());
         actual.set_lo_rate(1.0.into());
-        assert_eq!(
-            actual,
-            BenchmarkRange::new(4, Some(1.0.into()), Some(5.0.into()))
-        );
+        assert_eq!(actual, BenchmarkRange::new(4, Some(1.0.into()), Some(5.0.into())));
 
         Ok(())
     }
@@ -354,10 +317,7 @@ mod tests {
 
         actual.set_lo_rate(1.0.into());
         actual.set_hi_rate(1.0.into());
-        assert_eq!(
-            actual,
-            BenchmarkRange::new(4, Some(1.0.into()), Some(1.0.into()))
-        );
+        assert_eq!(actual, BenchmarkRange::new(4, Some(1.0.into()), Some(1.0.into())));
 
         Ok(())
     }
@@ -371,10 +331,7 @@ mod tests {
         let mut actual = BenchmarkRange::new(4, None, None);
         actual.set_lo_rate(1.0.into());
         actual.set_hi_rate(5.0.into());
-        assert_eq!(
-            actual,
-            BenchmarkRange::new(4, Some(1.0.into()), Some(5.0.into()))
-        );
+        assert_eq!(actual, BenchmarkRange::new(4, Some(1.0.into()), Some(5.0.into())));
 
         actual.set_lo_rate(7.0.into());
         assert_eq!(actual, BenchmarkRange::new(4, Some(7.0.into()), None));

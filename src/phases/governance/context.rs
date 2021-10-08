@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use proctor::elements::telemetry;
 use proctor::error::GovernanceError;
-use proctor::phases::collection::{Str, SubscriptionRequirements};
+use proctor::phases::collection::SubscriptionRequirements;
 use proctor::ProctorContext;
 
 #[derive(PolarClass, Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -26,7 +26,7 @@ pub struct GovernanceContext {
 }
 
 impl SubscriptionRequirements for GovernanceContext {
-    fn required_fields() -> HashSet<Str> {
+    fn required_fields() -> HashSet<proctor::SharedString> {
         maplit::hashset! {
             "min_cluster_size".into(),
             "max_cluster_size".into(),

@@ -3,8 +3,7 @@ use std::time::Duration;
 use oso::ToPolar;
 use pretty_assertions::assert_eq;
 use proctor::elements::{
-    self, PolicyOutcome, PolicySettings, PolicySource, PolicySubscription, Telemetry,
-    TelemetryValue, ToTelemetry,
+    self, PolicyOutcome, PolicySettings, PolicySource, PolicySubscription, Telemetry, TelemetryValue, ToTelemetry,
 };
 use proctor::graph::stage::{self, ThroughStage, WithApi, WithMonitor};
 use proctor::graph::{Connect, Graph, Inlet, SinkShape, SourceShape};
@@ -18,9 +17,7 @@ use tokio::task::JoinHandle;
 
 use super::fixtures::*;
 use proctor::phases::policy_phase::PolicyPhase;
-use springline::phases::decision::result::{
-    make_decision_transform, DecisionResult, DECISION_BINDING,
-};
+use springline::phases::decision::result::{make_decision_transform, DecisionResult, DECISION_BINDING};
 use std::path::PathBuf;
 
 lazy_static::lazy_static! {
@@ -47,12 +44,9 @@ where
     C: ProctorContext,
 {
     pub async fn new(
-        collect_out_subscription: TelemetrySubscription,
-        context_subscription: TelemetrySubscription,
-        decision_stage: impl ThroughStage<In, Out>,
-        decision_context_inlet: Inlet<C>,
-        tx_decision_api: elements::PolicyFilterApi<C>,
-        rx_decision_monitor: elements::PolicyFilterMonitor<In, C>,
+        collect_out_subscription: TelemetrySubscription, context_subscription: TelemetrySubscription,
+        decision_stage: impl ThroughStage<In, Out>, decision_context_inlet: Inlet<C>,
+        tx_decision_api: elements::PolicyFilterApi<C>, rx_decision_monitor: elements::PolicyFilterMonitor<In, C>,
     ) -> anyhow::Result<Self> {
         let telemetry_source = stage::ActorSource::<Telemetry>::new("telemetry_source");
         let tx_data_source_api = telemetry_source.tx_api();
@@ -60,20 +54,13 @@ where
         let ctx_source = stage::ActorSource::<Telemetry>::new("context_source");
         let tx_context_source_api = ctx_source.tx_api();
 
-        let mut builder = Collect::builder(
-            "collection",
-            vec![Box::new(telemetry_source), Box::new(ctx_source)],
-        );
+        let mut builder = Collect::builder("collection", vec![Box::new(telemetry_source), Box::new(ctx_source)]);
         let tx_clearinghouse_api = builder.clearinghouse.tx_api();
 
-        let context_channel = collection::SubscriptionChannel::<C>::connect_subscription(
-            context_subscription,
-            (&mut builder).into(),
-        )
-        .await?;
-        let collect = builder
-            .build_for_out_subscription(collect_out_subscription)
-            .await?;
+        let context_channel =
+            collection::SubscriptionChannel::<C>::connect_subscription(context_subscription, (&mut builder).into())
+                .await?;
+        let collect = builder.build_for_out_subscription(collect_out_subscription).await?;
 
         let mut sink = stage::Fold::<_, Out, _>::new("sink", Vec::new(), |mut acc, item| {
             acc.push(item);
@@ -83,9 +70,7 @@ where
         let rx_sink = sink.take_final_rx();
 
         (collect.outlet(), decision_stage.inlet()).connect().await;
-        (context_channel.outlet(), decision_context_inlet)
-            .connect()
-            .await;
+        (context_channel.outlet(), decision_context_inlet).connect().await;
         (decision_stage.outlet(), sink.inlet()).connect().await;
 
         assert!(collect.outlet().is_attached().await);
@@ -139,23 +124,14 @@ where
 
     #[allow(dead_code)]
     pub async fn tell_policy(
-        &self,
-        command_rx: (
-            elements::PolicyFilterCmd<C>,
-            oneshot::Receiver<proctor::Ack>,
-        ),
+        &self, command_rx: (elements::PolicyFilterCmd<C>, oneshot::Receiver<proctor::Ack>),
     ) -> anyhow::Result<proctor::Ack> {
         self.tx_decision_api.send(command_rx.0)?;
         command_rx.1.await.map_err(|err| err.into())
     }
 
-    pub async fn recv_policy_event(
-        &mut self,
-    ) -> anyhow::Result<elements::PolicyFilterEvent<In, C>> {
-        self.rx_decision_monitor
-            .recv()
-            .await
-            .map_err(|err| err.into())
+    pub async fn recv_policy_event(&mut self) -> anyhow::Result<elements::PolicyFilterEvent<In, C>> {
+        self.rx_decision_monitor.recv().await.map_err(|err| err.into())
     }
 
     #[allow(dead_code)]
@@ -184,10 +160,7 @@ where
 
     #[tracing::instrument(level = "info", skip(self, check_size))]
     pub async fn check_sink_accumulation(
-        &self,
-        label: &str,
-        timeout: Duration,
-        mut check_size: impl FnMut(Vec<Out>) -> bool,
+        &self, label: &str, timeout: Duration, mut check_size: impl FnMut(Vec<Out>) -> bool,
     ) -> anyhow::Result<bool> {
         use std::time::Instant;
         let deadline = Instant::now() + timeout;
@@ -402,9 +375,7 @@ async fn test_decision_common() -> anyhow::Result<()> {
     tracing::info!(?event, "DMR: TESTING policy event for context change");
     claim::assert_matches!(event, elements::PolicyFilterEvent::ContextChanged(_));
 
-    tracing::info!(
-        "DMR: pushing metrics padding - req metrics subscriptions fields not used in test."
-    );
+    tracing::info!("DMR: pushing metrics padding - req metrics subscriptions fields not used in test.");
     flow.push_telemetry(make_test_item_padding()).await?;
 
     let ts = *DT_1 + chrono::Duration::hours(1);
@@ -449,10 +420,7 @@ async fn test_decision_common() -> anyhow::Result<()> {
 
     assert_eq!(
         actual_vals,
-        vec![
-            (std::f64::consts::PI, "up"),
-            (std::f64::consts::LN_2, "down"),
-        ]
+        vec![(std::f64::consts::PI, "up"), (std::f64::consts::LN_2, "down"),]
     );
 
     Ok(())

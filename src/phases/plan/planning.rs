@@ -5,8 +5,7 @@ use async_trait::async_trait;
 
 use crate::phases::decision::result::DecisionResult;
 use crate::phases::plan::{
-    ForecastCalculator, PerformanceHistory, PerformanceRepository, ScalePlan,
-    WorkloadForecastBuilder,
+    ForecastCalculator, PerformanceHistory, PerformanceRepository, ScalePlan, WorkloadForecastBuilder,
 };
 use crate::phases::MetricCatalog;
 use proctor::error::PlanError;
@@ -36,16 +35,10 @@ pub struct FlinkPlanning<F: WorkloadForecastBuilder> {
 
 impl<F: WorkloadForecastBuilder> FlinkPlanning<F> {
     pub async fn new(
-        planning_name: impl AsRef<str>,
-        min_scaling_step: u16,
-        restart: Duration,
-        max_catch_up: Duration,
-        recovery_valid: Duration,
-        forecast_builder: F,
-        performance_repository: Box<dyn PerformanceRepository>,
+        planning_name: impl AsRef<str>, min_scaling_step: u16, restart: Duration, max_catch_up: Duration,
+        recovery_valid: Duration, forecast_builder: F, performance_repository: Box<dyn PerformanceRepository>,
     ) -> Result<Self, PlanError> {
-        let forecast_calculator =
-            ForecastCalculator::new(forecast_builder, restart, max_catch_up, recovery_valid)?;
+        let forecast_calculator = ForecastCalculator::new(forecast_builder, restart, max_catch_up, recovery_valid)?;
 
         let performance_history = performance_repository
             .load(planning_name.as_ref())
@@ -69,8 +62,7 @@ impl<F: WorkloadForecastBuilder> FlinkPlanning<F> {
 
     #[tracing::instrument(level = "info", skip(self, decision), fields(%decision))]
     pub async fn update_performance_history(
-        &mut self,
-        decision: &DecisionResult<MetricCatalog>,
+        &mut self, decision: &DecisionResult<MetricCatalog>,
     ) -> Result<(), PlanError> {
         use crate::phases::decision::result::DecisionResult as DR;
 
@@ -96,10 +88,7 @@ impl<F: WorkloadForecastBuilder> FlinkPlanning<F> {
     }
 
     #[tracing::instrument(level = "debug", skip(self, _metrics))]
-    fn handle_do_not_scale_decision(
-        &mut self,
-        _metrics: &MetricCatalog,
-    ) -> Result<Option<ScalePlan>, PlanError> {
+    fn handle_do_not_scale_decision(&mut self, _metrics: &MetricCatalog) -> Result<Option<ScalePlan>, PlanError> {
         tracing::debug!("Decision made not scale cluster up or down.");
         Ok(None)
     }
@@ -110,8 +99,7 @@ impl<F: WorkloadForecastBuilder> FlinkPlanning<F> {
         fields(planning_name=%self.name, %decision),
     )]
     async fn handle_scale_decision(
-        &mut self,
-        decision: DecisionResult<MetricCatalog>,
+        &mut self, decision: DecisionResult<MetricCatalog>,
     ) -> Result<Option<ScalePlan>, PlanError> {
         let plan = if self.forecast_calculator.have_enough_data() {
             let history = &self.performance_history;
@@ -122,9 +110,7 @@ impl<F: WorkloadForecastBuilder> FlinkPlanning<F> {
                 .calculate_target_rate(decision.item().timestamp, buffered_records)?;
             let required_nr_task_managers = history.cluster_size_for_workload(anticipated_workload);
 
-            if let Some(plan) =
-                ScalePlan::new(decision, required_nr_task_managers, self.min_scaling_step)
-            {
+            if let Some(plan) = ScalePlan::new(decision, required_nr_task_managers, self.min_scaling_step) {
                 if let Some(ref mut outlet) = self.outlet {
                     tracing::info!(?plan, "pushing scale plan.");
                     outlet.send(plan.clone()).await?;
@@ -169,10 +155,7 @@ impl<F: WorkloadForecastBuilder> Planning for FlinkPlanning<F> {
     }
 
     #[tracing::instrument(level = "info", skip(self))]
-    async fn handle_decision(
-        &mut self,
-        decision: Self::Decision,
-    ) -> Result<Option<ScalePlan>, PlanError> {
+    async fn handle_decision(&mut self, decision: Self::Decision) -> Result<Option<ScalePlan>, PlanError> {
         self.update_performance_history(&decision).await?;
 
         let plan = if let DecisionResult::NoAction(ref metrics) = decision {
@@ -435,11 +418,12 @@ mod tests {
     use super::*;
     use crate::phases::plan::forecast::*;
     use crate::phases::plan::{
-        make_performance_repository, Benchmark, PerformanceRepositorySettings,
-        PerformanceRepositoryType, MINIMAL_CLUSTER_SIZE,
+        make_performance_repository, Benchmark, PerformanceRepositorySettings, PerformanceRepositoryType,
+        MINIMAL_CLUSTER_SIZE,
     };
     use crate::phases::{ClusterMetrics, FlowMetrics};
     use proctor::elements::telemetry;
+    use proctor::graph;
 
     type TestPlanning = FlinkPlanning<LeastSquaresWorkloadForecastBuilder>;
     #[allow(dead_code)]
@@ -455,18 +439,12 @@ mod tests {
                 input_consumer_lag: 314.15926535897932384264,
                 ..FlowMetrics::default()
             },
-            cluster: ClusterMetrics {
-                nr_task_managers: 4,
-                ..ClusterMetrics::default()
-            },
+            cluster: ClusterMetrics { nr_task_managers: 4, ..ClusterMetrics::default() },
             custom: telemetry::TableType::default(),
         };
-        static ref SCALE_UP: DecisionResult<MetricCatalog> =
-            DecisionResult::ScaleUp(METRICS.clone());
-        static ref SCALE_DOWN: DecisionResult<MetricCatalog> =
-            DecisionResult::ScaleDown(METRICS.clone());
-        static ref NO_SCALE: DecisionResult<MetricCatalog> =
-            DecisionResult::NoAction(METRICS.clone());
+        static ref SCALE_UP: DecisionResult<MetricCatalog> = DecisionResult::ScaleUp(METRICS.clone());
+        static ref SCALE_DOWN: DecisionResult<MetricCatalog> = DecisionResult::ScaleDown(METRICS.clone());
+        static ref NO_SCALE: DecisionResult<MetricCatalog> = DecisionResult::NoAction(METRICS.clone());
     }
 
     enum SignalType {
@@ -475,18 +453,10 @@ mod tests {
     }
 
     async fn setup_planning(
-        planning_name: &str,
-        outlet: Outlet<ScalePlan>,
-        signal_type: SignalType,
+        planning_name: &str, outlet: Outlet<ScalePlan>, signal_type: SignalType,
     ) -> anyhow::Result<Arc<Mutex<TestPlanning>>> {
         let mut calc = ForecastCalculator::new(
-            LeastSquaresWorkloadForecastBuilder::new(
-                20,
-                SpikeSettings {
-                    influence: 0.25,
-                    ..SpikeSettings::default()
-                },
-            ),
+            LeastSquaresWorkloadForecastBuilder::new(20, SpikeSettings { influence: 0.25, ..SpikeSettings::default() }),
             Duration::from_secs(2 * 60),  // restart
             Duration::from_secs(13 * 60), // max_catch_up
             Duration::from_secs(5 * 60),  // valid_offset
@@ -586,7 +556,7 @@ mod tests {
         let _main_span_guard = main_span.enter();
 
         let (probe_tx, mut probe_rx) = mpsc::channel(8);
-        let outlet = Outlet::new("plan outlet");
+        let outlet = Outlet::new("plan outlet", graph::PORT_DATA);
         let mut outlet_2 = outlet.clone();
         block_on(async move { outlet_2.attach("plan_outlet", probe_tx).await });
 
@@ -657,7 +627,7 @@ mod tests {
         let _main_span_guard = main_span.enter();
 
         let (probe_tx, mut probe_rx) = mpsc::channel(8);
-        let outlet = Outlet::new("plan outlet");
+        let outlet = Outlet::new("plan outlet", graph::PORT_DATA);
         let mut outlet_2 = outlet.clone();
         block_on(async move { outlet_2.attach("plan_outlet", probe_tx).await });
 
