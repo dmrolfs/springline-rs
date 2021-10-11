@@ -5,10 +5,13 @@ use chrono::{DateTime, Utc};
 use oso::PolarClass;
 use serde::{Deserialize, Serialize};
 
-use proctor::elements::telemetry;
-use proctor::error::EligibilityError;
+use crate::phases::SpringlineContext;
+use lazy_static::lazy_static;
+use proctor::elements::{telemetry, Telemetry};
+use proctor::error::{EligibilityError, ProctorError};
 use proctor::phases::collection::SubscriptionRequirements;
-use proctor::ProctorContext;
+use proctor::{ProctorContext, SharedString};
+use prometheus::IntGauge;
 
 #[derive(PolarClass, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct EligibilityContext {
@@ -40,6 +43,35 @@ impl ProctorContext for EligibilityContext {
 
     fn custom(&self) -> telemetry::TableType {
         self.custom.clone()
+    }
+}
+
+impl SpringlineContext for EligibilityContext {
+    fn update_context_metrics_for(
+        phase_name: SharedString,
+    ) -> Box<dyn Fn(&str, &Telemetry) -> () + Send + Sync + 'static> {
+        let update_fn = move |subscription_name: &str, telemetry: &Telemetry| match telemetry
+            .clone()
+            .try_into::<EligibilityContext>()
+        {
+            Ok(ctx) => {
+                if let Some(last_failure_ts) = ctx.task_status.last_failure.map(|ts| ts.timestamp()) {
+                    ELIGIBILITY_CTX_TASK_LAST_FAILURE.set(last_failure_ts);
+                }
+
+                ELIGIBILITY_CTX_CLUSTER_IS_DEPLOYING.set(ctx.cluster_status.is_deploying as i64);
+                ELIGIBILITY_CTX_CLUSTER_LAST_DEPLOYMENT.set(ctx.cluster_status.last_deployment.timestamp());
+            }
+
+            Err(err) => {
+                tracing::warn!(
+                    error=?err, %phase_name,
+                    "failed to update eligibility context metrics on subscription: {}", subscription_name
+                );
+                proctor::track_errors(phase_name.as_ref(), &ProctorError::EligibilityError(err.into()));
+            }
+        };
+        Box::new(update_fn)
     }
 }
 
@@ -77,6 +109,24 @@ impl ClusterStatus {
         let boundary = Utc::now() - chrono::Duration::seconds(seconds);
         boundary < self.last_deployment
     }
+}
+
+lazy_static! {
+    pub(crate) static ref ELIGIBILITY_CTX_TASK_LAST_FAILURE: IntGauge = IntGauge::new(
+        "eligibility_ctx_task_last_failure",
+        "UNIX timestamp in seconds of last Flink Task Manager failure in environment",
+    )
+    .expect("failed creating eligibility_ctx_task_last_failure metric");
+    pub(crate) static ref ELIGIBILITY_CTX_CLUSTER_IS_DEPLOYING: IntGauge = IntGauge::new(
+        "eligibility_ctx_cluster_is_deploying",
+        "Is the Flink cluster actively deploying: 1=yes, 0=no"
+    )
+    .expect("failed creating eligibility_ctx_cluster_is_deploying metric");
+    pub(crate) static ref ELIGIBILITY_CTX_CLUSTER_LAST_DEPLOYMENT: IntGauge = IntGauge::new(
+        "eligibility_ctx_cluster_last_deployment",
+        "UNIX timestamp in seconds of last deployment of the Flink cluster"
+    )
+    .expect("failed creating eligibility_ctx_cluster_last_deployment metric");
 }
 
 // /////////////////////////////////////////////////////

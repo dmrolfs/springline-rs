@@ -13,7 +13,7 @@ name = "transcode"
 path = "src/bin/transcode.rs"
 
 [dependencies]
-proctor = { git = "https://github.com/dmrolfs/proctor-rs" }
+proctor = { git = "https://github.com/dmrolfs/proctor-rs", branch = "refactor-subscription-connection" }
 anyhow = "*"
 approx = "*"
 async-trait = "*"
@@ -26,6 +26,7 @@ config = { git = "https://github.com/dmrolfs/config-rs" } # until ron feature an
 #config = { version = "^0.11" }
 dashmap = "*"
 enum-display-derive = "*"
+#fix-hidden-lifetime-bug = "0.2"
 itertools = "*"
 lazy_static = "*"
 maplit = "*"
@@ -34,6 +35,8 @@ num-traits = "*"
 num_cpus = "*"
 oso = "*"
 polar-core = "*"
+prometheus = { version = "0.13", features = ["process"] }
+prometheus-static-metric = "0.5"
 reqwest = { version = "0.11", features = ["json", "multipart"] }
 reqwest-middleware = "*"
 reqwest-retry = "*"

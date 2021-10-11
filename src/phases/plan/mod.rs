@@ -118,7 +118,7 @@ pub async fn make_plan_phase(
 async fn do_connect_plan_data(
     name: SharedString, mut magnet: ClearinghouseSubscriptionMagnet<'_>,
 ) -> Result<SubscriptionChannel<MetricCatalog>> {
-    let subscription = TelemetrySubscription::new(name.as_ref()).with_requirements::<MetricCatalog>();
+    let subscription = TelemetrySubscription::new(name.as_ref()).for_requirements::<MetricCatalog>();
     let channel = SubscriptionChannel::new(name).await?;
     magnet
         .subscribe(subscription, channel.subscription_receiver.clone())

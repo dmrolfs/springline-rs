@@ -4,10 +4,13 @@ use std::fmt::Debug;
 use oso::PolarClass;
 use serde::{Deserialize, Serialize};
 
-use proctor::elements::telemetry;
+use crate::phases::SpringlineContext;
+use lazy_static::lazy_static;
+use proctor::elements::{telemetry, Telemetry};
 use proctor::error::DecisionError;
 use proctor::phases::collection::SubscriptionRequirements;
-use proctor::ProctorContext;
+use proctor::{ProctorContext, SharedString};
+use prometheus::IntGauge;
 
 #[derive(PolarClass, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DecisionContext {
@@ -37,6 +40,42 @@ impl ProctorContext for DecisionContext {
     fn custom(&self) -> telemetry::TableType {
         self.custom.clone()
     }
+}
+
+impl SpringlineContext for DecisionContext {
+    fn update_context_metrics_for(
+        phase_name: SharedString,
+    ) -> Box<dyn Fn(&str, &Telemetry) -> () + Send + Sync + 'static> {
+        let update_fn = move |subscription_name: &str, telemetry: &Telemetry| match telemetry
+            .clone()
+            .try_into::<DecisionContext>()
+        {
+            Ok(ctx) => {
+                DECISION_CTX_ALL_SINKS_HEALTHY.set(ctx.all_sinks_healthy as i64);
+                DECISION_CTX_NR_TASK_MANAGERS.set(ctx.nr_task_managers as i64);
+            }
+
+            Err(err) => {
+                tracing::warn!(error=?err, %phase_name, "failed to update decision context metrics on subscription: {}", subscription_name);
+                proctor::track_errors(
+                    phase_name.as_ref(),
+                    &proctor::error::ProctorError::DecisionError(err.into()),
+                );
+            }
+        };
+
+        Box::new(update_fn)
+    }
+}
+lazy_static! {
+    pub(crate) static ref DECISION_CTX_ALL_SINKS_HEALTHY: IntGauge = IntGauge::new(
+        "decision_ctx_all_sinks_healthy",
+        "Are all sinks for the FLink jobs healthy"
+    )
+    .expect("failed creating decision_ctx_all_sinks_healthy");
+    pub(crate) static ref DECISION_CTX_NR_TASK_MANAGERS: IntGauge =
+        IntGauge::new("decision_ctx_nr_task_managers", "Number of active Flink Task Managers")
+            .expect("failed creating decision_ctx_nr_task_managers");
 }
 
 // /////////////////////////////////////////////////////

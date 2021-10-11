@@ -4,10 +4,13 @@ use std::fmt::Debug;
 use oso::PolarClass;
 use serde::{Deserialize, Serialize};
 
-use proctor::elements::telemetry;
+use crate::phases::SpringlineContext;
+use lazy_static::lazy_static;
+use proctor::elements::{telemetry, Telemetry};
 use proctor::error::GovernanceError;
 use proctor::phases::collection::SubscriptionRequirements;
-use proctor::ProctorContext;
+use proctor::{ProctorContext, SharedString};
+use prometheus::IntGauge;
 
 #[derive(PolarClass, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GovernanceContext {
@@ -41,6 +44,47 @@ impl ProctorContext for GovernanceContext {
     fn custom(&self) -> telemetry::TableType {
         self.custom.clone()
     }
+}
+
+impl SpringlineContext for GovernanceContext {
+    fn update_context_metrics_for(
+        phase_name: SharedString,
+    ) -> Box<dyn Fn(&str, &Telemetry) -> () + Send + Sync + 'static> {
+        let update_fn = move |subscription_name: &str, telemetry: &Telemetry| match telemetry
+            .clone()
+            .try_into::<GovernanceContext>()
+        {
+            Ok(ctx) => {
+                GOVERNANCE_CTX_MIN_CLUSTER_SIZE.set(ctx.min_cluster_size as i64);
+                GOVERNANCE_CTX_MAX_CLUSTER_SIZE.set(ctx.max_cluster_size as i64);
+                GOVERNANCE_CTX_MAX_SCALING_STEP.set(ctx.max_scaling_step as i64);
+            }
+
+            Err(err) => {
+                tracing::warn!(error=?err, %phase_name, "failed to update governance context metrics on subscription: {}", subscription_name);
+                proctor::track_errors(
+                    phase_name.as_ref(),
+                    &proctor::error::ProctorError::GovernanceError(err.into()),
+                );
+            }
+        };
+
+        Box::new(update_fn)
+    }
+}
+
+lazy_static! {
+    pub(crate) static ref GOVERNANCE_CTX_MIN_CLUSTER_SIZE: IntGauge =
+        IntGauge::new("governance_ctx_min_cluster_size", "Minimum cluster size allowed",)
+            .expect("failed creating governance_ctx_min_cluster_size metric");
+    pub(crate) static ref GOVERNANCE_CTX_MAX_CLUSTER_SIZE: IntGauge =
+        IntGauge::new("governance_ctx_max_cluster_size", "Maximum cluster size allowed",)
+            .expect("failed creating governance_ctx_max_cluster_size metric");
+    pub(crate) static ref GOVERNANCE_CTX_MAX_SCALING_STEP: IntGauge = IntGauge::new(
+        "governance_ctx_max_scaling_step",
+        "Maximum change in cluster size allowed.",
+    )
+    .expect("failed creating governance_ctx_max_scaling_step metric");
 }
 
 #[cfg(test)]
