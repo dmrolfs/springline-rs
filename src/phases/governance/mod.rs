@@ -10,7 +10,7 @@ use crate::Result;
 
 pub use context::*;
 pub use policy::*;
-use proctor::elements::PolicySettings;
+use proctor::elements::{PolicySettings, PolicySubscription};
 use proctor::phases::collection::ClearinghouseSubscriptionMagnet;
 use proctor::phases::policy_phase::PolicyPhase;
 use proctor::SharedString;
@@ -25,19 +25,16 @@ pub type GovernancePhase = Box<PolicyPhase<PlanningOutcome, GovernanceOutcome, G
 pub async fn make_governance_phase(
     settings: &PolicySettings, magnet: ClearinghouseSubscriptionMagnet<'_>,
 ) -> Result<GovernancePhase> {
-    let governance_name: SharedString = "governance".into();
-    let governance_policy = GovernancePolicy::new(&settings);
-    let governance = Box::new(
-        PolicyPhase::with_transform(
-            governance_name.clone(),
-            governance_policy,
-            make_governance_transform(governance_name.into_owned()),
-        )
-        .await,
-    );
-    phases::subscribe_policy_phase(&governance, magnet).await?;
+    let name: SharedString = "governance".into();
+    let policy = GovernancePolicy::new(&settings);
+    let subscription = policy.subscription(name.as_ref());
+    let governance =
+        Box::new(PolicyPhase::with_transform(name.clone(), policy, make_governance_transform(name.into_owned())).await);
+
+    phases::subscribe_policy_phase(subscription, &governance, magnet).await?;
     Ok(governance)
 }
+
 // #[tracing::instrument(level = "info")]
 // pub async fn make_governance_phase(
 //     settings: &PolicySettings, clearinghouse_magnet: ClearinghouseSubscriptionMagnet<'_>,

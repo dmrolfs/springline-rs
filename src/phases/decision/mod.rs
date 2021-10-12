@@ -9,7 +9,7 @@ use crate::Result;
 pub use context::*;
 pub use policy::*;
 
-use proctor::elements::PolicySettings;
+use proctor::elements::{PolicySettings, PolicySubscription};
 use proctor::phases::collection::ClearinghouseSubscriptionMagnet;
 use proctor::phases::policy_phase::PolicyPhase;
 use proctor::SharedString;
@@ -25,17 +25,13 @@ pub type DecisionPhase = Box<PolicyPhase<EligibilityOutcome, DecisionOutcome, De
 pub async fn make_decision_phase(
     settings: &PolicySettings, magnet: ClearinghouseSubscriptionMagnet<'_>,
 ) -> Result<DecisionPhase> {
-    let decision_name: SharedString = "decision".into();
-    let decision_policy = DecisionPolicy::new(&settings);
-    let decision = Box::new(
-        PolicyPhase::with_transform(
-            decision_name.clone(),
-            decision_policy,
-            make_decision_transform(decision_name.into_owned()),
-        )
-        .await,
-    );
-    phases::subscribe_policy_phase(&decision, magnet).await?;
+    let name: SharedString = "decision".into();
+    let policy = DecisionPolicy::new(&settings);
+    let subscription = policy.subscription(name.as_ref());
+    let decision =
+        Box::new(PolicyPhase::with_transform(name.clone(), policy, make_decision_transform(name.into_owned())).await);
+
+    phases::subscribe_policy_phase(subscription, &decision, magnet).await?;
     Ok(decision)
 }
 

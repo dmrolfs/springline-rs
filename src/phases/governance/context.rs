@@ -4,7 +4,7 @@ use std::fmt::Debug;
 use oso::PolarClass;
 use serde::{Deserialize, Serialize};
 
-use crate::phases::SpringlineContext;
+use crate::phases::UpdateMetrics;
 use lazy_static::lazy_static;
 use proctor::elements::{telemetry, Telemetry};
 use proctor::error::GovernanceError;
@@ -46,10 +46,8 @@ impl ProctorContext for GovernanceContext {
     }
 }
 
-impl SpringlineContext for GovernanceContext {
-    fn update_context_metrics_for(
-        phase_name: SharedString,
-    ) -> Box<dyn Fn(&str, &Telemetry) -> () + Send + Sync + 'static> {
+impl UpdateMetrics for GovernanceContext {
+    fn update_metrics_for(phase_name: SharedString) -> Box<dyn Fn(&str, &Telemetry) -> () + Send + Sync + 'static> {
         let update_fn = move |subscription_name: &str, telemetry: &Telemetry| match telemetry
             .clone()
             .try_into::<GovernanceContext>()

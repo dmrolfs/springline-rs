@@ -2,7 +2,6 @@ use crate::Result;
 // use fix_hidden_lifetime_bug;
 pub use metric_catalog::*;
 use proctor::elements::Telemetry;
-use proctor::graph::stage::Stage;
 use proctor::graph::{Connect, SourceShape};
 use proctor::phases::collection::{ClearinghouseSubscriptionMagnet, SubscriptionChannel, TelemetrySubscription};
 use proctor::phases::policy_phase::PolicyPhase;
@@ -16,30 +15,23 @@ pub mod governance;
 pub mod metric_catalog;
 pub mod plan;
 
-pub trait SpringlineContext: ProctorContext {
-    fn update_context_metrics_for(
-        phase_name: SharedString,
-    ) -> Box<dyn Fn(&str, &Telemetry) -> () + Send + Sync + 'static>;
+pub trait UpdateMetrics {
+    fn update_metrics_for(name: SharedString) -> Box<dyn Fn(&str, &Telemetry) -> () + Send + Sync + 'static>;
 }
 
 // #[fix_hidden_lifetime_bug]
 #[tracing::instrument(level = "info")]
 pub async fn subscribe_policy_phase<In, Out, C>(
-    phase: &Box<PolicyPhase<In, Out, C>>, magnet: ClearinghouseSubscriptionMagnet<'_>,
+    subscription: TelemetrySubscription, phase: &Box<PolicyPhase<In, Out, C>>,
+    magnet: ClearinghouseSubscriptionMagnet<'_>,
 ) -> Result<()>
 where
     In: AppData + oso::ToPolar,
     Out: AppData,
-    C: SpringlineContext,
+    C: ProctorContext,
 {
-    let phase_name: SharedString = phase.name().to_string().into();
-    let subscription = TelemetrySubscription::new(phase_name.as_ref())
-        .for_requirements::<C>()
-        .with_update_metrics_fn(C::update_context_metrics_for(phase_name));
-
     let context_channel = SubscriptionChannel::connect_subscription(subscription, magnet).await?;
     (context_channel.outlet(), phase.context_inlet()).connect().await;
-
     Ok(())
 }
 

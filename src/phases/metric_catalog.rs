@@ -8,9 +8,13 @@ use chrono::{DateTime, Utc};
 use oso::PolarClass;
 use serde::{Deserialize, Serialize};
 
-use proctor::elements::{telemetry, TelemetryValue, Timestamp};
-use proctor::error::TelemetryError;
+use crate::phases::UpdateMetrics;
+use lazy_static::lazy_static;
+use proctor::elements::{telemetry, Telemetry, TelemetryValue, Timestamp};
+use proctor::error::{ProctorError, TelemetryError};
 use proctor::phases::collection::SubscriptionRequirements;
+use proctor::SharedString;
+use prometheus::{Gauge, IntGauge};
 
 // #[serde_as]
 #[derive(PolarClass, Debug, PartialEq, Clone, Serialize, Deserialize)]
@@ -139,6 +143,73 @@ impl SubscriptionRequirements for MetricCatalog {
             "network_io_utilization".into(),
         }
     }
+}
+
+impl UpdateMetrics for MetricCatalog {
+    fn update_metrics_for(name: SharedString) -> Box<dyn Fn(&str, &Telemetry) -> () + Send + Sync + 'static> {
+        let update_fn =
+            move |subscription_name: &str, telemetry: &Telemetry| match telemetry.clone().try_into::<MetricCatalog>() {
+                Ok(catalog) => {
+                    METRIC_CATALOG_TIMESTAMP.set(catalog.timestamp.as_secs());
+
+                    METRIC_CATALOG_FLOW_RECORDS_IN_PER_SEC.set(catalog.flow.records_in_per_sec);
+                    METRIC_CATALOG_FLOW_RECORDS_OUT_PER_SEC.set(catalog.flow.records_out_per_sec);
+                    METRIC_CATALOG_FLOW_INPUT_CONSUMER_LAG.set(catalog.flow.input_consumer_lag);
+
+                    METRIC_CATALOG_CLUSTER_NR_TASK_MANAGERS.set(catalog.cluster.nr_task_managers as i64);
+                    METRIC_CATALOG_CLUSTER_TASK_CPU_LOAD.set(catalog.cluster.task_cpu_load);
+                    METRIC_CATALOG_CLUSTER_NETWORK_IO_UTILIZATION.set(catalog.cluster.network_io_utilization);
+                }
+
+                Err(err) => {
+                    tracing::warn!(
+                        error=?err, phase_name=%name,
+                        "failed to update data collection metrics on subscription: {}", subscription_name
+                    );
+                    proctor::track_errors(name.as_ref(), &ProctorError::CollectionError(err.into()));
+                }
+            };
+
+        Box::new(update_fn)
+    }
+}
+
+lazy_static! {
+    pub(crate) static ref METRIC_CATALOG_TIMESTAMP: IntGauge = IntGauge::new(
+        "metric_catalog_timestamp",
+        "UNIX timestamp in seconds of last operational reading"
+    )
+    .expect("failed creating metric_catalog_timestamp metric");
+    pub(crate) static ref METRIC_CATALOG_FLOW_RECORDS_IN_PER_SEC: Gauge = Gauge::new(
+        "metric_catalog_flow_records_in_per_sec",
+        "Current records ingress per second"
+    )
+    .expect("failed creating metric_catalog_flow_records_in_per_sec metric");
+    pub(crate) static ref METRIC_CATALOG_FLOW_RECORDS_OUT_PER_SEC: Gauge = Gauge::new(
+        "metric_catalog_flow_records_out_per_sec",
+        "Current records egress per second"
+    )
+    .expect("failed creating metric_catalog_flow_records_out_per_sec metric");
+    pub(crate) static ref METRIC_CATALOG_FLOW_INPUT_CONSUMER_LAG: Gauge = Gauge::new(
+        "metric_catalog_flow_input_consumer_lag",
+        "Current lag in handling messages from the ingress topic"
+    )
+    .expect("failed creating metric_catalog_flow_input_consumer_lag metric");
+    pub(crate) static ref METRIC_CATALOG_CLUSTER_NR_TASK_MANAGERS: IntGauge = IntGauge::new(
+        "metric_catalog_cluster_nr_task_managers",
+        "Number of active task managers in the cluster"
+    )
+    .expect("failed creating metric_catalog_cluster_nr_task_managers metric");
+    pub(crate) static ref METRIC_CATALOG_CLUSTER_TASK_CPU_LOAD: Gauge = Gauge::new(
+        "metric_catalog_cluster_task_cpu_load",
+        "Current CPU load experienced by the cluster task managers"
+    )
+    .expect("failed creating metric_catalog_records_out_per_sec metric");
+    pub(crate) static ref METRIC_CATALOG_CLUSTER_NETWORK_IO_UTILIZATION: Gauge = Gauge::new(
+        "metric_catalog_cluster_network_io_utilization",
+        "Current network IO utilization by the cluster"
+    )
+    .expect("failed creating metric_catalog_cluster_network_io_utilization metric");
 }
 
 // /////////////////////////////////////////////////////

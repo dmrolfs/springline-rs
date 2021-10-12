@@ -5,7 +5,7 @@ use chrono::{DateTime, Utc};
 use oso::PolarClass;
 use serde::{Deserialize, Serialize};
 
-use crate::phases::SpringlineContext;
+use crate::phases::UpdateMetrics;
 use lazy_static::lazy_static;
 use proctor::elements::{telemetry, Telemetry};
 use proctor::error::{EligibilityError, ProctorError};
@@ -46,10 +46,8 @@ impl ProctorContext for EligibilityContext {
     }
 }
 
-impl SpringlineContext for EligibilityContext {
-    fn update_context_metrics_for(
-        phase_name: SharedString,
-    ) -> Box<dyn Fn(&str, &Telemetry) -> () + Send + Sync + 'static> {
+impl UpdateMetrics for EligibilityContext {
+    fn update_metrics_for(phase_name: SharedString) -> Box<dyn Fn(&str, &Telemetry) -> () + Send + Sync + 'static> {
         let update_fn = move |subscription_name: &str, telemetry: &Telemetry| match telemetry
             .clone()
             .try_into::<EligibilityContext>()
@@ -71,6 +69,7 @@ impl SpringlineContext for EligibilityContext {
                 proctor::track_errors(phase_name.as_ref(), &ProctorError::EligibilityError(err.into()));
             }
         };
+
         Box::new(update_fn)
     }
 }

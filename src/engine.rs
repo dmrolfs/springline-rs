@@ -1,9 +1,8 @@
-use crate::phases::collection;
 use crate::phases::decision::{self, DecisionMonitor};
 use crate::phases::eligibility::{self, EligibilityMonitor};
-use crate::phases::execution;
 use crate::phases::governance::{self, GovernanceMonitor};
 use crate::phases::plan::{self, PlanningStrategy};
+use crate::phases::{collection, execution, MetricCatalog, UpdateMetrics};
 use crate::settings::Settings;
 use crate::Result;
 use cast_trait_object::DynCastExt;
@@ -53,7 +52,11 @@ impl AutoscaleEngine {
 
         let execution = execution::make_execution_phase(&settings.execution).await?;
 
-        let collection = collection_builder.build_for_out().await?;
+        let collection = collection_builder
+            .build_for_out_w_metrics(
+                MetricCatalog::update_metrics_for("collection".into()), //todo: expose phase name from CollectBuilder
+            )
+            .await?;
         let tx_clearinghouse_api = collection.tx_api();
 
         (collection.outlet(), eligibility.inlet()).connect().await;

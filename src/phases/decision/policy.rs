@@ -3,9 +3,10 @@ use serde::{Deserialize, Serialize};
 
 use super::context::DecisionContext;
 use crate::phases::decision::result::DECISION_BINDING;
-use crate::phases::MetricCatalog;
+use crate::phases::{MetricCatalog, UpdateMetrics};
 use proctor::elements::{PolicySettings, PolicySource, PolicySubscription, QueryPolicy, QueryResult, Telemetry};
 use proctor::error::PolicyError;
+use proctor::phases::collection::TelemetrySubscription;
 use proctor::ProctorContext;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -19,6 +20,11 @@ impl DecisionPolicy {
 
 impl PolicySubscription for DecisionPolicy {
     type Requirements = DecisionContext;
+
+    fn do_extend_subscription(&self, subscription: TelemetrySubscription) -> TelemetrySubscription {
+        let update_fn = Self::Requirements::update_metrics_for(subscription.name());
+        subscription.with_update_metrics_fn(update_fn)
+    }
 }
 
 impl QueryPolicy for DecisionPolicy {

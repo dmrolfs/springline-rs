@@ -2,7 +2,7 @@ use crate::phases::{self, MetricCatalog};
 use crate::Result;
 use context::EligibilityContext;
 use policy::EligibilityPolicy;
-use proctor::elements::PolicySettings;
+use proctor::elements::{PolicySettings, PolicySubscription};
 use proctor::phases::collection::ClearinghouseSubscriptionMagnet;
 use proctor::phases::policy_phase::PolicyPhase;
 use proctor::SharedString;
@@ -19,10 +19,12 @@ pub type EligibilityPhase = Box<PolicyPhase<MetricCatalog, EligibilityOutcome, E
 pub async fn make_eligibility_phase(
     settings: &PolicySettings, magnet: ClearinghouseSubscriptionMagnet<'_>,
 ) -> Result<EligibilityPhase> {
-    let eligibility_name: SharedString = "eligibility".into();
-    let eligibility_policy = EligibilityPolicy::new(&settings);
-    let eligibility = Box::new(PolicyPhase::strip_policy_outcome(eligibility_name.as_ref(), eligibility_policy).await);
-    phases::subscribe_policy_phase(&eligibility, magnet).await?;
+    let name: SharedString = "eligibility".into();
+    let policy = EligibilityPolicy::new(&settings);
+    let subscription = policy.subscription(name.as_ref());
+    let eligibility = Box::new(PolicyPhase::strip_policy_outcome(name.as_ref(), policy).await);
+
+    phases::subscribe_policy_phase(subscription, &eligibility, magnet).await?;
     Ok(eligibility)
 }
 

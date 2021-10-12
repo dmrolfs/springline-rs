@@ -3,8 +3,10 @@ use serde::{Deserialize, Serialize};
 
 use super::context::GovernanceContext;
 use crate::phases::plan::ScalePlan;
+use crate::phases::UpdateMetrics;
 use proctor::elements::{PolicySettings, PolicySource, PolicySubscription, QueryPolicy, QueryResult, Telemetry};
 use proctor::error::PolicyError;
+use proctor::phases::collection::TelemetrySubscription;
 use proctor::ProctorContext;
 
 pub const ADJUSTED_TARGET: &'static str = "adjusted_target";
@@ -85,6 +87,11 @@ impl GovernancePolicy {
 
 impl PolicySubscription for GovernancePolicy {
     type Requirements = GovernanceContext;
+
+    fn do_extend_subscription(&self, subscription: TelemetrySubscription) -> TelemetrySubscription {
+        let update_fn = Self::Requirements::update_metrics_for(subscription.name());
+        subscription.with_update_metrics_fn(update_fn)
+    }
 }
 
 impl QueryPolicy for GovernancePolicy {
