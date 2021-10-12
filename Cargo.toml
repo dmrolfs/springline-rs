@@ -13,7 +13,7 @@ name = "transcode"
 path = "src/bin/transcode.rs"
 
 [dependencies]
-proctor = { git = "https://github.com/dmrolfs/proctor-rs", branch = "refactor-subscription-connection" }
+proctor = { git = "https://github.com/dmrolfs/proctor-rs", branch = "main" }
 anyhow = "*"
 approx = "*"
 async-trait = "*"

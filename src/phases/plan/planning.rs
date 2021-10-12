@@ -158,8 +158,8 @@ impl<F: WorkloadForecastBuilder> Planning for FlinkPlanning<F> {
     async fn handle_decision(&mut self, decision: Self::Decision) -> Result<Option<ScalePlan>, PlanError> {
         self.update_performance_history(&decision).await?;
 
-        let plan = if let DecisionResult::NoAction(ref metrics) = decision {
-            self.handle_do_not_scale_decision(metrics)?
+        let plan = if let DecisionResult::NoAction(ref catalog) = decision {
+            self.handle_do_not_scale_decision(catalog)?
         } else {
             self.handle_scale_decision(decision).await?
         };

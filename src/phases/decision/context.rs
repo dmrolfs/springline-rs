@@ -65,6 +65,7 @@ impl UpdateMetrics for DecisionContext {
         Box::new(update_fn)
     }
 }
+
 lazy_static! {
     pub(crate) static ref DECISION_CTX_ALL_SINKS_HEALTHY: IntGauge = IntGauge::new(
         "decision_ctx_all_sinks_healthy",

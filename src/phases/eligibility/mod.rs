@@ -2,7 +2,7 @@ use crate::phases::{self, MetricCatalog};
 use crate::Result;
 use context::EligibilityContext;
 use policy::EligibilityPolicy;
-use proctor::elements::{PolicySettings, PolicySubscription};
+use proctor::elements::{PolicyFilterEvent, PolicySettings, PolicySubscription};
 use proctor::phases::collection::ClearinghouseSubscriptionMagnet;
 use proctor::phases::policy_phase::PolicyPhase;
 use proctor::SharedString;
@@ -14,6 +14,7 @@ pub type EligibilityOutcome = MetricCatalog;
 pub type EligibilityApi = proctor::elements::PolicyFilterApi<EligibilityContext>;
 pub type EligibilityMonitor = proctor::elements::PolicyFilterMonitor<MetricCatalog, EligibilityContext>;
 pub type EligibilityPhase = Box<PolicyPhase<MetricCatalog, EligibilityOutcome, EligibilityContext>>;
+pub type EligibilityEvent = PolicyFilterEvent<MetricCatalog, EligibilityContext>;
 
 #[tracing::instrument(level = "info")]
 pub async fn make_eligibility_phase(

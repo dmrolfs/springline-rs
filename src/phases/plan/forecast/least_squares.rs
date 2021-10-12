@@ -150,11 +150,11 @@ impl LeastSquaresWorkloadForecastBuilder {
                 _ => Box::new(linear),
             };
 
-            tracing::debug!(%linear_r, %quadratic_r, "selected workload prediction model: {}", model.name());
+            tracing::debug!(%linear_r, %quadratic_r, "selected workload prediction model.rs: {}", model.name());
             model
         } else {
             tracing::debug!(
-                "failed to calculate the quadratic model due to a matrix decomposition issue - using linear model."
+                "failed to calculate the quadratic model.rs due to a matrix decomposition issue - using linear model.rs."
             );
             Box::new(linear)
         }
@@ -192,8 +192,8 @@ impl std::ops::Add<WorkloadMeasurement> for LeastSquaresWorkloadForecastBuilder 
 //     }
 //
 //     let data = self.data_slice();
-//     let model = Self::do_select_model(data)?;
-//     let prediction = model.workload_at(timestamp);
+//     let model.rs = Self::do_select_model(data)?;
+//     let prediction = model.rs.workload_at(timestamp);
 //
 //     tracing::debug!(?prediction, "workload[{}] =  {:?}", timestamp, prediction);
 //     Ok(prediction?)
@@ -202,8 +202,8 @@ impl std::ops::Add<WorkloadMeasurement> for LeastSquaresWorkloadForecastBuilder 
 // #[tracing::instrument(level = "debug", skip(self))]
 // fn total_records_between(&self, start: TimestampSeconds, end: TimestampSeconds) -> Result<f64,
 // PlanError> {     let data = self.data_slice();
-//     let model = Self::do_select_model(data)?;
-//     let total_events = model.total_records_within(start, end)?;
+//     let model.rs = Self::do_select_model(data)?;
+//     let total_events = model.rs.total_records_within(start, end)?;
 //     tracing::debug!("total events between within [{}, {}] = {}", start, end, total_events);
 //     Ok(total_events)
 // }
@@ -217,8 +217,8 @@ impl std::ops::Add<WorkloadMeasurement> for LeastSquaresWorkloadForecastBuilder 
 //
 // let data = self.data_slice();
 // let prediction = if let Some(next_timestamp) = Self::estimate_next_timestamp(data) {
-//     let model = Self::do_select_model(data)?;
-//     model.workload_at(next_timestamp.into())
+//     let model.rs = Self::do_select_model(data)?;
+//     model.rs.workload_at(next_timestamp.into())
 // } else {
 //     Ok(Workload::NotEnoughData)
 // };
@@ -231,8 +231,8 @@ impl std::ops::Add<WorkloadMeasurement> for LeastSquaresWorkloadForecastBuilder 
 // impl LeastSquaresWorkloadForecast {
 //     fn do_predict_workload(data: &[Point]) -> Result<Workload, PlanError> {
 //         if let Some(next_timestamp) = Self::estimate_next_timestamp(&data) {
-//             let model = Self::do_select_model(&data)?;
-//             model.workload_at(next_timestamp.into())
+//             let model.rs = Self::do_select_model(&data)?;
+//             model.rs.workload_at(next_timestamp.into())
 //         } else {
 //             Ok(Workload::NotEnoughData)
 //         }

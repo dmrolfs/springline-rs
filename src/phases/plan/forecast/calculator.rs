@@ -74,7 +74,7 @@ impl<F: WorkloadForecastBuilder> ForecastCalculator<F> {
         tracing::debug!( recovery=?recovery.as_utc(), valid=?valid.as_utc(), "cluster scaling timestamp markers estimated." );
 
         let forecast = self.forecast_builder.build_forecast()?;
-        tracing::debug!(?forecast, "workload forecast model calculated.");
+        tracing::debug!(?forecast, "workload forecast model.rs calculated.");
 
         let total_records = self.total_records_between(&forecast, trigger, recovery)? + buffered_records;
         tracing::debug!(total_records_at_valid_time=%total_records, "estimated total records to process before valid time");

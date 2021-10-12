@@ -18,6 +18,7 @@ use result::{make_decision_transform, DecisionResult};
 pub type DecisionOutcome = DecisionResult<MetricCatalog>;
 pub type DecisionApi = proctor::elements::PolicyFilterApi<DecisionContext>;
 pub type DecisionMonitor = proctor::elements::PolicyFilterMonitor<MetricCatalog, DecisionContext>;
+pub type DecisionEvent = proctor::elements::PolicyFilterEvent<MetricCatalog, DecisionContext>;
 
 pub type DecisionPhase = Box<PolicyPhase<EligibilityOutcome, DecisionOutcome, DecisionContext>>;
 

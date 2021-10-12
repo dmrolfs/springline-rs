@@ -10,7 +10,7 @@ use crate::Result;
 
 pub use context::*;
 pub use policy::*;
-use proctor::elements::{PolicySettings, PolicySubscription};
+use proctor::elements::{PolicyFilterEvent, PolicySettings, PolicySubscription};
 use proctor::phases::collection::ClearinghouseSubscriptionMagnet;
 use proctor::phases::policy_phase::PolicyPhase;
 use proctor::SharedString;
@@ -20,6 +20,7 @@ pub type GovernanceOutcome = PlanningOutcome;
 pub type GovernanceApi = proctor::elements::PolicyFilterApi<GovernanceContext>;
 pub type GovernanceMonitor = proctor::elements::PolicyFilterMonitor<ScalePlan, GovernanceContext>;
 pub type GovernancePhase = Box<PolicyPhase<PlanningOutcome, GovernanceOutcome, GovernanceContext>>;
+pub type GovernanceEvent = PolicyFilterEvent<PlanningOutcome, GovernanceContext>;
 
 #[tracing::instrument(level = "info")]
 pub async fn make_governance_phase(

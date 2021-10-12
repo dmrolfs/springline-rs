@@ -271,7 +271,7 @@ async fn test_decision_carry_policy_result() -> anyhow::Result<()> {
     tracing::warn!(?item, "DMR-A.1: created item to push.");
     flow.push_telemetry(item).await?;
     let event = flow.recv_policy_event().await?;
-    claim::assert_matches!(event, elements::PolicyFilterEvent::ItemPassed);
+    claim::assert_matches!(event, elements::PolicyFilterEvent::ItemPassed(_));
     tracing::info!("DMR-waiting for item to reach sink...");
     assert!(
         flow.check_sink_accumulation("first", Duration::from_millis(250), |acc| acc.len() == 1)
@@ -384,7 +384,7 @@ async fn test_decision_common() -> anyhow::Result<()> {
 
     flow.push_telemetry(item).await?;
     let event = flow.recv_policy_event().await?;
-    claim::assert_matches!(event, elements::PolicyFilterEvent::ItemPassed);
+    claim::assert_matches!(event, elements::PolicyFilterEvent::ItemPassed(_));
     tracing::info!("DMR-waiting for *first* item to reach sink...");
     assert!(
         flow.check_sink_accumulation("first", Duration::from_millis(500), |acc| acc.len() == 1)

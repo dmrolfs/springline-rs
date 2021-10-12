@@ -1,32 +1,24 @@
-use crate::phases::decision::{self, DecisionMonitor};
-use crate::phases::eligibility::{self, EligibilityMonitor};
-use crate::phases::governance::{self, GovernanceMonitor};
-use crate::phases::plan::{self, PlanningStrategy};
-use crate::phases::{collection, execution, MetricCatalog, UpdateMetrics};
+mod monitor;
+
+use crate::phases::{collection, decision, eligibility, execution, governance, plan};
+use crate::phases::{MetricCatalog, UpdateMetrics};
 use crate::settings::Settings;
 use crate::Result;
 use cast_trait_object::DynCastExt;
+use monitor::Monitor;
 use proctor::elements::Telemetry;
 use proctor::graph::stage::{self, ActorSourceApi, WithApi, WithMonitor};
 use proctor::graph::{Connect, Graph, SinkShape, SourceShape};
 use proctor::phases::collection::ClearinghouseApi;
-use proctor::phases::plan::PlanMonitor;
 use proctor::ProctorResult;
 use tokio::task::JoinHandle;
-
-struct Monitor {
-    rx_eligibility_monitor: EligibilityMonitor,
-    rx_decision_monitor: DecisionMonitor,
-    rx_plan_monitor: PlanMonitor<PlanningStrategy>,
-    rx_governance_monitor: GovernanceMonitor,
-}
 
 //todo: type with Quiescent/Ready status... offer run() in Quiescent; ???
 pub struct AutoscaleEngine {
     tx_telemetry_source_api: ActorSourceApi<Telemetry>,
     tx_clearinghouse_api: ClearinghouseApi,
     pub graph_handle: JoinHandle<ProctorResult<()>>,
-    monitor: Monitor,
+    pub monitor_handle: JoinHandle<()>,
 }
 
 impl AutoscaleEngine {
@@ -75,16 +67,19 @@ impl AutoscaleEngine {
 
         let graph_handle = tokio::spawn(async { g.run().await });
 
+        let monitor = Monitor::new(
+            rx_eligibility_monitor,
+            rx_decision_monitor,
+            rx_plan_monitor,
+            rx_governance_monitor,
+        );
+        let monitor_handle = tokio::spawn(async { monitor.run().await });
+
         Ok(Self {
             tx_telemetry_source_api,
             tx_clearinghouse_api,
             graph_handle,
-            monitor: Monitor {
-                rx_eligibility_monitor,
-                rx_decision_monitor,
-                rx_plan_monitor,
-                rx_governance_monitor,
-            },
+            monitor_handle,
         })
     }
 }
