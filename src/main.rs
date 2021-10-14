@@ -1,7 +1,7 @@
 use clap::Clap;
 use proctor::tracing::{get_subscriber, init_subscriber};
 use settings_loader::SettingsLoader;
-use springline::engine::AutoscaleEngine;
+use springline::engine::Autoscaler;
 use springline::settings::{CliOptions, Settings};
 use springline::Result;
 use std::future::Future;
@@ -18,8 +18,12 @@ fn main() -> Result<()> {
 
     //todo assemble and start pipeline in entry
     start_pipeline(async move {
-        let engine = AutoscaleEngine::new(settings).await?;
-        engine.graph_handle.await??;
+        Autoscaler::builder("springline")
+            .finish(settings)
+            .await?
+            .run()
+            .block_for_completion()
+            .await?;
         Ok(())
     })
 }
