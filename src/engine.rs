@@ -1,4 +1,4 @@
-mod monitor;
+pub mod monitor;
 
 use crate::phases::governance::{self, GovernanceOutcome};
 use crate::phases::{collection, decision, eligibility, execution, plan};
@@ -12,11 +12,12 @@ use proctor::graph::stage::{SinkStage, SourceStage, WithApi, WithMonitor};
 use proctor::graph::{Connect, Graph, SinkShape, SourceShape};
 use proctor::phases::collection::ClearinghouseApi;
 use proctor::{ProctorResult, SharedString};
+use prometheus::Registry;
 use tokio::task::JoinHandle;
 
 pub struct Autoscaler;
 impl Autoscaler {
-    pub fn builder(name: impl Into<SharedString>) -> AutoscaleEngine<Building> {
+    pub fn builder<'r>(name: impl Into<SharedString>) -> AutoscaleEngine<Building<'r>> {
         AutoscaleEngine::default().with_name(name)
     }
 }
@@ -26,7 +27,7 @@ pub struct AutoscaleEngine<S: EngineState> {
     inner: S,
 }
 
-impl Default for AutoscaleEngine<Building> {
+impl<'r> Default for AutoscaleEngine<Building<'r>> {
     fn default() -> Self {
         Self { inner: Building::default() }
     }
@@ -36,12 +37,13 @@ impl Default for AutoscaleEngine<Building> {
 pub trait EngineState {}
 
 #[derive(Debug, Default)]
-pub struct Building {
+pub struct Building<'r> {
     name: SharedString,
     sources: Vec<Box<dyn SourceStage<Telemetry>>>,
     execution: Option<Box<dyn SinkStage<GovernanceOutcome>>>,
+    metrics_registry: Option<&'r Registry>,
 }
-impl EngineState for Building {}
+impl<'r> EngineState for Building<'r> {}
 
 #[derive(Debug)]
 pub struct Ready {
@@ -61,7 +63,7 @@ pub struct Running {
 }
 impl EngineState for Running {}
 
-impl AutoscaleEngine<Building> {
+impl<'r> AutoscaleEngine<Building<'r>> {
     pub fn with_name(self, name: impl Into<SharedString>) -> Self {
         Self {
             inner: Building { name: name.into(), ..self.inner },
@@ -90,8 +92,22 @@ impl AutoscaleEngine<Building> {
         self
     }
 
+    pub fn with_metrics_registry<'a>(self, registry: &'a Registry) -> Self
+    where
+        'a: 'r,
+    {
+        tracing::info!(?registry, "added metrics registry to autoscale engine.");
+        Self {
+            inner: Building { metrics_registry: Some(registry), ..self.inner },
+        }
+    }
+
     #[tracing::instrument(level = "info")]
     pub async fn finish(self, settings: Settings) -> Result<AutoscaleEngine<Ready>> {
+        if let Some(registry) = self.inner.metrics_registry {
+            crate::metrics::register_metrics(registry)?;
+        }
+
         let mut collection_builder =
             collection::make_collection_phase(&settings.collection, self.inner.sources).await?;
 

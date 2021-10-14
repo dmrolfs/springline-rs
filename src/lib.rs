@@ -4,6 +4,7 @@ extern crate enum_display_derive;
 // extern crate fix_hidden_lifetime_bug;
 
 pub mod engine;
+pub mod metrics;
 pub mod phases;
 pub mod settings;
 

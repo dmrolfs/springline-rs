@@ -134,18 +134,16 @@ lazy_static! {
         "Should plan for scaling the cluster"
     )
     .expect("failed creating decision_should_plan_for_scaling metric");
-    pub(crate) static ref DECISION_SCALING_DECISION_COUNT: ScalingDecisionsCount = {
-        let counter_vec = IntCounterVec::new(
-            Opts::new(
-                "decision_scaling_decision_count",
-                "Count of decisions for scaling planning made.",
-            ),
-            &["decision"],
-        )
-        .expect("failed creating decision_scaling_decision_count metric");
-
-        ScalingDecisionsCount::from(&counter_vec)
-    };
+    pub(crate) static ref DECISION_SCALING_DECISION_COUNT_METRIC: IntCounterVec = IntCounterVec::new(
+        Opts::new(
+            "decision_scaling_decision_count",
+            "Count of decisions for scaling planning made.",
+        ),
+        &["decision"],
+    )
+    .expect("failed creating decision_scaling_decision_count metric");
+    pub(crate) static ref DECISION_SCALING_DECISION_COUNT: ScalingDecisionsCount =
+        ScalingDecisionsCount::from(&DECISION_SCALING_DECISION_COUNT_METRIC);
     pub(crate) static ref PLAN_OBSERVATION_COUNT: IntCounter =
         IntCounter::new("plan_observation_count", "Number of observations made for planning.")
             .expect("failed creating plan_observation_count metric");
