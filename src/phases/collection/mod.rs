@@ -1,6 +1,7 @@
 use crate::phases::MetricCatalog;
 use crate::settings::CollectionSettings;
 use crate::Result;
+use pretty_snowflake::MachineNode;
 use proctor::elements::Telemetry;
 use proctor::graph::stage::SourceStage;
 use proctor::phases::collection::builder::CollectBuilder;
@@ -12,10 +13,11 @@ pub mod flink_metrics_source;
 #[tracing::instrument(level = "info", skip(settings, auxiliary_sources))]
 pub async fn make_collection_phase(
     settings: &CollectionSettings, auxiliary_sources: Vec<Box<dyn SourceStage<Telemetry>>>,
+    machine_node: MachineNode,
 ) -> Result<CollectBuilder<MetricCatalog>> {
     let name = "collection";
     let sources = do_make_telemetry_sources(&settings.sources, auxiliary_sources).await?;
-    Ok(Collect::builder(name, sources))
+    Ok(Collect::builder(name, sources, machine_node))
 }
 
 #[tracing::instrument(level = "info", skip())]

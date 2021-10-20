@@ -10,9 +10,9 @@ lazy_static! {
     pub static ref DT_1_TS: i64 = DT_1.timestamp();
 }
 
-pub fn make_test_item(timestamp: &DateTime<Utc>, records_in_per_sec: f64, inbox_lag: f64) -> Telemetry {
+pub fn make_test_item(_timestamp: &DateTime<Utc>, records_in_per_sec: f64, inbox_lag: f64) -> Telemetry {
     let item = maplit::hashmap! {
-        "timestamp".to_string() => Timestamp::from_datetime(&timestamp).into(),
+        // "timestamp".to_string() => Timestamp::from_datetime(&timestamp).into(),
         "records_in_per_sec".to_string() => records_in_per_sec.into(),
         "input_consumer_lag".to_string() => inbox_lag.into(),
     }

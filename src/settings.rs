@@ -6,14 +6,18 @@ pub use collection_settings::*;
 pub use execution_settings::*;
 pub use plan_settings::*;
 
-use clap::Clap;
+use clap::Parser;
 use proctor::elements::PolicySettings;
 use serde::{Deserialize, Serialize};
 use settings_loader::{LoadingOptions, SettingsError, SettingsLoader};
 use std::path::PathBuf;
+use config::builder::DefaultState;
+use config::ConfigBuilder;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Settings {
+    pub machine_id: i32,
+    pub node_id: i32,
     pub collection: CollectionSettings,
     pub eligibility: PolicySettings,
     pub decision: PolicySettings,
@@ -26,7 +30,7 @@ impl SettingsLoader for Settings {
     type Options = CliOptions;
 }
 
-#[derive(Clap, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Parser, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[clap(version = "0.1.0", author = "Damon Rolfs")]
 pub struct CliOptions {
     /// override environment-based configuration file to load.
@@ -37,6 +41,16 @@ pub struct CliOptions {
     /// specify path to secrets configuration file
     #[clap(short, long)]
     secrets: Option<String>,
+
+    /// Specify the machine id [0, 31) used in correlation id generation, overriding what may be set
+    /// in an environment variable. This id should be unique for the entity type within a cluster
+    /// environment. Different entity types can use the same machine id.
+    machine_id: Option<i8>,
+
+    /// Specify the node id [0, 31) used in correlation id generation, overriding what may be set
+    /// in an environment variable. This id should be unique for the entity type within a cluster
+    /// environment. Different entity types can use the same machine id.
+    node_id: Option<i8>,
 }
 
 impl LoadingOptions for CliOptions {
@@ -48,6 +62,20 @@ impl LoadingOptions for CliOptions {
 
     fn secrets_path(&self) -> Option<PathBuf> {
         self.secrets.as_ref().map(PathBuf::from)
+    }
+
+    fn load_overrides(self, config: ConfigBuilder<DefaultState>) -> Result<ConfigBuilder<DefaultState>, Self::Error> {
+        let config = match self.machine_id {
+            None => config,
+            Some(machine_id) => config.set_override("machine_id", machine_id as i64)?,
+        };
+
+        let config = match self.node_id {
+            None => config,
+            Some(node_id) => config.set_override("node_id", node_id as i64)?,
+        };
+
+        Ok(config)
     }
 }
 
@@ -165,12 +193,17 @@ mod tests {
             let main_span = tracing::info_span!("test_settings_applications_load");
             let _ = main_span.enter();
 
+            env::set_var("APP__MACHINE_ID", "7");
+            env::set_var("APP__NODE_ID", "3");
+
             // let builder = assert_ok!(Settings::load(Config::builder()));
             // let c = assert_ok!(builder.build());
             // tracing::info!(config=?c, "loaded configuration file");
-            let actual: Settings = assert_ok!(Settings::load(CliOptions { config: None, secrets: None }));
+            let actual: Settings = assert_ok!(Settings::load(CliOptions::default()));
 
             let expected = Settings {
+                node_id: 3,
+                machine_id: 7,
                 collection: CollectionSettings {
                     sources: maplit::hashmap! {
                         "foo".to_string() => SourceSetting::Csv { path: PathBuf::from("./resources/bar.toml"),},

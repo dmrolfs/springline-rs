@@ -19,6 +19,7 @@ use super::fixtures::*;
 use proctor::phases::policy_phase::PolicyPhase;
 use springline::phases::decision::result::{make_decision_transform, DecisionResult, DECISION_BINDING};
 use std::path::PathBuf;
+use pretty_snowflake::MachineNode;
 
 lazy_static::lazy_static! {
     static ref DECISION_PREAMBLE: PolicySource = PolicySource::File(PathBuf::from("./resources/decision_preamble.polar"));
@@ -54,7 +55,11 @@ where
         let ctx_source = stage::ActorSource::<Telemetry>::new("context_source");
         let tx_context_source_api = ctx_source.tx_api();
 
-        let mut builder = Collect::builder("collection", vec![Box::new(telemetry_source), Box::new(ctx_source)]);
+        let mut builder = Collect::builder(
+            "collection",
+            vec![Box::new(telemetry_source), Box::new(ctx_source)],
+            MachineNode::default()
+        );
         let tx_clearinghouse_api = builder.clearinghouse.tx_api();
 
         let context_channel =

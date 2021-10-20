@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::phases::UpdateMetrics;
 use lazy_static::lazy_static;
+use pretty_snowflake::Id;
 use proctor::elements::{telemetry, Telemetry, TelemetryValue, Timestamp};
 use proctor::error::{ProctorError, TelemetryError};
 use proctor::phases::collection::SubscriptionRequirements;
@@ -19,6 +20,8 @@ use prometheus::{Gauge, IntGauge};
 // #[serde_as]
 #[derive(PolarClass, Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct MetricCatalog {
+    pub correlation_id: Id,
+
     #[polar(attribute)]
     pub timestamp: Timestamp,
 
@@ -76,9 +79,21 @@ pub struct ClusterMetrics {
     pub network_io_utilization: f64,
 }
 
+use pretty_snowflake::{AlphabetCodec, IdPrettifier};
+use proctor::IdGenerator;
+use std::sync::Mutex;
+
+lazy_static! {
+    static ref ID_GENERATOR: Mutex<IdGenerator> =
+        Mutex::new(IdGenerator::single_node(IdPrettifier::<AlphabetCodec>::default()));
+}
+
 impl MetricCatalog {
-    pub fn for_timestamp(timestamp: Timestamp, custom: telemetry::TableType) -> Self {
+    pub(crate) fn for_test_with_timestamp(timestamp: Timestamp, custom: telemetry::TableType) -> Self {
+        let generator = &mut ID_GENERATOR.lock().unwrap();
+
         Self {
+            correlation_id: generator.next_id(),
             timestamp,
             flow: FlowMetrics::default(),
             cluster: ClusterMetrics::default(),
@@ -86,8 +101,8 @@ impl MetricCatalog {
         }
     }
 
-    pub fn for_datetime(timestamp: DateTime<Utc>, custom: telemetry::TableType) -> Self {
-        Self::for_timestamp(timestamp.into(), custom)
+    pub(crate) fn for_test_with_datetime(timestamp: DateTime<Utc>, custom: telemetry::TableType) -> Self {
+        Self::for_test_with_timestamp(timestamp.into(), custom)
     }
 
     // todo limited usefulness by itself; keys? iter support for custom and for entire catalog?
@@ -126,8 +141,8 @@ impl Add<&Self> for MetricCatalog {
 impl SubscriptionRequirements for MetricCatalog {
     fn required_fields() -> HashSet<proctor::SharedString> {
         maplit::hashset! {
-            "timestamp".into(),
-
+            // "timestamp".into(),
+            //
             // FlowMetrics
             "records_in_per_sec".into(),
             "records_out_per_sec".into(),
@@ -227,6 +242,7 @@ mod tests {
     use proctor::elements::telemetry::ToTelemetry;
     use proctor::elements::Telemetry;
     use proctor::error::TypeExpectation;
+    use proctor::phases::collection::{SUBSCRIPTION_TIMESTAMP, SUBSCRIPTION_CORRELATION};
 
     #[derive(PartialEq, Debug)]
     struct Bar(String);
@@ -258,7 +274,7 @@ mod tests {
             "otis".to_string() => "Otis".to_telemetry(),
             "bar".to_string() => "Neo".to_telemetry(),
         };
-        let data = MetricCatalog::for_datetime(Utc::now(), cdata);
+        let data = MetricCatalog::for_test_with_datetime(Utc::now(), cdata);
         assert_eq!(data.custom::<i64>("foo").unwrap().unwrap(), 17_i64);
         assert_eq!(data.custom::<f64>("foo").unwrap().unwrap(), 17.0_f64);
         assert_eq!(data.custom::<String>("otis").unwrap().unwrap(), "Otis".to_string());
@@ -270,12 +286,12 @@ mod tests {
     #[test]
     fn test_metric_add() {
         let ts = Utc::now();
-        let data = MetricCatalog::for_datetime(ts.clone(), std::collections::HashMap::default());
+        let data = MetricCatalog::for_test_with_datetime(ts.clone(), std::collections::HashMap::default());
         let am1 = maplit::hashmap! {
             "foo.1".to_string() => "f-1".to_telemetry(),
             "bar.1".to_string() => "b-1".to_telemetry(),
         };
-        let a1 = MetricCatalog::for_datetime(ts.clone(), am1.clone());
+        let a1 = MetricCatalog::for_test_with_datetime(ts.clone(), am1.clone());
         let d1 = data.clone() + a1.clone();
         assert_eq!(d1.custom, am1);
 
@@ -283,18 +299,25 @@ mod tests {
             "foo.2".to_string() => "f-2".to_telemetry(),
             "bar.2".to_string() => "b-2".to_telemetry(),
         };
-        let a2 = MetricCatalog::for_datetime(ts.clone(), am2.clone());
+        let a2 = MetricCatalog::for_test_with_datetime(ts.clone(), am2.clone());
         let d2 = d1.clone() + a2.clone();
         let mut exp2 = am1.clone();
         exp2.extend(am2.clone());
         assert_eq!(d2.custom, exp2);
     }
 
+    lazy_static! {
+        static ref CORR_ID: Id =Id::direct(12, "L");
+        static ref CORR_ID_REP: &'static str = "L";
+    }
+
     #[test]
     fn test_metric_catalog_serde() {
         let ts: Timestamp = Utc.ymd(1988, 5, 30).and_hms(9, 1, 17).into();
         let (ts_secs, ts_nsecs) = ts.as_pair();
+        let corr_id = Id::direct(12, "12");
         let metrics = MetricCatalog {
+            correlation_id: CORR_ID.clone(),
             timestamp: ts,
             flow: FlowMetrics {
                 records_in_per_sec: 17.,
@@ -319,7 +342,14 @@ mod tests {
             &metrics,
             &vec![
                 Token::Map { len: None },
-                Token::Str("timestamp"),
+                Token::Str(SUBSCRIPTION_CORRELATION),
+                Token::Struct { name: "Id", len: 2 },
+                Token::Str("snowflake"),
+                Token::I64(CORR_ID.clone().into()),
+                Token::Str("pretty"),
+                Token::Str(&CORR_ID_REP),
+                Token::StructEnd,
+                Token::Str(SUBSCRIPTION_TIMESTAMP),
                 Token::TupleStruct { name: "Timestamp", len: 2 },
                 Token::I64(ts_secs),
                 Token::U32(ts_nsecs),
@@ -358,7 +388,9 @@ mod tests {
         let _main_span_guard = main_span.enter();
 
         let ts = Utc.ymd(1988, 5, 30).and_hms(9, 1, 17).into();
+        let corr_id = Id::direct(17, "AB");
         let metrics = MetricCatalog {
+            correlation_id: corr_id.clone(),
             timestamp: ts,
             flow: FlowMetrics {
                 records_in_per_sec: 17.,
@@ -386,7 +418,8 @@ mod tests {
         assert_eq!(
             telemetry,
             TelemetryValue::Table(maplit::hashmap! {
-                "timestamp".to_string() => TelemetryValue::Seq(vec![ts_secs.to_telemetry(), ts_nsecs.to_telemetry(),]),
+                SUBSCRIPTION_CORRELATION.to_string() => corr_id.to_telemetry(),
+                SUBSCRIPTION_TIMESTAMP.to_string() => TelemetryValue::Seq(vec![ts_secs.to_telemetry(), ts_nsecs.to_telemetry(),]),
                 "records_in_per_sec".to_string() => (17.).to_telemetry(),
                 "records_out_per_sec".to_string() => (0.).to_telemetry(),
                 "input_consumer_lag".to_string() => 3.14.to_telemetry(),

@@ -1,4 +1,4 @@
-use clap::Clap;
+use clap::Parser;
 use proctor::tracing::{get_subscriber, init_subscriber};
 use settings_loader::SettingsLoader;
 use springline::engine::Autoscaler;

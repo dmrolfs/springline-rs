@@ -7,6 +7,7 @@ use crate::settings::Settings;
 use crate::Result;
 use cast_trait_object::DynCastExt;
 use monitor::Monitor;
+use pretty_snowflake::MachineNode;
 use proctor::elements::Telemetry;
 use proctor::graph::stage::{SinkStage, SourceStage, WithApi, WithMonitor};
 use proctor::graph::{Connect, Graph, SinkShape, SourceShape};
@@ -104,12 +105,14 @@ impl<'r> AutoscaleEngine<Building<'r>> {
 
     #[tracing::instrument(level = "info")]
     pub async fn finish(self, settings: Settings) -> Result<AutoscaleEngine<Ready>> {
+        let machine_node = MachineNode::new(settings.machine_id, settings.node_id,)?;
+
         if let Some(registry) = self.inner.metrics_registry {
             crate::metrics::register_metrics(registry)?;
         }
 
         let mut collection_builder =
-            collection::make_collection_phase(&settings.collection, self.inner.sources).await?;
+            collection::make_collection_phase(&settings.collection, self.inner.sources, machine_node).await?;
 
         let eligibility =
             eligibility::make_eligibility_phase(&settings.eligibility, (&mut collection_builder).into()).await?;

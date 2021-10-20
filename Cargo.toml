@@ -19,7 +19,7 @@ approx = "*"
 async-trait = "*"
 cast_trait_object = "*"
 chrono = "*"
-clap = { version = "3.0.0-beta.4", features = ["yaml"] }
+clap = { version = "3.0.0-beta.5", features = ["yaml"] }
 # until ron feature and builder fns in *published* config-rs
 config = { git = "https://github.com/dmrolfs/config-rs" } # until ron feature and builder fns in *published* config-rs
 #config = { version = "^0.11", default_features = true, features = ["ron"] }
@@ -35,6 +35,7 @@ num-traits = "*"
 num_cpus = "*"
 oso = "*"
 polar-core = "*"
+pretty-snowflake = { git = "https://github.com/dmrolfs/pretty-snowflake-rs" }
 prometheus = { version = "0.13", features = ["process"] }
 prometheus-static-metric = "0.5"
 reqwest = { version = "0.11", features = ["json", "multipart"] }

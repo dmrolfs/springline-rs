@@ -414,6 +414,7 @@ mod tests {
     use tokio::sync::mpsc::Receiver;
     use tokio::sync::Mutex;
     use tokio_test::block_on;
+    use pretty_snowflake::Id;
 
     use super::*;
     use crate::phases::plan::forecast::*;
@@ -433,7 +434,10 @@ mod tests {
     const NOW: i64 = 1624061766 + (30 * STEP);
 
     lazy_static! {
+        static ref CORRELATION: Id = Id::direct(13, "ABC");
+
         static ref METRICS: MetricCatalog = MetricCatalog {
+            correlation_id: CORRELATION.clone(),
             timestamp: Utc.timestamp(NOW, 0).into(),
             flow: FlowMetrics {
                 input_consumer_lag: 314.15926535897932384264,

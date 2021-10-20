@@ -6,6 +6,7 @@ use fake::locales::EN;
 use fake::Fake;
 use lazy_static::lazy_static;
 use pretty_assertions::assert_eq;
+use pretty_snowflake::Id;
 use proctor::elements::telemetry;
 use proctor::elements::Timestamp;
 use proctor::graph::stage::{self, WithApi, WithMonitor};
@@ -169,8 +170,9 @@ fn make_test_data(
     start: Timestamp, tick: i64, nr_task_managers: u16, input_consumer_lag: f64, records_per_sec: f64,
 ) -> InData {
     let timestamp = Utc.timestamp(start.as_secs() + tick * STEP, 0).into();
-
+    let corr_id = Id::direct(9, "CBA");
     MetricCatalog {
+        correlation_id: corr_id,
         timestamp,
         flow: FlowMetrics {
             records_in_per_sec: records_per_sec,
