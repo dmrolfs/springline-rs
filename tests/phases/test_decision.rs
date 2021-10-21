@@ -16,10 +16,10 @@ use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
 use super::fixtures::*;
+use pretty_snowflake::MachineNode;
 use proctor::phases::policy_phase::PolicyPhase;
 use springline::phases::decision::result::{make_decision_transform, DecisionResult, DECISION_BINDING};
 use std::path::PathBuf;
-use pretty_snowflake::MachineNode;
 
 lazy_static::lazy_static! {
     static ref DECISION_PREAMBLE: PolicySource = PolicySource::File(PathBuf::from("./resources/decision_preamble.polar"));
@@ -58,7 +58,7 @@ where
         let mut builder = Collect::builder(
             "collection",
             vec![Box::new(telemetry_source), Box::new(ctx_source)],
-            MachineNode::default()
+            MachineNode::default(),
         );
         let tx_clearinghouse_api = builder.clearinghouse.tx_api();
 

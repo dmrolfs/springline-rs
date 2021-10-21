@@ -410,11 +410,11 @@ mod tests {
     use claim::*;
     use lazy_static::lazy_static;
     use pretty_assertions::assert_eq;
+    use pretty_snowflake::Id;
     use tokio::sync::mpsc;
     use tokio::sync::mpsc::Receiver;
     use tokio::sync::Mutex;
     use tokio_test::block_on;
-    use pretty_snowflake::Id;
 
     use super::*;
     use crate::phases::plan::forecast::*;
@@ -435,7 +435,6 @@ mod tests {
 
     lazy_static! {
         static ref CORRELATION: Id = Id::direct(13, "ABC");
-
         static ref METRICS: MetricCatalog = MetricCatalog {
             correlation_id: CORRELATION.clone(),
             timestamp: Utc.timestamp(NOW, 0).into(),

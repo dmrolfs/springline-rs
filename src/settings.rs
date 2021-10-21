@@ -7,12 +7,12 @@ pub use execution_settings::*;
 pub use plan_settings::*;
 
 use clap::Parser;
+use config::builder::DefaultState;
+use config::ConfigBuilder;
 use proctor::elements::PolicySettings;
 use serde::{Deserialize, Serialize};
 use settings_loader::{LoadingOptions, SettingsError, SettingsLoader};
 use std::path::PathBuf;
-use config::builder::DefaultState;
-use config::ConfigBuilder;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Settings {

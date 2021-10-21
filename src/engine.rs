@@ -105,7 +105,7 @@ impl<'r> AutoscaleEngine<Building<'r>> {
 
     #[tracing::instrument(level = "info")]
     pub async fn finish(self, settings: Settings) -> Result<AutoscaleEngine<Ready>> {
-        let machine_node = MachineNode::new(settings.machine_id, settings.node_id,)?;
+        let machine_node = MachineNode::new(settings.machine_id, settings.node_id)?;
 
         if let Some(registry) = self.inner.metrics_registry {
             crate::metrics::register_metrics(registry)?;

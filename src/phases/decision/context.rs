@@ -6,14 +6,19 @@ use serde::{Deserialize, Serialize};
 
 use crate::phases::UpdateMetrics;
 use lazy_static::lazy_static;
-use proctor::elements::{telemetry, Telemetry};
+use pretty_snowflake::Id;
+use proctor::elements::{telemetry, Telemetry, Timestamp};
 use proctor::error::DecisionError;
 use proctor::phases::collection::SubscriptionRequirements;
 use proctor::{ProctorContext, SharedString};
 use prometheus::IntGauge;
 
-#[derive(PolarClass, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(PolarClass, Debug, Clone, Serialize, Deserialize)]
 pub struct DecisionContext {
+    // auto-filled
+    pub correlation_id: Id,
+    pub timestamp: Timestamp,
+
     #[polar(attribute)]
     pub all_sinks_healthy: bool,
 
@@ -23,6 +28,14 @@ pub struct DecisionContext {
     #[polar(attribute)]
     #[serde(flatten)] // flatten enables collection of extra properties
     pub custom: telemetry::TableType,
+}
+
+impl PartialEq for DecisionContext {
+    fn eq(&self, other: &Self) -> bool {
+        self.all_sinks_healthy == other.all_sinks_healthy
+            && self.nr_task_managers == other.nr_task_managers
+            && self.custom == self.custom
+    }
 }
 
 impl SubscriptionRequirements for DecisionContext {
@@ -82,6 +95,7 @@ lazy_static! {
 
 #[cfg(test)]
 mod tests {
+    use claim::*;
     use pretty_assertions::assert_eq;
     use serde_test::{assert_tokens, Token};
 
@@ -92,6 +106,8 @@ mod tests {
     #[test]
     fn test_serde_flink_decision_context() {
         let context = DecisionContext {
+            correlation_id: Id::direct(0, "A"),
+            timestamp: Timestamp::new(0, 0),
             all_sinks_healthy: true,
             nr_task_managers: 4,
             custom: maplit::hashmap! {
@@ -102,6 +118,18 @@ mod tests {
 
         let mut expected = vec![
             Token::Map { len: None },
+            Token::Str("correlation_id"),
+            Token::Struct { name: "Id", len: 2 },
+            Token::Str("snowflake"),
+            Token::I64(0),
+            Token::Str("pretty"),
+            Token::Str("A"),
+            Token::StructEnd,
+            Token::Str("timestamp"),
+            Token::TupleStruct { name: "Timestamp", len: 2 },
+            Token::I64(0),
+            Token::U32(0),
+            Token::TupleStructEnd,
             Token::Str("all_sinks_healthy"),
             Token::Bool(true),
             Token::Str("nr_task_managers"),
@@ -129,6 +157,8 @@ mod tests {
         lazy_static::initialize(&proctor::tracing::TEST_TRACING);
 
         let data: Telemetry = maplit::hashmap! {
+            "correlation_id" => Id::direct(0, "A").to_telemetry(),
+            "timestamp" => Timestamp::new(0, 0).to_telemetry(),
             "all_sinks_healthy" => false.to_telemetry(),
             "nr_task_managers" => 4.to_telemetry(),
             "foo" => "bar".to_telemetry(),
@@ -138,15 +168,17 @@ mod tests {
 
         tracing::info!(telemetry=?data, "created telemetry");
 
-        let actual = data.try_into::<DecisionContext>();
+        let actual = assert_ok!(data.try_into::<DecisionContext>());
         tracing::info!(?actual, "converted into FlinkDecisionContext");
         let expected = DecisionContext {
+            correlation_id: Id::direct(0, "A"),
+            timestamp: Timestamp::new(0, 0),
             all_sinks_healthy: false,
             nr_task_managers: 4,
             custom: maplit::hashmap! {"foo".to_string() => "bar".into(),},
         };
         tracing::info!("actual: {:?}", actual);
         tracing::info!("expected: {:?}", expected);
-        assert_eq!(actual.unwrap(), expected);
+        assert_eq!(actual, expected);
     }
 }

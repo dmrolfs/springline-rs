@@ -141,8 +141,6 @@ impl Add<&Self> for MetricCatalog {
 impl SubscriptionRequirements for MetricCatalog {
     fn required_fields() -> HashSet<proctor::SharedString> {
         maplit::hashset! {
-            // "timestamp".into(),
-            //
             // FlowMetrics
             "records_in_per_sec".into(),
             "records_out_per_sec".into(),
@@ -242,7 +240,7 @@ mod tests {
     use proctor::elements::telemetry::ToTelemetry;
     use proctor::elements::Telemetry;
     use proctor::error::TypeExpectation;
-    use proctor::phases::collection::{SUBSCRIPTION_TIMESTAMP, SUBSCRIPTION_CORRELATION};
+    use proctor::phases::collection::{SUBSCRIPTION_CORRELATION, SUBSCRIPTION_TIMESTAMP};
 
     #[derive(PartialEq, Debug)]
     struct Bar(String);
@@ -307,7 +305,7 @@ mod tests {
     }
 
     lazy_static! {
-        static ref CORR_ID: Id =Id::direct(12, "L");
+        static ref CORR_ID: Id = Id::direct(12, "L");
         static ref CORR_ID_REP: &'static str = "L";
     }
 
@@ -315,7 +313,6 @@ mod tests {
     fn test_metric_catalog_serde() {
         let ts: Timestamp = Utc.ymd(1988, 5, 30).and_hms(9, 1, 17).into();
         let (ts_secs, ts_nsecs) = ts.as_pair();
-        let corr_id = Id::direct(12, "12");
         let metrics = MetricCatalog {
             correlation_id: CORR_ID.clone(),
             timestamp: ts,

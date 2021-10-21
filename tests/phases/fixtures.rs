@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 use lazy_static::lazy_static;
-use proctor::elements::{Telemetry, Timestamp};
+use proctor::elements::Telemetry;
 
 lazy_static! {
     pub static ref DT_1: DateTime<Utc> = DateTime::parse_from_str("2021-05-05T17:11:07.246310806Z", "%+")

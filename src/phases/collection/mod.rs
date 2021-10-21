@@ -12,8 +12,7 @@ pub mod flink_metrics_source;
 
 #[tracing::instrument(level = "info", skip(settings, auxiliary_sources))]
 pub async fn make_collection_phase(
-    settings: &CollectionSettings, auxiliary_sources: Vec<Box<dyn SourceStage<Telemetry>>>,
-    machine_node: MachineNode,
+    settings: &CollectionSettings, auxiliary_sources: Vec<Box<dyn SourceStage<Telemetry>>>, machine_node: MachineNode,
 ) -> Result<CollectBuilder<MetricCatalog>> {
     let name = "collection";
     let sources = do_make_telemetry_sources(&settings.sources, auxiliary_sources).await?;
