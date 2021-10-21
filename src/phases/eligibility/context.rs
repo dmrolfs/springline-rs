@@ -7,14 +7,19 @@ use serde::{Deserialize, Serialize};
 
 use crate::phases::UpdateMetrics;
 use lazy_static::lazy_static;
-use proctor::elements::{telemetry, Telemetry};
+use pretty_snowflake::Id;
+use proctor::elements::{telemetry, Telemetry, Timestamp};
 use proctor::error::{EligibilityError, ProctorError};
 use proctor::phases::collection::SubscriptionRequirements;
 use proctor::{ProctorContext, SharedString};
 use prometheus::IntGauge;
 
-#[derive(PolarClass, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(PolarClass, Debug, Clone, Serialize, Deserialize)]
 pub struct EligibilityContext {
+    // auto-filled
+    pub correlation_id: Id,
+    pub timestamp: Timestamp,
+
     #[polar(attribute)]
     #[serde(flatten)] // current subscription mechanism only supports flatten keys
     pub task_status: TaskStatus,
@@ -26,6 +31,14 @@ pub struct EligibilityContext {
     #[polar(attribute)]
     #[serde(flatten)] // flatten to collect extra properties.
     pub custom: telemetry::TableType,
+}
+
+impl PartialEq for EligibilityContext {
+    fn eq(&self, other: &Self) -> bool {
+        self.task_status == other.task_status
+            && self.cluster_status == other.cluster_status
+            && self.custom == other.custom
+    }
 }
 
 impl SubscriptionRequirements for EligibilityContext {
@@ -138,6 +151,7 @@ mod tests {
     use serde_test::{assert_tokens, Token};
 
     use super::*;
+    use claim::*;
     use proctor::elements::telemetry::ToTelemetry;
     use proctor::elements::{Telemetry, NANOS_KEY, SECS_KEY};
 
@@ -152,6 +166,8 @@ mod tests {
     #[ignore]
     fn test_serde_flink_eligibility_context() {
         let context = EligibilityContext {
+            correlation_id: Id::direct(0, "A"),
+            timestamp: Timestamp::new(0, 0),
             task_status: TaskStatus { last_failure: Some(DT_1.clone()) },
             cluster_status: ClusterStatus { is_deploying: false, last_deployment: DT_2.clone() },
             custom: maplit::hashmap! {
@@ -162,6 +178,18 @@ mod tests {
 
         let mut expected = vec![
             Token::Map { len: None },
+            Token::Str("correlation_id"),
+            Token::Struct { name: "Id", len: 2 },
+            Token::Str("snowflake"),
+            Token::I64(0),
+            Token::Str("pretty"),
+            Token::Str("A"),
+            Token::StructEnd,
+            Token::Str("timestamp"),
+            Token::TupleStruct { name: "Timestamp", len: 2 },
+            Token::I64(0),
+            Token::U32(0),
+            Token::TupleStructEnd,
             Token::Str("task.last_failure"),
             Token::Some,
             Token::Map { len: Some(2) },
@@ -224,6 +252,8 @@ mod tests {
         lazy_static::initialize(&proctor::tracing::TEST_TRACING);
 
         let data: Telemetry = maplit::hashmap! {
+            "correlation_id" => Id::direct(0, "A").to_telemetry(),
+            "timestamp" => Timestamp::new(0, 0).to_telemetry(),
             "task.last_failure" => DT_1_STR.as_str().to_telemetry(),
             "cluster.is_deploying" => false.to_telemetry(),
             "cluster.last_deployment" => DT_2_STR.as_str().to_telemetry(),
@@ -234,15 +264,17 @@ mod tests {
 
         tracing::info!(telemetry=?data, "created telemetry");
 
-        let actual = data.try_into::<EligibilityContext>();
+        let actual = assert_ok!(data.try_into::<EligibilityContext>());
         tracing::info!(?actual, "converted into FlinkEligibilityContext");
         let expected = EligibilityContext {
+            correlation_id: Id::direct(0, "A"),
+            timestamp: Timestamp::new(0, 0),
             task_status: TaskStatus { last_failure: Some(DT_1.clone()) },
             cluster_status: ClusterStatus { is_deploying: false, last_deployment: DT_2.clone() },
             custom: maplit::hashmap! {"foo".to_string() => "bar".into(),},
         };
         tracing::info!("actual: {:?}", actual);
         tracing::info!("expected: {:?}", expected);
-        assert_eq!(actual.unwrap(), expected);
+        assert_eq!(actual, expected);
     }
 }

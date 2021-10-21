@@ -4,7 +4,6 @@ use std::fmt::Debug;
 use std::ops::Add;
 
 // use ::serde_with::{serde_as, TimestampSeconds};
-use chrono::{DateTime, Utc};
 use oso::PolarClass;
 use serde::{Deserialize, Serialize};
 
@@ -79,6 +78,7 @@ pub struct ClusterMetrics {
     pub network_io_utilization: f64,
 }
 
+use chrono::{DateTime, Utc};
 use pretty_snowflake::{AlphabetCodec, IdPrettifier};
 use proctor::IdGenerator;
 use std::sync::Mutex;
@@ -89,6 +89,7 @@ lazy_static! {
 }
 
 impl MetricCatalog {
+    #[cfg(test)]
     pub(crate) fn for_test_with_timestamp(timestamp: Timestamp, custom: telemetry::TableType) -> Self {
         let generator = &mut ID_GENERATOR.lock().unwrap();
 
@@ -101,6 +102,7 @@ impl MetricCatalog {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn for_test_with_datetime(timestamp: DateTime<Utc>, custom: telemetry::TableType) -> Self {
         Self::for_test_with_timestamp(timestamp.into(), custom)
     }

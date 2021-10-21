@@ -146,8 +146,8 @@ mod tests {
         });
 
         if result.is_err() {
-            expected.swap(5, 7);
-            expected.swap(6, 8);
+            expected.swap(17, 19);
+            expected.swap(18, 20);
             assert_tokens(&context, expected.as_slice());
         }
     }

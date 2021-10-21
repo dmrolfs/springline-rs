@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use claim::*;
 use pretty_assertions::assert_eq;
+use pretty_snowflake::Id;
 use proctor::elements::{self, PolicyFilterEvent, PolicySettings, PolicySource, Timestamp};
 use proctor::graph::stage::{self, WithApi, WithMonitor};
 use proctor::graph::{Connect, Graph, SinkShape, SourceShape};
@@ -274,10 +275,14 @@ async fn test_flink_governance_flow_simple_and_happy() -> anyhow::Result<()> {
 
     let min_cluster_size = 2;
     let max_cluster_size = 10;
+    let min_scaling_step = 1;
     let max_scaling_step = 5;
     let context = GovernanceContext {
+        correlation_id: Id::direct(0, "A"),
+        timestamp: Timestamp::new(0, 0),
         min_cluster_size,
         max_cluster_size,
+        min_scaling_step,
         max_scaling_step,
         custom: Default::default(),
     };
@@ -328,10 +333,14 @@ async fn test_flink_governance_flow_simple_below_min_cluster_size() -> anyhow::R
 
     let min_cluster_size = 2;
     let max_cluster_size = 10;
+    let min_scaling_step = 1;
     let max_scaling_step = 5;
     let context = GovernanceContext {
+        correlation_id: Id::direct(0, "A"),
+        timestamp: Timestamp::new(0, 0),
         min_cluster_size,
         max_cluster_size,
+        min_scaling_step,
         max_scaling_step,
         custom: Default::default(),
     };
@@ -382,10 +391,14 @@ async fn test_flink_governance_flow_simple_above_max_cluster_size() -> anyhow::R
 
     let min_cluster_size = 2;
     let max_cluster_size = 10;
+    let min_scaling_step = 1;
     let max_scaling_step = 5;
     let context = GovernanceContext {
+        correlation_id: Id::direct(0, "A"),
+        timestamp: Timestamp::new(0, 0),
         min_cluster_size,
         max_cluster_size,
+        min_scaling_step,
         max_scaling_step,
         custom: Default::default(),
     };
@@ -436,10 +449,14 @@ async fn test_flink_governance_flow_simple_step_up_too_big() -> anyhow::Result<(
 
     let min_cluster_size = 2;
     let max_cluster_size = 10;
+    let min_scaling_step = 1;
     let max_scaling_step = 5;
     let context = GovernanceContext {
+        correlation_id: Id::direct(0, "A"),
+        timestamp: Timestamp::new(0, 0),
         min_cluster_size,
         max_cluster_size,
+        min_scaling_step,
         max_scaling_step,
         custom: Default::default(),
     };
@@ -490,10 +507,14 @@ async fn test_flink_governance_flow_simple_step_down_too_big() -> anyhow::Result
 
     let min_cluster_size = 2;
     let max_cluster_size = 10;
+    let min_scaling_step = 1;
     let max_scaling_step = 5;
     let context = GovernanceContext {
+        correlation_id: Id::direct(0, "A"),
+        timestamp: Timestamp::new(0, 0),
         min_cluster_size,
         max_cluster_size,
+        min_scaling_step,
         max_scaling_step,
         custom: Default::default(),
     };
@@ -547,10 +568,14 @@ async fn test_flink_governance_flow_simple_step_up_before_max() -> anyhow::Resul
 
     let min_cluster_size = 2;
     let max_cluster_size = 10;
+    let min_scaling_step = 1;
     let max_scaling_step = 5;
     let context = GovernanceContext {
+        correlation_id: Id::direct(0, "A"),
+        timestamp: Timestamp::new(0, 0),
         min_cluster_size,
         max_cluster_size,
+        min_scaling_step,
         max_scaling_step,
         custom: Default::default(),
     };
@@ -601,10 +626,14 @@ async fn test_flink_governance_flow_simple_step_down_before_min() -> anyhow::Res
 
     let min_cluster_size = 2;
     let max_cluster_size = 10;
+    let min_scaling_step = 1;
     let max_scaling_step = 5;
     let context = GovernanceContext {
+        correlation_id: Id::direct(0, "A"),
+        timestamp: Timestamp::new(0, 0),
         min_cluster_size,
         max_cluster_size,
+        min_scaling_step,
         max_scaling_step,
         custom: Default::default(),
     };

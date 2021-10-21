@@ -6,19 +6,27 @@ use serde::{Deserialize, Serialize};
 
 use crate::phases::UpdateMetrics;
 use lazy_static::lazy_static;
-use proctor::elements::{telemetry, Telemetry};
+use pretty_snowflake::Id;
+use proctor::elements::{telemetry, Telemetry, Timestamp};
 use proctor::error::GovernanceError;
 use proctor::phases::collection::SubscriptionRequirements;
 use proctor::{ProctorContext, SharedString};
 use prometheus::IntGauge;
 
-#[derive(PolarClass, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(PolarClass, Debug, Clone, Serialize, Deserialize)]
 pub struct GovernanceContext {
+    // auto-filled
+    pub correlation_id: Id,
+    pub timestamp: Timestamp,
+
     #[polar(attribute)]
     pub min_cluster_size: u16,
 
     #[polar(attribute)]
     pub max_cluster_size: u16,
+
+    #[polar(attribute)]
+    pub min_scaling_step: u16,
 
     #[polar(attribute)]
     pub max_scaling_step: u16,
@@ -28,11 +36,22 @@ pub struct GovernanceContext {
     pub custom: telemetry::TableType,
 }
 
+impl PartialEq for GovernanceContext {
+    fn eq(&self, other: &Self) -> bool {
+        self.min_cluster_size == other.min_cluster_size
+            && self.max_cluster_size == other.max_cluster_size
+            && self.min_scaling_step == other.min_scaling_step
+            && self.max_scaling_step == other.max_scaling_step
+            && self.custom == other.custom
+    }
+}
+
 impl SubscriptionRequirements for GovernanceContext {
     fn required_fields() -> HashSet<proctor::SharedString> {
         maplit::hashset! {
             "min_cluster_size".into(),
             "max_cluster_size".into(),
+            "min_scaling_step".into(),
             "max_scaling_step".into(),
         }
     }
@@ -87,6 +106,7 @@ lazy_static! {
 
 #[cfg(test)]
 mod tests {
+    use claim::*;
     use pretty_assertions::assert_eq;
     use serde_test::{assert_tokens, Token};
 
@@ -103,13 +123,17 @@ mod tests {
     ) {
         let min_cluster_size = 7;
         let max_cluster_size = 199;
+        let min_scaling_step = 1;
         let max_scaling_step = 33;
         let custom_prop_a = std::f64::consts::SQRT_2;
         let custom_prop_b = 242;
 
         let context = GovernanceContext {
+            correlation_id: Id::direct(0, "A"),
+            timestamp: Timestamp::new(0, 0),
             min_cluster_size,
             max_cluster_size,
+            min_scaling_step,
             max_scaling_step,
             custom: maplit::hashmap! {
                 "custom_prop_a".to_string() => custom_prop_a.into(),
@@ -119,10 +143,24 @@ mod tests {
 
         let mut expected = vec![
             Token::Map { len: None },
+            Token::Str("correlation_id"),
+            Token::Struct { name: "Id", len: 2 },
+            Token::Str("snowflake"),
+            Token::I64(0),
+            Token::Str("pretty"),
+            Token::Str("A"),
+            Token::StructEnd,
+            Token::Str("timestamp"),
+            Token::TupleStruct { name: "Timestamp", len: 2 },
+            Token::I64(0),
+            Token::U32(0),
+            Token::TupleStructEnd,
             Token::Str("min_cluster_size"),
             Token::U16(min_cluster_size),
             Token::Str("max_cluster_size"),
             Token::U16(max_cluster_size),
+            Token::Str("min_scaling_step"),
+            Token::U16(min_scaling_step),
             Token::Str("max_scaling_step"),
             Token::U16(max_scaling_step),
             Token::Str("custom_prop_a"),
@@ -137,8 +175,8 @@ mod tests {
         });
 
         if result.is_err() {
-            expected.swap(7, 9);
-            expected.swap(8, 10);
+            expected.swap(21, 23);
+            expected.swap(22, 24);
             assert_tokens(&context, expected.as_slice());
         }
     }
@@ -154,13 +192,17 @@ mod tests {
 
         let min_cluster_size = 7;
         let max_cluster_size = 199;
+        let min_scaling_step = 2;
         let max_scaling_step = 33;
         let foo = std::f64::consts::SQRT_2;
         let bar = 242;
 
         let data: Telemetry = maplit::hashmap! {
+            "correlation_id" => Id::direct(0, "A").to_telemetry(),
+            "timestamp" => Timestamp::new(0, 0).to_telemetry(),
             "min_cluster_size" => min_cluster_size.to_telemetry(),
             "max_cluster_size" => max_cluster_size.to_telemetry(),
+            "min_scaling_step" => min_scaling_step.to_telemetry(),
             "max_scaling_step" => max_scaling_step.to_telemetry(),
             "foo" => foo.to_telemetry(),
             "bar" => bar.to_telemetry(),
@@ -170,11 +212,14 @@ mod tests {
 
         tracing::info!(telemetry=?data, "created telemetry");
 
-        let actual = data.try_into::<GovernanceContext>();
+        let actual = assert_ok!(data.try_into::<GovernanceContext>());
         tracing::info!(?actual, "converted into FlinkGovernanceContext");
         let expected = GovernanceContext {
+            correlation_id: Id::direct(0, "A"),
+            timestamp: Timestamp::new(0, 0),
             min_cluster_size,
             max_cluster_size,
+            min_scaling_step,
             max_scaling_step,
             custom: maplit::hashmap! {
                 "foo".to_string() => foo.into(),
@@ -183,6 +228,6 @@ mod tests {
         };
         tracing::info!("actual: {:?}", actual);
         tracing::info!("expected: {:?}", expected);
-        assert_eq!(actual.unwrap(), expected);
+        assert_eq!(actual, expected);
     }
 }
