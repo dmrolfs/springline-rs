@@ -1,0 +1,61 @@
+use crate::engine::service::{EngineApiError, EngineCmd, MetricsSpan, Service};
+use axum::extract::{Extension, Path};
+use axum::handler::get;
+use axum::{AddExtensionLayer, Router};
+use axum_debug::{debug_handler, debug_router};
+use std::net::SocketAddr;
+use std::sync::Arc;
+use std::time::Duration;
+use tower::timeout::TimeoutLayer;
+use tower::ServiceBuilder;
+use tower_http::trace::TraceLayer;
+
+struct State<'r> {
+    engine: Service<'r>,
+}
+
+#[tracing::instrument(level = "info", skip())]
+async fn run_http_server(engine: Service<'static>) -> Result<(), EngineApiError> {
+    let shared_state = Arc::new(State { engine });
+
+    let middleware_stack = ServiceBuilder::new()
+        // .layer(RateLimitLayer::new(10, Duration::from_millis(100))) // arbitrary limit
+        .layer(TimeoutLayer::new(Duration::from_secs(10))) // arbitrary limit
+        .layer(TraceLayer::new_for_http())
+        .layer(AddExtensionLayer::new(shared_state))
+        .into_inner();
+
+    let app = Router::new()
+        .route("/metrics", get(get_metrics))
+        .layer(middleware_stack)
+        // .handle_error(handle_engine_error)
+    ;
+
+    debug_router!(app);
+
+    let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
+    tracing::info!("autoscale engine API listening on {}", addr);
+    axum::Server::bind(&addr).serve(app.into_make_service()).await?;
+
+    Ok(())
+}
+
+#[debug_handler]
+#[tracing::instrument(level = "info", skip())]
+async fn get_metrics<'r>(
+    span: Option<Path<MetricsSpan>>, Extension(engine): Extension<Arc<State<'r>>>,
+) -> Result<String, EngineApiError> {
+    let span = match span {
+        Some(Path(s)) => s,
+        None => MetricsSpan::default(),
+    };
+
+    let (cmd, rx) = EngineCmd::gather_metrics(span);
+    engine.engine.tx_api().send(cmd)?;
+    rx.await?.map(|mr| mr.0)
+}
+
+// #[tracing::instrument(level="info", skip())]
+// fn handle_engine_error(error: BoxError) -> Result<impl IntoResponse, Infallible> {
+//     todo!()
+// }

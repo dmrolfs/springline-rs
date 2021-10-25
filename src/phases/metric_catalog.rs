@@ -78,11 +78,16 @@ pub struct ClusterMetrics {
     pub network_io_utilization: f64,
 }
 
+#[cfg(test)]
 use chrono::{DateTime, Utc};
+#[cfg(test)]
 use pretty_snowflake::{AlphabetCodec, IdPrettifier};
+#[cfg(test)]
 use proctor::IdGenerator;
+#[cfg(test)]
 use std::sync::Mutex;
 
+#[cfg(test)]
 lazy_static! {
     static ref ID_GENERATOR: Mutex<IdGenerator> =
         Mutex::new(IdGenerator::single_node(IdPrettifier::<AlphabetCodec>::default()));

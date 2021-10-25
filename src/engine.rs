@@ -1,4 +1,6 @@
+mod http;
 pub mod monitor;
+mod service;
 
 use crate::phases::governance::{self, GovernanceOutcome};
 use crate::phases::{collection, decision, eligibility, execution, plan};
@@ -47,22 +49,24 @@ pub struct Building<'r> {
 impl<'r> EngineState for Building<'r> {}
 
 #[derive(Debug)]
-pub struct Ready {
+pub struct Ready<'r> {
     name: SharedString,
     graph: Graph,
     monitor: Monitor,
     tx_clearinghouse_api: ClearinghouseApi,
+    metrics_registry: Option<&'r Registry>,
 }
-impl EngineState for Ready {}
+impl<'r> EngineState for Ready<'r> {}
 
 #[derive(Debug)]
-pub struct Running {
+pub struct Running<'r> {
     name: SharedString,
     graph_handle: JoinHandle<ProctorResult<()>>,
     monitor_handle: JoinHandle<()>,
     tx_clearinghouse_api: ClearinghouseApi,
+    metrics_registry: Option<&'r Registry>,
 }
-impl EngineState for Running {}
+impl<'r> EngineState for Running<'r> {}
 
 impl<'r> AutoscaleEngine<Building<'r>> {
     pub fn with_name(self, name: impl Into<SharedString>) -> Self {
@@ -104,7 +108,7 @@ impl<'r> AutoscaleEngine<Building<'r>> {
     }
 
     #[tracing::instrument(level = "info")]
-    pub async fn finish(self, settings: Settings) -> Result<AutoscaleEngine<Ready>> {
+    pub async fn finish(self, settings: Settings) -> Result<AutoscaleEngine<Ready<'r>>> {
         let machine_node = MachineNode::new(settings.machine_id, settings.node_id)?;
 
         if let Some(registry) = self.inner.metrics_registry {
@@ -166,14 +170,15 @@ impl<'r> AutoscaleEngine<Building<'r>> {
                     rx_plan_monitor,
                     rx_governance_monitor,
                 ),
+                metrics_registry: self.inner.metrics_registry,
             },
         })
     }
 }
 
-impl AutoscaleEngine<Ready> {
+impl<'r> AutoscaleEngine<Ready<'r>> {
     #[tracing::instrument(level = "info")]
-    pub fn run(self) -> AutoscaleEngine<Running> {
+    pub fn run(self) -> AutoscaleEngine<Running<'r>> {
         let graph = self.inner.graph;
         let monitor = self.inner.monitor;
         let graph_handle = tokio::spawn(async { graph.run().await });
@@ -184,12 +189,13 @@ impl AutoscaleEngine<Ready> {
                 graph_handle,
                 monitor_handle,
                 tx_clearinghouse_api: self.inner.tx_clearinghouse_api,
+                metrics_registry: self.inner.metrics_registry,
             },
         }
     }
 }
 
-impl AutoscaleEngine<Running> {
+impl<'r> AutoscaleEngine<Running<'r>> {
     #[tracing::instrument(level = "info")]
     pub async fn block_for_completion(self) -> Result<()> {
         self.inner.graph_handle.await??;

@@ -17,6 +17,8 @@ proctor = { git = "https://github.com/dmrolfs/proctor-rs", branch = "main" }
 anyhow = "*"
 approx = "*"
 async-trait = "*"
+axum = "*"
+axum-debug = "*"
 cast_trait_object = "*"
 chrono = "*"
 clap = { version = "3.0.0-beta.5", features = ["yaml"] }
@@ -27,6 +29,7 @@ config = { git = "https://github.com/dmrolfs/config-rs" } # until ron feature an
 dashmap = "*"
 enum-display-derive = "*"
 #fix-hidden-lifetime-bug = "0.2"
+hyper = { version = "*", features = ["server", "tcp", "stream"] }
 itertools = "*"
 lazy_static = "*"
 maplit = "*"
@@ -38,6 +41,7 @@ polar-core = "*"
 pretty-snowflake = { git = "https://github.com/dmrolfs/pretty-snowflake-rs" }
 prometheus = { version = "0.13", features = ["process"] }
 prometheus-static-metric = "0.5"
+regex = "1.5"
 reqwest = { version = "0.11", features = ["json", "multipart"] }
 reqwest-middleware = "*"
 reqwest-retry = "*"
@@ -51,8 +55,12 @@ settings_loader = { git = "https://github.com/dmrolfs/settings-loader-rs" }
 splines = "*"
 thiserror = "*"
 tokio = { version = "*", features = ["full"] }
+tower = { version = "*", features = ["timeout", "limit"] }
+tower-http = { version ="*", features = ["trace"] }
 tracing = "*"
+tracing-flame = "*"
 tracing-futures = "*"
+tracing-subscriber = { version = "0.2", features = ["env-filter", "json"] }
 
 [dev-dependencies]
 pretty_assertions = "*"
