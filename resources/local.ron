@@ -1,4 +1,9 @@
 (
-    machine_id: 1,
-    node_id: 1,
+    http: (
+        host: "127.0.0.1",
+    ),
+    engine: (
+        machine_id: 1,
+        node_id: 1,
+    ),
 )

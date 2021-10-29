@@ -1,8 +1,10 @@
 pub mod collection_settings;
+pub mod engine_settings;
 pub mod execution_settings;
 pub mod plan_settings;
 
 pub use collection_settings::*;
+pub use engine_settings::*;
 pub use execution_settings::*;
 pub use plan_settings::*;
 
@@ -11,17 +13,24 @@ use config::builder::DefaultState;
 use config::ConfigBuilder;
 use proctor::elements::PolicySettings;
 use serde::{Deserialize, Serialize};
+use settings_loader::common::http::HttpServerSettings;
 use settings_loader::{LoadingOptions, SettingsError, SettingsLoader};
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Settings {
-    pub machine_id: i32,
-    pub node_id: i32,
+    pub http: HttpServerSettings,
+    #[serde(default)]
+    pub engine: EngineSettings,
+    #[serde(default)]
     pub collection: CollectionSettings,
+    #[serde(default)]
     pub eligibility: PolicySettings,
+    #[serde(default)]
     pub decision: PolicySettings,
+    #[serde(default)]
     pub plan: PlanSettings,
+    #[serde(default)]
     pub governance: PolicySettings,
     pub execution: ExecutionSettings,
 }
@@ -188,68 +197,72 @@ mod tests {
 
     #[test]
     fn test_settings_applications_load() -> anyhow::Result<()> {
-        with_env_vars("test_settings_applications_load", vec![], || {
-            lazy_static::initialize(&proctor::tracing::TEST_TRACING);
-            let main_span = tracing::info_span!("test_settings_applications_load");
-            let _ = main_span.enter();
+        lazy_static::initialize(&proctor::tracing::TEST_TRACING);
+        let main_span = tracing::info_span!("test_settings_applications_load");
+        let _ = main_span.enter();
 
-            env::set_var("APP__MACHINE_ID", "7");
-            env::set_var("APP__NODE_ID", "3");
+        let before_env = assert_ok!(Settings::load(CliOptions::default()));
+        assert_eq!(before_env.engine, EngineSettings { machine_id: 1, node_id: 1});
 
-            // let builder = assert_ok!(Settings::load(Config::builder()));
-            // let c = assert_ok!(builder.build());
-            // tracing::info!(config=?c, "loaded configuration file");
-            let actual: Settings = assert_ok!(Settings::load(CliOptions::default()));
+        with_env_vars(
+            "test_settings_applications_load",
+            vec![
+                ("APP__ENGINE__MACHINE_ID", Some("7")),
+                ("APP__ENGINE__NODE_ID", Some("3")),
+            ],
+            || {
+                let actual: Settings = assert_ok!(Settings::load(CliOptions::default()));
+                assert_eq!(actual.engine, EngineSettings { machine_id: 7, node_id: 3});
 
-            let expected = Settings {
-                node_id: 3,
-                machine_id: 7,
-                collection: CollectionSettings {
-                    sources: maplit::hashmap! {
-                        "foo".to_string() => SourceSetting::Csv { path: PathBuf::from("./resources/bar.toml"),},
+                let expected = Settings {
+                    http: HttpServerSettings { host: "0.0.0.0".to_string(), port: 8000 },
+                    engine: EngineSettings { machine_id: 7, node_id: 3 },
+                    collection: CollectionSettings {
+                        sources: maplit::hashmap! {
+                            "foo".to_string() => SourceSetting::Csv { path: PathBuf::from("./resources/bar.toml"),},
+                        },
                     },
-                },
-                eligibility: PolicySettings::default()
-                    .with_source(PolicySource::File(PathBuf::from("./resources/eligibility.polar")))
-                    .with_source(PolicySource::String(
-                        r##"
+                    eligibility: PolicySettings::default()
+                        .with_source(PolicySource::File(PathBuf::from("./resources/eligibility.polar")))
+                        .with_source(PolicySource::String(
+                            r##"
                     eligible(_, _context, length) if length = 13;
                     eligible(_item, context, c) if
                     c = context.custom() and
                     c.cat = "Otis" and
                     cut;
-                "##
-                        .to_string(),
-                    )),
-                decision: PolicySettings::default()
-                    .with_source(PolicySource::File(PathBuf::from("./resources/decision_preamble.polar")))
-                    .with_source(PolicySource::File(PathBuf::from("./resources/decision.polar"))),
-                plan: PlanSettings {
-                    min_scaling_step: 2,
-                    restart: Duration::from_secs(2 * 60),
-                    max_catch_up: Duration::from_secs(10 * 60),
-                    recovery_valid: Duration::from_secs(5 * 60),
-                    performance_repository: PerformanceRepositorySettings {
-                        storage: PerformanceRepositoryType::File,
-                        storage_path: Some("./tests/data/performance.data".to_string()),
+                "## .to_string(),
+                        )),
+                    decision: PolicySettings::default()
+                        .with_source(PolicySource::File(PathBuf::from("./resources/decision_preamble.polar")))
+                        .with_source(PolicySource::File(PathBuf::from("./resources/decision.polar"))),
+                    plan: PlanSettings {
+                        min_scaling_step: 2,
+                        restart: Duration::from_secs(2 * 60),
+                        max_catch_up: Duration::from_secs(10 * 60),
+                        recovery_valid: Duration::from_secs(5 * 60),
+                        performance_repository: PerformanceRepositorySettings {
+                            storage: PerformanceRepositoryType::File,
+                            storage_path: Some("./tests/data/performance.data".to_string()),
+                        },
+                        window: 20,
+                        spike: SpikeSettings {
+                            std_deviation_threshold: 5.,
+                            influence: 0.75,
+                            length_threshold: 3,
+                        },
                     },
-                    window: 20,
-                    spike: SpikeSettings {
-                        std_deviation_threshold: 5.,
-                        influence: 0.75,
-                        length_threshold: 3,
-                    },
-                },
-                governance: PolicySettings::default()
-                    .with_source(PolicySource::File(PathBuf::from(
-                        "./resources/governance_preamble.polar",
-                    )))
-                    .with_source(PolicySource::File(PathBuf::from("./resources/governance.polar"))),
-                execution: ExecutionSettings,
-            };
+                    governance: PolicySettings::default()
+                        .with_source(PolicySource::File(PathBuf::from(
+                            "./resources/governance_preamble.polar",
+                        )))
+                        .with_source(PolicySource::File(PathBuf::from("./resources/governance.polar"))),
+                    execution: ExecutionSettings,
+                };
 
-            assert_eq!(actual, expected);
-        });
+                assert_eq!(actual, expected);
+            });
+
         Ok(())
     }
 

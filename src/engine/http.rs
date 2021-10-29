@@ -3,9 +3,10 @@ use axum::extract::{Extension, Path};
 use axum::handler::get;
 use axum::{AddExtensionLayer, Router};
 use axum_debug::{debug_handler, debug_router};
-use std::net::SocketAddr;
+use settings_loader::common::http::HttpServerSettings;
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::net::TcpListener;
 use tower::timeout::TimeoutLayer;
 use tower::ServiceBuilder;
 use tower_http::trace::TraceLayer;
@@ -15,7 +16,7 @@ struct State<'r> {
 }
 
 #[tracing::instrument(level = "info", skip())]
-async fn run_http_server(engine: Service<'static>) -> Result<(), EngineApiError> {
+async fn run_http_server(engine: Service<'static>, settings: &HttpServerSettings) -> Result<(), EngineApiError> {
     let shared_state = Arc::new(State { engine });
 
     let middleware_stack = ServiceBuilder::new()
@@ -33,9 +34,12 @@ async fn run_http_server(engine: Service<'static>) -> Result<(), EngineApiError>
 
     debug_router!(app);
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
-    tracing::info!("autoscale engine API listening on {}", addr);
-    axum::Server::bind(&addr).serve(app.into_make_service()).await?;
+    let address = format!("{}:{}", settings.host, settings.port);
+    let listener = TcpListener::bind(&address).await?.into_std()?;
+    let port = listener.local_addr()?.port();
+
+    tracing::info!("autoscale engine API listening on {}", address);
+    axum::Server::from_tcp(listener)?.serve(app.into_make_service()).await?;
 
     Ok(())
 }

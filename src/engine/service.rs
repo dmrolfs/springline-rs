@@ -71,6 +71,9 @@ mod protocol {
 
         #[error("Could not send command to telemetry clearinghouse: {0}")]
         ClearinghouseRecvError(#[from] oneshot::error::RecvError),
+
+        #[error("Could not open or bind to a TCP address for the autoscale engine's API: {0}")]
+        IOError(#[from] std::io::Error),
     }
 
     impl IntoResponse for EngineApiError {

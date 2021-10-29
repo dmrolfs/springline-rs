@@ -38,6 +38,12 @@ pub struct PerformanceRepositorySettings {
     pub storage_path: Option<String>,
 }
 
+impl Default for PerformanceRepositorySettings {
+    fn default() -> Self {
+        Self { storage: PerformanceRepositoryType::Memory, storage_path: None }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum PerformanceRepositoryType {

@@ -1,4 +1,4 @@
-use crate::phases::plan::{PerformanceRepositorySettings, SpikeSettings};
+use crate::phases::plan::{PerformanceRepositorySettings, PerformanceRepositoryType, SpikeSettings};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
@@ -12,6 +12,21 @@ pub struct PlanSettings {
     pub window: usize,
     pub spike: SpikeSettings,
 }
+
+impl Default for PlanSettings {
+    fn default() -> Self {
+        Self {
+            min_scaling_step: 1,
+            restart: Duration::from_secs(2 * 60),
+            max_catch_up: Duration::from_secs(13 * 60),
+            recovery_valid: Duration::from_secs(5 * 60),
+            performance_repository: PerformanceRepositorySettings::default(),
+            window: 20,
+            spike: SpikeSettings::default(),
+        }
+    }
+}
+
 
 #[cfg(test)]
 mod tests {

@@ -1,4 +1,9 @@
 (
+    // set engine.machine_id and engine.node_id via environment variable
+    http: (
+        host: "0.0.0.0",
+        port: 8000,
+    ),
     collection: (
         sources: {
             "foo": ( type: "csv", path: "./resources/bar.toml", ),
