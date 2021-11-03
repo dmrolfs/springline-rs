@@ -26,7 +26,7 @@ pub struct MetricCatalog {
 
     #[polar(attribute)]
     #[serde(flatten)] // current subscription mechanism only supports flatten keys
-    pub job_health: JobHealthMetrics,
+    pub health: JobHealthMetrics,
 
     #[polar(attribute)]
     #[serde(flatten)] // current subscription mechanism only supports flatten keys
@@ -47,19 +47,23 @@ pub struct JobHealthMetrics {
     //
     // Returns -1 for completed jobs (in milliseconds).
     #[polar(attribute)]
+    #[serde(rename = "health.job_uptime_millis")]
     pub job_uptime_millis: i64,
 
     /// The total number of restarts since this job was submitted, including full restarts and
     /// fine-grained restarts.
     #[polar(attribute)]
+    #[serde(rename = "health.job_nr_restarts")]
     pub job_nr_restarts: i64,
 
     /// The number of successfully completed checkpoints.
     #[polar(attribute)]
+    #[serde(rename = "health.job_nr_completed_checkpoints")]
     pub job_nr_completed_checkpoints: i64,
 
     /// The number of failed checkpoints.
     #[polar(attribute)]
+    #[serde(rename = "health.job_nr_failed_checkpoints")]
     pub job_nr_failed_checkpoints: i64,
 }
 
@@ -67,50 +71,62 @@ pub struct JobHealthMetrics {
 pub struct FlowMetrics {
     // this will need to be in context:  historical_input_messages_per_sec: VecDeque<(f64, DateTime<Utc>)>,
     #[polar(attribute)]
+    #[serde(rename = "flow.records_in_per_sec")]
     pub records_in_per_sec: f64,
 
     #[polar(attribute)]
+    #[serde(rename = "flow.records_out_per_sec")]
     pub records_out_per_sec: f64,
 
     #[polar(attribute)]
+    #[serde(rename = "flow.input_consumer_lag")]
     pub input_consumer_lag: f64,
 }
 
 #[derive(PolarClass, Debug, Default, PartialEq, Clone, Serialize, Deserialize)]
 pub struct ClusterMetrics {
     #[polar(attribute)]
+    #[serde(rename = "cluster.nr_task_managers")]
     pub nr_task_managers: u16,
 
     /// The recent CPU usage of the JVM.
     #[polar(attribute)]
+    #[serde(rename = "cluster.task_cpu_load")]
     pub task_cpu_load: f64,
 
     /// The amount of heap memory currently used (in bytes).
     #[polar(attribute)]
+    #[serde(rename = "cluster.task_heap_memory_used")]
     pub task_heap_memory_used: f64,
 
     /// The amount of heap memory guaranteed to be available to the JVM (in bytes).
     #[polar(attribute)]
+    #[serde(rename = "cluster.task_heap_memory_committed")]
     pub task_heap_memory_committed: f64,
 
     /// The total number of live threads.
     #[polar(attribute)]
+    #[serde(rename = "cluster.nr_threads")]
     pub nr_threads: i64,
 
     /// The number of queued input buffers.
     #[polar(attribute)]
+    #[serde(rename = "cluster.task_network_input_queue_len")]
     pub task_network_input_queue_len: i64,
 
     /// An estimate of the input buffers usage.
     #[polar(attribute)]
+    #[serde(rename = "cluster.task_network_input_pool_usage")]
     pub task_network_input_pool_usage: i64,
 
     /// The number of queued input buffers.
     #[polar(attribute)]
+    #[serde(rename = "cluster.task_network_output_queue_len")]
     pub task_network_output_queue_len: i64,
 
     /// An estimate of the output buffers usage.
     #[polar(attribute)]
+    #[serde(rename = "cluster.task_network_output_pool_usage")]
     pub task_network_output_pool_usage: i64,
 }
 
@@ -137,7 +153,7 @@ impl MetricCatalog {
         Self {
             correlation_id: generator.next_id(),
             timestamp,
-            job_health: JobHealthMetrics::default(),
+            health: JobHealthMetrics::default(),
             flow: FlowMetrics::default(),
             cluster: ClusterMetrics::default(),
             custom,
@@ -186,26 +202,26 @@ impl SubscriptionRequirements for MetricCatalog {
     fn required_fields() -> HashSet<proctor::SharedString> {
         maplit::hashset! {
             // JobHealthMetrics
-            "job_uptime_millis".into(),
-            "job_nr_restarts".into(),
-            "job_nr_completed_checkpoints".into(),
-            "job_nr_failed_checkpoints".into(),
+            "health.job_uptime_millis".into(),
+            "health.job_nr_restarts".into(),
+            "health.job_nr_completed_checkpoints".into(),
+            "health.job_nr_failed_checkpoints".into(),
 
             // FlowMetrics
-            "records_in_per_sec".into(),
-            "records_out_per_sec".into(),
-            "input_consumer_lag".into(),
+            "flow.records_in_per_sec".into(),
+            "flow.records_out_per_sec".into(),
+            "flow.input_consumer_lag".into(),
 
             // ClusterMetrics
-            "nr_task_managers".into(),
-            "task_cpu_load".into(),
-            "task_heap_memory_used".into(),
-            "task_heap_memory_committed".into(),
-            "nr_threads".into(),
-            "task_network_input_queue_len".into(),
-            "task_network_input_pool_usage".into(),
-            "task_network_output_queue_len".into(),
-            "task_network_output_pool_usage".into(),
+            "cluster.nr_task_managers".into(),
+            "cluster.task_cpu_load".into(),
+            "cluster.task_heap_memory_used".into(),
+            "cluster.task_heap_memory_committed".into(),
+            "cluster.nr_threads".into(),
+            "cluster.task_network_input_queue_len".into(),
+            "cluster.task_network_input_pool_usage".into(),
+            "cluster.task_network_output_queue_len".into(),
+            "cluster.task_network_output_pool_usage".into(),
         }
     }
 }
@@ -219,10 +235,10 @@ impl UpdateMetrics for MetricCatalog {
             Ok(catalog) => {
                 METRIC_CATALOG_TIMESTAMP.set(catalog.timestamp.as_secs());
 
-                METRIC_CATALOG_JOB_HEALTH_UPTIME.set(catalog.job_health.job_uptime_millis);
-                METRIC_CATALOG_JOB_HEALTH_NR_RESTARTS.set(catalog.job_health.job_nr_restarts);
-                METRIC_CATALOG_JOB_HEALTH_NR_COMPLETED_CHECKPOINTS.set(catalog.job_health.job_nr_completed_checkpoints);
-                METRIC_CATALOG_JOB_HEALTH_NR_FAILED_CHECKPOINTS.set(catalog.job_health.job_nr_failed_checkpoints);
+                METRIC_CATALOG_JOB_HEALTH_UPTIME.set(catalog.health.job_uptime_millis);
+                METRIC_CATALOG_JOB_HEALTH_NR_RESTARTS.set(catalog.health.job_nr_restarts);
+                METRIC_CATALOG_JOB_HEALTH_NR_COMPLETED_CHECKPOINTS.set(catalog.health.job_nr_completed_checkpoints);
+                METRIC_CATALOG_JOB_HEALTH_NR_FAILED_CHECKPOINTS.set(catalog.health.job_nr_failed_checkpoints);
 
                 METRIC_CATALOG_FLOW_RECORDS_IN_PER_SEC.set(catalog.flow.records_in_per_sec);
                 METRIC_CATALOG_FLOW_RECORDS_OUT_PER_SEC.set(catalog.flow.records_out_per_sec);
@@ -432,7 +448,7 @@ mod tests {
         let metrics = MetricCatalog {
             correlation_id: CORR_ID.clone(),
             timestamp: ts,
-            job_health: JobHealthMetrics {
+            health: JobHealthMetrics {
                 job_uptime_millis: 1_234_567,
                 job_nr_restarts: 3,
                 job_nr_completed_checkpoints: 12_345,
@@ -475,37 +491,37 @@ mod tests {
                 Token::I64(ts_secs),
                 Token::U32(ts_nsecs),
                 Token::TupleStructEnd,
-                Token::Str("job_uptime_millis"),
+                Token::Str("health.job_uptime_millis"),
                 Token::I64(1_234_567),
-                Token::Str("job_nr_restarts"),
+                Token::Str("health.job_nr_restarts"),
                 Token::I64(3),
-                Token::Str("job_nr_completed_checkpoints"),
+                Token::Str("health.job_nr_completed_checkpoints"),
                 Token::I64(12_345),
-                Token::Str("job_nr_failed_checkpoints"),
+                Token::Str("health.job_nr_failed_checkpoints"),
                 Token::I64(7),
-                Token::Str("records_in_per_sec"),
+                Token::Str("flow.records_in_per_sec"),
                 Token::F64(17.),
-                Token::Str("records_out_per_sec"),
+                Token::Str("flow.records_out_per_sec"),
                 Token::F64(0.),
-                Token::Str("input_consumer_lag"),
+                Token::Str("flow.input_consumer_lag"),
                 Token::F64(3.14),
-                Token::Str("nr_task_managers"),
+                Token::Str("cluster.nr_task_managers"),
                 Token::U16(4),
-                Token::Str("task_cpu_load"),
+                Token::Str("cluster.task_cpu_load"),
                 Token::F64(0.65),
-                Token::Str("task_heap_memory_used"),
+                Token::Str("cluster.task_heap_memory_used"),
                 Token::F64(92_987.),
-                Token::Str("task_heap_memory_committed"),
+                Token::Str("cluster.task_heap_memory_committed"),
                 Token::F64(103_929_920.),
-                Token::Str("nr_threads"),
+                Token::Str("cluster.nr_threads"),
                 Token::I64(8),
-                Token::Str("task_network_input_queue_len"),
+                Token::Str("cluster.task_network_input_queue_len"),
                 Token::I64(12),
-                Token::Str("task_network_input_pool_usage"),
+                Token::Str("cluster.task_network_input_pool_usage"),
                 Token::I64(8),
-                Token::Str("task_network_output_queue_len"),
+                Token::Str("cluster.task_network_output_queue_len"),
                 Token::I64(13),
-                Token::Str("task_network_output_pool_usage"),
+                Token::Str("cluster.task_network_output_pool_usage"),
                 Token::I64(5),
                 Token::Str("bar"),
                 Token::I64(33),
@@ -525,7 +541,7 @@ mod tests {
         let metrics = MetricCatalog {
             correlation_id: corr_id.clone(),
             timestamp: ts,
-            job_health: JobHealthMetrics {
+            health: JobHealthMetrics {
                 job_uptime_millis: 1_234_567,
                 job_nr_restarts: 3,
                 job_nr_completed_checkpoints: 12_345,
@@ -561,24 +577,24 @@ mod tests {
             TelemetryValue::Table(maplit::hashmap! {
                 SUBSCRIPTION_CORRELATION.to_string() => corr_id.to_telemetry(),
                 SUBSCRIPTION_TIMESTAMP.to_string() => TelemetryValue::Seq(vec![ts_secs.to_telemetry(), ts_nsecs.to_telemetry(),]),
-                "job_uptime_millis".to_string() => (1_234_567).to_telemetry(),
-                "job_nr_restarts".to_string() => (3).to_telemetry(),
-                "job_nr_completed_checkpoints".to_string() => (12_345).to_telemetry(),
-                "job_nr_failed_checkpoints".to_string() => (7).to_telemetry(),
+                "health.job_uptime_millis".to_string() => (1_234_567).to_telemetry(),
+                "health.job_nr_restarts".to_string() => (3).to_telemetry(),
+                "health.job_nr_completed_checkpoints".to_string() => (12_345).to_telemetry(),
+                "health.job_nr_failed_checkpoints".to_string() => (7).to_telemetry(),
 
-                "records_in_per_sec".to_string() => (17.).to_telemetry(),
-                "records_out_per_sec".to_string() => (0.).to_telemetry(),
-                "input_consumer_lag".to_string() => 3.14.to_telemetry(),
+                "flow.records_in_per_sec".to_string() => (17.).to_telemetry(),
+                "flow.records_out_per_sec".to_string() => (0.).to_telemetry(),
+                "flow.input_consumer_lag".to_string() => 3.14.to_telemetry(),
 
-                "nr_task_managers".to_string() => 4.to_telemetry(),
-                "task_cpu_load".to_string() => (0.65).to_telemetry(),
-                "task_heap_memory_used".to_string() => (92_987.).to_telemetry(),
-                "task_heap_memory_committed".to_string() => (103_929_920.).to_telemetry(),
-                "nr_threads".to_string() => (8).to_telemetry(),
-                "task_network_input_queue_len".to_string() => (12).to_telemetry(),
-                "task_network_input_pool_usage".to_string() => (8).to_telemetry(),
-                "task_network_output_queue_len".to_string() => (13).to_telemetry(),
-                "task_network_output_pool_usage".to_string() => (5).to_telemetry(),
+                "cluster.nr_task_managers".to_string() => 4.to_telemetry(),
+                "cluster.task_cpu_load".to_string() => (0.65).to_telemetry(),
+                "cluster.task_heap_memory_used".to_string() => (92_987.).to_telemetry(),
+                "cluster.task_heap_memory_committed".to_string() => (103_929_920.).to_telemetry(),
+                "cluster.nr_threads".to_string() => (8).to_telemetry(),
+                "cluster.task_network_input_queue_len".to_string() => (12).to_telemetry(),
+                "cluster.task_network_input_pool_usage".to_string() => (8).to_telemetry(),
+                "cluster.task_network_output_queue_len".to_string() => (13).to_telemetry(),
+                "cluster.task_network_output_pool_usage".to_string() => (5).to_telemetry(),
 
                 "foo".to_string() => "David".to_telemetry(),
                 "bar".to_string() => 33.to_telemetry(),

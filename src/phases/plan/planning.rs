@@ -438,7 +438,7 @@ mod tests {
         static ref METRICS: MetricCatalog = MetricCatalog {
             correlation_id: CORRELATION.clone(),
             timestamp: Utc.timestamp(NOW, 0).into(),
-            job_health: JobHealthMetrics::default(),
+            health: JobHealthMetrics::default(),
             flow: FlowMetrics {
                 input_consumer_lag: 314.15926535897932384264,
                 ..FlowMetrics::default()

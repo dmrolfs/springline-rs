@@ -107,7 +107,6 @@ mod tests {
     use std::sync::Mutex;
     use std::time::Duration;
     use std::{env, panic};
-    use trim_margin::MarginTrimmable;
 
     lazy_static! {
         static ref SERIAL_TEST: Mutex<()> = Default::default();

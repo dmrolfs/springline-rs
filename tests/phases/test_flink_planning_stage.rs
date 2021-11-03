@@ -174,7 +174,7 @@ fn make_test_data(
     MetricCatalog {
         correlation_id: corr_id,
         timestamp,
-        job_health: JobHealthMetrics {
+        health: JobHealthMetrics {
             job_uptime_millis: 1_234_567,
             job_nr_restarts: 3,
             job_nr_completed_checkpoints: 12_345,

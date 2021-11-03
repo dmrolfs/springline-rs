@@ -132,7 +132,7 @@ mod tests {
     use super::*;
     use claim::*;
     use pretty_assertions::assert_eq;
-    use proctor::elements::{policy_filter, PolicyRegistry};
+    use proctor::elements::PolicyRegistry;
     use serde_test::{assert_tokens, Token};
     use trim_margin::MarginTrimmable;
 
@@ -164,7 +164,6 @@ mod tests {
             ],
         );
 
-        let json = r##"{"template_data":{"basis":"decision_basis","max_healthy_lag":133,"min_healthy_lag":1,"max_healthy_cpu_load":0.7}}"##;
         let c = assert_ok!(config::Config::builder()
             .add_source(config::File::from(std::path::PathBuf::from(
                 "./tests/data/decision.ron"

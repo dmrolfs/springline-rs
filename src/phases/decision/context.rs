@@ -23,6 +23,7 @@ pub struct DecisionContext {
     pub all_sinks_healthy: bool,
 
     #[polar(attribute)]
+    #[serde(rename = "cluster.nr_task_managers")]
     pub nr_task_managers: u16,
 
     #[polar(attribute)]
@@ -42,7 +43,7 @@ impl SubscriptionRequirements for DecisionContext {
     fn required_fields() -> HashSet<proctor::SharedString> {
         maplit::hashset! {
             "all_sinks_healthy".into(),
-            "nr_task_managers".into(),
+            "cluster.nr_task_managers".into(),
         }
     }
 }
@@ -132,7 +133,7 @@ mod tests {
             Token::TupleStructEnd,
             Token::Str("all_sinks_healthy"),
             Token::Bool(true),
-            Token::Str("nr_task_managers"),
+            Token::Str("cluster.nr_task_managers"),
             Token::U16(4),
             Token::Str("custom_foo"),
             Token::Str("fred flintstone"),
@@ -160,7 +161,7 @@ mod tests {
             "correlation_id" => Id::direct(0, "A").to_telemetry(),
             "timestamp" => Timestamp::new(0, 0).to_telemetry(),
             "all_sinks_healthy" => false.to_telemetry(),
-            "nr_task_managers" => 4.to_telemetry(),
+            "cluster.nr_task_managers" => 4.to_telemetry(),
             "foo" => "bar".to_telemetry(),
         }
         .into_iter()

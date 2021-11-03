@@ -20,7 +20,6 @@ use super::fixtures::*;
 use pretty_snowflake::MachineNode;
 use proctor::phases::policy_phase::PolicyPhase;
 use springline::phases::decision::result::{make_decision_transform, DecisionResult, DECISION_BINDING};
-use std::path::PathBuf;
 
 lazy_static::lazy_static! {
     static ref DECISION_PREAMBLE: PolicySource = PolicySource::from_template_file("./resources/decision.polar").expect("failed to create decision policy source");
@@ -243,7 +242,7 @@ async fn test_decision_carry_policy_result() -> anyhow::Result<()> {
         .with_required_fields(<MetricCatalog as SubscriptionRequirements>::required_fields())
         .with_optional_fields(maplit::hashset! {
             "all_sinks_healthy",
-            "nr_task_managers",
+            "cluster.nr_task_managers",
         });
 
     let policy = DecisionPolicy::new(&POLICY_SETTINGS.clone().with_source(PolicySource::from_template_string(
@@ -275,7 +274,7 @@ async fn test_decision_carry_policy_result() -> anyhow::Result<()> {
 
     flow.push_context(maplit::hashmap! {
         "all_sinks_healthy" => true.to_telemetry(),
-        "nr_task_managers" => 4.to_telemetry(),
+        "cluster.nr_task_managers" => 4.to_telemetry(),
     })
     .await?;
 
@@ -386,7 +385,7 @@ async fn test_decision_common() -> anyhow::Result<()> {
 
     flow.push_context(maplit::hashmap! {
         "all_sinks_healthy" => true.to_telemetry(),
-        "nr_task_managers" => 4.to_telemetry(),
+        "cluster.nr_task_managers" => 4.to_telemetry(),
     })
     .await?;
 

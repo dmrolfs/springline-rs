@@ -2,7 +2,7 @@ use crate::engine::service::{EngineApiError, EngineCmd, MetricsSpan, Service};
 use axum::extract::{Extension, Path};
 use axum::routing::get;
 use axum::{AddExtensionLayer, BoxError, Router};
-use axum_debug::{debug_handler, debug_router};
+use axum_debug::debug_handler;
 use settings_loader::common::http::HttpServerSettings;
 use std::sync::Arc;
 use std::time::Duration;
@@ -11,15 +11,9 @@ use tower::timeout::TimeoutLayer;
 use tower::ServiceBuilder;
 use tower_http::trace::TraceLayer;
 
+use axum::error_handling::HandleErrorLayer;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use axum::{
-    body::{Body, BoxBody},
-    error_handling::HandleErrorLayer,
-    http::{Request, Response},
-};
-use std::convert::Infallible;
-use tower::util::AndThenLayer;
 
 struct State<'r> {
     engine: Service<'r>,
