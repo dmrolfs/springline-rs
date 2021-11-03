@@ -44,6 +44,7 @@ impl PartialEq for EligibilityContext {
 impl SubscriptionRequirements for EligibilityContext {
     fn required_fields() -> HashSet<proctor::SharedString> {
         maplit::hashset! {
+            // this works because we rename the property via #serde field attributes
             "task.last_failure".into(),
             "cluster.is_deploying".into(),
             "cluster.last_deployment".into(),

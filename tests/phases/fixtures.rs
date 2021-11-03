@@ -31,6 +31,17 @@ pub fn make_test_item_padding() -> Telemetry {
             "sink_health_metrics".to_string() => (0.).into(),
             "task_cpu_load".to_string() => (0.).into(),
             "network_io_utilization".to_string() => (0.).into(),
+            "job_nr_completed_checkpoints".to_string() => (0).into(),
+            "task_network_output_pool_usage".to_string() => (0).into(),
+            "task_network_input_queue_len".to_string() => (0).into(),
+            "nr_threads".to_string() => (0).into(),
+            "job_nr_failed_checkpoints".to_string() => (0).into(),
+            "task_heap_memory_committed".to_string() => (0.).into(),
+            "job_nr_restarts".to_string() => (0).into(),
+            "task_network_output_queue_len".to_string() => (0).into(),
+            "task_network_input_pool_usage".to_string() => (0).into(),
+            "task_heap_memory_used".to_string() => (0.).into(),
+            "job_uptime_millis".to_string() => (0).into(),
     }
     .into_iter()
     .collect();

@@ -2,7 +2,6 @@ accept(plan, context, adjusted_target)
     if accept_scale_up(plan, context, adjusted_target)
     or accept_scale_down(plan, context, adjusted_target);
 
-
 accept_scale_up(plan, context, adjusted_target)
     if check_scale_up(plan, context, adjusted)
     and context.max_cluster_size < adjusted

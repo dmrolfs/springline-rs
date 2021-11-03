@@ -8,6 +8,9 @@ pub use engine_settings::*;
 pub use execution_settings::*;
 pub use plan_settings::*;
 
+use crate::phases::decision::DecisionTemplateData;
+use crate::phases::eligibility::policy::EligibilityTemplateData;
+use crate::phases::governance::GovernanceTemplateData;
 use clap::Parser;
 use config::builder::DefaultState;
 use config::ConfigBuilder;
@@ -25,13 +28,13 @@ pub struct Settings {
     #[serde(default)]
     pub collection: CollectionSettings,
     #[serde(default)]
-    pub eligibility: PolicySettings,
+    pub eligibility: PolicySettings<EligibilityTemplateData>,
     #[serde(default)]
-    pub decision: PolicySettings,
+    pub decision: PolicySettings<DecisionTemplateData>,
     #[serde(default)]
     pub plan: PlanSettings,
     #[serde(default)]
-    pub governance: PolicySettings,
+    pub governance: PolicySettings<GovernanceTemplateData>,
     pub execution: ExecutionSettings,
 }
 
@@ -98,11 +101,13 @@ mod tests {
     use pretty_assertions::assert_eq;
     use proctor::elements::PolicySource;
     use proctor::phases::collection::SourceSetting;
+    use std::collections::HashMap;
     use std::env::VarError;
     use std::panic::{RefUnwindSafe, UnwindSafe};
     use std::sync::Mutex;
     use std::time::Duration;
     use std::{env, panic};
+    use trim_margin::MarginTrimmable;
 
     lazy_static! {
         static ref SERIAL_TEST: Mutex<()> = Default::default();
@@ -165,6 +170,84 @@ mod tests {
     }
 
     #[test]
+    fn test_basic_load() {
+        let c = assert_ok!(config::Config::builder()
+            .add_source(config::File::from(std::path::PathBuf::from("./tests/data/settings.ron")))
+            // .add_source(config::File::from(std::path::PathBuf::from("./resources/application.ron")))
+            .build());
+
+        let expected = Settings {
+            http: HttpServerSettings { host: "0.0.0.0".to_string(), port: 8000 },
+            engine: Default::default(),
+            collection: CollectionSettings {
+                sources: maplit::hashmap! {
+                    "foo".to_string() => SourceSetting::Csv { path: PathBuf::from("./resources/bar.toml"), },
+                },
+            },
+            eligibility: PolicySettings {
+                policies: vec![
+                    assert_ok!(PolicySource::from_template_file("./resources/eligibility.polar")),
+                    assert_ok!(PolicySource::from_template_string(
+                        "eligibility_basis",
+                        r##"|
+    |                        eligible(_, _context, length) if length = 13;
+    |                        eligible(_item, context, c) if
+    |                            c = context.custom() and
+    |                            c.cat = "Otis" and
+    |                            cut;
+    |                    "##,
+                    )),
+                ],
+                ..PolicySettings::default()
+            },
+            decision: PolicySettings {
+                policies: vec![
+                    assert_ok!(PolicySource::from_complete_file("./resources/decision.polar")),
+                    assert_ok!(PolicySource::from_complete_file("./resources/decision_basis.polar")),
+                ],
+                template_data: Some(DecisionTemplateData {
+                    basis: "decision_basis".to_string(),
+                    max_healthy_lag: Some(133.),
+                    min_healthy_lag: 0.,
+                    max_healthy_cpu_load: Some(0.7),
+                    ..DecisionTemplateData::default()
+                }),
+                ..PolicySettings::default()
+            },
+            plan: PlanSettings {
+                min_scaling_step: 2,
+                restart: Duration::from_secs(120),
+                max_catch_up: Duration::from_secs(600),
+                recovery_valid: Duration::from_secs(300),
+                performance_repository: PerformanceRepositorySettings {
+                    storage: PerformanceRepositoryType::File,
+                    storage_path: Some("./tests/data/performance.data".to_string()),
+                },
+                window: 20,
+                spike: SpikeSettings {
+                    std_deviation_threshold: 5.0,
+                    influence: 0.75,
+                    length_threshold: 3,
+                },
+            },
+            governance: PolicySettings {
+                policies: vec![assert_ok!(PolicySource::from_complete_file(
+                    "./resources/governance.polar"
+                ))],
+                ..PolicySettings::default()
+            },
+            execution: ExecutionSettings,
+        };
+
+        // let exp_rep = assert_ok!(ron::to_string(&expected));
+        // assert_eq!(exp_rep.as_str(), "");
+
+        let actual: Settings = assert_ok!(c.try_into());
+
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
     fn test_load_eligibility_settings() -> anyhow::Result<()> {
         lazy_static::initialize(&proctor::tracing::TEST_TRACING);
         let main_span = tracing::info_span!("test_load_eligibility_settings");
@@ -177,7 +260,7 @@ mod tests {
                     required_subscription_fields: [],
                     optional_subscription_fields: [],
                     policies: [
-                        (source: "file", policy: "./resources/eligibility.polar"),
+                        (source: "file", policy: (path:"./resources/eligibility.polar")),
                     ],
                 )
                 "###,
@@ -187,11 +270,10 @@ mod tests {
 
         tracing::info!(?config, "eligibility config loaded.");
 
-        let actual: PolicySettings = assert_ok!(config.try_into());
-        assert_eq!(
-            actual,
-            PolicySettings::default().with_source(PolicySource::File(PathBuf::from("./resources/eligibility.polar"))),
-        );
+        let actual: PolicySettings<EligibilityTemplateData> = assert_ok!(config.try_into());
+        let expected = PolicySettings::<EligibilityTemplateData>::default()
+            .with_source(PolicySource::from_complete_file("./resources/eligibility.polar")?);
+        assert_eq!(actual, expected);
         Ok(())
     }
 
@@ -201,8 +283,10 @@ mod tests {
         let main_span = tracing::info_span!("test_settings_applications_load");
         let _ = main_span.enter();
 
-        let before_env = assert_ok!(Settings::load(CliOptions::default()));
-        assert_eq!(before_env.engine, EngineSettings { machine_id: 1, node_id: 1});
+        let before_env = Settings::load(CliOptions::default());
+        tracing::info!("from Settings::load: {:?}", before_env);
+        let before_env = assert_ok!(before_env);
+        assert_eq!(before_env.engine, EngineSettings { machine_id: 1, node_id: 1 });
 
         with_env_vars(
             "test_settings_applications_load",
@@ -212,7 +296,7 @@ mod tests {
             ],
             || {
                 let actual: Settings = assert_ok!(Settings::load(CliOptions::default()));
-                assert_eq!(actual.engine, EngineSettings { machine_id: 7, node_id: 3});
+                assert_eq!(actual.engine, EngineSettings { machine_id: 7, node_id: 3 });
 
                 let expected = Settings {
                     http: HttpServerSettings { host: "0.0.0.0".to_string(), port: 8000 },
@@ -223,19 +307,33 @@ mod tests {
                         },
                     },
                     eligibility: PolicySettings::default()
-                        .with_source(PolicySource::File(PathBuf::from("./resources/eligibility.polar")))
-                        .with_source(PolicySource::String(
-                            r##"
-                    eligible(_, _context, length) if length = 13;
-                    eligible(_item, context, c) if
-                    c = context.custom() and
-                    c.cat = "Otis" and
-                    cut;
-                "## .to_string(),
-                        )),
+                        .with_source(assert_ok!(PolicySource::from_template_file(
+                            "./resources/eligibility.polar"
+                        )))
+                        .with_source(assert_ok!(PolicySource::from_template_file(
+                            "./resources/eligibility_basis.polar"
+                        )))
+                        .with_template_data(EligibilityTemplateData {
+                            basis: "eligibility_basis".to_string(),
+                            cooling_secs: Some(15 * 60),
+                            stable_secs: Some(15 * 60),
+                            custom: HashMap::default(),
+                        }),
                     decision: PolicySettings::default()
-                        .with_source(PolicySource::File(PathBuf::from("./resources/decision_preamble.polar")))
-                        .with_source(PolicySource::File(PathBuf::from("./resources/decision.polar"))),
+                        .with_source(assert_ok!(PolicySource::from_template_file(
+                            "./resources/decision.polar"
+                        )))
+                        .with_source(assert_ok!(PolicySource::from_template_file(
+                            "./resources/decision_basis.polar"
+                        )))
+                        .with_template_data(DecisionTemplateData {
+                            basis: "decision_basis".to_string(),
+                            max_healthy_lag: Some(133_f64),
+                            min_healthy_lag: 0_f64,
+                            max_healthy_cpu_load: Some(0.7),
+                            max_healthy_network_io: None,
+                            custom: HashMap::default(),
+                        }),
                     plan: PlanSettings {
                         min_scaling_step: 2,
                         restart: Duration::from_secs(2 * 60),
@@ -252,16 +350,15 @@ mod tests {
                             length_threshold: 3,
                         },
                     },
-                    governance: PolicySettings::default()
-                        .with_source(PolicySource::File(PathBuf::from(
-                            "./resources/governance_preamble.polar",
-                        )))
-                        .with_source(PolicySource::File(PathBuf::from("./resources/governance.polar"))),
+                    governance: PolicySettings::default().with_source(assert_ok!(PolicySource::from_complete_file(
+                        "./resources/governance.polar"
+                    ))),
                     execution: ExecutionSettings,
                 };
 
                 assert_eq!(actual, expected);
-            });
+            },
+        );
 
         Ok(())
     }

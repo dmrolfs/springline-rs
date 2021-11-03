@@ -18,7 +18,7 @@ use springline::phases::plan::{
     make_performance_repository, FlinkPlanning, LeastSquaresWorkloadForecastBuilder, PerformanceRepositorySettings,
     PerformanceRepositoryType, ScalePlan, SpikeSettings,
 };
-use springline::phases::{ClusterMetrics, FlowMetrics, MetricCatalog};
+use springline::phases::{ClusterMetrics, FlowMetrics, JobHealthMetrics, MetricCatalog};
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
@@ -174,19 +174,27 @@ fn make_test_data(
     MetricCatalog {
         correlation_id: corr_id,
         timestamp,
+        job_health: JobHealthMetrics {
+            job_uptime_millis: 1_234_567,
+            job_nr_restarts: 3,
+            job_nr_completed_checkpoints: 12_345,
+            job_nr_failed_checkpoints: 7,
+        },
         flow: FlowMetrics {
             records_in_per_sec: records_per_sec,
             records_out_per_sec: records_per_sec,
             input_consumer_lag,
-            // max_message_latency: 0.,
-            // net_in_utilization: 0.,
-            // net_out_utilization: 0.,
-            // sink_health_metrics: 0.,
         },
         cluster: ClusterMetrics {
             nr_task_managers,
-            task_cpu_load: 0.,
-            network_io_utilization: 0.,
+            task_cpu_load: 0.65,
+            task_heap_memory_used: 92_987_f64,
+            task_heap_memory_committed: 103_929_920_f64,
+            nr_threads: 8,
+            task_network_input_queue_len: 12,
+            task_network_input_pool_usage: 8,
+            task_network_output_queue_len: 12,
+            task_network_output_pool_usage: 5,
         },
         custom: telemetry::TableType::default(),
     }

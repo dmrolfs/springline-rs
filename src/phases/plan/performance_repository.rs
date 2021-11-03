@@ -40,7 +40,10 @@ pub struct PerformanceRepositorySettings {
 
 impl Default for PerformanceRepositorySettings {
     fn default() -> Self {
-        Self { storage: PerformanceRepositoryType::Memory, storage_path: None }
+        Self {
+            storage: PerformanceRepositoryType::Memory,
+            storage_path: None,
+        }
     }
 }
 

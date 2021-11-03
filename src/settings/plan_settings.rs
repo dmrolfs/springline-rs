@@ -1,4 +1,4 @@
-use crate::phases::plan::{PerformanceRepositorySettings, PerformanceRepositoryType, SpikeSettings};
+use crate::phases::plan::{PerformanceRepositorySettings, SpikeSettings};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
@@ -26,7 +26,6 @@ impl Default for PlanSettings {
         }
     }
 }
-
 
 #[cfg(test)]
 mod tests {

@@ -8,6 +8,16 @@ pub fn register_metrics(registry: &Registry) -> Result<()> {
     proctor::metrics::register_proctor_metrics(registry)?;
 
     registry.register(Box::new(metric_catalog::METRIC_CATALOG_TIMESTAMP.clone()))?;
+
+    registry.register(Box::new(metric_catalog::METRIC_CATALOG_JOB_HEALTH_UPTIME.clone()))?;
+    registry.register(Box::new(metric_catalog::METRIC_CATALOG_JOB_HEALTH_NR_RESTARTS.clone()))?;
+    registry.register(Box::new(
+        metric_catalog::METRIC_CATALOG_JOB_HEALTH_NR_COMPLETED_CHECKPOINTS.clone(),
+    ))?;
+    registry.register(Box::new(
+        metric_catalog::METRIC_CATALOG_JOB_HEALTH_NR_FAILED_CHECKPOINTS.clone(),
+    ))?;
+
     registry.register(Box::new(metric_catalog::METRIC_CATALOG_FLOW_RECORDS_IN_PER_SEC.clone()))?;
     registry.register(Box::new(
         metric_catalog::METRIC_CATALOG_FLOW_RECORDS_OUT_PER_SEC.clone(),
@@ -18,7 +28,23 @@ pub fn register_metrics(registry: &Registry) -> Result<()> {
     ))?;
     registry.register(Box::new(metric_catalog::METRIC_CATALOG_CLUSTER_TASK_CPU_LOAD.clone()))?;
     registry.register(Box::new(
-        metric_catalog::METRIC_CATALOG_CLUSTER_NETWORK_IO_UTILIZATION.clone(),
+        metric_catalog::METRIC_CATALOG_CLUSTER_TASK_HEAP_MEMORY_USED.clone(),
+    ))?;
+    registry.register(Box::new(
+        metric_catalog::METRIC_CATALOG_CLUSTER_TASK_HEAP_MEMORY_COMMITTED.clone(),
+    ))?;
+    registry.register(Box::new(metric_catalog::METRIC_CATALOG_CLUSTER_TASK_NR_THREADS.clone()))?;
+    registry.register(Box::new(
+        metric_catalog::METRIC_CATALOG_CLUSTER_TASK_NETWORK_INPUT_QUEUE_LEN.clone(),
+    ))?;
+    registry.register(Box::new(
+        metric_catalog::METRIC_CATALOG_CLUSTER_TASK_NETWORK_INPUT_POOL_USAGE.clone(),
+    ))?;
+    registry.register(Box::new(
+        metric_catalog::METRIC_CATALOG_CLUSTER_TASK_NETWORK_OUTPUT_QUEUE_LEN.clone(),
+    ))?;
+    registry.register(Box::new(
+        metric_catalog::METRIC_CATALOG_CLUSTER_TASK_NETWORK_OUTPUT_POOL_USAGE.clone(),
     ))?;
 
     registry.register(Box::new(

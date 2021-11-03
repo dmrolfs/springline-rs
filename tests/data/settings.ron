@@ -9,32 +9,43 @@
     eligibility: (
         policies: [
             (source: "file", policy: (path: "./resources/eligibility.polar", is_template: true)),
-            (source: "file", policy: (path: "./resources/eligibility_basis.polar", is_template: true)),
+            (
+                source: "string",
+                policy: (
+                    name: "eligibility_basis",
+                    polar: r#"
+                        eligible(_, _context, length) if length = 13;
+                        eligible(_item, context, c) if
+                            c = context.custom() and
+                            c.cat = "Otis" and
+                            cut;
+                    "#,
+                    is_template: true
+                )
+            )
         ],
-        template_data: (
-            basis: "eligibility_basis",
-            cooling_secs: 900,
-            stable_secs: 900,
-        ),
     ),
     decision: (
         policies: [
-            (source: "file", policy: (path: "./resources/decision.polar", is_template: true)),
-            (source: "file", policy: (path: "./resources/decision_basis.polar", is_template: true)),
+            (source: "file", policy: (path: "./resources/decision.polar")),
+            (source: "file", policy: (path: "./resources/decision_basis.polar")),
         ],
         template_data: (
             basis: "decision_basis",
             max_healthy_lag: 133.0,
             min_healthy_lag: 0.0,
             max_healthy_cpu_load: 0.7,
-        ),
+        )
     ),
     plan: (
         min_scaling_step: 2,
         restart: (secs: 120, nanos: 0),
         max_catch_up: (secs: 600, nanos: 0),
         recovery_valid: (secs: 300, nanos: 0),
-        performance_repository: ( storage: "file", storage_path: "./tests/data/performance.data", ),
+        performance_repository: (
+            storage: "file",
+            storage_path: "./tests/data/performance.data",
+        ),
         window: 20,
         spike: (
             std_deviation_threshold: 5.0,
@@ -43,8 +54,10 @@
         ),
     ),
     governance: (
+        required_subscription_fields: [],
+        optional_subscription_fields: [],
         policies: [
-            (source: "file", policy: (path: "./resources/governance.polar")),
+            ( source: "file", policy: (path: "./resources/governance.polar" )),
         ],
     ),
     execution: (),

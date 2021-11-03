@@ -16,21 +16,21 @@ use proctor::SharedString;
 use result::{make_decision_transform, DecisionResult};
 
 pub type DecisionOutcome = DecisionResult<MetricCatalog>;
-pub type DecisionApi = proctor::elements::PolicyFilterApi<DecisionContext>;
+pub type DecisionApi = proctor::elements::PolicyFilterApi<DecisionContext, DecisionTemplateData>;
 pub type DecisionMonitor = proctor::elements::PolicyFilterMonitor<MetricCatalog, DecisionContext>;
 pub type DecisionEvent = proctor::elements::PolicyFilterEvent<MetricCatalog, DecisionContext>;
 
-pub type DecisionPhase = Box<PolicyPhase<EligibilityOutcome, DecisionOutcome, DecisionContext>>;
+pub type DecisionPhase = Box<PolicyPhase<EligibilityOutcome, DecisionOutcome, DecisionContext, DecisionTemplateData>>;
 
 #[tracing::instrument(level = "info")]
 pub async fn make_decision_phase(
-    settings: &PolicySettings, magnet: ClearinghouseSubscriptionMagnet<'_>,
+    settings: &PolicySettings<DecisionTemplateData>, magnet: ClearinghouseSubscriptionMagnet<'_>,
 ) -> Result<DecisionPhase> {
     let name: SharedString = "decision".into();
     let policy = DecisionPolicy::new(&settings);
     let subscription = policy.subscription(name.as_ref());
     let decision =
-        Box::new(PolicyPhase::with_transform(name.clone(), policy, make_decision_transform(name.into_owned())).await);
+        Box::new(PolicyPhase::with_transform(name.clone(), policy, make_decision_transform(name.into_owned())).await?);
 
     phases::subscribe_policy_phase(subscription, &decision, magnet).await?;
     Ok(decision)

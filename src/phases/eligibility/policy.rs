@@ -1,20 +1,66 @@
 use oso::{Oso, PolarClass};
+use std::collections::{HashMap, HashSet};
 
 use super::context::{ClusterStatus, EligibilityContext, TaskStatus};
 use crate::phases::{MetricCatalog, UpdateMetrics};
 use proctor::elements::{PolicySettings, PolicySource, PolicySubscription, QueryPolicy, QueryResult, Telemetry};
 use proctor::error::PolicyError;
 use proctor::phases::collection::TelemetrySubscription;
-use proctor::ProctorContext;
+use proctor::{ProctorContext, SharedString};
+use serde::{Deserialize, Serialize};
 
 // todo draft policy preample and/or default policy
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EligibilityTemplateData {
+    pub basis: String,
 
-#[derive(Debug)]
-pub struct EligibilityPolicy(PolicySettings);
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cooling_secs: Option<u32>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stable_secs: Option<u32>,
+
+    #[serde(flatten, skip_serializing_if = "HashMap::is_empty")]
+    pub custom: HashMap<String, String>,
+}
+
+impl Default for EligibilityTemplateData {
+    fn default() -> Self {
+        Self {
+            basis: format!("{}_basis", EligibilityPolicy::base_template_name()),
+            cooling_secs: None,
+            stable_secs: None,
+            custom: HashMap::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct EligibilityPolicy {
+    pub required_subscription_fields: HashSet<SharedString>,
+    pub optional_subscription_fields: HashSet<SharedString>,
+    pub sources: Vec<PolicySource>,
+    pub template_data: Option<EligibilityTemplateData>,
+}
 
 impl EligibilityPolicy {
-    pub fn new(settings: &PolicySettings) -> Self {
-        Self(settings.clone())
+    pub fn new(settings: &PolicySettings<EligibilityTemplateData>) -> Self {
+        let required_subscription_fields = settings
+            .required_subscription_fields
+            .iter()
+            .map(|f| SharedString::from(f.to_string()))
+            .collect();
+        let optional_subscription_fields = settings
+            .optional_subscription_fields
+            .iter()
+            .map(|f| SharedString::from(f.to_string()))
+            .collect();
+        Self {
+            required_subscription_fields,
+            optional_subscription_fields,
+            sources: settings.policies.clone(),
+            template_data: settings.template_data.clone(),
+        }
     }
 }
 
@@ -67,11 +113,25 @@ impl QueryPolicy for EligibilityPolicy {
         QueryResult::from_query(engine.query_rule("eligible", args)?)
     }
 
-    fn policy_sources(&self) -> Vec<PolicySource> {
-        self.0.policies.clone()
+    type TemplateData = EligibilityTemplateData;
+
+    fn base_template_name() -> &'static str {
+        "eligibility"
     }
 
-    fn replace_sources(&mut self, sources: Vec<PolicySource>) {
-        self.0.policies = sources;
+    fn policy_template_data(&self) -> Option<&Self::TemplateData> {
+        self.template_data.as_ref()
+    }
+
+    fn policy_template_data_mut(&mut self) -> Option<&mut Self::TemplateData> {
+        self.template_data.as_mut()
+    }
+
+    fn sources(&self) -> &[PolicySource] {
+        self.sources.as_slice()
+    }
+
+    fn sources_mut(&mut self) -> &mut Vec<PolicySource> {
+        &mut self.sources
     }
 }

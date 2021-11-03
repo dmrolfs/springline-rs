@@ -7,7 +7,9 @@ use proctor::elements::{self, PolicyFilterEvent, PolicySettings, PolicySource, T
 use proctor::graph::stage::{self, WithApi, WithMonitor};
 use proctor::graph::{Connect, Graph, SinkShape, SourceShape};
 use proctor::phases::policy_phase::PolicyPhase;
-use springline::phases::governance::{make_governance_transform, GovernanceContext, GovernancePolicy};
+use springline::phases::governance::{
+    make_governance_transform, GovernanceContext, GovernancePolicy, GovernanceTemplateData,
+};
 use springline::phases::plan::ScalePlan;
 use std::path::PathBuf;
 use tokio::sync::oneshot;
@@ -17,8 +19,8 @@ type Data = ScalePlan;
 type Context = GovernanceContext;
 
 lazy_static::lazy_static! {
-    static ref GOVERNANCE_PREAMBLE: PolicySource = PolicySource::File(PathBuf::from("./resources/governance_preamble.polar"));
-    static ref POLICY_SETTINGS: PolicySettings = PolicySettings::default().with_source(GOVERNANCE_PREAMBLE.clone());
+    static ref GOVERNANCE_PREAMBLE: PolicySource = PolicySource::from_complete_file("./resources/governance.polar").expect("failed to create governance policy source");
+    static ref POLICY_SETTINGS: PolicySettings<GovernanceTemplateData> = PolicySettings::default().with_source(GOVERNANCE_PREAMBLE.clone());
 }
 
 #[allow(dead_code)]
@@ -26,14 +28,16 @@ struct TestFlow {
     pub graph_handle: JoinHandle<()>,
     pub tx_data_source_api: stage::ActorSourceApi<Data>,
     pub tx_context_source_api: stage::ActorSourceApi<Context>,
-    pub tx_governance_api: elements::PolicyFilterApi<Context>,
+    pub tx_governance_api: elements::PolicyFilterApi<Context, GovernanceTemplateData>,
     pub rx_governance_monitor: elements::PolicyFilterMonitor<Data, Context>,
     pub tx_sink_api: stage::FoldApi<Vec<Data>>,
     pub rx_sink: Option<oneshot::Receiver<Vec<Data>>>,
 }
 
 impl TestFlow {
-    pub async fn new(governance_stage: PolicyPhase<Data, Data, Context>) -> anyhow::Result<Self> {
+    pub async fn new(
+        governance_stage: PolicyPhase<Data, Data, Context, GovernanceTemplateData>,
+    ) -> anyhow::Result<Self> {
         let data_source: stage::ActorSource<Data> = stage::ActorSource::new("plan_source");
         let tx_data_source_api = data_source.tx_api();
 
@@ -99,7 +103,11 @@ impl TestFlow {
 
     #[allow(dead_code)]
     pub async fn tell_policy(
-        &self, command_rx: (elements::PolicyFilterCmd<Context>, oneshot::Receiver<proctor::Ack>),
+        &self,
+        command_rx: (
+            elements::PolicyFilterCmd<Context, GovernanceTemplateData>,
+            oneshot::Receiver<proctor::Ack>,
+        ),
     ) -> anyhow::Result<proctor::Ack> {
         self.tx_governance_api.send(command_rx.0)?;
         Ok(command_rx.1.await?)
@@ -110,7 +118,9 @@ impl TestFlow {
     }
 
     #[allow(dead_code)]
-    pub async fn inspect_policy_context(&self) -> anyhow::Result<elements::PolicyFilterDetail<Context>> {
+    pub async fn inspect_policy_context(
+        &self,
+    ) -> anyhow::Result<elements::PolicyFilterDetail<Context, GovernanceTemplateData>> {
         let (cmd, detail) = elements::PolicyFilterCmd::inspect();
         self.tx_governance_api.send(cmd)?;
 
@@ -269,7 +279,7 @@ async fn test_flink_governance_flow_simple_and_happy() -> anyhow::Result<()> {
         policy,
         make_governance_transform("common_governance_transform"),
     )
-    .await;
+    .await?;
 
     let mut flow = TestFlow::new(governance_stage).await?;
 
@@ -327,7 +337,7 @@ async fn test_flink_governance_flow_simple_below_min_cluster_size() -> anyhow::R
         policy,
         make_governance_transform("common_governance_transform"),
     )
-    .await;
+    .await?;
 
     let mut flow = TestFlow::new(governance_stage).await?;
 
@@ -385,7 +395,7 @@ async fn test_flink_governance_flow_simple_above_max_cluster_size() -> anyhow::R
         policy,
         make_governance_transform("common_governance_transform"),
     )
-    .await;
+    .await?;
 
     let mut flow = TestFlow::new(governance_stage).await?;
 
@@ -443,7 +453,7 @@ async fn test_flink_governance_flow_simple_step_up_too_big() -> anyhow::Result<(
         policy,
         make_governance_transform("common_governance_transform"),
     )
-    .await;
+    .await?;
 
     let mut flow = TestFlow::new(governance_stage).await?;
 
@@ -501,7 +511,7 @@ async fn test_flink_governance_flow_simple_step_down_too_big() -> anyhow::Result
         policy,
         make_governance_transform("common_governance_transform"),
     )
-    .await;
+    .await?;
 
     let mut flow = TestFlow::new(governance_stage).await?;
 
@@ -562,7 +572,7 @@ async fn test_flink_governance_flow_simple_step_up_before_max() -> anyhow::Resul
         policy,
         make_governance_transform("common_governance_transform"),
     )
-    .await;
+    .await?;
 
     let mut flow = TestFlow::new(governance_stage).await?;
 
@@ -620,7 +630,7 @@ async fn test_flink_governance_flow_simple_step_down_before_min() -> anyhow::Res
         policy,
         make_governance_transform("common_governance_transform"),
     )
-    .await;
+    .await?;
 
     let mut flow = TestFlow::new(governance_stage).await?;
 

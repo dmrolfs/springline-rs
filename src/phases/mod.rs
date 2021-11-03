@@ -6,6 +6,7 @@ use proctor::graph::{Connect, SourceShape};
 use proctor::phases::collection::{ClearinghouseSubscriptionMagnet, SubscriptionChannel, TelemetrySubscription};
 use proctor::phases::policy_phase::PolicyPhase;
 use proctor::{AppData, ProctorContext, SharedString};
+use serde::Serialize;
 
 pub mod collection;
 pub mod decision;
@@ -21,14 +22,15 @@ pub trait UpdateMetrics {
 
 // #[fix_hidden_lifetime_bug]
 #[tracing::instrument(level = "info")]
-pub async fn subscribe_policy_phase<In, Out, C>(
-    subscription: TelemetrySubscription, phase: &Box<PolicyPhase<In, Out, C>>,
+pub async fn subscribe_policy_phase<In, Out, C, D>(
+    subscription: TelemetrySubscription, phase: &Box<PolicyPhase<In, Out, C, D>>,
     magnet: ClearinghouseSubscriptionMagnet<'_>,
 ) -> Result<()>
 where
     In: AppData + oso::ToPolar,
     Out: AppData,
     C: ProctorContext,
+    D: AppData + Serialize,
 {
     let context_channel = SubscriptionChannel::connect_subscription(subscription, magnet).await?;
     (context_channel.outlet(), phase.context_inlet()).connect().await;

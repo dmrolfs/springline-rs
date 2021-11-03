@@ -1,3 +1,4 @@
+use crate::phases::eligibility::policy::EligibilityTemplateData;
 use crate::phases::{self, MetricCatalog};
 use crate::Result;
 use context::EligibilityContext;
@@ -11,19 +12,20 @@ pub mod context;
 pub mod policy;
 
 pub type EligibilityOutcome = MetricCatalog;
-pub type EligibilityApi = proctor::elements::PolicyFilterApi<EligibilityContext>;
+pub type EligibilityApi = proctor::elements::PolicyFilterApi<EligibilityContext, EligibilityTemplateData>;
 pub type EligibilityMonitor = proctor::elements::PolicyFilterMonitor<MetricCatalog, EligibilityContext>;
-pub type EligibilityPhase = Box<PolicyPhase<MetricCatalog, EligibilityOutcome, EligibilityContext>>;
+pub type EligibilityPhase =
+    Box<PolicyPhase<MetricCatalog, EligibilityOutcome, EligibilityContext, EligibilityTemplateData>>;
 pub type EligibilityEvent = PolicyFilterEvent<MetricCatalog, EligibilityContext>;
 
 #[tracing::instrument(level = "info")]
 pub async fn make_eligibility_phase(
-    settings: &PolicySettings, magnet: ClearinghouseSubscriptionMagnet<'_>,
+    settings: &PolicySettings<EligibilityTemplateData>, magnet: ClearinghouseSubscriptionMagnet<'_>,
 ) -> Result<EligibilityPhase> {
     let name: SharedString = "eligibility".into();
     let policy = EligibilityPolicy::new(&settings);
     let subscription = policy.subscription(name.as_ref());
-    let eligibility = Box::new(PolicyPhase::strip_policy_outcome(name.as_ref(), policy).await);
+    let eligibility = Box::new(PolicyPhase::strip_policy_outcome(name.as_ref(), policy).await?);
 
     phases::subscribe_policy_phase(subscription, &eligibility, magnet).await?;
     Ok(eligibility)

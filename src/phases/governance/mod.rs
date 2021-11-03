@@ -17,20 +17,22 @@ use proctor::SharedString;
 pub use result::*;
 
 pub type GovernanceOutcome = PlanningOutcome;
-pub type GovernanceApi = proctor::elements::PolicyFilterApi<GovernanceContext>;
+pub type GovernanceApi = proctor::elements::PolicyFilterApi<GovernanceContext, GovernanceTemplateData>;
 pub type GovernanceMonitor = proctor::elements::PolicyFilterMonitor<ScalePlan, GovernanceContext>;
-pub type GovernancePhase = Box<PolicyPhase<PlanningOutcome, GovernanceOutcome, GovernanceContext>>;
+pub type GovernancePhase =
+    Box<PolicyPhase<PlanningOutcome, GovernanceOutcome, GovernanceContext, GovernanceTemplateData>>;
 pub type GovernanceEvent = PolicyFilterEvent<PlanningOutcome, GovernanceContext>;
 
 #[tracing::instrument(level = "info")]
 pub async fn make_governance_phase(
-    settings: &PolicySettings, magnet: ClearinghouseSubscriptionMagnet<'_>,
+    settings: &PolicySettings<GovernanceTemplateData>, magnet: ClearinghouseSubscriptionMagnet<'_>,
 ) -> Result<GovernancePhase> {
     let name: SharedString = "governance".into();
     let policy = GovernancePolicy::new(&settings);
     let subscription = policy.subscription(name.as_ref());
-    let governance =
-        Box::new(PolicyPhase::with_transform(name.clone(), policy, make_governance_transform(name.into_owned())).await);
+    let governance = Box::new(
+        PolicyPhase::with_transform(name.clone(), policy, make_governance_transform(name.into_owned())).await?,
+    );
 
     phases::subscribe_policy_phase(subscription, &governance, magnet).await?;
     Ok(governance)

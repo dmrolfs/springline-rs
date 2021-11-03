@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use oso::ToPolar;
 use pretty_assertions::assert_eq;
+use proctor::elements::QueryPolicy;
 use proctor::elements::{
     self, PolicyOutcome, PolicySettings, PolicySource, PolicySubscription, Telemetry, TelemetryValue, ToTelemetry,
 };
@@ -10,7 +11,7 @@ use proctor::graph::{Connect, Graph, Inlet, SinkShape, SourceShape};
 use proctor::phases::collection::{self, Collect, SubscriptionRequirements, TelemetrySubscription};
 use proctor::{AppData, ProctorContext};
 use serde::de::DeserializeOwned;
-use springline::phases::decision::{DecisionContext, DecisionPolicy};
+use springline::phases::decision::{DecisionContext, DecisionPolicy, DecisionTemplateData};
 use springline::phases::MetricCatalog;
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
@@ -22,8 +23,16 @@ use springline::phases::decision::result::{make_decision_transform, DecisionResu
 use std::path::PathBuf;
 
 lazy_static::lazy_static! {
-    static ref DECISION_PREAMBLE: PolicySource = PolicySource::File(PathBuf::from("./resources/decision_preamble.polar"));
-    static ref POLICY_SETTINGS: PolicySettings = PolicySettings::default().with_source(DECISION_PREAMBLE.clone());
+    static ref DECISION_PREAMBLE: PolicySource = PolicySource::from_template_file("./resources/decision.polar").expect("failed to create decision policy source");
+    static ref POLICY_SETTINGS: PolicySettings<DecisionTemplateData> = PolicySettings::default()
+        .with_source(DECISION_PREAMBLE.clone())
+        .with_template_data(DecisionTemplateData {
+            custom: maplit::hashmap! {
+                "max_records_in_per_sec".to_string() => 3_f64.to_string(),
+                "min_records_in_per_sec".to_string() => 1_f64.to_string(),
+            },
+            ..DecisionTemplateData::default()
+        });
 }
 
 #[allow(dead_code)]
@@ -32,7 +41,7 @@ struct TestFlow<In, Out, C> {
     pub tx_data_source_api: stage::ActorSourceApi<Telemetry>,
     pub tx_context_source_api: stage::ActorSourceApi<Telemetry>,
     pub tx_clearinghouse_api: collection::ClearinghouseApi,
-    pub tx_decision_api: elements::PolicyFilterApi<C>,
+    pub tx_decision_api: elements::PolicyFilterApi<C, DecisionTemplateData>,
     pub rx_decision_monitor: elements::PolicyFilterMonitor<In, C>,
     pub tx_sink_api: stage::FoldApi<Vec<Out>>,
     pub rx_sink: Option<oneshot::Receiver<Vec<Out>>>,
@@ -47,7 +56,8 @@ where
     pub async fn new(
         collect_out_subscription: TelemetrySubscription, context_subscription: TelemetrySubscription,
         decision_stage: impl ThroughStage<In, Out>, decision_context_inlet: Inlet<C>,
-        tx_decision_api: elements::PolicyFilterApi<C>, rx_decision_monitor: elements::PolicyFilterMonitor<In, C>,
+        tx_decision_api: elements::PolicyFilterApi<C, DecisionTemplateData>,
+        rx_decision_monitor: elements::PolicyFilterMonitor<In, C>,
     ) -> anyhow::Result<Self> {
         let telemetry_source = stage::ActorSource::<Telemetry>::new("telemetry_source");
         let tx_data_source_api = telemetry_source.tx_api();
@@ -129,7 +139,11 @@ where
 
     #[allow(dead_code)]
     pub async fn tell_policy(
-        &self, command_rx: (elements::PolicyFilterCmd<C>, oneshot::Receiver<proctor::Ack>),
+        &self,
+        command_rx: (
+            elements::PolicyFilterCmd<C, DecisionTemplateData>,
+            oneshot::Receiver<proctor::Ack>,
+        ),
     ) -> anyhow::Result<proctor::Ack> {
         self.tx_decision_api.send(command_rx.0)?;
         command_rx.1.await.map_err(|err| err.into())
@@ -140,7 +154,9 @@ where
     }
 
     #[allow(dead_code)]
-    pub async fn inspect_policy_context(&self) -> anyhow::Result<elements::PolicyFilterDetail<C>> {
+    pub async fn inspect_policy_context(
+        &self,
+    ) -> anyhow::Result<elements::PolicyFilterDetail<C, DecisionTemplateData>> {
         let (cmd, detail) = elements::PolicyFilterCmd::inspect();
         self.tx_decision_api.send(cmd)?;
         detail
@@ -230,21 +246,20 @@ async fn test_decision_carry_policy_result() -> anyhow::Result<()> {
             "nr_task_managers",
         });
 
-    let policy = DecisionPolicy::new(
-        &POLICY_SETTINGS.clone().with_source(PolicySource::String(
-            r###"
-                scale_up(item, _context, _) if 3.0 < item.flow.records_in_per_sec;
-                scale_down(item, _context, _) if item.flow.records_in_per_sec < 1.0;
-            "###
-            .to_string(),
-        )),
-    );
+    let policy = DecisionPolicy::new(&POLICY_SETTINGS.clone().with_source(PolicySource::from_template_string(
+        format!("{}_basis", DecisionPolicy::base_template_name()),
+        r###"
+            | {{> preamble}}
+            | scale_up(item, _context, _) if {{max_records_in_per_sec}} < item.flow.records_in_per_sec;
+            | scale_down(item, _context, _) if item.flow.records_in_per_sec < {{min_records_in_per_sec}};
+            "###,
+    )?));
 
     let context_subscription = policy.subscription("decision_context");
 
-    let decision_stage = PolicyPhase::carry_policy_outcome("carry_policy_decision", policy).await;
+    let decision_stage = PolicyPhase::carry_policy_outcome("carry_policy_decision", policy).await?;
     let decision_context_inlet = decision_stage.context_inlet();
-    let tx_decision_api: elements::PolicyFilterApi<DecisionContext> = decision_stage.tx_api();
+    let tx_decision_api: elements::PolicyFilterApi<DecisionContext, DecisionTemplateData> = decision_stage.tx_api();
     let rx_decision_monitor: elements::PolicyFilterMonitor<MetricCatalog, DecisionContext> =
         decision_stage.rx_monitor();
 
@@ -337,15 +352,14 @@ async fn test_decision_common() -> anyhow::Result<()> {
             "all_sinks_healthy",
         });
 
-    let policy = DecisionPolicy::new(
-        &POLICY_SETTINGS.clone().with_source(PolicySource::String(
-            r###"
-                scale_up(item, _context, _) if 3.0 < item.flow.records_in_per_sec;
-                scale_down(item, _context, _) if item.flow.records_in_per_sec < 1.0;
-                "###
-            .to_string(),
-        )),
-    );
+    let policy = DecisionPolicy::new(&POLICY_SETTINGS.clone().with_source(PolicySource::from_template_string(
+        format!("{}_basis", DecisionPolicy::base_template_name()),
+        r###"
+            | {{> preamble}}
+            | scale_up(item, _context, _) if {{max_records_in_per_sec}} < item.flow.records_in_per_sec;
+            | scale_down(item, _context, _) if item.flow.records_in_per_sec < {{min_records_in_per_sec}};
+            "###,
+    )?));
 
     let context_subscription = policy.subscription("decision_context");
 
@@ -354,9 +368,9 @@ async fn test_decision_common() -> anyhow::Result<()> {
         policy,
         make_decision_transform("common_decision_transform"),
     )
-    .await;
+    .await?;
     let decision_context_inlet = decision_stage.context_inlet();
-    let tx_decision_api: elements::PolicyFilterApi<DecisionContext> = decision_stage.tx_api();
+    let tx_decision_api: elements::PolicyFilterApi<DecisionContext, DecisionTemplateData> = decision_stage.tx_api();
     let rx_decision_monitor: elements::PolicyFilterMonitor<MetricCatalog, DecisionContext> =
         decision_stage.rx_monitor();
 
