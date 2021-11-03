@@ -1,12 +1,12 @@
-use crate::phases::eligibility::policy::EligibilityTemplateData;
 use crate::phases::{self, MetricCatalog};
 use crate::Result;
-use context::EligibilityContext;
-use policy::EligibilityPolicy;
 use proctor::elements::{PolicyFilterEvent, PolicySettings, PolicySubscription};
 use proctor::phases::collection::ClearinghouseSubscriptionMagnet;
 use proctor::phases::policy_phase::PolicyPhase;
 use proctor::SharedString;
+
+pub use context::{ClusterStatus, EligibilityContext, TaskStatus};
+pub use policy::{EligibilityPolicy, EligibilityTemplateData};
 
 pub mod context;
 pub mod policy;

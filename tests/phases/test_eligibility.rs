@@ -1,0 +1,511 @@
+use std::time::Duration;
+
+use chrono::{DateTime, Utc};
+use claim::*;
+use lazy_static::lazy_static;
+use pretty_assertions::assert_eq;
+use pretty_snowflake::{AlphabetCodec, IdPrettifier, PrettyIdGenerator, RealTimeGenerator};
+use proctor::elements::{self, telemetry, PolicyFilterEvent, PolicySettings, PolicySource, Timestamp, ToTelemetry};
+use proctor::graph::stage::{self, WithApi, WithMonitor};
+use proctor::graph::{Connect, Graph, SinkShape, SourceShape};
+use proctor::phases::policy_phase::PolicyPhase;
+use springline::phases::eligibility::context::{ClusterStatus, TaskStatus};
+use springline::phases::eligibility::{EligibilityContext, EligibilityPolicy, EligibilityTemplateData};
+use springline::phases::{ClusterMetrics, FlowMetrics, JobHealthMetrics, MetricCatalog};
+use std::sync::Mutex;
+use tokio::sync::oneshot;
+use tokio::task::JoinHandle;
+
+type Data = MetricCatalog;
+type Context = EligibilityContext;
+
+lazy_static! {
+    static ref DT_1: DateTime<Utc> = DateTime::parse_from_str("2021-05-05T17:11:07.246310806Z", "%+")
+        .unwrap()
+        .with_timezone(&Utc);
+    static ref DT_1_STR: String = format!("{}", DT_1.format("%+"));
+    static ref DT_1_TS: i64 = DT_1.timestamp();
+}
+
+#[allow(dead_code)]
+struct TestFlow {
+    pub graph_handle: JoinHandle<()>,
+    pub tx_data_source_api: stage::ActorSourceApi<Data>,
+    pub tx_context_source_api: stage::ActorSourceApi<Context>,
+    pub tx_stage_api: elements::PolicyFilterApi<Context, EligibilityTemplateData>,
+    pub rx_stage_monitor: elements::PolicyFilterMonitor<Data, Context>,
+    pub tx_sink_api: stage::FoldApi<Vec<Data>>,
+    pub rx_sink: Option<oneshot::Receiver<Vec<Data>>>,
+}
+
+impl TestFlow {
+    pub async fn new(stage: PolicyPhase<Data, Data, Context, EligibilityTemplateData>) -> anyhow::Result<Self> {
+        let data_source: stage::ActorSource<Data> = stage::ActorSource::new("plan_source");
+        let tx_data_source_api = data_source.tx_api();
+
+        let context_source: stage::ActorSource<Context> = stage::ActorSource::new("context_source");
+        let tx_context_source_api = context_source.tx_api();
+
+        let tx_stage_api = stage.tx_api();
+        let rx_stage_monitor = stage.rx_monitor();
+
+        let mut sink = stage::Fold::<_, Data, _>::new("sink", Vec::new(), |mut acc, item| {
+            acc.push(item);
+            acc
+        });
+        let tx_sink_api = sink.tx_api();
+        let rx_sink = sink.take_final_rx();
+
+        (data_source.outlet(), stage.inlet()).connect().await;
+        (context_source.outlet(), stage.context_inlet()).connect().await;
+        (stage.outlet(), sink.inlet()).connect().await;
+        assert!(stage.inlet().is_attached().await);
+        assert!(stage.context_inlet().is_attached().await);
+        assert!(stage.outlet().is_attached().await);
+
+        let mut graph = Graph::default();
+        graph.push_back(Box::new(data_source)).await;
+        graph.push_back(Box::new(context_source)).await;
+        graph.push_back(Box::new(stage)).await;
+        graph.push_back(Box::new(sink)).await;
+
+        let graph_handle = tokio::spawn(async move {
+            graph
+                .run()
+                .await
+                .map_err(|err| {
+                    tracing::error!(error=?err, "graph run failed!");
+                    err
+                })
+                .expect("graph run failed!")
+        });
+
+        Ok(Self {
+            graph_handle,
+            tx_data_source_api,
+            tx_context_source_api,
+            tx_stage_api,
+            rx_stage_monitor,
+            tx_sink_api,
+            rx_sink,
+        })
+    }
+
+    pub async fn push_data(&self, data: Data) -> anyhow::Result<()> {
+        let (cmd, ack) = stage::ActorSourceCmd::push(data);
+        self.tx_data_source_api.send(cmd)?;
+        Ok(ack.await?)
+    }
+
+    pub async fn push_context(&self, context: Context) -> anyhow::Result<()> {
+        let (cmd, ack) = stage::ActorSourceCmd::push(context);
+        self.tx_context_source_api.send(cmd)?;
+        Ok(ack.await?)
+    }
+
+    #[allow(dead_code)]
+    pub async fn tell_policy(
+        &self,
+        command_rx: (
+            elements::PolicyFilterCmd<Context, EligibilityTemplateData>,
+            oneshot::Receiver<proctor::Ack>,
+        ),
+    ) -> anyhow::Result<proctor::Ack> {
+        self.tx_stage_api.send(command_rx.0)?;
+        Ok(command_rx.1.await?)
+    }
+
+    pub async fn recv_policy_event(&mut self) -> anyhow::Result<elements::PolicyFilterEvent<Data, Context>> {
+        Ok(self.rx_stage_monitor.recv().await?)
+    }
+
+    #[allow(dead_code)]
+    pub async fn inspect_policy_context(
+        &self,
+    ) -> anyhow::Result<elements::PolicyFilterDetail<Context, EligibilityTemplateData>> {
+        let (cmd, detail) = elements::PolicyFilterCmd::inspect();
+        self.tx_stage_api.send(cmd)?;
+
+        let result = detail.await.map(|d| {
+            tracing::info!(detail=?d, "inspected policy.");
+            d
+        })?;
+
+        Ok(result)
+    }
+
+    pub async fn inspect_sink(&self) -> anyhow::Result<Vec<Data>> {
+        let (cmd, acc) = stage::FoldCmd::get_accumulation();
+        self.tx_sink_api.send(cmd)?;
+        acc.await
+            .map(|a| {
+                tracing::info!(accumulation=?a, "inspected sink accumulation");
+                a
+            })
+            .map_err(|err| err.into())
+    }
+
+    #[tracing::instrument(level = "info", skip(self))]
+    pub async fn check_scenario(&mut self, label: &str, data: Data, expectation: Vec<Data>) -> anyhow::Result<()> {
+        let scenario_span = tracing::info_span!("DMR check scenario", %label, ?data, ?expectation, );
+        let _ = scenario_span.enter();
+
+        let timeout = Duration::from_millis(250);
+
+        assert_ok!(self.push_data(data).await);
+        claim::assert_matches!(
+            assert_ok!(self.rx_stage_monitor.recv().await),
+            PolicyFilterEvent::ItemPassed(_)
+        );
+
+        let result = assert_ok!(
+            self.check_sink_accumulation(label, timeout, |acc| {
+                let check_span =
+                    tracing::info_span!("DMR check collection accumulation", %label, ?expectation, ?timeout);
+                let _ = check_span.enter();
+
+                tracing::warn!(
+                    ?acc,
+                    "checking accumulation against expected. lengths:[{}=={} - {}]",
+                    acc.len(),
+                    expectation.len(),
+                    acc.len() == expectation.len()
+                );
+
+                let result = std::panic::catch_unwind(|| {
+                    assert_eq!(acc.len(), expectation.len());
+                    assert_eq!(acc, expectation);
+                    true
+                });
+
+                match result {
+                    Ok(check) => check,
+                    Err(err) => {
+                        tracing::info!(error=?err, "check accumulation failed.");
+                        false
+                    }
+                }
+            })
+            .await
+        );
+
+        if !result {
+            anyhow::bail!("failed accumulation check.")
+        }
+
+        let (reset_cmd, reset_rx) = stage::FoldCmd::get_and_reset_accumulation();
+        assert_ok!(self.tx_sink_api.send(reset_cmd));
+        let ack = assert_ok!(reset_rx.await);
+        tracing::info!("sink reset ack = {:?}", ack);
+
+        Ok(())
+    }
+
+    #[allow(unused)]
+    #[tracing::instrument(level = "info", skip(self, check_accumulation))]
+    pub async fn check_sink_accumulation<F>(
+        &self, label: &str, timeout: Duration, mut check_accumulation: F,
+    ) -> anyhow::Result<bool>
+    where
+        F: FnMut(Vec<Data>) -> bool,
+    {
+        use std::time::Instant;
+        let deadline = Instant::now() + timeout;
+        let step = Duration::from_millis(50);
+
+        let mut result = false;
+
+        loop {
+            let check_span = tracing::info_span!("DMR check sink accumulation", %label);
+            let _ = check_span.enter();
+
+            if Instant::now() < deadline {
+                let acc = self.inspect_sink().await;
+                if acc.is_ok() {
+                    let acc = acc?;
+                    tracing::info!(?acc, len=?acc.len(), "inspecting sink");
+
+                    result = check_accumulation(acc);
+
+                    if !result {
+                        tracing::warn!(
+                            ?result,
+                            "sink accumulation check predicate - retrying after {:?}.",
+                            step
+                        );
+                        tokio::time::sleep(step).await;
+                    } else {
+                        tracing::info!(?result, "sink accumulation passed check predicate.");
+                        break;
+                    }
+                } else {
+                    tracing::error!(?acc, "failed to inspect sink");
+                    anyhow::bail!("failed to inspect sink");
+                }
+            } else {
+                tracing::error!(?timeout, "check timeout exceeded - stopping check.");
+                anyhow::bail!(format!("check {:?} timeout exceeded - stopping check.", timeout));
+            }
+        }
+
+        Ok(result)
+    }
+
+    #[tracing::instrument(level = "warn", skip(self))]
+    pub async fn close(mut self) -> anyhow::Result<Vec<Data>> {
+        let (stop, _) = stage::ActorSourceCmd::stop();
+        self.tx_data_source_api.send(stop)?;
+
+        let (stop, _) = stage::ActorSourceCmd::stop();
+        self.tx_context_source_api.send(stop)?;
+
+        self.graph_handle.await?;
+
+        let result = self.rx_sink.take().unwrap().await?;
+        Ok(result)
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn test_flink_eligibility_happy_flow() -> anyhow::Result<()> {
+    lazy_static::initialize(&proctor::tracing::TEST_TRACING);
+    let main_span = tracing::info_span!("test_flink_eligibility_happy_flow");
+    let _ = main_span.enter();
+
+    let settings = PolicySettings::default()
+        .with_source(
+            PolicySource::from_template_file("./resources/eligibility.polar")
+                .expect("failed to create eligibility policy source"),
+        )
+        .with_source(
+            PolicySource::from_template_file("./resources/eligibility_basis.polar")
+                .expect("failed to create eligibility_basis policy source"),
+        )
+        .with_template_data(EligibilityTemplateData {
+            cooling_secs: Some(4 * 60 * 60), // 4 hours
+            stable_secs: Some(2 * 60 * 60),  // 2 hours
+            ..EligibilityTemplateData::default()
+        });
+
+    let policy = EligibilityPolicy::new(&settings);
+
+    let stage = PolicyPhase::strip_policy_outcome("test_eligibility", policy).await?;
+
+    let mut flow = TestFlow::new(stage).await?;
+
+    let now = Utc::now();
+    let t1 = now - chrono::Duration::days(1);
+
+    let ctx_1 = make_context(
+        None,
+        false,
+        t1,
+        maplit::hashmap! { "location_code".to_string() => 3_i32.to_telemetry() },
+    );
+
+    tracing::info!(?ctx_1, "pushing test context...");
+    assert_ok!(flow.push_context(ctx_1).await);
+
+    let event = assert_ok!(flow.recv_policy_event().await);
+    tracing::info!(?event, "received policy event.");
+    claim::assert_matches!(event, elements::PolicyFilterEvent::ContextChanged(_));
+
+    let data_1 = make_test_item(maplit::hashmap! {"foo".to_string() => "bar".into()});
+    flow.push_data(data_1.clone()).await?;
+
+    let event = assert_ok!(flow.recv_policy_event().await);
+    tracing::info!(?event, "received policy event.");
+    claim::assert_matches!(event, elements::PolicyFilterEvent::ItemPassed(_));
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn test_flink_eligibility_block_on_active_deployment() -> anyhow::Result<()> {
+    lazy_static::initialize(&proctor::tracing::TEST_TRACING);
+    let main_span = tracing::info_span!("test_flink_eligibility_block_on_active_deployment");
+    let _ = main_span.enter();
+
+    let settings = PolicySettings::default()
+        .with_source(
+            PolicySource::from_template_file("./resources/eligibility.polar")
+                .expect("failed to create eligibility policy source"),
+        )
+        .with_source(
+            PolicySource::from_template_file("./resources/eligibility_basis.polar")
+                .expect("failed to create eligibility_basis policy source"),
+        )
+        .with_template_data(EligibilityTemplateData { ..EligibilityTemplateData::default() });
+
+    let policy = EligibilityPolicy::new(&settings);
+
+    let stage = PolicyPhase::strip_policy_outcome("test_eligibility", policy).await?;
+
+    let mut flow = TestFlow::new(stage).await?;
+
+    let now = Utc::now();
+    let t1 = now - chrono::Duration::days(1);
+
+    let ctx_1 = make_context(
+        None,
+        true,
+        t1,
+        maplit::hashmap! { "location_code".to_string() => 3_i32.to_telemetry() },
+    );
+
+    tracing::info!(?ctx_1, "pushing test context...");
+    assert_ok!(flow.push_context(ctx_1).await);
+
+    let event = assert_ok!(flow.recv_policy_event().await);
+    tracing::info!(?event, "received policy event.");
+    claim::assert_matches!(event, elements::PolicyFilterEvent::ContextChanged(_));
+
+    let data_1 = make_test_item(maplit::hashmap! {"foo".to_string() => "bar".into()});
+    flow.push_data(data_1.clone()).await?;
+
+    let event = assert_ok!(flow.recv_policy_event().await);
+    tracing::info!(?event, "received policy event.");
+    claim::assert_matches!(event, elements::PolicyFilterEvent::ItemBlocked(_));
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn test_flink_eligibility_block_on_recent_deployment() -> anyhow::Result<()> {
+    lazy_static::initialize(&proctor::tracing::TEST_TRACING);
+    let main_span = tracing::info_span!("test_flink_eligibility_block_on_recent_deployment");
+    let _ = main_span.enter();
+
+    let cooling_duration = chrono::Duration::minutes(15);
+    let settings = PolicySettings::default()
+        .with_source(
+            PolicySource::from_template_file("./resources/eligibility.polar")
+                .expect("failed to create eligibility policy source"),
+        )
+        .with_source(
+            PolicySource::from_template_file("./resources/eligibility_basis.polar")
+                .expect("failed to create eligibility_basis policy source"),
+        )
+        .with_template_data(EligibilityTemplateData {
+            cooling_secs: Some(cooling_duration.num_seconds() as u32),
+            ..EligibilityTemplateData::default()
+        });
+
+    let policy = EligibilityPolicy::new(&settings);
+
+    let stage = PolicyPhase::strip_policy_outcome("test_eligibility", policy).await?;
+
+    let mut flow = TestFlow::new(stage).await?;
+
+    let now = Utc::now();
+    let ts_cold = now - cooling_duration + chrono::Duration::minutes(1);
+
+    let ctx_cold = make_context(
+        None,
+        false,
+        ts_cold,
+        maplit::hashmap! { "location_code".to_string() => 3_i32.to_telemetry() },
+    );
+
+    tracing::info!(?ctx_cold, "pushing test context...");
+    assert_ok!(flow.push_context(ctx_cold).await);
+
+    let event = assert_ok!(flow.recv_policy_event().await);
+    tracing::info!(?event, "received policy event.");
+    claim::assert_matches!(event, elements::PolicyFilterEvent::ContextChanged(_));
+
+    let data_1 = make_test_item(maplit::hashmap! {"foo".to_string() => "bar".into()});
+    flow.push_data(data_1.clone()).await?;
+
+    let event = assert_ok!(flow.recv_policy_event().await);
+    tracing::info!(?event, "received policy event.");
+    claim::assert_matches!(event, elements::PolicyFilterEvent::ItemBlocked(_));
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn test_flink_eligibility_block_on_recent_failure() -> anyhow::Result<()> {
+    lazy_static::initialize(&proctor::tracing::TEST_TRACING);
+    let main_span = tracing::info_span!("test_flink_eligibility_block_on_recent_failure");
+    let _ = main_span.enter();
+
+    let stability_window = chrono::Duration::minutes(15);
+    let settings = PolicySettings::default()
+        .with_source(
+            PolicySource::from_template_file("./resources/eligibility.polar")
+                .expect("failed to create eligibility policy source"),
+        )
+        .with_source(
+            PolicySource::from_template_file("./resources/eligibility_basis.polar")
+                .expect("failed to create eligibility_basis policy source"),
+        )
+        .with_template_data(EligibilityTemplateData {
+            stable_secs: Some(stability_window.num_seconds() as u32),
+            ..EligibilityTemplateData::default()
+        });
+
+    let policy = EligibilityPolicy::new(&settings);
+
+    let stage = PolicyPhase::strip_policy_outcome("test_eligibility", policy).await?;
+
+    let mut flow = TestFlow::new(stage).await?;
+
+    let now = Utc::now();
+    let ts = now - stability_window + chrono::Duration::minutes(1);
+
+    let ctx = make_context(
+        Some(ts),
+        false,
+        ts,
+        maplit::hashmap! { "location_code".to_string() => 3_i32.to_telemetry() },
+    );
+
+    tracing::info!(?ctx, "pushing test context...");
+    assert_ok!(flow.push_context(ctx).await);
+
+    let event = assert_ok!(flow.recv_policy_event().await);
+    tracing::info!(?event, "received policy event.");
+    claim::assert_matches!(event, elements::PolicyFilterEvent::ContextChanged(_));
+
+    let data_1 = make_test_item(maplit::hashmap! {"foo".to_string() => "bar".into()});
+    flow.push_data(data_1.clone()).await?;
+
+    let event = assert_ok!(flow.recv_policy_event().await);
+    tracing::info!(?event, "received policy event.");
+    claim::assert_matches!(event, elements::PolicyFilterEvent::ItemBlocked(_));
+
+    Ok(())
+}
+
+type IdGenerator = PrettyIdGenerator<RealTimeGenerator, AlphabetCodec>;
+lazy_static! {
+    static ref ID_GENERATOR: Mutex<IdGenerator> =
+        Mutex::new(IdGenerator::single_node(IdPrettifier::<AlphabetCodec>::default()));
+}
+
+pub fn make_context(
+    last_failure: Option<DateTime<Utc>>, is_deploying: bool, last_deployment: DateTime<Utc>,
+    custom: telemetry::TableType,
+) -> Context {
+    let mut gen = ID_GENERATOR.lock().unwrap();
+
+    EligibilityContext {
+        timestamp: Timestamp::now(),
+        correlation_id: gen.next_id(),
+        task_status: TaskStatus { last_failure },
+        cluster_status: ClusterStatus { is_deploying, last_deployment },
+        custom,
+    }
+}
+
+pub fn make_test_item(custom: telemetry::TableType) -> Data {
+    let mut gen = ID_GENERATOR.lock().unwrap();
+
+    MetricCatalog {
+        timestamp: Timestamp::now(),
+        correlation_id: gen.next_id(),
+        health: JobHealthMetrics::default(),
+        flow: FlowMetrics::default(),
+        cluster: ClusterMetrics::default(),
+        custom,
+    }
+}

@@ -1,5 +1,6 @@
 {{> preamble}}
 
 eligible(item, context) if
-    outside_cooling_period(item, context) and
-    sufficiently_stable(item, context);
+    not deploying(item, context) and
+    not in_cooling_period(item, context) and
+    not recent_failure(item, context);

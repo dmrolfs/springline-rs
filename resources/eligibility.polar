@@ -1,9 +1,19 @@
 {{#*inline "preamble"}}
 # define eligibile rule in eligibility polar basis file.
 
-outside_cooling_period(_, context) if context.cluster.last_deployment_within_seconds({{cooling_secs}});
+deploying(_, context) if context.cluster_status.is_deploying;
 
-sufficiently_stable(_, context) if context.task.last_failure_within_seconds({{stable_secs}});
+{{#if cooling_secs}}
+in_cooling_period(_, context) if context.cluster_status.last_deployment_within_seconds({{cooling_secs}});
+{{else}}
+in_cooling_period(_, _) if false;
+{{/if}}
+
+{{#if stable_secs}}
+recent_failure(_, context) if context.task_status.last_failure_within_seconds({{stable_secs}});
+{{else}}
+recent_failure(_, _) if false;
+{{/if}}
 
 # Do not scale during multi region failure
 # Are there task failures
