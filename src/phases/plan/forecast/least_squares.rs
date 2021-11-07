@@ -387,7 +387,7 @@ mod tests {
 
     #[test]
     fn test_plan_forecast_model_selection() -> anyhow::Result<()> {
-        lazy_static::initialize(&proctor::tracing::TEST_TRACING);
+        once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
         let main_span = tracing::info_span!("test_plan_forecast_model_selection");
         let _ = main_span.enter();
 
@@ -467,7 +467,7 @@ mod tests {
 
     #[test]
     fn test_plan_forecast_predict_workload() -> anyhow::Result<()> {
-        lazy_static::initialize(&proctor::tracing::TEST_TRACING);
+        once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
         let main_span = tracing::info_span!("test_plan_forecast_predict_workload");
         let _ = main_span.enter();
 

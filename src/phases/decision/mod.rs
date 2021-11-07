@@ -9,7 +9,8 @@ use crate::Result;
 pub use context::*;
 pub use policy::*;
 
-use proctor::elements::{PolicySettings, PolicySubscription};
+use crate::settings::DecisionSettings;
+use proctor::elements::PolicySubscription;
 use proctor::phases::collection::ClearinghouseSubscriptionMagnet;
 use proctor::phases::policy_phase::PolicyPhase;
 use proctor::SharedString;
@@ -24,7 +25,7 @@ pub type DecisionPhase = Box<PolicyPhase<EligibilityOutcome, DecisionOutcome, De
 
 #[tracing::instrument(level = "info")]
 pub async fn make_decision_phase(
-    settings: &PolicySettings<DecisionTemplateData>, magnet: ClearinghouseSubscriptionMagnet<'_>,
+    settings: &DecisionSettings, magnet: ClearinghouseSubscriptionMagnet<'_>,
 ) -> Result<DecisionPhase> {
     let name: SharedString = "decision".into();
     let policy = DecisionPolicy::new(&settings);

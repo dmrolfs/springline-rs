@@ -3,7 +3,7 @@ use std::time::Duration;
 use claim::*;
 use pretty_assertions::assert_eq;
 use pretty_snowflake::Id;
-use proctor::elements::{self, PolicyFilterEvent, PolicySettings, PolicySource, Timestamp};
+use proctor::elements::{self, PolicyFilterEvent, PolicySource, Timestamp};
 use proctor::graph::stage::{self, WithApi, WithMonitor};
 use proctor::graph::{Connect, Graph, SinkShape, SourceShape};
 use proctor::phases::policy_phase::PolicyPhase;
@@ -11,6 +11,7 @@ use springline::phases::governance::{
     make_governance_transform, GovernanceContext, GovernancePolicy, GovernanceTemplateData,
 };
 use springline::phases::plan::ScalePlan;
+use springline::settings::GovernanceSettings;
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
@@ -19,7 +20,7 @@ type Context = GovernanceContext;
 
 lazy_static::lazy_static! {
     static ref GOVERNANCE_PREAMBLE: PolicySource = PolicySource::from_complete_file("./resources/governance.polar").expect("failed to create governance policy source");
-    static ref POLICY_SETTINGS: PolicySettings<GovernanceTemplateData> = PolicySettings::default().with_source(GOVERNANCE_PREAMBLE.clone());
+    static ref POLICY_SETTINGS: GovernanceSettings = GovernanceSettings::default().with_source(GOVERNANCE_PREAMBLE.clone());
 }
 
 #[allow(dead_code)]
@@ -267,7 +268,7 @@ impl TestFlow {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn test_flink_governance_flow_simple_and_happy() -> anyhow::Result<()> {
-    lazy_static::initialize(&proctor::tracing::TEST_TRACING);
+    once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
     let main_span = tracing::info_span!("test_flink_governance_flow_simple_and_happy");
     let _ = main_span.enter();
 
@@ -325,7 +326,7 @@ async fn test_flink_governance_flow_simple_and_happy() -> anyhow::Result<()> {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn test_flink_governance_flow_simple_below_min_cluster_size() -> anyhow::Result<()> {
-    lazy_static::initialize(&proctor::tracing::TEST_TRACING);
+    once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
     let main_span = tracing::info_span!("test_flink_governance_flow_simple_below_min_cluster_size");
     let _ = main_span.enter();
 
@@ -383,7 +384,7 @@ async fn test_flink_governance_flow_simple_below_min_cluster_size() -> anyhow::R
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn test_flink_governance_flow_simple_above_max_cluster_size() -> anyhow::Result<()> {
-    lazy_static::initialize(&proctor::tracing::TEST_TRACING);
+    once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
     let main_span = tracing::info_span!("test_flink_governance_flow_simple_above_max_cluster_size");
     let _ = main_span.enter();
 
@@ -441,7 +442,7 @@ async fn test_flink_governance_flow_simple_above_max_cluster_size() -> anyhow::R
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn test_flink_governance_flow_simple_step_up_too_big() -> anyhow::Result<()> {
-    lazy_static::initialize(&proctor::tracing::TEST_TRACING);
+    once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
     let main_span = tracing::info_span!("test_flink_governance_flow_simple_step_up_too_big");
     let _ = main_span.enter();
 
@@ -499,7 +500,7 @@ async fn test_flink_governance_flow_simple_step_up_too_big() -> anyhow::Result<(
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn test_flink_governance_flow_simple_step_down_too_big() -> anyhow::Result<()> {
-    lazy_static::initialize(&proctor::tracing::TEST_TRACING);
+    once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
     let main_span = tracing::info_span!("test_flink_governance_flow_simple_step_down_too_big");
     let _ = main_span.enter();
 
@@ -560,7 +561,7 @@ async fn test_flink_governance_flow_simple_step_down_too_big() -> anyhow::Result
 }
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn test_flink_governance_flow_simple_step_up_before_max() -> anyhow::Result<()> {
-    lazy_static::initialize(&proctor::tracing::TEST_TRACING);
+    once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
     let main_span = tracing::info_span!("test_flink_governance_flow_simple_step_up_before_max");
     let _ = main_span.enter();
 
@@ -618,7 +619,7 @@ async fn test_flink_governance_flow_simple_step_up_before_max() -> anyhow::Resul
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn test_flink_governance_flow_simple_step_down_before_min() -> anyhow::Result<()> {
-    lazy_static::initialize(&proctor::tracing::TEST_TRACING);
+    once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
     let main_span = tracing::info_span!("test_flink_governance_flow_simple_step_down_before_min");
     let _ = main_span.enter();
 

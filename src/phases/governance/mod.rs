@@ -8,9 +8,10 @@ use crate::phases::{
 };
 use crate::Result;
 
+use crate::settings::GovernanceSettings;
 pub use context::*;
 pub use policy::*;
-use proctor::elements::{PolicyFilterEvent, PolicySettings, PolicySubscription};
+use proctor::elements::{PolicyFilterEvent, PolicySubscription};
 use proctor::phases::collection::ClearinghouseSubscriptionMagnet;
 use proctor::phases::policy_phase::PolicyPhase;
 use proctor::SharedString;
@@ -25,7 +26,7 @@ pub type GovernanceEvent = PolicyFilterEvent<PlanningOutcome, GovernanceContext>
 
 #[tracing::instrument(level = "info")]
 pub async fn make_governance_phase(
-    settings: &PolicySettings<GovernanceTemplateData>, magnet: ClearinghouseSubscriptionMagnet<'_>,
+    settings: &GovernanceSettings, magnet: ClearinghouseSubscriptionMagnet<'_>,
 ) -> Result<GovernancePhase> {
     let name: SharedString = "governance".into();
     let policy = GovernancePolicy::new(&settings);

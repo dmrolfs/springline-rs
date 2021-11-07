@@ -3,14 +3,15 @@ use std::collections::{HashMap, HashSet};
 
 use super::context::{ClusterStatus, EligibilityContext, TaskStatus};
 use crate::phases::{MetricCatalog, UpdateMetrics};
-use proctor::elements::{PolicySettings, PolicySource, PolicySubscription, QueryPolicy, QueryResult, Telemetry};
+use crate::settings::EligibilitySettings;
+use proctor::elements::{PolicySource, PolicySubscription, QueryPolicy, QueryResult, Telemetry};
 use proctor::error::PolicyError;
 use proctor::phases::collection::TelemetrySubscription;
 use proctor::{ProctorContext, SharedString};
 use serde::{Deserialize, Serialize};
 
-// todo draft policy preample and/or default policy
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct EligibilityTemplateData {
     pub basis: String,
 
@@ -20,7 +21,7 @@ pub struct EligibilityTemplateData {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stable_secs: Option<u32>,
 
-    #[serde(flatten, skip_serializing_if = "HashMap::is_empty")]
+    #[serde(skip_serializing_if = "HashMap::is_empty")]
     pub custom: HashMap<String, String>,
 }
 
@@ -44,7 +45,7 @@ pub struct EligibilityPolicy {
 }
 
 impl EligibilityPolicy {
-    pub fn new(settings: &PolicySettings<EligibilityTemplateData>) -> Self {
+    pub fn new(settings: &EligibilitySettings) -> Self {
         let required_subscription_fields = settings
             .required_subscription_fields
             .iter()
@@ -133,5 +134,112 @@ impl QueryPolicy for EligibilityPolicy {
 
     fn sources_mut(&mut self) -> &mut Vec<PolicySource> {
         &mut self.sources
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pretty_assertions::assert_eq;
+    use claim::*;
+    use trim_margin::MarginTrimmable;
+
+    #[test]
+    fn test_ser_eligibility_setting() {
+        let settings = EligibilitySettings {
+            policies: vec![
+                assert_ok!(PolicySource::from_template_file("./resources/eligibility.polar")),
+                assert_ok!(PolicySource::from_template_file("./resources/eligibility_basis.polar")),
+            ],
+            template_data: Some(EligibilityTemplateData {
+                basis: "eligibility_basis".to_string(),
+                cooling_secs: Some(900),
+                stable_secs: Some(900),
+                custom: maplit::hashmap! { "foo".to_string() => "bar".to_string(), },
+            }),
+            ..EligibilitySettings::default()
+        };
+
+        let actual = assert_ok!(ron::ser::to_string_pretty(&settings, ron::ser::PrettyConfig::default()));
+
+        assert_eq!(
+            actual,
+            r##"
+            | (
+            |     policies: [
+            |         (
+            |             source: "file",
+            |             policy: (
+            |                 path: "./resources/eligibility.polar",
+            |                 is_template: true,
+            |             ),
+            |         ),
+            |         (
+            |             source: "file",
+            |             policy: (
+            |                 path: "./resources/eligibility_basis.polar",
+            |                 is_template: true,
+            |             ),
+            |         ),
+            |     ],
+            |     template_data: Some((
+            |         basis: "eligibility_basis",
+            |         cooling_secs: Some(900),
+            |         stable_secs: Some(900),
+            |         custom: {
+            |             "foo": "bar",
+            |         },
+            |     )),
+            | )"##.trim_margin_with("| ").unwrap()
+        );
+    }
+
+    #[test]
+    fn test_deser_eligibility_setting() {
+        let rep = r##"
+        | (
+        |     policies: [
+        |         (
+        |             source: "file",
+        |             policy: (
+        |                 path: "./resources/eligibility.polar",
+        |                 is_template: true,
+        |             ),
+        |         ),
+        |         (
+        |             source: "file",
+        |             policy: (
+        |                 path: "./resources/eligibility_basis.polar",
+        |                 is_template: true,
+        |             ),
+        |         ),
+        |     ],
+        |     template_data: Some((
+        |         basis: "eligibility_basis",
+        |         cooling_secs: Some(900),
+        |         stable_secs: Some(900),
+        |         custom: {
+        |             "foo": "bar",
+        |         },
+        |     )),
+        | )"##.trim_margin_with("| ").unwrap();
+
+        let actual: EligibilitySettings = assert_ok!(ron::from_str(&rep));
+        assert_eq!(
+            actual,
+            EligibilitySettings {
+                policies: vec![
+                    assert_ok!(PolicySource::from_template_file("./resources/eligibility.polar")),
+                    assert_ok!(PolicySource::from_template_file("./resources/eligibility_basis.polar")),
+                ],
+                template_data: Some(EligibilityTemplateData {
+                    basis: "eligibility_basis".to_string(),
+                    cooling_secs: Some(900),
+                    stable_secs: Some(900),
+                    custom: maplit::hashmap! { "foo".to_string() => "bar".to_string(), },
+                }),
+                ..EligibilitySettings::default()
+            }
+        )
     }
 }

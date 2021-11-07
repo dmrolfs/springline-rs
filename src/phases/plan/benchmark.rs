@@ -282,7 +282,7 @@ mod tests {
 
     #[test]
     fn test_bench_add_lower_benchmark() -> anyhow::Result<()> {
-        lazy_static::initialize(&proctor::tracing::TEST_TRACING);
+        once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
         let main_span = tracing::info_span!("test_bench_add_lower_benchmark");
         let _main_span_guard = main_span.enter();
 
@@ -303,7 +303,7 @@ mod tests {
 
     #[test]
     fn test_bench_add_upper_benchmark() -> anyhow::Result<()> {
-        lazy_static::initialize(&proctor::tracing::TEST_TRACING);
+        once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
         let main_span = tracing::info_span!("test_bench_add_upper_benchmark");
         let _main_span_guard = main_span.enter();
 
@@ -324,7 +324,7 @@ mod tests {
 
     #[test]
     fn test_bench_add_lower_upper_benchmarks() -> anyhow::Result<()> {
-        lazy_static::initialize(&proctor::tracing::TEST_TRACING);
+        once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
         let main_span = tracing::info_span!("test_bench_add_lower_upper_benchmarks");
         let _main_span_guard = main_span.enter();
 

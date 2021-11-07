@@ -4,7 +4,7 @@ use oso::ToPolar;
 use pretty_assertions::assert_eq;
 use proctor::elements::QueryPolicy;
 use proctor::elements::{
-    self, PolicyOutcome, PolicySettings, PolicySource, PolicySubscription, Telemetry, TelemetryValue, ToTelemetry,
+    self, PolicyOutcome, PolicySource, PolicySubscription, Telemetry, TelemetryValue, ToTelemetry,
 };
 use proctor::graph::stage::{self, ThroughStage, WithApi, WithMonitor};
 use proctor::graph::{Connect, Graph, Inlet, SinkShape, SourceShape};
@@ -20,10 +20,11 @@ use super::fixtures::*;
 use pretty_snowflake::MachineNode;
 use proctor::phases::policy_phase::PolicyPhase;
 use springline::phases::decision::result::{make_decision_transform, DecisionResult, DECISION_BINDING};
+use springline::settings::DecisionSettings;
 
 lazy_static::lazy_static! {
     static ref DECISION_PREAMBLE: PolicySource = PolicySource::from_template_file("./resources/decision.polar").expect("failed to create decision policy source");
-    static ref POLICY_SETTINGS: PolicySettings<DecisionTemplateData> = PolicySettings::default()
+    static ref POLICY_SETTINGS: DecisionSettings = DecisionSettings::default()
         .with_source(DECISION_PREAMBLE.clone())
         .with_template_data(DecisionTemplateData {
             custom: maplit::hashmap! {
@@ -234,7 +235,7 @@ where
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn test_decision_carry_policy_result() -> anyhow::Result<()> {
-    lazy_static::initialize(&proctor::tracing::TEST_TRACING);
+    once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
     let main_span = tracing::info_span!("test_decision_carry_policy_result");
     let _ = main_span.enter();
 
@@ -341,7 +342,7 @@ async fn test_decision_carry_policy_result() -> anyhow::Result<()> {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn test_decision_common() -> anyhow::Result<()> {
-    lazy_static::initialize(&proctor::tracing::TEST_TRACING);
+    once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
     let main_span = tracing::info_span!("test_decision_basic");
     let _ = main_span.enter();
 

@@ -5,13 +5,14 @@ use claim::*;
 use lazy_static::lazy_static;
 use pretty_assertions::assert_eq;
 use pretty_snowflake::{AlphabetCodec, IdPrettifier, PrettyIdGenerator, RealTimeGenerator};
-use proctor::elements::{self, telemetry, PolicyFilterEvent, PolicySettings, PolicySource, Timestamp, ToTelemetry};
+use proctor::elements::{self, telemetry, PolicyFilterEvent, PolicySource, Timestamp, ToTelemetry};
 use proctor::graph::stage::{self, WithApi, WithMonitor};
 use proctor::graph::{Connect, Graph, SinkShape, SourceShape};
 use proctor::phases::policy_phase::PolicyPhase;
 use springline::phases::eligibility::context::{ClusterStatus, TaskStatus};
 use springline::phases::eligibility::{EligibilityContext, EligibilityPolicy, EligibilityTemplateData};
 use springline::phases::{ClusterMetrics, FlowMetrics, JobHealthMetrics, MetricCatalog};
+use springline::settings::EligibilitySettings;
 use std::sync::Mutex;
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
@@ -268,11 +269,11 @@ impl TestFlow {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn test_flink_eligibility_happy_flow() -> anyhow::Result<()> {
-    lazy_static::initialize(&proctor::tracing::TEST_TRACING);
+    once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
     let main_span = tracing::info_span!("test_flink_eligibility_happy_flow");
     let _ = main_span.enter();
 
-    let settings = PolicySettings::default()
+    let settings = EligibilitySettings::default()
         .with_source(
             PolicySource::from_template_file("./resources/eligibility.polar")
                 .expect("failed to create eligibility policy source"),
@@ -321,11 +322,11 @@ async fn test_flink_eligibility_happy_flow() -> anyhow::Result<()> {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn test_flink_eligibility_block_on_active_deployment() -> anyhow::Result<()> {
-    lazy_static::initialize(&proctor::tracing::TEST_TRACING);
+    once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
     let main_span = tracing::info_span!("test_flink_eligibility_block_on_active_deployment");
     let _ = main_span.enter();
 
-    let settings = PolicySettings::default()
+    let settings = EligibilitySettings::default()
         .with_source(
             PolicySource::from_template_file("./resources/eligibility.polar")
                 .expect("failed to create eligibility policy source"),
@@ -370,12 +371,12 @@ async fn test_flink_eligibility_block_on_active_deployment() -> anyhow::Result<(
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn test_flink_eligibility_block_on_recent_deployment() -> anyhow::Result<()> {
-    lazy_static::initialize(&proctor::tracing::TEST_TRACING);
+    once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
     let main_span = tracing::info_span!("test_flink_eligibility_block_on_recent_deployment");
     let _ = main_span.enter();
 
     let cooling_duration = chrono::Duration::minutes(15);
-    let settings = PolicySettings::default()
+    let settings = EligibilitySettings::default()
         .with_source(
             PolicySource::from_template_file("./resources/eligibility.polar")
                 .expect("failed to create eligibility policy source"),
@@ -424,12 +425,12 @@ async fn test_flink_eligibility_block_on_recent_deployment() -> anyhow::Result<(
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn test_flink_eligibility_block_on_recent_failure() -> anyhow::Result<()> {
-    lazy_static::initialize(&proctor::tracing::TEST_TRACING);
+    once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
     let main_span = tracing::info_span!("test_flink_eligibility_block_on_recent_failure");
     let _ = main_span.enter();
 
     let stability_window = chrono::Duration::minutes(15);
-    let settings = PolicySettings::default()
+    let settings = EligibilitySettings::default()
         .with_source(
             PolicySource::from_template_file("./resources/eligibility.polar")
                 .expect("failed to create eligibility policy source"),

@@ -233,7 +233,7 @@ mod tests {
 
     #[test]
     fn test_performance_memory_repository() -> anyhow::Result<()> {
-        lazy_static::initialize(&proctor::tracing::TEST_TRACING);
+        once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
         let main_span = tracing::info_span!("test_performance_memory_repository");
         let _main_span_guard = main_span.enter();
 
@@ -250,7 +250,7 @@ mod tests {
 
     #[test]
     fn test_performance_file_repository() -> anyhow::Result<()> {
-        lazy_static::initialize(&proctor::tracing::TEST_TRACING);
+        once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
         let main_span = tracing::info_span!("test_performance_file_repository");
         let _main_span_guard = main_span.enter();
 

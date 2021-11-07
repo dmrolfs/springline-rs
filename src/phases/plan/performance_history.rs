@@ -179,7 +179,7 @@ mod tests {
 
     #[test]
     fn test_performance_history_add_upper_benchmark_add_lower_benchmark() -> anyhow::Result<()> {
-        lazy_static::initialize(&proctor::tracing::TEST_TRACING);
+        once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
         let main_span = tracing::info_span!("test_performance_history_add_lower_benchmark");
         let _main_span_guard = main_span.enter();
 
@@ -221,7 +221,7 @@ mod tests {
 
     #[test]
     fn test_performance_history_add_upper_benchmark() -> anyhow::Result<()> {
-        lazy_static::initialize(&proctor::tracing::TEST_TRACING);
+        once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
         let main_span = tracing::info_span!("test_performance_history_add_upper_benchmark");
         let _main_span_guard = main_span.enter();
 
@@ -263,7 +263,7 @@ mod tests {
 
     #[test]
     fn test_performance_history_add_lower_upper_benchmarks() -> anyhow::Result<()> {
-        lazy_static::initialize(&proctor::tracing::TEST_TRACING);
+        once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
         let main_span = tracing::info_span!("test_performance_history_add_lower_upper_benchmarks");
         let _main_span_guard = main_span.enter();
 
@@ -336,7 +336,7 @@ mod tests {
 
     #[test]
     fn test_performance_history_below_lowest_neighbor_extrapolate() -> anyhow::Result<()> {
-        // lazy_static::initialize(&crate::tracing::TEST_TRACING);
+        // once_cell::sync::Lazy::force(&crate::tracing::TEST_TRACING);
         // let main_span = tracing::info_span!("test_bench_below_lowest_neighbor_extrapolate");
         // let _main_span_guard = main_span.enter();
 
@@ -355,7 +355,7 @@ mod tests {
 
     #[test]
     fn test_performance_history_above_highest_neighbor_extrapolate() -> anyhow::Result<()> {
-        // lazy_static::initialize(&crate::tracing::TEST_TRACING);
+        // once_cell::sync::Lazy::force(&crate::tracing::TEST_TRACING);
         // let main_span = tracing::info_span!("test_bench_above_highest_neighbor_extrapolate");
         // let _main_span_guard = main_span.enter();
 
@@ -376,7 +376,7 @@ mod tests {
 
     #[test]
     fn test_performance_history_simple_evaluate_neighbors() -> anyhow::Result<()> {
-        lazy_static::initialize(&proctor::tracing::TEST_TRACING);
+        once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
         let main_span = tracing::info_span!("test_bench_evaluate_neighbors");
         let _main_span_guard = main_span.enter();
 
@@ -401,7 +401,7 @@ mod tests {
 
     #[test]
     fn test_performance_history_evaluate_more_neighbors() -> anyhow::Result<()> {
-        lazy_static::initialize(&proctor::tracing::TEST_TRACING);
+        once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
         let main_span = tracing::info_span!("test_bench_evaluate_neighbors");
         let _main_span_guard = main_span.enter();
 
@@ -452,7 +452,7 @@ mod tests {
 
     #[test]
     fn test_performance_history_estimate_cluster_size() -> anyhow::Result<()> {
-        lazy_static::initialize(&proctor::tracing::TEST_TRACING);
+        once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
         let main_span = tracing::info_span!("test_performance_history_estimate_cluster_size");
         let _main_span_guard = main_span.enter();
 

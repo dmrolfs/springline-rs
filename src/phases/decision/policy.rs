@@ -5,7 +5,8 @@ use std::collections::{HashMap, HashSet};
 use super::context::DecisionContext;
 use crate::phases::decision::result::DECISION_BINDING;
 use crate::phases::{MetricCatalog, UpdateMetrics};
-use proctor::elements::{PolicySettings, PolicySource, PolicySubscription, QueryPolicy, QueryResult, Telemetry};
+use crate::settings::DecisionSettings;
+use proctor::elements::{PolicySource, PolicySubscription, QueryPolicy, QueryResult, Telemetry};
 use proctor::error::PolicyError;
 use proctor::phases::collection::TelemetrySubscription;
 use proctor::{ProctorContext, SharedString};
@@ -47,7 +48,7 @@ pub struct DecisionPolicy {
 }
 
 impl DecisionPolicy {
-    pub fn new(settings: &PolicySettings<DecisionTemplateData>) -> Self {
+    pub fn new(settings: &DecisionSettings) -> Self {
         let required_subscription_fields = settings
             .required_subscription_fields
             .iter()
@@ -170,19 +171,19 @@ mod tests {
             )))
             .build());
 
-        let actual: PolicySettings<DecisionTemplateData> = assert_ok!(c.try_into());
+        let actual: DecisionSettings = assert_ok!(c.try_into());
         assert_eq!(
             actual,
-            PolicySettings {
+            DecisionSettings {
                 template_data: Some(data),
-                ..PolicySettings::default()
+                ..DecisionSettings::default()
             }
         );
     }
 
     #[test]
     fn test_template() {
-        lazy_static::initialize(&proctor::tracing::TEST_TRACING);
+        once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
         let main_span = tracing::info_span!("test_template");
         let _ = main_span.enter();
 
@@ -221,7 +222,7 @@ mod tests {
 
     #[test]
     fn test_policy_composition() -> anyhow::Result<()> {
-        lazy_static::initialize(&proctor::tracing::TEST_TRACING);
+        once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
         let main_span = tracing::info_span!("test_policy_composition");
         let _ = main_span.enter();
 
@@ -245,7 +246,7 @@ mod tests {
             },
             ..DecisionTemplateData::default()
         });
-        let settings = PolicySettings::<DecisionTemplateData> {
+        let settings = DecisionSettings {
             required_subscription_fields: HashSet::default(),
             optional_subscription_fields: HashSet::default(),
             policies: sources,

@@ -12,7 +12,7 @@ fn make_measurement(timestamp: DateTime<Utc>, workload: RecordsPerSecond) -> Wor
 
 #[test]
 fn test_flink_plan_calculator() -> anyhow::Result<()> {
-    lazy_static::initialize(&proctor::tracing::TEST_TRACING);
+    once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
     let main_span = tracing::info_span!("test_flink_plan_calculator");
     let _ = main_span.enter();
 

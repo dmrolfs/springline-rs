@@ -1,10 +1,11 @@
 use crate::phases::{self, MetricCatalog};
 use crate::Result;
-use proctor::elements::{PolicyFilterEvent, PolicySettings, PolicySubscription};
+use proctor::elements::{PolicyFilterEvent, PolicySubscription};
 use proctor::phases::collection::ClearinghouseSubscriptionMagnet;
 use proctor::phases::policy_phase::PolicyPhase;
 use proctor::SharedString;
 
+use crate::settings::EligibilitySettings;
 pub use context::{ClusterStatus, EligibilityContext, TaskStatus};
 pub use policy::{EligibilityPolicy, EligibilityTemplateData};
 
@@ -20,7 +21,7 @@ pub type EligibilityEvent = PolicyFilterEvent<MetricCatalog, EligibilityContext>
 
 #[tracing::instrument(level = "info")]
 pub async fn make_eligibility_phase(
-    settings: &PolicySettings<EligibilityTemplateData>, magnet: ClearinghouseSubscriptionMagnet<'_>,
+    settings: &EligibilitySettings, magnet: ClearinghouseSubscriptionMagnet<'_>,
 ) -> Result<EligibilityPhase> {
     let name: SharedString = "eligibility".into();
     let policy = EligibilityPolicy::new(&settings);

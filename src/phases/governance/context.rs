@@ -188,7 +188,7 @@ mod tests {
             // foo in prop::num::f64::ANY,
             // bar in prop::num::i64::ANY,
     ) {
-        lazy_static::initialize(&proctor::tracing::TEST_TRACING);
+        once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
 
         let min_cluster_size = 7;
         let max_cluster_size = 199;

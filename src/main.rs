@@ -7,7 +7,7 @@ use springline::Result;
 use std::future::Future;
 
 fn main() -> Result<()> {
-    let subscriber = get_subscriber("springline", "info");
+    let subscriber = get_subscriber("springline", "info", std::io::stdout);
     init_subscriber(subscriber);
 
     let main_span = tracing::info_span!("main");

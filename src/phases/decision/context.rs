@@ -155,7 +155,7 @@ mod tests {
 
     #[test]
     fn test_serde_flink_decision_context_from_telemetry() {
-        lazy_static::initialize(&proctor::tracing::TEST_TRACING);
+        once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
 
         let data: Telemetry = maplit::hashmap! {
             "correlation_id" => Id::direct(0, "A").to_telemetry(),

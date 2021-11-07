@@ -5,7 +5,8 @@ use std::collections::HashSet;
 use super::context::GovernanceContext;
 use crate::phases::plan::ScalePlan;
 use crate::phases::UpdateMetrics;
-use proctor::elements::{PolicySettings, PolicySource, PolicySubscription, QueryPolicy, QueryResult, Telemetry};
+use crate::settings::GovernanceSettings;
+use proctor::elements::{PolicySource, PolicySubscription, QueryPolicy, QueryResult, Telemetry};
 use proctor::error::PolicyError;
 use proctor::phases::collection::TelemetrySubscription;
 use proctor::{ProctorContext, SharedString};
@@ -89,7 +90,7 @@ pub struct GovernancePolicy {
 }
 
 impl GovernancePolicy {
-    pub fn new(settings: &PolicySettings<GovernanceTemplateData>) -> Self {
+    pub fn new(settings: &GovernanceSettings) -> Self {
         let required_subscription_fields = settings
             .required_subscription_fields
             .iter()
