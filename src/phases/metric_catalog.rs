@@ -78,9 +78,23 @@ pub struct FlowMetrics {
     #[serde(rename = "flow.records_out_per_sec")]
     pub records_out_per_sec: f64,
 
+    /// Applies to Kafka input connections. Pulled from the FlinkKafkaConsumer records-lag-max metric.
     #[polar(attribute)]
-    #[serde(rename = "flow.input_consumer_lag")]
-    pub input_consumer_lag: f64,
+    #[serde(
+        default,
+        rename = "flow.input_records_lag_max",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub input_records_lag_max: Option<i64>,
+
+    /// Applies to Kinesis input connections. Pulled from the FlinkKinesisConsumer millisBehindLatest metric.
+    #[polar(attribute)]
+    #[serde(
+        default,
+        rename = "flow.millis_behind_latest",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub input_millis_behind_latest: Option<i64>,
 }
 
 #[derive(PolarClass, Debug, Default, PartialEq, Clone, Serialize, Deserialize)]
@@ -210,7 +224,6 @@ impl SubscriptionRequirements for MetricCatalog {
             // FlowMetrics
             "flow.records_in_per_sec".into(),
             "flow.records_out_per_sec".into(),
-            "flow.input_consumer_lag".into(),
 
             // ClusterMetrics
             "cluster.nr_task_managers".into(),
@@ -222,6 +235,14 @@ impl SubscriptionRequirements for MetricCatalog {
             "cluster.task_network_input_pool_usage".into(),
             "cluster.task_network_output_queue_len".into(),
             "cluster.task_network_output_pool_usage".into(),
+        }
+    }
+
+    fn optional_fields() -> HashSet<SharedString> {
+        maplit::hashset! {
+             // FlowMetrics
+             "flow.input_records_lag_max".into(),
+             "flow.input_millis_behind_latest".into(),
         }
     }
 }
@@ -242,7 +263,14 @@ impl UpdateMetrics for MetricCatalog {
 
                 METRIC_CATALOG_FLOW_RECORDS_IN_PER_SEC.set(catalog.flow.records_in_per_sec);
                 METRIC_CATALOG_FLOW_RECORDS_OUT_PER_SEC.set(catalog.flow.records_out_per_sec);
-                METRIC_CATALOG_FLOW_INPUT_CONSUMER_LAG.set(catalog.flow.input_consumer_lag);
+
+                if let Some(lag) = catalog.flow.input_records_lag_max {
+                    METRIC_CATALOG_FLOW_INPUT_RECORDS_LAG_MAX.set(lag);
+                }
+
+                if let Some(lag) = catalog.flow.input_millis_behind_latest {
+                    METRIC_CATALOG_FLOW_INPUT_MILLIS_BEHIND_LATEST.set(lag);
+                }
 
                 METRIC_CATALOG_CLUSTER_NR_TASK_MANAGERS.set(catalog.cluster.nr_task_managers as i64);
                 METRIC_CATALOG_CLUSTER_TASK_CPU_LOAD.set(catalog.cluster.task_cpu_load);
@@ -305,11 +333,16 @@ lazy_static! {
         "Current records egress per second"
     )
     .expect("failed creating metric_catalog_flow_records_out_per_sec metric");
-    pub(crate) static ref METRIC_CATALOG_FLOW_INPUT_CONSUMER_LAG: Gauge = Gauge::new(
-        "metric_catalog_flow_input_consumer_lag",
-        "Current lag in handling messages from the ingress topic"
+    pub(crate) static ref METRIC_CATALOG_FLOW_INPUT_RECORDS_LAG_MAX: IntGauge = IntGauge::new(
+        "metric_catalog_flow_input_records_lag_max",
+        "Current lag in handling messages from the Kafka ingress topic"
     )
-    .expect("failed creating metric_catalog_flow_input_consumer_lag metric");
+    .expect("failed creating metric_catalog_flow_input_records_lag_max metric");
+    pub(crate) static ref METRIC_CATALOG_FLOW_INPUT_MILLIS_BEHIND_LATEST: IntGauge = IntGauge::new(
+        "metric_catalog_flow_input_millis_behind_latest",
+        "Current lag in handling messages from the Kinesis ingress topic"
+    )
+    .expect("failed creating metric_catalog_flow_input_records_lag_max metric");
     pub(crate) static ref METRIC_CATALOG_CLUSTER_NR_TASK_MANAGERS: IntGauge = IntGauge::new(
         "metric_catalog_cluster_nr_task_managers",
         "Number of active task managers in the cluster"
@@ -456,7 +489,8 @@ mod tests {
             },
             flow: FlowMetrics {
                 records_in_per_sec: 17.,
-                input_consumer_lag: 3.14,
+                input_records_lag_max: Some(314),
+                input_millis_behind_latest: None,
                 records_out_per_sec: 0.0,
             },
             cluster: ClusterMetrics {
@@ -503,8 +537,9 @@ mod tests {
                 Token::F64(17.),
                 Token::Str("flow.records_out_per_sec"),
                 Token::F64(0.),
-                Token::Str("flow.input_consumer_lag"),
-                Token::F64(3.14),
+                Token::Str("flow.input_records_lag_max"),
+                Token::Some,
+                Token::I64(314),
                 Token::Str("cluster.nr_task_managers"),
                 Token::U16(4),
                 Token::Str("cluster.task_cpu_load"),
@@ -532,7 +567,7 @@ mod tests {
 
     #[test]
     fn test_telemetry_from_metric_catalog() -> anyhow::Result<()> {
-        lazy_static::initialize(&proctor::tracing::TEST_TRACING);
+        once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
         let main_span = tracing::info_span!("test_telemetry_from_metric_catalog");
         let _main_span_guard = main_span.enter();
 
@@ -549,7 +584,8 @@ mod tests {
             },
             flow: FlowMetrics {
                 records_in_per_sec: 17.,
-                input_consumer_lag: 3.14,
+                input_records_lag_max: Some(314),
+                input_millis_behind_latest: None,
                 records_out_per_sec: 0.0,
             },
             cluster: ClusterMetrics {
@@ -584,7 +620,7 @@ mod tests {
 
                 "flow.records_in_per_sec".to_string() => (17.).to_telemetry(),
                 "flow.records_out_per_sec".to_string() => (0.).to_telemetry(),
-                "flow.input_consumer_lag".to_string() => 3.14.to_telemetry(),
+                "flow.input_records_lag_max".to_string() => 314.to_telemetry(),
 
                 "cluster.nr_task_managers".to_string() => 4.to_telemetry(),
                 "cluster.task_cpu_load".to_string() => (0.65).to_telemetry(),

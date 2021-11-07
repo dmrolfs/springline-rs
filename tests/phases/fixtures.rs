@@ -14,7 +14,7 @@ pub fn make_test_item(_timestamp: &DateTime<Utc>, records_in_per_sec: f64, inbox
     let item = maplit::hashmap! {
         // "timestamp".to_string() => Timestamp::from_datetime(&timestamp).into(),
         "flow.records_in_per_sec".to_string() => records_in_per_sec.into(),
-        "flow.input_consumer_lag".to_string() => inbox_lag.into(),
+        "flow.input_records_lag_max".to_string() => inbox_lag.into(),
     }
     .into_iter()
     .collect();

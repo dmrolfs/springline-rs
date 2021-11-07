@@ -167,7 +167,7 @@ const STEP: i64 = 15;
 
 #[tracing::instrument(level = "info")]
 fn make_test_data(
-    start: Timestamp, tick: i64, nr_task_managers: u16, input_consumer_lag: f64, records_per_sec: f64,
+    start: Timestamp, tick: i64, nr_task_managers: u16, input_records_lag_max: i64, records_per_sec: f64,
 ) -> InData {
     let timestamp = Utc.timestamp(start.as_secs() + tick * STEP, 0).into();
     let corr_id = Id::direct(9, "CBA");
@@ -183,7 +183,8 @@ fn make_test_data(
         flow: FlowMetrics {
             records_in_per_sec: records_per_sec,
             records_out_per_sec: records_per_sec,
-            input_consumer_lag,
+            input_records_lag_max: Some(input_records_lag_max),
+            input_millis_behind_latest: None,
         },
         cluster: ClusterMetrics {
             nr_task_managers,
@@ -201,12 +202,12 @@ fn make_test_data(
 }
 
 fn make_test_data_series(
-    start: Timestamp, nr_task_managers: u16, input_consumer_lag: f64, mut gen: impl FnMut(i64) -> f64,
+    start: Timestamp, nr_task_managers: u16, input_records_lag_max: i64, mut gen: impl FnMut(i64) -> f64,
 ) -> Vec<InData> {
     let total = 30;
     (0..total)
         .into_iter()
-        .map(move |tick| make_test_data(start, tick, nr_task_managers, input_consumer_lag, gen(tick)))
+        .map(move |tick| make_test_data(start, tick, nr_task_managers, input_records_lag_max, gen(tick)))
         .collect()
 }
 
@@ -220,10 +221,10 @@ enum DecisionType {
 
 #[tracing::instrument(level = "info")]
 fn make_decision(
-    decision: DecisionType, start: Timestamp, tick: i64, nr_task_managers: u16, input_consumer_lag: f64,
+    decision: DecisionType, start: Timestamp, tick: i64, nr_task_managers: u16, input_records_lag_max: i64,
     records_per_sec: f64,
 ) -> InDecision {
-    let data = make_test_data(start, tick, nr_task_managers, input_consumer_lag, records_per_sec);
+    let data = make_test_data(start, tick, nr_task_managers, input_records_lag_max, records_per_sec);
     match decision {
         DecisionType::Up => DecisionResult::ScaleUp(data),
         DecisionType::Down => DecisionResult::ScaleDown(data),
@@ -233,7 +234,7 @@ fn make_decision(
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn test_flink_planning_linear() {
-    lazy_static::initialize(&proctor::tracing::TEST_TRACING);
+    once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
     let main_span = tracing::info_span!("test_flink_planning_linear");
     let _ = main_span.enter();
 
@@ -261,25 +262,25 @@ async fn test_flink_planning_linear() {
     );
 
     let start: DateTime<Utc> = fake::faker::chrono::raw::DateTimeBefore(EN, Utc::now()).fake();
-    let data = make_test_data_series(start.into(), 2, 1000., |tick| tick as f64);
+    let data = make_test_data_series(start.into(), 2, 1000, |tick| tick as f64);
     let data_len = data.len();
     let last_data = assert_some!(data.last()).clone();
 
     assert_ok!(
         planning
-            .update_performance_history(&make_decision(DecisionType::Up, last_data.timestamp, 0, 2, 0., 25.))
+            .update_performance_history(&make_decision(DecisionType::Up, last_data.timestamp, 0, 2, 0, 25.))
             .await
     );
     tracing::warn!("DMR: planning history = {:?}", planning);
     assert_ok!(
         planning
-            .update_performance_history(&make_decision(DecisionType::Up, last_data.timestamp, 0, 4, 0., 75.))
+            .update_performance_history(&make_decision(DecisionType::Up, last_data.timestamp, 0, 4, 0, 75.))
             .await
     );
     tracing::warn!("DMR: planning history = {:?}", planning);
     assert_ok!(
         planning
-            .update_performance_history(&make_decision(DecisionType::Up, last_data.timestamp, 0, 10, 0., 250.))
+            .update_performance_history(&make_decision(DecisionType::Up, last_data.timestamp, 0, 10, 0, 250.))
             .await
     );
     tracing::warn!("DMR: planning history = {:?}", planning);
@@ -333,7 +334,7 @@ async fn test_flink_planning_linear() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn test_flink_planning_sine() {
-    lazy_static::initialize(&proctor::tracing::TEST_TRACING);
+    once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
     let main_span = tracing::info_span!("test_flink_planning_sine");
     let _ = main_span.enter();
 
@@ -361,25 +362,25 @@ async fn test_flink_planning_sine() {
     );
 
     let start: DateTime<Utc> = fake::faker::chrono::raw::DateTimeBefore(EN, Utc::now()).fake();
-    let data = make_test_data_series(start.into(), 2, 1000., |tick| 75. * ((tick as f64) / 15.).sin());
+    let data = make_test_data_series(start.into(), 2, 1000, |tick| 75. * ((tick as f64) / 15.).sin());
     let data_len = data.len();
     let last_data = assert_some!(data.last()).clone();
 
     assert_ok!(
         planning
-            .update_performance_history(&make_decision(DecisionType::Up, last_data.timestamp, 0, 2, 0., 25.))
+            .update_performance_history(&make_decision(DecisionType::Up, last_data.timestamp, 0, 2, 0, 25.))
             .await
     );
     tracing::warn!("DMR: planning history = {:?}", planning);
     assert_ok!(
         planning
-            .update_performance_history(&make_decision(DecisionType::Up, last_data.timestamp, 0, 4, 0., 75.))
+            .update_performance_history(&make_decision(DecisionType::Up, last_data.timestamp, 0, 4, 0, 75.))
             .await
     );
     tracing::warn!("DMR: planning history = {:?}", planning);
     assert_ok!(
         planning
-            .update_performance_history(&make_decision(DecisionType::Up, last_data.timestamp, 0, 10, 0., 250.))
+            .update_performance_history(&make_decision(DecisionType::Up, last_data.timestamp, 0, 10, 0, 250.))
             .await
     );
     tracing::warn!("DMR: planning history = {:?}", planning);

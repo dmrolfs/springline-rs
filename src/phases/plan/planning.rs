@@ -104,7 +104,7 @@ impl<F: WorkloadForecastBuilder> FlinkPlanning<F> {
         let plan = if self.forecast_calculator.have_enough_data() {
             let history = &self.performance_history;
             let current_nr_task_managers = decision.item().cluster.nr_task_managers;
-            let buffered_records = decision.item().flow.input_consumer_lag; // todo: how to support other options?
+            let buffered_records = Self::buffered_lag_score(decision.item());
             let anticipated_workload = self
                 .forecast_calculator
                 .calculate_target_rate(decision.item().timestamp, buffered_records)?;
@@ -137,6 +137,20 @@ impl<F: WorkloadForecastBuilder> FlinkPlanning<F> {
         };
 
         Ok(plan)
+    }
+
+    /// An attempt at cross-platform (wrt FlinkKafkaConsumer and FlinkKinesisConsumer at least)
+    /// scoring of input lag. Precedence is given to Kafka. If neither are set, returns 0.0.
+    /// The assumption is made that Kafka or Kinesis will be used ongoing. They obviously represent
+    /// different units; however the planning calculation, if the lag score is of a consistent type,
+    /// remains the same.
+    fn buffered_lag_score(item: &MetricCatalog) -> f64 {
+        // todo: how to support other options?
+        match (item.flow.input_records_lag_max, item.flow.input_millis_behind_latest) {
+            (Some(lag), _) => lag as f64,
+            (None, Some(lag)) => lag as f64,
+            (None, None) => 0_f64,
+        }
     }
 }
 
@@ -366,7 +380,7 @@ impl<F: WorkloadForecastBuilder> Planning for FlinkPlanning<F> {
 // min_scaling_step: u16,     ) -> Result<(), PlanError> {
 //         if calculator.have_enough_data() {
 //             let current_nr_task_managers = decision.item().cluster.nr_task_managers;
-//             let buffered_records = decision.item().flow.input_consumer_lag; // todo: how to
+//             let buffered_records = decision.item().flow.input_records_lag_max; // todo: how to
 // support other options             let anticipated_workload =
 // calculator.calculate_target_rate(decision.item().timestamp, buffered_records)?;             let
 // required_nr_task_managers = performance_history.cluster_size_for_workload(anticipated_workload);
@@ -440,7 +454,8 @@ mod tests {
             timestamp: Utc.timestamp(NOW, 0).into(),
             health: JobHealthMetrics::default(),
             flow: FlowMetrics {
-                input_consumer_lag: 314.15926535897932384264,
+                // input_records_lag_max: 314.15926535897932384264,
+                input_records_lag_max: Some(314),
                 ..FlowMetrics::default()
             },
             cluster: ClusterMetrics { nr_task_managers: 4, ..ClusterMetrics::default() },

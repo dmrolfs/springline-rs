@@ -140,8 +140,8 @@ impl QueryPolicy for EligibilityPolicy {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pretty_assertions::assert_eq;
     use claim::*;
+    use pretty_assertions::assert_eq;
     use trim_margin::MarginTrimmable;
 
     #[test]
@@ -190,7 +190,9 @@ mod tests {
             |             "foo": "bar",
             |         },
             |     )),
-            | )"##.trim_margin_with("| ").unwrap()
+            | )"##
+                .trim_margin_with("| ")
+                .unwrap()
         );
     }
 
@@ -222,7 +224,9 @@ mod tests {
         |             "foo": "bar",
         |         },
         |     )),
-        | )"##.trim_margin_with("| ").unwrap();
+        | )"##
+            .trim_margin_with("| ")
+            .unwrap();
 
         let actual: EligibilitySettings = assert_ok!(ron::from_str(&rep));
         assert_eq!(

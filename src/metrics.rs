@@ -22,7 +22,12 @@ pub fn register_metrics(registry: &Registry) -> Result<()> {
     registry.register(Box::new(
         metric_catalog::METRIC_CATALOG_FLOW_RECORDS_OUT_PER_SEC.clone(),
     ))?;
-    registry.register(Box::new(metric_catalog::METRIC_CATALOG_FLOW_INPUT_CONSUMER_LAG.clone()))?;
+    registry.register(Box::new(
+        metric_catalog::METRIC_CATALOG_FLOW_INPUT_RECORDS_LAG_MAX.clone(),
+    ))?;
+    registry.register(Box::new(
+        metric_catalog::METRIC_CATALOG_FLOW_INPUT_MILLIS_BEHIND_LATEST.clone(),
+    ))?;
     registry.register(Box::new(
         metric_catalog::METRIC_CATALOG_CLUSTER_NR_TASK_MANAGERS.clone(),
     ))?;
