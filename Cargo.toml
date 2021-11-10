@@ -10,7 +10,7 @@ path = "src/main.rs"
 
 [[bin]]
 name = "policy-explorer"
-path = "src/bin/explorer/policy_explorer.rs"
+path = "src/bin/explorer/main.rs"
 
 [[bin]]
 name = "transcode"

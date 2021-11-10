@@ -34,20 +34,6 @@ static BASE_OPTIONS: OnceCell<CliOptions> = OnceCell::new();
 static ID_GENERATOR: Lazy<Mutex<IdGenerator>> =
     Lazy::new(|| Mutex::new(IdGenerator::single_node(IdPrettifier::<AlphabetCodec>::default())));
 
-fn main() {
-    let app_name = std::env::args().nth(0).unwrap();
-    let subscriber = get_subscriber(app_name, "info", std::io::stdout);
-    init_subscriber(subscriber);
-
-    let main_span = tracing::info_span!("main");
-    let _main_span_guard = main_span.enter();
-
-    let options: CliOptions = CliOptions::parse();
-    BASE_OPTIONS.set(options).expect("failed to set base options");
-
-    eprintln!("\nWelcome to the Springline Policy Explorer!");
-    app_menu()
-}
 
 static THEME: Lazy<ColorfulTheme> = Lazy::new(|| ColorfulTheme {
     values_style: Style::new().yellow().dim(),

@@ -2,6 +2,7 @@ use proctor::tracing::{get_subscriber, init_subscriber};
 use springline::settings::{CliOptions, Settings};
 use clap::Parser;
 use console::style;
+use springline::bin::explorer::{MenuAction, AppMenu};
 
 fn main() {
     let app_name = std::env::args().nth(0).unwrap();
@@ -15,7 +16,7 @@ fn main() {
 
     eprintln!("\nWelcome to the {}!", style("Springline Policy Explorer").green().bold());
     let menu = AppMenu::new(options);
-    match menu.interact() {
-        Ok(()) => eprintln!
+    if let Err(err) = menu.interact() {
+        eprintln!("{} failed: {}", app_name, err);
     }
 }
