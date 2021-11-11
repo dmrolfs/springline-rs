@@ -538,7 +538,7 @@ fn load_config_dialog() -> anyhow::Result<Settings> {
             builder.add_source(Settings::make_explicit_config_source(path))
         }
         None => {
-            let resources = Settings::resources_dir();
+            let resources = Settings::resources();
             let basename = Settings::app_config_basename();
             eprintln!(
                 "Using implicit configuration found at {:?} for basename: {}",

@@ -227,7 +227,7 @@ mod tests {
         let _ = main_span.enter();
 
         let sources = vec![
-            PolicySource::from_template_file("./resources/decision.polar")?,
+            PolicySource::from_template_file("../resources/decision.polar")?,
             PolicySource::from_template_string(
                 format!("{}_basis", DecisionPolicy::base_template_name()),
                 r###"

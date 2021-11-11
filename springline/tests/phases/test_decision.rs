@@ -23,7 +23,7 @@ use springline::phases::decision::result::{make_decision_transform, DecisionResu
 use springline::settings::DecisionSettings;
 
 lazy_static::lazy_static! {
-    static ref DECISION_PREAMBLE: PolicySource = PolicySource::from_template_file("./resources/decision.polar").expect("failed to create decision policy source");
+    static ref DECISION_PREAMBLE: PolicySource = PolicySource::from_template_file("../resources/decision.polar").expect("failed to create decision policy source");
     static ref POLICY_SETTINGS: DecisionSettings = DecisionSettings::default()
         .with_source(DECISION_PREAMBLE.clone())
         .with_template_data(DecisionTemplateData {

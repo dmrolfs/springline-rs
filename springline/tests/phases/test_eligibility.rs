@@ -275,11 +275,11 @@ async fn test_flink_eligibility_happy_flow() -> anyhow::Result<()> {
 
     let settings = EligibilitySettings::default()
         .with_source(
-            PolicySource::from_template_file("./resources/eligibility.polar")
+            PolicySource::from_template_file("../resources/eligibility.polar")
                 .expect("failed to create eligibility policy source"),
         )
         .with_source(
-            PolicySource::from_template_file("./resources/eligibility_basis.polar")
+            PolicySource::from_template_file("../resources/eligibility_basis.polar")
                 .expect("failed to create eligibility_basis policy source"),
         )
         .with_template_data(EligibilityTemplateData {
@@ -328,11 +328,11 @@ async fn test_flink_eligibility_block_on_active_deployment() -> anyhow::Result<(
 
     let settings = EligibilitySettings::default()
         .with_source(
-            PolicySource::from_template_file("./resources/eligibility.polar")
+            PolicySource::from_template_file("../resources/eligibility.polar")
                 .expect("failed to create eligibility policy source"),
         )
         .with_source(
-            PolicySource::from_template_file("./resources/eligibility_basis.polar")
+            PolicySource::from_template_file("../resources/eligibility_basis.polar")
                 .expect("failed to create eligibility_basis policy source"),
         )
         .with_template_data(EligibilityTemplateData { ..EligibilityTemplateData::default() });
@@ -378,11 +378,11 @@ async fn test_flink_eligibility_block_on_recent_deployment() -> anyhow::Result<(
     let cooling_duration = chrono::Duration::minutes(15);
     let settings = EligibilitySettings::default()
         .with_source(
-            PolicySource::from_template_file("./resources/eligibility.polar")
+            PolicySource::from_template_file("../resources/eligibility.polar")
                 .expect("failed to create eligibility policy source"),
         )
         .with_source(
-            PolicySource::from_template_file("./resources/eligibility_basis.polar")
+            PolicySource::from_template_file("../resources/eligibility_basis.polar")
                 .expect("failed to create eligibility_basis policy source"),
         )
         .with_template_data(EligibilityTemplateData {
@@ -432,11 +432,11 @@ async fn test_flink_eligibility_block_on_recent_failure() -> anyhow::Result<()> 
     let stability_window = chrono::Duration::minutes(15);
     let settings = EligibilitySettings::default()
         .with_source(
-            PolicySource::from_template_file("./resources/eligibility.polar")
+            PolicySource::from_template_file("../resources/eligibility.polar")
                 .expect("failed to create eligibility policy source"),
         )
         .with_source(
-            PolicySource::from_template_file("./resources/eligibility_basis.polar")
+            PolicySource::from_template_file("../resources/eligibility_basis.polar")
                 .expect("failed to create eligibility_basis policy source"),
         )
         .with_template_data(EligibilityTemplateData {

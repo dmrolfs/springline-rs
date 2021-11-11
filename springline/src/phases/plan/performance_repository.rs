@@ -256,7 +256,7 @@ mod tests {
 
         let aaa = "AAA";
         let bbb = "BBB";
-        let mut repo = PerformanceFileRepository::new("./target");
+        let mut repo = PerformanceFileRepository::new("../target");
         let (aaa_path, bbb_path) = block_on(async {
             (
                 repo.path_for(repo.file_name_for(aaa).as_str()),

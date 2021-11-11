@@ -3,12 +3,12 @@
     http: ( host: "0.0.0.0", port: 8000, ),
     collection: (
         sources: {
-            "foo": ( type: "csv", path: "./resources/bar.toml", ),
+            "foo": ( type: "csv", path: "../resources/bar.toml", ),
         }
     ),
     eligibility: (
         policies: [
-            (source: "file", policy: (path: "./resources/eligibility.polar", is_template: true)),
+            (source: "file", policy: (path: "../resources/eligibility.polar", is_template: true)),
             (
                 source: "string",
                 policy: (
@@ -27,8 +27,8 @@
     ),
     decision: (
         policies: [
-            (source: "file", policy: (path: "./resources/decision.polar")),
-            (source: "file", policy: (path: "./resources/decision_basis.polar")),
+            (source: "file", policy: (path: "../resources/decision.polar")),
+            (source: "file", policy: (path: "../resources/decision_basis.polar")),
         ],
         template_data: (
             basis: "decision_basis",
@@ -57,7 +57,7 @@
         required_subscription_fields: [],
         optional_subscription_fields: [],
         policies: [
-            ( source: "file", policy: (path: "./resources/governance.polar" )),
+            ( source: "file", policy: (path: "../resources/governance.polar" )),
         ],
     ),
     execution: (),

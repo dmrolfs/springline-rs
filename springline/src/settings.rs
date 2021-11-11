@@ -52,11 +52,15 @@ pub struct CliOptions {
     /// override environment-based configuration file to load.
     /// Default behavior is to load configuration based on `APP_ENVIRONMENT` envvar.
     #[clap(short, long)]
-    config: Option<String>,
+    config: Option<PathBuf>,
 
     /// specify path to secrets configuration file
     #[clap(short, long)]
-    secrets: Option<String>,
+    secrets: Option<PathBuf>,
+
+    /// Override default location from which to load configuration files. Default directory is
+    /// ./resources.
+    resources: Option<PathBuf>,
 
     /// Specify the machine id [0, 31) used in correlation id generation, overriding what may be set
     /// in an environment variable. This id should be unique for the entity type within a cluster
@@ -73,14 +77,18 @@ impl LoadingOptions for CliOptions {
     type Error = SettingsError;
 
     fn config_path(&self) -> Option<PathBuf> {
-        self.config.as_ref().map(PathBuf::from)
+        self.config.clone()
+    }
+
+    fn resources_path(&self) -> Option<PathBuf> {
+        self.resources.clone()
     }
 
     fn secrets_path(&self) -> Option<PathBuf> {
-        self.secrets.as_ref().map(PathBuf::from)
+        self.secrets.clone()
     }
 
-    fn load_overrides(self, config: ConfigBuilder<DefaultState>) -> Result<ConfigBuilder<DefaultState>, Self::Error> {
+    fn load_overrides(&self, config: ConfigBuilder<DefaultState>) -> Result<ConfigBuilder<DefaultState>, Self::Error> {
         let config = match self.machine_id {
             None => config,
             Some(machine_id) => config.set_override("machine_id", machine_id as i64)?,
@@ -184,12 +192,12 @@ mod tests {
             engine: Default::default(),
             collection: CollectionSettings {
                 sources: maplit::hashmap! {
-                    "foo".to_string() => SourceSetting::Csv { path: PathBuf::from("./resources/bar.toml"), },
+                    "foo".to_string() => SourceSetting::Csv { path: PathBuf::from("../resources/bar.toml"), },
                 },
             },
             eligibility: EligibilitySettings {
                 policies: vec![
-                    assert_ok!(PolicySource::from_template_file("./resources/eligibility.polar")),
+                    assert_ok!(PolicySource::from_template_file("../resources/eligibility.polar")),
                     assert_ok!(PolicySource::from_template_string(
                         "eligibility_basis",
                         r##"|
@@ -205,8 +213,8 @@ mod tests {
             },
             decision: DecisionSettings {
                 policies: vec![
-                    assert_ok!(PolicySource::from_complete_file("./resources/decision.polar")),
-                    assert_ok!(PolicySource::from_complete_file("./resources/decision_basis.polar")),
+                    assert_ok!(PolicySource::from_complete_file("../resources/decision.polar")),
+                    assert_ok!(PolicySource::from_complete_file("../resources/decision_basis.polar")),
                 ],
                 template_data: Some(DecisionTemplateData {
                     basis: "decision_basis".to_string(),
@@ -235,7 +243,7 @@ mod tests {
             },
             governance: GovernanceSettings {
                 policies: vec![assert_ok!(PolicySource::from_complete_file(
-                    "./resources/governance.polar"
+                    "../resources/governance.polar"
                 ))],
                 ..GovernanceSettings::default()
             },
@@ -286,7 +294,11 @@ mod tests {
         let main_span = tracing::info_span!("test_settings_applications_load");
         let _ = main_span.enter();
 
-        let before_env = Settings::load(CliOptions::default());
+        let options = CliOptions {
+            resources: Some("../resources".into()),
+            ..CliOptions::default()
+        };
+        let before_env = Settings::load(&options);
         tracing::info!("from Settings::load: {:?}", before_env);
         let before_env = assert_ok!(before_env);
         assert_eq!(before_env.engine, EngineSettings { machine_id: 1, node_id: 1 });
@@ -299,7 +311,7 @@ mod tests {
                 ("APP__ENGINE__NODE_ID", Some("3")),
             ],
             || {
-                let actual: Settings = assert_ok!(Settings::load(CliOptions::default()));
+                let actual: Settings = assert_ok!(Settings::load(&options));
                 assert_eq!(actual.engine, EngineSettings { machine_id: 7, node_id: 3 });
 
                 let expected = Settings {

@@ -19,7 +19,7 @@ type Data = ScalePlan;
 type Context = GovernanceContext;
 
 lazy_static::lazy_static! {
-    static ref GOVERNANCE_PREAMBLE: PolicySource = PolicySource::from_complete_file("./resources/governance.polar").expect("failed to create governance policy source");
+    static ref GOVERNANCE_PREAMBLE: PolicySource = PolicySource::from_complete_file("../resources/governance.polar").expect("failed to create governance policy source");
     static ref POLICY_SETTINGS: GovernanceSettings = GovernanceSettings::default().with_source(GOVERNANCE_PREAMBLE.clone());
 }
 

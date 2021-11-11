@@ -14,7 +14,7 @@ fn main() -> Result<()> {
     let _main_span_guard = main_span.enter();
 
     let options = CliOptions::parse();
-    let settings = Settings::load(options)?;
+    let settings = Settings::load(&options)?;
 
     //todo assemble and start pipeline in entry
     start_pipeline(async move {

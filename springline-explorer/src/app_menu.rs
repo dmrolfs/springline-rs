@@ -1,8 +1,8 @@
 use dialoguer::FuzzySelect;
-use crate::settings::{CliOptions, Settings};
 use settings_loader::SettingsLoader;
 use once_cell::sync::Lazy;
-use crate::bin::explorer::{MenuAction, THEME};
+use springline::settings::{CliOptions, Settings};
+use crate::{MenuAction, THEME};
 
 static SELECTION_ACTIONS: Lazy<[(&str, MenuAction);2]> = Lazy::new(|| {[
     ("Settings", Box::new(AppMenu::establish_settings)),
@@ -19,7 +19,7 @@ pub struct AppMenu {
 
 impl AppMenu {
     pub fn new(options: CliOptions) -> anyhow::Result<Self> {
-        let settings = Settings::load(options.clone())?;
+        let settings = Settings::load(&options)?;
         Ok(Self { options, settings, })
     }
 
