@@ -1,5 +1,6 @@
-use crate::phases::MetricCatalog;
 use proctor::error::PlanError;
+
+use crate::phases::MetricCatalog;
 
 mod calculator;
 pub mod least_squares;
@@ -13,9 +14,8 @@ pub use calculator::ForecastCalculator;
 pub use least_squares::{LeastSquaresWorkloadForecastBuilder, SpikeSettings};
 #[cfg(test)]
 use mockall::{automock, predicate::*};
-use serde::{Deserialize, Serialize};
-
 use proctor::elements::{Point, RecordsPerSecond, Timestamp};
+use serde::{Deserialize, Serialize};
 
 #[cfg_attr(test, automock)]
 pub trait WorkloadForecastBuilder: Debug + Sync + Send {

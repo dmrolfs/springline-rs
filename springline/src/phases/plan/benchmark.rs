@@ -4,11 +4,11 @@ use std::fmt;
 
 use ::serde_with::serde_as;
 use approx::{AbsDiffEq, RelativeEq};
+use proctor::elements::{RecordsPerSecond, TelemetryValue, ToTelemetry};
+use proctor::error::{PlanError, TelemetryError, TypeExpectation};
 use serde::{Deserialize, Serialize};
 
 use crate::phases::MetricCatalog;
-use proctor::elements::{RecordsPerSecond, TelemetryValue, ToTelemetry};
-use proctor::error::{PlanError, TelemetryError, TypeExpectation};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct BenchmarkRange {

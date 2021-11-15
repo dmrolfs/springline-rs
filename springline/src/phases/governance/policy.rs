@@ -1,15 +1,16 @@
-use oso::{Oso, PolarClass, PolarValue};
-use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
+
+use oso::{Oso, PolarClass, PolarValue};
+use proctor::elements::{PolicySource, PolicySubscription, QueryPolicy, QueryResult, Telemetry};
+use proctor::error::PolicyError;
+use proctor::phases::collection::TelemetrySubscription;
+use proctor::{ProctorContext, SharedString};
+use serde::{Deserialize, Serialize};
 
 use super::context::GovernanceContext;
 use crate::phases::plan::ScalePlan;
 use crate::phases::UpdateMetrics;
 use crate::settings::GovernanceSettings;
-use proctor::elements::{PolicySource, PolicySubscription, QueryPolicy, QueryResult, Telemetry};
-use proctor::error::PolicyError;
-use proctor::phases::collection::TelemetrySubscription;
-use proctor::{ProctorContext, SharedString};
 
 pub const ADJUSTED_TARGET: &'static str = "adjusted_target";
 
@@ -51,24 +52,26 @@ pub const ADJUSTED_TARGET: &'static str = "adjusted_target";
 //
 //     accept_step_up(plan, context, adjusted_target)
 //         if scale_up(plan)
-//         and (plan.target_nr_task_managers - plan.current_nr_task_managers) <= context.max_scaling_step
-//         and adjusted_target = plan.target_nr_task_managers;
+//         and (plan.target_nr_task_managers - plan.current_nr_task_managers) <=
+// context.max_scaling_step         and adjusted_target = plan.target_nr_task_managers;
 //
 //     accept_step_up(plan, context, adjusted_target)
 //         if scale_up(plan)
-//         and context.max_scaling_step < (plan.target_nr_task_managers - plan.current_nr_task_managers)
-//         and adjusted_target = plan.current_nr_task_managers + context.max_scaling_step;
+//         and context.max_scaling_step < (plan.target_nr_task_managers -
+// plan.current_nr_task_managers)         and adjusted_target = plan.current_nr_task_managers +
+// context.max_scaling_step;
 //
 //
 //     accept_step_down(plan, context, adjusted_target)
 //         if scale_down(plan)
-//         and (plan.current_nr_task_managers - plan.target_nr_task_managers) <= context.max_scaling_step
-//         and adjusted_target = plan.target_nr_task_managers;
+//         and (plan.current_nr_task_managers - plan.target_nr_task_managers) <=
+// context.max_scaling_step         and adjusted_target = plan.target_nr_task_managers;
 //
 //     accept_step_down(plan, context, adjusted_target)
 //         if scale_down(plan)
-//         and context.max_scaling_step < (plan.current_nr_task_managers - plan.target_nr_task_managers)
-//         and adjusted_target = plan.current_nr_task_managers - context.max_scaling_step;
+//         and context.max_scaling_step < (plan.current_nr_task_managers -
+// plan.target_nr_task_managers)         and adjusted_target = plan.current_nr_task_managers -
+// context.max_scaling_step;
 //
 //
 //     scale_up(plan) if plan.current_nr_task_managers < plan.target_nr_task_managers;
@@ -123,6 +126,7 @@ impl QueryPolicy for GovernancePolicy {
     type Args = (Self::Item, Self::Context, PolarValue);
     type Context = GovernanceContext;
     type Item = ScalePlan;
+    type TemplateData = GovernanceTemplateData;
 
     fn initialize_policy_engine(&mut self, engine: &mut Oso) -> Result<(), PolicyError> {
         Telemetry::initialize_policy_engine(engine)?;
@@ -147,8 +151,6 @@ impl QueryPolicy for GovernancePolicy {
     fn query_policy(&self, engine: &Oso, args: Self::Args) -> Result<QueryResult, PolicyError> {
         QueryResult::from_query(engine.query_rule("accept", args)?)
     }
-
-    type TemplateData = GovernanceTemplateData;
 
     fn base_template_name() -> &'static str {
         "governance"

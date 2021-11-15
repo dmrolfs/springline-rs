@@ -20,7 +20,6 @@ name = "springline"
 path = "src/main.rs"
 
 [dependencies]
-proctor = { git = "https://github.com/dmrolfs/proctor-rs", branch = "main" }
 anyhow = "1.0"
 approx = "0.5"
 async-trait = "0.1"
@@ -49,6 +48,7 @@ once_cell = "1.8"
 oso = "0.22"
 polar-core = "*"
 pretty-snowflake = { git = "https://github.com/dmrolfs/pretty-snowflake-rs" }
+proctor = { git = "https://github.com/dmrolfs/proctor-rs", branch = "main" }
 prometheus = { version = "0.13", features = ["process"] }
 prometheus-static-metric = "0.5"
 regex = "1.5"

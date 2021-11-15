@@ -2,15 +2,15 @@ use std::fmt::Debug;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use proctor::error::PlanError;
+use proctor::graph::Outlet;
+use proctor::phases::plan::Planning;
 
 use crate::phases::decision::result::DecisionResult;
 use crate::phases::plan::{
     ForecastCalculator, PerformanceHistory, PerformanceRepository, ScalePlan, WorkloadForecastBuilder,
 };
 use crate::phases::MetricCatalog;
-use proctor::error::PlanError;
-use proctor::graph::Outlet;
-use proctor::phases::plan::Planning;
 
 // todo: this needs to be worked into Plan stage...  Need to determine best design
 // todo: pub type FlinkPlanningApi = mpsc::UnboundedSender<FlinkPlanningCmd>;
@@ -71,11 +71,11 @@ impl<F: WorkloadForecastBuilder> FlinkPlanning<F> {
             DR::ScaleUp(metrics) => {
                 self.performance_history.add_upper_benchmark(metrics.into());
                 true
-            }
+            },
             DR::ScaleDown(metrics) => {
                 self.performance_history.add_lower_benchmark(metrics.into());
                 true
-            }
+            },
         };
 
         if update_repository {
@@ -156,8 +156,8 @@ impl<F: WorkloadForecastBuilder> FlinkPlanning<F> {
 
 #[async_trait]
 impl<F: WorkloadForecastBuilder> Planning for FlinkPlanning<F> {
-    type Observation = MetricCatalog;
     type Decision = DecisionResult<MetricCatalog>;
+    type Observation = MetricCatalog;
     type Out = ScalePlan;
 
     fn set_outlet(&mut self, outlet: Outlet<Self::Out>) {
@@ -425,6 +425,8 @@ mod tests {
     use lazy_static::lazy_static;
     use pretty_assertions::assert_eq;
     use pretty_snowflake::Id;
+    use proctor::elements::telemetry;
+    use proctor::graph;
     use tokio::sync::mpsc;
     use tokio::sync::mpsc::Receiver;
     use tokio::sync::Mutex;
@@ -437,8 +439,6 @@ mod tests {
         MINIMAL_CLUSTER_SIZE,
     };
     use crate::phases::{ClusterMetrics, FlowMetrics, JobHealthMetrics};
-    use proctor::elements::telemetry;
-    use proctor::graph;
 
     type TestPlanning = FlinkPlanning<LeastSquaresWorkloadForecastBuilder>;
     #[allow(dead_code)]
@@ -448,7 +448,7 @@ mod tests {
     const NOW: i64 = 1624061766 + (30 * STEP);
 
     lazy_static! {
-        static ref CORRELATION: Id = Id::direct(13, "ABC");
+        static ref CORRELATION: Id<MetricCatalog> = Id::direct("MetricCatalog", 13, "ABC");
         static ref METRICS: MetricCatalog = MetricCatalog {
             correlation_id: CORRELATION.clone(),
             timestamp: Utc.timestamp(NOW, 0).into(),
@@ -493,7 +493,7 @@ mod tests {
                         (x, y)
                     })
                     .collect()
-            }
+            },
 
             SignalType::Sine => {
                 let total = 30;
@@ -505,7 +505,7 @@ mod tests {
                         (x, y)
                     })
                     .collect()
-            }
+            },
         };
 
         points.into_iter().for_each(|(ts, value)| {

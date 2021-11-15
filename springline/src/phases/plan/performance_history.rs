@@ -2,13 +2,13 @@ use std::cmp;
 use std::collections::BTreeMap;
 use std::fmt::Debug;
 
+use proctor::elements::RecordsPerSecond;
 use serde::{Deserialize, Serialize};
 use splines::{Interpolation, Key, Spline};
 
 use super::Benchmark;
 use crate::phases::plan::benchmark::BenchmarkRange;
 use crate::phases::plan::MINIMAL_CLUSTER_SIZE;
-use proctor::elements::RecordsPerSecond;
 
 #[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PerformanceHistory(BTreeMap<u16, BenchmarkRange>);

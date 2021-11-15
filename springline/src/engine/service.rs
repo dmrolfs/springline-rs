@@ -1,12 +1,15 @@
+use std::fmt;
+
 use proctor::phases::collection::{ClearinghouseApi, ClearinghouseCmd, ClearinghouseSnapshot};
 use prometheus::{Registry, TextEncoder};
+pub use protocol::{EngineApiError, EngineCmd, EngineServiceApi, MetricsReport, MetricsSpan};
 use regex::RegexSet;
-use std::fmt;
 use tokio::sync::mpsc;
 
-pub use protocol::{EngineApiError, EngineCmd, EngineServiceApi, MetricsReport, MetricsSpan};
-
 mod protocol {
+    use std::collections::HashMap;
+    use std::fmt::Display;
+
     use axum::body::Body;
     use axum::http::{Response, StatusCode};
     use axum::response::IntoResponse;
@@ -15,8 +18,6 @@ mod protocol {
     use proctor::phases::collection::{ClearinghouseCmd, ClearinghouseSnapshot};
     use regex::RegexSet;
     use serde::Deserialize;
-    use std::collections::HashMap;
-    use std::fmt::Display;
     use thiserror::Error;
     use tokio::sync::{mpsc, oneshot};
 

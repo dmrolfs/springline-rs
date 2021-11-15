@@ -2,10 +2,10 @@ use std::fmt::Debug;
 
 use nalgebra::{Matrix3, Matrix3x1};
 use num_traits::pow;
-
-use crate::phases::plan::WorkloadForecast;
 use proctor::elements::{Point, RecordsPerSecond, Timestamp};
 use proctor::error::PlanError;
+
+use crate::phases::plan::WorkloadForecast;
 
 #[derive(Debug)]
 pub struct LinearRegression {

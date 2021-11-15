@@ -1,8 +1,9 @@
 use std::time::Duration;
 
-use super::{WorkloadForecast, WorkloadForecastBuilder, WorkloadMeasurement};
 use proctor::elements::{RecordsPerSecond, Timestamp};
 use proctor::error::PlanError;
+
+use super::{WorkloadForecast, WorkloadForecastBuilder, WorkloadMeasurement};
 
 #[derive(Debug, Clone)]
 pub struct ForecastCalculator<F: WorkloadForecastBuilder> {
@@ -118,11 +119,11 @@ impl<F: WorkloadForecastBuilder> ForecastCalculator<F> {
 #[cfg(test)]
 mod tests {
     use approx::assert_relative_eq;
+    use chrono::Utc;
     use claim::*;
 
     use super::*;
     use crate::phases::plan::forecast::*;
-    use chrono::Utc;
 
     #[test]
     fn test_creation() {

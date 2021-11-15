@@ -9,11 +9,11 @@ use async_trait::async_trait;
 use dashmap::DashMap;
 #[cfg(test)]
 use mockall::{automock, predicate::*};
+use proctor::error::PlanError;
 use serde::{Deserialize, Serialize};
 use serde_json::error::Category;
 
 use crate::phases::plan::PerformanceHistory;
-use proctor::error::PlanError;
 
 #[tracing::instrument(level = "info")]
 pub fn make_performance_repository(
@@ -27,7 +27,7 @@ pub fn make_performance_repository(
                 .clone()
                 .unwrap_or("performance_history.data".to_string());
             Ok(Box::new(PerformanceFileRepository::new(path)))
-        }
+        },
     }
 }
 
@@ -154,13 +154,13 @@ impl PerformanceRepository for PerformanceFileRepository {
                     Err(err) if err.classify() == Category::Eof => {
                         tracing::debug!(?performance_history_path, "performance history empty, creating new.");
                         Ok(None)
-                    }
+                    },
                     Err(err) => Err(err),
                 };
                 tracing::debug!(performance_history=?ph, "file loaded performance history.");
 
                 Ok(ph?)
-            }
+            },
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
             Err(err) => Err(err.into()),
         }

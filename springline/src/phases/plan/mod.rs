@@ -6,15 +6,15 @@ pub use performance_repository::{
     PerformanceRepositorySettings, PerformanceRepositoryType,
 };
 pub use planning::FlinkPlanning;
+use proctor::graph::{Connect, SinkShape, SourceShape};
+use proctor::phases::collection::{ClearinghouseSubscriptionMagnet, SubscriptionChannel, TelemetrySubscription};
+use proctor::phases::plan::{Plan, Planning};
+use proctor::SharedString;
 
 use crate::phases::decision::result::DecisionResult;
 use crate::phases::MetricCatalog;
 use crate::settings::PlanSettings;
 use crate::Result;
-use proctor::graph::{Connect, SinkShape, SourceShape};
-use proctor::phases::collection::{ClearinghouseSubscriptionMagnet, SubscriptionChannel, TelemetrySubscription};
-use proctor::phases::plan::{Plan, Planning};
-use proctor::SharedString;
 
 mod benchmark;
 pub mod forecast;

@@ -1,26 +1,30 @@
+use dialoguer::console::style;
 use dialoguer::FuzzySelect;
-use settings_loader::SettingsLoader;
 use once_cell::sync::Lazy;
+use settings_loader::SettingsLoader;
 use springline::settings::{CliOptions, Settings};
-use crate::{MenuAction, THEME};
 
-static SELECTION_ACTIONS: Lazy<[(&str, MenuAction);2]> = Lazy::new(|| {[
-    ("Settings", Box::new(AppMenu::establish_settings)),
-    ("Eligibility", Box::new(AppMenu::explore_eligibility_policy)),
-]});
+use crate::{ExplorerState, MenuAction, Result, THEME};
 
-static SELECTIONS: Lazy<Vec<&str>> = Lazy::new(|| { SELECTION_ACTIONS.iter().map(|s| s.0).collect() });
+static SELECTION_ACTIONS: Lazy<[(&str, MenuAction); 3]> = Lazy::new(|| {
+    [
+        ("Settings", Box::new(AppMenu::establish_settings)),
+        ("Eligibility", Box::new(AppMenu::explore_eligibility_policy)),
+        ("exit", Box::new(AppMenu::exit_action)),
+    ]
+});
 
-#[derive(Debug, Clone, PartialEq)]
+static SELECTIONS: Lazy<Vec<&str>> = Lazy::new(|| SELECTION_ACTIONS.iter().map(|s| s.0).collect());
+
+#[derive(Debug)]
 pub struct AppMenu {
-    pub options: CliOptions,
-    pub settings: Settings,
+    state: ExplorerState,
 }
 
 impl AppMenu {
-    pub fn new(options: CliOptions) -> anyhow::Result<Self> {
-        let settings = Settings::load(&options)?;
-        Ok(Self { options, settings, })
+    pub fn new(options: CliOptions) -> Result<Self> {
+        let state = ExplorerState::new(options)?;
+        Ok(Self { state })
     }
 
     pub fn interact(&mut self) -> anyhow::Result<()> {
@@ -32,9 +36,10 @@ impl AppMenu {
                 .interact()
                 .expect("failed to select main menu action");
 
+            // match selected.and_then(|pos| SELECTION_ACTIONS.get(pos)) {
             match SELECTION_ACTIONS.get(selected) {
                 Some((label, action)) => {
-                    if let Err(err) = action() {
+                    if let Err(err) = action(&mut self.state) {
                         eprintln!("action {} failed: {:?}", label, err);
                         break Ok(());
                     }
@@ -46,6 +51,20 @@ impl AppMenu {
         }
     }
 
-    pub fn establish_settings() -> anyhow::Result<()> { todo!() }
-    pub fn explore_eligibility_policy() -> anyhow::Result<()> { todo!() }
+    pub fn establish_settings(state: &mut ExplorerState) -> anyhow::Result<()> {
+        todo!()
+    }
+
+    pub fn explore_eligibility_policy(state: &mut ExplorerState) -> anyhow::Result<()> {
+        todo!()
+    }
+
+    pub fn exit_action(_state: &mut ExplorerState) -> anyhow::Result<()> {
+        eprintln!(
+            "\n{} {}",
+            style("Exiting").bold(),
+            style("Springline Policy Explorer").green().bold()
+        );
+        std::process::exit(0)
+    }
 }

@@ -1,13 +1,15 @@
+use std::fmt;
+
+use lazy_static::lazy_static;
+use proctor::phases::plan::PlanMonitor;
+use prometheus::{IntCounter, IntCounterVec, IntGauge, Opts};
+use prometheus_static_metric::make_static_metric;
+
 use crate::phases::decision::result::DecisionResult;
 use crate::phases::decision::{DecisionEvent, DecisionMonitor};
 use crate::phases::eligibility::{EligibilityEvent, EligibilityMonitor};
 use crate::phases::governance::{GovernanceEvent, GovernanceMonitor};
 use crate::phases::plan::{PlanEvent, PlanningStrategy};
-use lazy_static::lazy_static;
-use proctor::phases::plan::PlanMonitor;
-use prometheus::{IntCounter, IntCounterVec, IntGauge, Opts};
-use prometheus_static_metric::make_static_metric;
-use std::fmt;
 
 pub struct Monitor {
     rx_eligibility_monitor: EligibilityMonitor,
@@ -61,7 +63,7 @@ impl Monitor {
         match event {
             EligibilityEvent::ItemPassed(_) => ELIGIBILITY_IS_ELIGIBLE_FOR_SCALING.set(true as i64),
             EligibilityEvent::ItemBlocked(_) => ELIGIBILITY_IS_ELIGIBLE_FOR_SCALING.set(false as i64),
-            _ => {}
+            _ => {},
         }
     }
 
@@ -70,7 +72,7 @@ impl Monitor {
         match event {
             DecisionEvent::ItemPassed(_) => DECISION_SHOULD_PLAN_FOR_SCALING.set(true as i64),
             DecisionEvent::ItemBlocked(_) => DECISION_SHOULD_PLAN_FOR_SCALING.set(false as i64),
-            _ => {}
+            _ => {},
         }
     }
 
@@ -89,10 +91,10 @@ impl Monitor {
                     DecisionResult::ScaleUp(_) | DecisionResult::ScaleDown(_) => {
                         DECISION_PLAN_CURRENT_NR_TASK_MANAGERS.set(plan.current_nr_task_managers as i64);
                         PLAN_TARGET_NR_TASK_MANAGERS.set(plan.target_nr_task_managers as i64);
-                    }
-                    _ => {}
+                    },
+                    _ => {},
                 }
-            }
+            },
             PlanEvent::DecisionIgnored(decision) => match decision {
                 DecisionResult::ScaleUp(_) => DECISION_SCALING_DECISION_COUNT.up.inc(),
                 DecisionResult::ScaleDown(_) => DECISION_SCALING_DECISION_COUNT.down.inc(),
@@ -106,7 +108,7 @@ impl Monitor {
         match event {
             GovernanceEvent::ItemPassed(_) => GOVERNANCE_PLAN_ACCEPTED.set(true as i64),
             GovernanceEvent::ItemBlocked(_) => GOVERNANCE_PLAN_ACCEPTED.set(false as i64),
-            _ => {}
+            _ => {},
         }
     }
 }

@@ -1,15 +1,16 @@
-use oso::{Oso, PolarClass, PolarValue};
-use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
+
+use oso::{Oso, PolarClass, PolarValue};
+use proctor::elements::{PolicySource, PolicySubscription, QueryPolicy, QueryResult, Telemetry};
+use proctor::error::PolicyError;
+use proctor::phases::collection::TelemetrySubscription;
+use proctor::{ProctorContext, SharedString};
+use serde::{Deserialize, Serialize};
 
 use super::context::DecisionContext;
 use crate::phases::decision::result::DECISION_BINDING;
 use crate::phases::{MetricCatalog, UpdateMetrics};
 use crate::settings::DecisionSettings;
-use proctor::elements::{PolicySource, PolicySubscription, QueryPolicy, QueryResult, Telemetry};
-use proctor::error::PolicyError;
-use proctor::phases::collection::TelemetrySubscription;
-use proctor::{ProctorContext, SharedString};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -78,9 +79,9 @@ impl PolicySubscription for DecisionPolicy {
 }
 
 impl QueryPolicy for DecisionPolicy {
-    type Item = MetricCatalog;
-    type Context = DecisionContext;
     type Args = (Self::Item, Self::Context, PolarValue);
+    type Context = DecisionContext;
+    type Item = MetricCatalog;
     type TemplateData = DecisionTemplateData;
 
     fn base_template_name() -> &'static str {
@@ -130,12 +131,13 @@ impl QueryPolicy for DecisionPolicy {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use claim::*;
     use pretty_assertions::assert_eq;
     use proctor::elements::PolicyRegistry;
     use serde_test::{assert_tokens, Token};
     use trim_margin::MarginTrimmable;
+
+    use super::*;
 
     #[test]
     fn test_decision_data_serde() {

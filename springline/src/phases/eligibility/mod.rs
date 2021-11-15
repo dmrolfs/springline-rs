@@ -1,13 +1,13 @@
-use crate::phases::{self, MetricCatalog};
-use crate::Result;
+pub use context::{ClusterStatus, EligibilityContext, TaskStatus};
+pub use policy::{EligibilityPolicy, EligibilityTemplateData};
 use proctor::elements::{PolicyFilterEvent, PolicySubscription};
 use proctor::phases::collection::ClearinghouseSubscriptionMagnet;
 use proctor::phases::policy_phase::PolicyPhase;
 use proctor::SharedString;
 
+use crate::phases::{self, MetricCatalog};
 use crate::settings::EligibilitySettings;
-pub use context::{ClusterStatus, EligibilityContext, TaskStatus};
-pub use policy::{EligibilityPolicy, EligibilityTemplateData};
+use crate::Result;
 
 pub mod context;
 pub mod policy;
@@ -72,9 +72,10 @@ pub async fn make_eligibility_phase(
 //
 // #[tracing::instrument(level = "info")]
 // async fn do_connect_eligibility_context(
-//     context_name: SharedString, policy_settings: &PolicySettings, magnet: ClearinghouseSubscriptionMagnet<'_>,
-// ) -> Result<(EligibilityPolicy, SubscriptionChannel<EligibilityContext>)> {
-//     let policy = EligibilityPolicy::new(policy_settings);
+//     context_name: SharedString, policy_settings: &PolicySettings, magnet:
+// ClearinghouseSubscriptionMagnet<'_>, ) -> Result<(EligibilityPolicy,
+// SubscriptionChannel<EligibilityContext>)> {     let policy =
+// EligibilityPolicy::new(policy_settings);
 //
 //     let subscription = TelemetrySubscription::new(context_name.as_ref())
 //         .for_requirements::<EligibilityContext>()

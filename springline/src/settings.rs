@@ -3,22 +3,23 @@ pub mod engine_settings;
 pub mod execution_settings;
 pub mod plan_settings;
 
+use std::path::PathBuf;
+
+use clap::Parser;
 pub use collection_settings::*;
+use config::builder::DefaultState;
+use config::ConfigBuilder;
 pub use engine_settings::*;
 pub use execution_settings::*;
 pub use plan_settings::*;
-
-use crate::phases::decision::DecisionTemplateData;
-use crate::phases::eligibility::policy::EligibilityTemplateData;
-use crate::phases::governance::GovernanceTemplateData;
-use clap::Parser;
-use config::builder::DefaultState;
-use config::ConfigBuilder;
 use proctor::elements::PolicySettings;
 use serde::{Deserialize, Serialize};
 use settings_loader::common::http::HttpServerSettings;
 use settings_loader::{LoadingOptions, SettingsError, SettingsLoader};
-use std::path::PathBuf;
+
+use crate::phases::decision::DecisionTemplateData;
+use crate::phases::eligibility::policy::EligibilityTemplateData;
+use crate::phases::governance::GovernanceTemplateData;
 
 pub type EligibilitySettings = PolicySettings<EligibilityTemplateData>;
 pub type DecisionSettings = PolicySettings<DecisionTemplateData>;
@@ -105,14 +106,6 @@ impl LoadingOptions for CliOptions {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::phases::plan::{PerformanceRepositorySettings, PerformanceRepositoryType, SpikeSettings};
-    use claim::assert_ok;
-    use config::{Config, FileFormat};
-    use lazy_static::lazy_static;
-    use pretty_assertions::assert_eq;
-    use proctor::elements::PolicySource;
-    use proctor::phases::collection::SourceSetting;
     use std::collections::HashMap;
     use std::env::VarError;
     use std::panic::{RefUnwindSafe, UnwindSafe};
@@ -120,12 +113,23 @@ mod tests {
     use std::time::Duration;
     use std::{env, panic};
 
+    use claim::assert_ok;
+    use config::{Config, FileFormat};
+    use lazy_static::lazy_static;
+    use pretty_assertions::assert_eq;
+    use proctor::elements::PolicySource;
+    use proctor::phases::collection::SourceSetting;
+
+    use super::*;
+    use crate::phases::plan::{PerformanceRepositorySettings, PerformanceRepositoryType, SpikeSettings};
+
     lazy_static! {
         static ref SERIAL_TEST: Mutex<()> = Default::default();
     }
 
     /// Sets environment variables to the given value for the duration of the closure.
-    /// Restores the previous values when the closure completes or panics, before unwinding the panic.
+    /// Restores the previous values when the closure completes or panics, before unwinding the
+    /// panic.
     pub fn with_env_vars<F>(label: &str, kvs: Vec<(&str, Option<&str>)>, closure: F)
     where
         F: Fn() + UnwindSafe + RefUnwindSafe,
@@ -151,7 +155,7 @@ mod tests {
                 for (k, v) in old_kvs {
                     reset_env(k, v);
                 }
-            }
+            },
             Err(err) => {
                 eprintln!("W_END[{}]: Err - resetting env to: {:?}", label, old_kvs);
                 for (k, v) in old_kvs {
@@ -159,7 +163,7 @@ mod tests {
                 }
                 drop(guard);
                 panic::resume_unwind(err);
-            }
+            },
         };
         for (k, v) in old_kvs_2 {
             eprintln!(

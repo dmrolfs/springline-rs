@@ -1,19 +1,21 @@
+use std::sync::Mutex;
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 use claim::*;
 use lazy_static::lazy_static;
+use once_cell::sync::Lazy;
 use pretty_assertions::assert_eq;
 use pretty_snowflake::{AlphabetCodec, IdPrettifier, PrettyIdGenerator, RealTimeGenerator};
 use proctor::elements::{self, telemetry, PolicyFilterEvent, PolicySource, Timestamp, ToTelemetry};
 use proctor::graph::stage::{self, WithApi, WithMonitor};
 use proctor::graph::{Connect, Graph, SinkShape, SourceShape};
 use proctor::phases::policy_phase::PolicyPhase;
+use proctor::ProctorIdGenerator;
 use springline::phases::eligibility::context::{ClusterStatus, TaskStatus};
 use springline::phases::eligibility::{EligibilityContext, EligibilityPolicy, EligibilityTemplateData};
 use springline::phases::{ClusterMetrics, FlowMetrics, JobHealthMetrics, MetricCatalog};
 use springline::settings::EligibilitySettings;
-use std::sync::Mutex;
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
@@ -184,7 +186,7 @@ impl TestFlow {
                     Err(err) => {
                         tracing::info!(error=?err, "check accumulation failed.");
                         false
-                    }
+                    },
                 }
             })
             .await
@@ -477,11 +479,7 @@ async fn test_flink_eligibility_block_on_recent_failure() -> anyhow::Result<()> 
     Ok(())
 }
 
-type IdGenerator = PrettyIdGenerator<RealTimeGenerator, AlphabetCodec>;
-lazy_static! {
-    static ref ID_GENERATOR: Mutex<IdGenerator> =
-        Mutex::new(IdGenerator::single_node(IdPrettifier::<AlphabetCodec>::default()));
-}
+static ID_GENERATOR: Lazy<Mutex<ProctorIdGenerator<()>>> = Lazy::new(|| Mutex::new(ProctorIdGenerator::default()));
 
 pub fn make_context(
     last_failure: Option<DateTime<Utc>>, is_deploying: bool, last_deployment: DateTime<Utc>,
@@ -491,7 +489,7 @@ pub fn make_context(
 
     EligibilityContext {
         timestamp: Timestamp::now(),
-        correlation_id: gen.next_id(),
+        correlation_id: gen.next_id().relabel(),
         task_status: TaskStatus { last_failure },
         cluster_status: ClusterStatus { is_deploying, last_deployment },
         custom,
@@ -503,7 +501,7 @@ pub fn make_test_item(custom: telemetry::TableType) -> Data {
 
     MetricCatalog {
         timestamp: Timestamp::now(),
-        correlation_id: gen.next_id(),
+        correlation_id: gen.next_id().relabel(),
         health: JobHealthMetrics::default(),
         flow: FlowMetrics::default(),
         cluster: ClusterMetrics::default(),

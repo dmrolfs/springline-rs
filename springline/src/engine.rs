@@ -2,11 +2,6 @@ mod http;
 pub mod monitor;
 mod service;
 
-use crate::phases::governance::{self, GovernanceOutcome};
-use crate::phases::{collection, decision, eligibility, execution, plan};
-use crate::phases::{MetricCatalog, UpdateMetrics};
-use crate::settings::Settings;
-use crate::Result;
 use cast_trait_object::DynCastExt;
 use monitor::Monitor;
 use pretty_snowflake::MachineNode;
@@ -17,6 +12,12 @@ use proctor::phases::collection::ClearinghouseApi;
 use proctor::{ProctorResult, SharedString};
 use prometheus::Registry;
 use tokio::task::JoinHandle;
+
+use crate::phases::governance::{self, GovernanceOutcome};
+use crate::phases::{collection, decision, eligibility, execution, plan};
+use crate::phases::{MetricCatalog, UpdateMetrics};
+use crate::settings::Settings;
+use crate::Result;
 
 pub struct Autoscaler;
 impl Autoscaler {

@@ -2,22 +2,22 @@ use std::collections::HashSet;
 use std::fmt::Debug;
 
 use chrono::{DateTime, Utc};
-use oso::PolarClass;
-use serde::{Deserialize, Serialize};
-
-use crate::phases::UpdateMetrics;
 use lazy_static::lazy_static;
-use pretty_snowflake::Id;
+use oso::PolarClass;
+use pretty_snowflake::{Id, Label};
 use proctor::elements::{telemetry, Telemetry, Timestamp};
 use proctor::error::{EligibilityError, ProctorError};
 use proctor::phases::collection::SubscriptionRequirements;
 use proctor::{ProctorContext, SharedString};
 use prometheus::IntGauge;
+use serde::{Deserialize, Serialize};
 
-#[derive(PolarClass, Debug, Clone, Serialize, Deserialize)]
+use crate::phases::UpdateMetrics;
+
+#[derive(PolarClass, Label, Debug, Clone, Serialize, Deserialize)]
 pub struct EligibilityContext {
     // auto-filled
-    pub correlation_id: Id,
+    pub correlation_id: Id<Self>,
     pub timestamp: Timestamp,
 
     #[polar(attribute)]
@@ -73,7 +73,7 @@ impl UpdateMetrics for EligibilityContext {
 
                 ELIGIBILITY_CTX_CLUSTER_IS_DEPLOYING.set(ctx.cluster_status.is_deploying as i64);
                 ELIGIBILITY_CTX_CLUSTER_LAST_DEPLOYMENT.set(ctx.cluster_status.last_deployment.timestamp());
-            }
+            },
 
             Err(err) => {
                 tracing::warn!(
@@ -81,7 +81,7 @@ impl UpdateMetrics for EligibilityContext {
                     "failed to update eligibility context metrics on subscription: {}", subscription_name
                 );
                 proctor::track_errors(phase_name.as_ref(), &ProctorError::EligibilityError(err.into()));
-            }
+            },
         };
 
         Box::new(update_fn)
@@ -148,13 +148,13 @@ lazy_static! {
 #[cfg(test)]
 mod tests {
     use chrono::{DateTime, Utc};
+    use claim::*;
     use lazy_static::lazy_static;
+    use proctor::elements::telemetry::ToTelemetry;
+    use proctor::elements::{Telemetry, NANOS_KEY, SECS_KEY};
     use serde_test::{assert_tokens, Token};
 
     use super::*;
-    use claim::*;
-    use proctor::elements::telemetry::ToTelemetry;
-    use proctor::elements::{Telemetry, NANOS_KEY, SECS_KEY};
 
     lazy_static! {
         static ref DT_1: DateTime<Utc> = Utc::now();
@@ -167,7 +167,7 @@ mod tests {
     #[ignore]
     fn test_serde_flink_eligibility_context() {
         let context = EligibilityContext {
-            correlation_id: Id::direct(0, "A"),
+            correlation_id: Id::direct("EligibilityContext", 0, "A"),
             timestamp: Timestamp::new(0, 0),
             task_status: TaskStatus { last_failure: Some(DT_1.clone()) },
             cluster_status: ClusterStatus { is_deploying: false, last_deployment: DT_2.clone() },
@@ -253,7 +253,7 @@ mod tests {
         once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
 
         let data: Telemetry = maplit::hashmap! {
-            "correlation_id" => Id::direct(0, "A").to_telemetry(),
+            "correlation_id" => Id::<EligibilityContext>::direct("EligibilityContext", 0, "A").to_telemetry(),
             "timestamp" => Timestamp::new(0, 0).to_telemetry(),
             "task.last_failure" => DT_1_STR.as_str().to_telemetry(),
             "cluster.is_deploying" => false.to_telemetry(),
@@ -268,7 +268,7 @@ mod tests {
         let actual = assert_ok!(data.try_into::<EligibilityContext>());
         tracing::info!(?actual, "converted into FlinkEligibilityContext");
         let expected = EligibilityContext {
-            correlation_id: Id::direct(0, "A"),
+            correlation_id: Id::direct("EligibilityContext", 0, "A"),
             timestamp: Timestamp::new(0, 0),
             task_status: TaskStatus { last_failure: Some(DT_1.clone()) },
             cluster_status: ClusterStatus { is_deploying: false, last_deployment: DT_2.clone() },

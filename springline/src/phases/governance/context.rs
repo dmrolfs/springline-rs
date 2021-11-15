@@ -1,22 +1,22 @@
 use std::collections::HashSet;
 use std::fmt::Debug;
 
-use oso::PolarClass;
-use serde::{Deserialize, Serialize};
-
-use crate::phases::UpdateMetrics;
 use lazy_static::lazy_static;
-use pretty_snowflake::Id;
+use oso::PolarClass;
+use pretty_snowflake::{Id, Label};
 use proctor::elements::{telemetry, Telemetry, Timestamp};
 use proctor::error::GovernanceError;
 use proctor::phases::collection::SubscriptionRequirements;
 use proctor::{ProctorContext, SharedString};
 use prometheus::IntGauge;
+use serde::{Deserialize, Serialize};
 
-#[derive(PolarClass, Debug, Clone, Serialize, Deserialize)]
+use crate::phases::UpdateMetrics;
+
+#[derive(PolarClass, Label, Debug, Clone, Serialize, Deserialize)]
 pub struct GovernanceContext {
     // auto-filled
-    pub correlation_id: Id,
+    pub correlation_id: Id<Self>,
     pub timestamp: Timestamp,
 
     #[polar(attribute)]
@@ -75,7 +75,7 @@ impl UpdateMetrics for GovernanceContext {
                 GOVERNANCE_CTX_MIN_CLUSTER_SIZE.set(ctx.min_cluster_size as i64);
                 GOVERNANCE_CTX_MAX_CLUSTER_SIZE.set(ctx.max_cluster_size as i64);
                 GOVERNANCE_CTX_MAX_SCALING_STEP.set(ctx.max_scaling_step as i64);
-            }
+            },
 
             Err(err) => {
                 tracing::warn!(error=?err, %phase_name, "failed to update governance context metrics on subscription: {}", subscription_name);
@@ -83,7 +83,7 @@ impl UpdateMetrics for GovernanceContext {
                     phase_name.as_ref(),
                     &proctor::error::ProctorError::GovernanceError(err.into()),
                 );
-            }
+            },
         };
 
         Box::new(update_fn)
@@ -108,11 +108,11 @@ lazy_static! {
 mod tests {
     use claim::*;
     use pretty_assertions::assert_eq;
+    use proctor::elements::telemetry::ToTelemetry;
+    use proctor::elements::Telemetry;
     use serde_test::{assert_tokens, Token};
 
     use super::*;
-    use proctor::elements::telemetry::ToTelemetry;
-    use proctor::elements::Telemetry;
 
     #[test]
     fn test_serde_flink_governance_context(// min_cluster_size in prop::num::u16::ANY,
@@ -129,7 +129,7 @@ mod tests {
         let custom_prop_b = 242;
 
         let context = GovernanceContext {
-            correlation_id: Id::direct(0, "A"),
+            correlation_id: Id::direct("GovernanceContext", 0, "A"),
             timestamp: Timestamp::new(0, 0),
             min_cluster_size,
             max_cluster_size,
@@ -198,7 +198,7 @@ mod tests {
         let bar = 242;
 
         let data: Telemetry = maplit::hashmap! {
-            "correlation_id" => Id::direct(0, "A").to_telemetry(),
+            "correlation_id" => Id::<GovernanceContext>::direct("GovernanceContext", 0, "A").to_telemetry(),
             "timestamp" => Timestamp::new(0, 0).to_telemetry(),
             "min_cluster_size" => min_cluster_size.to_telemetry(),
             "max_cluster_size" => max_cluster_size.to_telemetry(),
@@ -215,7 +215,7 @@ mod tests {
         let actual = assert_ok!(data.try_into::<GovernanceContext>());
         tracing::info!(?actual, "converted into FlinkGovernanceContext");
         let expected = GovernanceContext {
-            correlation_id: Id::direct(0, "A"),
+            correlation_id: Id::direct("GovernanceContext", 0, "A"),
             timestamp: Timestamp::new(0, 0),
             min_cluster_size,
             max_cluster_size,

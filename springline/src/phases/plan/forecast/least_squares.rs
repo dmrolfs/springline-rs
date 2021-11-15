@@ -1,14 +1,14 @@
 use std::collections::VecDeque;
 use std::fmt::Debug;
 
+use proctor::elements::{Point, SignalDetector};
+use proctor::error::PlanError;
 use serde::{Deserialize, Serialize};
 
 use super::WorkloadForecast;
 use crate::phases::plan::forecast::regression::{LinearRegression, QuadraticRegression};
 use crate::phases::plan::forecast::WorkloadMeasurement;
 use crate::phases::plan::WorkloadForecastBuilder;
-use proctor::elements::{Point, SignalDetector};
-use proctor::error::PlanError;
 
 #[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SpikeSettings {
@@ -154,7 +154,8 @@ impl LeastSquaresWorkloadForecastBuilder {
             model
         } else {
             tracing::debug!(
-                "failed to calculate the quadratic model.rs due to a matrix decomposition issue - using linear model.rs."
+                "failed to calculate the quadratic model.rs due to a matrix decomposition issue - using linear \
+                 model.rs."
             );
             Box::new(linear)
         }

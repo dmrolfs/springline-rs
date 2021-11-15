@@ -1,6 +1,8 @@
-use crate::phases::plan::{PerformanceRepositorySettings, SpikeSettings};
-use serde::{Deserialize, Serialize};
 use std::time::Duration;
+
+use serde::{Deserialize, Serialize};
+
+use crate::phases::plan::{PerformanceRepositorySettings, SpikeSettings};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PlanSettings {
@@ -29,9 +31,10 @@ impl Default for PlanSettings {
 
 #[cfg(test)]
 mod tests {
+    use serde_test::{assert_tokens, Token};
+
     use super::*;
     use crate::phases::plan::PerformanceRepositoryType;
-    use serde_test::{assert_tokens, Token};
 
     #[test]
     fn test_serde_plan_settings() {

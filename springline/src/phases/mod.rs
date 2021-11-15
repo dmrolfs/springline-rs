@@ -1,4 +1,3 @@
-use crate::Result;
 // use fix_hidden_lifetime_bug;
 pub use metric_catalog::*;
 use proctor::elements::Telemetry;
@@ -7,6 +6,8 @@ use proctor::phases::collection::{ClearinghouseSubscriptionMagnet, SubscriptionC
 use proctor::phases::policy_phase::PolicyPhase;
 use proctor::{AppData, ProctorContext, SharedString};
 use serde::Serialize;
+
+use crate::Result;
 
 pub mod collection;
 pub mod decision;
@@ -20,7 +21,6 @@ pub trait UpdateMetrics {
     fn update_metrics_for(name: SharedString) -> Box<dyn Fn(&str, &Telemetry) -> () + Send + Sync + 'static>;
 }
 
-// #[fix_hidden_lifetime_bug]
 #[tracing::instrument(level = "info")]
 pub async fn subscribe_policy_phase<In, Out, C, D>(
     subscription: TelemetrySubscription, phase: &Box<PolicyPhase<In, Out, C, D>>,

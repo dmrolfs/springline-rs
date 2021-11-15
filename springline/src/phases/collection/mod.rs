@@ -1,12 +1,14 @@
-use crate::phases::MetricCatalog;
-use crate::settings::CollectionSettings;
-use crate::Result;
+use std::collections::HashMap;
+
 use pretty_snowflake::MachineNode;
 use proctor::elements::Telemetry;
 use proctor::graph::stage::SourceStage;
 use proctor::phases::collection::builder::CollectBuilder;
 use proctor::phases::collection::{Collect, SourceSetting, TelemetrySource};
-use std::collections::HashMap;
+
+use crate::phases::MetricCatalog;
+use crate::settings::CollectionSettings;
+use crate::Result;
 
 pub mod flink_metrics_source;
 

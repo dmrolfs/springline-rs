@@ -1,6 +1,7 @@
+use std::collections::HashMap;
+
 use proctor::phases::collection::SourceSetting;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 #[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -10,18 +11,20 @@ pub struct CollectionSettings {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use std::path::PathBuf;
+    use std::time::Duration;
+
     use proctor::phases::collection::HttpQuery;
     use reqwest::header::{AUTHORIZATION, CONTENT_LENGTH};
     use reqwest::{Method, Url};
     use serde_test::{assert_tokens, Token};
-    use std::path::PathBuf;
-    use std::time::Duration;
+
+    use super::*;
 
     #[test]
     fn test_serde_collection_settings() {
         let settings_csv = CollectionSettings {
-            //only doing one pair at a time until *convenient* way to pin order and test is determined
+            // only doing one pair at a time until *convenient* way to pin order and test is determined
             sources: maplit::hashmap! {
                 "foo".to_string() => SourceSetting::Csv { path: PathBuf::from("./resources/bar.toml"),},
             },
@@ -46,7 +49,7 @@ mod tests {
         );
 
         let settings_rest = CollectionSettings {
-            //only doing one pair at a time until *convenient* way to pin order and test is determined
+            // only doing one pair at a time until *convenient* way to pin order and test is determined
             sources: maplit::hashmap! {
                 "foo".to_string() => SourceSetting::RestApi(HttpQuery {
                     interval: Duration::from_secs(7),

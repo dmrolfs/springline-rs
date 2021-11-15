@@ -1,9 +1,10 @@
-use crate::phases::decision::result::DecisionResult;
-use crate::phases::plan::MINIMAL_CLUSTER_SIZE;
-use crate::phases::MetricCatalog;
 use oso::PolarClass;
 use proctor::elements::Timestamp;
 use serde::{Deserialize, Serialize};
+
+use crate::phases::decision::result::DecisionResult;
+use crate::phases::plan::MINIMAL_CLUSTER_SIZE;
+use crate::phases::MetricCatalog;
 
 #[derive(PolarClass, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ScalePlan {
@@ -48,7 +49,7 @@ impl ScalePlan {
                 );
 
                 scale_plan_for(corrected_nr_task_managers)
-            }
+            },
 
             (DR::ScaleDown(_), Some(calculated)) if calculated < current_nr_task_managers => scale_plan_for(calculated),
 
@@ -68,7 +69,7 @@ impl ScalePlan {
                 );
 
                 scale_plan_for(corrected_nr_task_managers)
-            }
+            },
 
             (DR::NoAction(_), _) => None,
         }

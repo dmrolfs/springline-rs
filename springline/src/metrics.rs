@@ -1,7 +1,8 @@
+use prometheus::Registry;
+
 use crate::engine::monitor;
 use crate::phases::{decision, eligibility, governance, metric_catalog};
 use crate::Result;
-use prometheus::Registry;
 
 #[tracing::instrument(level = "info")]
 pub fn register_metrics(registry: &Registry) -> Result<()> {

@@ -3,23 +3,23 @@ use std::convert::TryFrom;
 use std::fmt::Debug;
 use std::ops::Add;
 
+use lazy_static::lazy_static;
 // use ::serde_with::{serde_as, TimestampSeconds};
 use oso::PolarClass;
-use serde::{Deserialize, Serialize};
-
-use crate::phases::UpdateMetrics;
-use lazy_static::lazy_static;
-use pretty_snowflake::Id;
+use pretty_snowflake::{Id, Label};
 use proctor::elements::{telemetry, Telemetry, TelemetryValue, Timestamp};
 use proctor::error::{ProctorError, TelemetryError};
 use proctor::phases::collection::SubscriptionRequirements;
 use proctor::SharedString;
 use prometheus::{Gauge, IntGauge};
+use serde::{Deserialize, Serialize};
+
+use crate::phases::UpdateMetrics;
 
 // #[serde_as]
-#[derive(PolarClass, Debug, PartialEq, Clone, Serialize, Deserialize)]
+#[derive(PolarClass, Label, Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub struct MetricCatalog {
-    pub correlation_id: Id,
+    pub correlation_id: Id<Self>,
 
     #[polar(attribute)]
     pub timestamp: Timestamp,
@@ -44,7 +44,6 @@ pub struct MetricCatalog {
 #[derive(PolarClass, Debug, Default, PartialEq, Clone, Serialize, Deserialize)]
 pub struct JobHealthMetrics {
     /// The time that the job has been running without interruption.
-    //
     // Returns -1 for completed jobs (in milliseconds).
     #[polar(attribute)]
     #[serde(rename = "health.job_uptime_millis")]
@@ -78,7 +77,8 @@ pub struct FlowMetrics {
     #[serde(rename = "flow.records_out_per_sec")]
     pub records_out_per_sec: f64,
 
-    /// Applies to Kafka input connections. Pulled from the FlinkKafkaConsumer records-lag-max metric.
+    /// Applies to Kafka input connections. Pulled from the FlinkKafkaConsumer records-lag-max
+    /// metric.
     #[polar(attribute)]
     #[serde(
         default,
@@ -87,7 +87,8 @@ pub struct FlowMetrics {
     )]
     pub input_records_lag_max: Option<i64>,
 
-    /// Applies to Kinesis input connections. Pulled from the FlinkKinesisConsumer millisBehindLatest metric.
+    /// Applies to Kinesis input connections. Pulled from the FlinkKinesisConsumer
+    /// millisBehindLatest metric.
     #[polar(attribute)]
     #[serde(
         default,
@@ -145,18 +146,18 @@ pub struct ClusterMetrics {
 }
 
 #[cfg(test)]
+use std::sync::Mutex;
+
+#[cfg(test)]
 use chrono::{DateTime, Utc};
 #[cfg(test)]
 use pretty_snowflake::{AlphabetCodec, IdPrettifier};
 #[cfg(test)]
-use proctor::IdGenerator;
-#[cfg(test)]
-use std::sync::Mutex;
+use proctor::ProctorIdGenerator;
 
 #[cfg(test)]
 lazy_static! {
-    static ref ID_GENERATOR: Mutex<IdGenerator> =
-        Mutex::new(IdGenerator::single_node(IdPrettifier::<AlphabetCodec>::default()));
+    static ref ID_GENERATOR: Mutex<ProctorIdGenerator<MetricCatalog>> = Mutex::new(ProctorIdGenerator::default());
 }
 
 impl MetricCatalog {
@@ -282,7 +283,7 @@ impl UpdateMetrics for MetricCatalog {
                 METRIC_CATALOG_CLUSTER_TASK_NETWORK_OUTPUT_QUEUE_LEN.set(catalog.cluster.task_network_output_queue_len);
                 METRIC_CATALOG_CLUSTER_TASK_NETWORK_OUTPUT_POOL_USAGE
                     .set(catalog.cluster.task_network_output_pool_usage);
-            }
+            },
 
             Err(err) => {
                 tracing::warn!(
@@ -290,7 +291,7 @@ impl UpdateMetrics for MetricCatalog {
                     "failed to update data collection metrics on subscription: {}", subscription_name
                 );
                 proctor::track_errors(name.as_ref(), &ProctorError::CollectionError(err.into()));
-            }
+            },
         };
 
         Box::new(update_fn)
@@ -399,13 +400,13 @@ mod tests {
 
     use chrono::TimeZone;
     use pretty_assertions::assert_eq;
-    use serde_test::{assert_tokens, Token};
-
-    use super::*;
     use proctor::elements::telemetry::ToTelemetry;
     use proctor::elements::Telemetry;
     use proctor::error::TypeExpectation;
     use proctor::phases::collection::{SUBSCRIPTION_CORRELATION, SUBSCRIPTION_TIMESTAMP};
+    use serde_test::{assert_tokens, Token};
+
+    use super::*;
 
     #[derive(PartialEq, Debug)]
     struct Bar(String);
@@ -470,7 +471,7 @@ mod tests {
     }
 
     lazy_static! {
-        static ref CORR_ID: Id = Id::direct(12, "L");
+        static ref CORR_ID: Id<MetricCatalog> = Id::direct("MetricCatalog", 12, "L");
         static ref CORR_ID_REP: &'static str = "L";
     }
 
@@ -572,7 +573,7 @@ mod tests {
         let _main_span_guard = main_span.enter();
 
         let ts = Utc.ymd(1988, 5, 30).and_hms(9, 1, 17).into();
-        let corr_id = Id::direct(17, "AB");
+        let corr_id = Id::direct("MetricCatalog", 17, "AB");
         let metrics = MetricCatalog {
             correlation_id: corr_id.clone(),
             timestamp: ts,

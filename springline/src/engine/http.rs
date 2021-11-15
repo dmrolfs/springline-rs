@@ -1,19 +1,20 @@
-use crate::engine::service::{EngineApiError, EngineCmd, MetricsSpan, Service};
+use std::sync::Arc;
+use std::time::Duration;
+
+use axum::error_handling::HandleErrorLayer;
 use axum::extract::{Extension, Path};
+use axum::http::StatusCode;
+use axum::response::IntoResponse;
 use axum::routing::get;
 use axum::{AddExtensionLayer, BoxError, Router};
 use axum_debug::debug_handler;
 use settings_loader::common::http::HttpServerSettings;
-use std::sync::Arc;
-use std::time::Duration;
 use tokio::net::TcpListener;
 use tower::timeout::TimeoutLayer;
 use tower::ServiceBuilder;
 use tower_http::trace::TraceLayer;
 
-use axum::error_handling::HandleErrorLayer;
-use axum::http::StatusCode;
-use axum::response::IntoResponse;
+use crate::engine::service::{EngineApiError, EngineCmd, MetricsSpan, Service};
 
 struct State<'r> {
     engine: Service<'r>,

@@ -1,14 +1,15 @@
-use oso::{Oso, PolarClass};
 use std::collections::{HashMap, HashSet};
 
-use super::context::{ClusterStatus, EligibilityContext, TaskStatus};
-use crate::phases::{MetricCatalog, UpdateMetrics};
-use crate::settings::EligibilitySettings;
+use oso::{Oso, PolarClass};
 use proctor::elements::{PolicySource, PolicySubscription, QueryPolicy, QueryResult, Telemetry};
 use proctor::error::PolicyError;
 use proctor::phases::collection::TelemetrySubscription;
 use proctor::{ProctorContext, SharedString};
 use serde::{Deserialize, Serialize};
+
+use super::context::{ClusterStatus, EligibilityContext, TaskStatus};
+use crate::phases::{MetricCatalog, UpdateMetrics};
+use crate::settings::EligibilitySettings;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -78,6 +79,7 @@ impl QueryPolicy for EligibilityPolicy {
     type Args = (Self::Item, Self::Context);
     type Context = EligibilityContext;
     type Item = MetricCatalog;
+    type TemplateData = EligibilityTemplateData;
 
     fn initialize_policy_engine(&mut self, oso: &mut Oso) -> Result<(), PolicyError> {
         Telemetry::initialize_policy_engine(oso)?;
@@ -114,8 +116,6 @@ impl QueryPolicy for EligibilityPolicy {
         QueryResult::from_query(engine.query_rule("eligible", args)?)
     }
 
-    type TemplateData = EligibilityTemplateData;
-
     fn base_template_name() -> &'static str {
         "eligibility"
     }
@@ -139,10 +139,11 @@ impl QueryPolicy for EligibilityPolicy {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use claim::*;
     use pretty_assertions::assert_eq;
     use trim_margin::MarginTrimmable;
+
+    use super::*;
 
     #[test]
     fn test_ser_eligibility_setting() {

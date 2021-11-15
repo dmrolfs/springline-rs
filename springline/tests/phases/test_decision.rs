@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use oso::ToPolar;
 use pretty_assertions::assert_eq;
+use pretty_snowflake::MachineNode;
 use proctor::elements::QueryPolicy;
 use proctor::elements::{
     self, PolicyOutcome, PolicySource, PolicySubscription, Telemetry, TelemetryValue, ToTelemetry,
@@ -9,18 +10,17 @@ use proctor::elements::{
 use proctor::graph::stage::{self, ThroughStage, WithApi, WithMonitor};
 use proctor::graph::{Connect, Graph, Inlet, SinkShape, SourceShape};
 use proctor::phases::collection::{self, Collect, SubscriptionRequirements, TelemetrySubscription};
+use proctor::phases::policy_phase::PolicyPhase;
 use proctor::{AppData, ProctorContext};
 use serde::de::DeserializeOwned;
+use springline::phases::decision::result::{make_decision_transform, DecisionResult, DECISION_BINDING};
 use springline::phases::decision::{DecisionContext, DecisionPolicy, DecisionTemplateData};
 use springline::phases::MetricCatalog;
+use springline::settings::DecisionSettings;
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
 use super::fixtures::*;
-use pretty_snowflake::MachineNode;
-use proctor::phases::policy_phase::PolicyPhase;
-use springline::phases::decision::result::{make_decision_transform, DecisionResult, DECISION_BINDING};
-use springline::settings::DecisionSettings;
 
 lazy_static::lazy_static! {
     static ref DECISION_PREAMBLE: PolicySource = PolicySource::from_template_file("../resources/decision.polar").expect("failed to create decision policy source");

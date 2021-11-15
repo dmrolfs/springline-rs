@@ -1,10 +1,11 @@
+use std::future::Future;
+
 use clap::Parser;
 use proctor::tracing::{get_subscriber, init_subscriber};
 use settings_loader::SettingsLoader;
 use springline::engine::Autoscaler;
 use springline::settings::{CliOptions, Settings};
 use springline::Result;
-use std::future::Future;
 
 fn main() -> Result<()> {
     let subscriber = get_subscriber("springline", "info", std::io::stdout);
@@ -16,7 +17,7 @@ fn main() -> Result<()> {
     let options = CliOptions::parse();
     let settings = Settings::load(&options)?;
 
-    //todo assemble and start pipeline in entry
+    // todo assemble and start pipeline in entry
     start_pipeline(async move {
         Autoscaler::builder("springline")
             .finish(settings)

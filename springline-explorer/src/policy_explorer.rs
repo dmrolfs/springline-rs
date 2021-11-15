@@ -1,3 +1,10 @@
+use std::collections::HashMap;
+use std::io::Read;
+use std::process::exit;
+use std::str::FromStr;
+use std::sync::Mutex;
+use std::thread::sleep;
+
 use chrono::{DateTime, Utc};
 use clap::Parser;
 use config::builder::DefaultState;
@@ -7,10 +14,10 @@ use dialoguer::theme::ColorfulTheme;
 use dialoguer::{Confirm, Editor, FuzzySelect, Input};
 use once_cell::sync::{Lazy, OnceCell};
 use oso::Oso;
-use pretty_snowflake::{AlphabetCodec, Id, IdPrettifier};
+use pretty_snowflake::{AlphabetCodec, Id, IdPrettifier, Label, Labeling};
 use proctor::elements::{PolicySettings, QueryPolicy, Timestamp, ToTelemetry};
 use proctor::tracing::{get_subscriber, init_subscriber};
-use proctor::IdGenerator;
+use proctor::ProctorIdGenerator;
 use ron::ser::{self as ron_ser, PrettyConfig};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -20,19 +27,12 @@ use springline::phases::eligibility::{
 };
 use springline::phases::{ClusterMetrics, FlowMetrics, JobHealthMetrics, MetricCatalog};
 use springline::settings::{CliOptions, EligibilitySettings, Settings};
-use std::collections::HashMap;
-use std::io::Read;
-use std::process::exit;
-use std::str::FromStr;
-use std::sync::Mutex;
-use std::thread::sleep;
 use tailcall::tailcall;
 use tracing::instrument::WithSubscriber;
 use trim_margin::MarginTrimmable;
 
 static BASE_OPTIONS: OnceCell<CliOptions> = OnceCell::new();
-static ID_GENERATOR: Lazy<Mutex<IdGenerator>> =
-    Lazy::new(|| Mutex::new(IdGenerator::single_node(IdPrettifier::<AlphabetCodec>::default())));
+static ID_GENERATOR: Lazy<Mutex<ProctorIdGenerator<()>>> = Lazy::new(|| Mutex::new(ProctorIdGenerator::default()));
 
 
 static THEME: Lazy<ColorfulTheme> = Lazy::new(|| ColorfulTheme {
@@ -63,11 +63,11 @@ fn app_menu() {
                 Err(err) => {
                     eprintln!("action {} failed: {:?}", label, err);
                     break;
-                }
+                },
             },
             None => {
                 eprintln!("I don't know how you got here, but your selection is not understood.");
-            }
+            },
         }
 
         eprintln!("STOPPING...");
@@ -118,7 +118,7 @@ fn explore_eligibility() -> anyhow::Result<()> {
     let id_gen = &mut ID_GENERATOR.lock().unwrap();
     let mc = MetricCatalog {
         timestamp: now.into(),
-        correlation_id: id_gen.next_id(),
+        correlation_id: id_gen.next_id().relabel(),
         health: JobHealthMetrics::default(),
         flow: FlowMetrics::default(),
         cluster: ClusterMetrics::default(),
@@ -177,7 +177,7 @@ fn make_eligibility_context(now: DateTime<Utc>, settings: &EligibilitySettings) 
 
     let id_gen = &mut ID_GENERATOR.lock().unwrap();
     Ok(EligibilityContext {
-        correlation_id: id_gen.next_id(),
+        correlation_id: id_gen.next_id().relabel(),
         timestamp: now.into(),
         task_status: TaskStatus { last_failure },
         cluster_status: ClusterStatus { is_deploying, last_deployment },
@@ -225,6 +225,8 @@ enum MetricCatalogRootLens {
     Timestamp,
 }
 
+static METRIC_CATALOG_LABEL: Lazy<String> = Lazy::new(|| <MetricCatalog as Label>::labeler().label().to_string());
+
 impl Lens for MetricCatalogRootLens {
     type T = MetricCatalog;
 
@@ -239,11 +241,15 @@ impl Lens for MetricCatalogRootLens {
         match self {
             Self::CorrelationId => {
                 let snowflake = i64::from_str(value_rep.as_ref())?;
-                telemetry.correlation_id = Id::new(snowflake, &IdPrettifier::<AlphabetCodec>::default());
-            }
+                telemetry.correlation_id = Id::new(
+                    &*METRIC_CATALOG_LABEL,
+                    snowflake,
+                    &IdPrettifier::<AlphabetCodec>::default(),
+                );
+            },
             Self::Timestamp => {
                 telemetry.timestamp = Timestamp::from_str(value_rep.as_ref())?;
-            }
+            },
         }
 
         Ok(())
@@ -275,7 +281,7 @@ impl Lens for JobHealthLens {
             Self::JobNrRestarts => telemetry.job_nr_restarts = i64::from_str(value_rep.as_ref())?,
             Self::JobNrCompletedCheckpoints => {
                 telemetry.job_nr_completed_checkpoints = i64::from_str(value_rep.as_ref())?
-            }
+            },
             Self::JobNrFailedCheckpoints => telemetry.job_nr_failed_checkpoints = i64::from_str(value_rep.as_ref())?,
         }
 
@@ -318,14 +324,14 @@ impl Lens for FlowLens {
                 } else {
                     Some(i64::from_str(value_rep.as_ref())?)
                 };
-            }
+            },
             Self::InputMillisBehindLatest => {
                 telemetry.input_millis_behind_latest = if value_rep.as_ref().is_empty() {
                     None
                 } else {
                     Some(i64::from_str(value_rep.as_ref())?)
                 };
-            }
+            },
         }
 
         Ok(())
@@ -370,16 +376,16 @@ impl Lens for ClusterLens {
             Self::NrThreads => telemetry.nr_threads = i64::from_str(value_rep.as_ref())?,
             Self::TaskNetworkInputQueueLen => {
                 telemetry.task_network_input_queue_len = i64::from_str(value_rep.as_ref())?
-            }
+            },
             Self::TaskNetworkInputPoolUsage => {
                 telemetry.task_network_input_pool_usage = i64::from_str(value_rep.as_ref())?
-            }
+            },
             Self::TaskNetworkOutputQueueLen => {
                 telemetry.task_network_output_queue_len = i64::from_str(value_rep.as_ref())?
-            }
+            },
             Self::TaskNetworkOutputPoolUsage => {
                 telemetry.task_network_output_pool_usage = i64::from_str(value_rep.as_ref())?
-            }
+            },
         }
 
         Ok(())
@@ -495,7 +501,7 @@ fn make_metric_catalog(telemetry: MetricCatalog) -> anyhow::Result<MetricCatalog
 
                 lens.set(&mut telemetry, value)?;
                 make_metric_catalog(telemetry)
-            }
+            },
         }
     }
 
@@ -536,7 +542,7 @@ fn load_config_dialog() -> anyhow::Result<Settings> {
         Some(ref path) => {
             eprintln!("\nUsing configuration at: {:?}", path);
             builder.add_source(Settings::make_explicit_config_source(path))
-        }
+        },
         None => {
             let resources = Settings::resources();
             let basename = Settings::app_config_basename();
@@ -566,17 +572,17 @@ fn load_config_dialog() -> anyhow::Result<Settings> {
                     );
                     let env: Environment = env_rep.try_into()?;
                     builder.add_source(Settings::make_app_environment_source(env, &resources))
-                }
+                },
                 Err(std::env::VarError::NotPresent) => {
                     eprintln!(
                         "no environment variable override of base specified at envvar: {}",
                         Settings::env_app_environment()
                     );
                     builder
-                }
+                },
                 Err(err) => return Err(err.into()),
             }
-        }
+        },
     };
 
     builder = match options.secrets_path() {
@@ -584,11 +590,11 @@ fn load_config_dialog() -> anyhow::Result<Settings> {
             eprintln!("Using secrets at: {:?}", secrets);
             let s = Settings::make_secrets_source(secrets);
             builder.add_source(s)
-        }
+        },
         None => {
             eprintln!("No secrets provided.");
             builder
-        }
+        },
     };
 
     eprintln!(

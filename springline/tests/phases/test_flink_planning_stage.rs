@@ -170,7 +170,7 @@ fn make_test_data(
     start: Timestamp, tick: i64, nr_task_managers: u16, input_records_lag_max: i64, records_per_sec: f64,
 ) -> InData {
     let timestamp = Utc.timestamp(start.as_secs() + tick * STEP, 0).into();
-    let corr_id = Id::direct(9, "CBA");
+    let corr_id = Id::direct("MetricCatalog", 9, "CBA");
     MetricCatalog {
         correlation_id: corr_id,
         timestamp,

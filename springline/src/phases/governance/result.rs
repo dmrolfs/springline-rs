@@ -1,9 +1,10 @@
-use super::policy::ADJUSTED_TARGET;
-use crate::phases::governance::context::GovernanceContext;
-use crate::phases::plan::ScalePlan;
 use proctor::elements::PolicyOutcome;
 use proctor::graph::stage;
 use proctor::graph::stage::ThroughStage;
+
+use super::policy::ADJUSTED_TARGET;
+use crate::phases::governance::context::GovernanceContext;
+use crate::phases::plan::ScalePlan;
 
 type Item = ScalePlan;
 type Context = GovernanceContext;
@@ -35,24 +36,24 @@ pub fn make_governance_transform(name: impl Into<String>) -> impl ThroughStage<P
             (Err(err), _current, _target) => {
                 tracing::error!(error=?err, "error during policy review - dropping plan.");
                 None
-            }
+            },
 
             (Ok(None), _current, _target) => {
                 tracing::error!("{} binding is empty - dropping plan.", ADJUSTED_TARGET);
                 None
-            }
+            },
 
             (Ok(Some(adjusted)), current, _target) if adjusted == current => {
                 tracing::warn!("final plan does not affect cluster change - dropping.");
                 None
-            }
+            },
 
             (Ok(Some(adjusted)), _current, target) if adjusted == target => Some(outcome.item),
 
             (Ok(Some(adjusted)), _current, _target) => {
                 tracing::warn!("governance accepted plan with adjustment.");
                 Some(ScalePlan { target_nr_task_managers: adjusted, ..outcome.item })
-            }
+            },
         }
     });
 
