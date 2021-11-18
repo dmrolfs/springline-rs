@@ -15,7 +15,7 @@ pub use plan_settings::*;
 use proctor::elements::PolicySettings;
 use serde::{Deserialize, Serialize};
 use settings_loader::common::http::HttpServerSettings;
-use settings_loader::{LoadingOptions, SettingsError, SettingsLoader};
+use settings_loader::{Environment, LoadingOptions, SettingsError, SettingsLoader};
 
 use crate::phases::decision::DecisionTemplateData;
 use crate::phases::eligibility::policy::EligibilityTemplateData;
@@ -53,25 +53,31 @@ pub struct CliOptions {
     /// override environment-based configuration file to load.
     /// Default behavior is to load configuration based on `APP_ENVIRONMENT` envvar.
     #[clap(short, long)]
-    config: Option<PathBuf>,
+    pub config: Option<PathBuf>,
 
     /// specify path to secrets configuration file
     #[clap(short, long)]
-    secrets: Option<PathBuf>,
+    pub secrets: Option<PathBuf>,
+
+    #[clap(short, long)]
+    pub environment: Option<Environment>,
 
     /// Override default location from which to load configuration files. Default directory is
     /// ./resources.
-    resources: Option<PathBuf>,
+    #[clap(short, long)]
+    pub resources: Option<PathBuf>,
 
     /// Specify the machine id [0, 31) used in correlation id generation, overriding what may be set
     /// in an environment variable. This id should be unique for the entity type within a cluster
     /// environment. Different entity types can use the same machine id.
-    machine_id: Option<i8>,
+    #[clap(short, long)]
+    pub machine_id: Option<i8>,
 
     /// Specify the node id [0, 31) used in correlation id generation, overriding what may be set
     /// in an environment variable. This id should be unique for the entity type within a cluster
     /// environment. Different entity types can use the same machine id.
-    node_id: Option<i8>,
+    #[clap(short, long)]
+    pub node_id: Option<i8>,
 }
 
 impl LoadingOptions for CliOptions {
@@ -101,6 +107,10 @@ impl LoadingOptions for CliOptions {
         };
 
         Ok(config)
+    }
+
+    fn environment_override(&self) -> Option<Environment> {
+        self.environment
     }
 }
 

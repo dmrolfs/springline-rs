@@ -184,6 +184,39 @@ mod tests {
     }
 
     #[test]
+    fn test_decision_data_ron_serde() {
+        let data = DecisionTemplateData {
+            basis: "decision_basis".to_string(),
+            max_healthy_lag: Some(133_f64),
+            min_healthy_lag: 1_f64,
+            max_healthy_cpu_load: Some(0.7),
+            custom: maplit::hashmap! { "foo".to_string() => "zed".to_string(), },
+            ..DecisionTemplateData::default()
+        };
+
+        let rep = assert_ok!(ron::ser::to_string_pretty(&data, ron::ser::PrettyConfig::default()));
+        let expected_rep = r##"|{
+        |    "basis": "decision_basis",
+        |    "max_healthy_lag": Some(133),
+        |    "min_healthy_lag": 1,
+        |    "max_healthy_cpu_load": Some(0.7),
+        |    "foo": "zed",
+        |}"##
+            .trim_margin_with("|")
+            .unwrap();
+        assert_eq!(rep, expected_rep);
+
+        let mut ron_deser = assert_ok!(ron::Deserializer::from_str(&rep));
+        let json_rep = vec![];
+        let mut json_ser = serde_json::Serializer::new(json_rep);
+        assert_ok!(serde_transcode::transcode(&mut ron_deser, &mut json_ser));
+        let json_rep = assert_ok!(String::from_utf8(json_ser.into_inner()));
+
+        let actual: DecisionTemplateData = assert_ok!(serde_json::from_str(&json_rep));
+        assert_eq!(actual, data);
+    }
+
+    #[test]
     fn test_template() {
         once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
         let main_span = tracing::info_span!("test_template");

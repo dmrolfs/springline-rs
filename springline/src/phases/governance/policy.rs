@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use oso::{Oso, PolarClass, PolarValue};
 use proctor::elements::{PolicySource, PolicySubscription, QueryPolicy, QueryResult, Telemetry};
@@ -82,7 +82,11 @@ pub const ADJUSTED_TARGET: &'static str = "adjusted_target";
 // "#;
 
 #[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
-pub struct GovernanceTemplateData;
+#[serde(default)]
+pub struct GovernanceTemplateData {
+    #[serde(flatten, skip_serializing_if = "HashMap::is_empty")]
+    pub custom: HashMap<String, String>,
+}
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct GovernancePolicy {
@@ -170,5 +174,48 @@ impl QueryPolicy for GovernancePolicy {
 
     fn sources_mut(&mut self) -> &mut Vec<PolicySource> {
         &mut self.sources
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use claim::*;
+    use pretty_assertions::assert_eq;
+    use trim_margin::MarginTrimmable;
+
+    use super::*;
+
+    #[test]
+    fn test_ser_governance_setting() {
+        let settings = GovernanceSettings {
+            policies: vec![assert_ok!(PolicySource::from_template_file(
+                "./resources/governance.polar"
+            ))],
+            template_data: None,
+            ..GovernanceSettings::default()
+        };
+
+        let actual_rep = assert_ok!(ron::ser::to_string_pretty(&settings, ron::ser::PrettyConfig::default()));
+
+        assert_eq!(
+            actual_rep,
+            r##"
+            | (
+            |     policies: [
+            |         (
+            |             source: "file",
+            |             policy: (
+            |                 path: "./resources/governance.polar",
+            |                 is_template: true,
+            |             ),
+            |         ),
+            |     ],
+            | )"##
+                .trim_margin_with("| ")
+                .unwrap()
+        );
+
+        let actual: GovernanceSettings = assert_ok!(ron::from_str(&actual_rep));
+        assert_eq!(actual, settings);
     }
 }

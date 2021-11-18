@@ -22,7 +22,7 @@ pub struct EligibilityTemplateData {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stable_secs: Option<u32>,
 
-    #[serde(skip_serializing_if = "HashMap::is_empty")]
+    #[serde(flatten, skip_serializing_if = "HashMap::is_empty")]
     pub custom: HashMap<String, String>,
 }
 
@@ -161,75 +161,75 @@ mod tests {
             ..EligibilitySettings::default()
         };
 
-        let actual = assert_ok!(ron::ser::to_string_pretty(&settings, ron::ser::PrettyConfig::default()));
+        let rep = assert_ok!(ron::ser::to_string_pretty(&settings, ron::ser::PrettyConfig::default()));
+        let mut ron_deser = assert_ok!(ron::Deserializer::from_str(&rep));
+        let mut json_rep = vec![];
+        let mut json_ser = serde_json::Serializer::pretty(json_rep);
+        assert_ok!(serde_transcode::transcode(&mut ron_deser, &mut json_ser));
+        let json_rep = assert_ok!(String::from_utf8(json_ser.into_inner()));
+        let expected_json = r##"|{
+            |  "policies": [
+            |    {
+            |      "source": "file",
+            |      "policy": {
+            |        "path": "./resources/eligibility.polar",
+            |        "is_template": true
+            |      }
+            |    },
+            |    {
+            |      "source": "file",
+            |      "policy": {
+            |        "path": "./resources/eligibility_basis.polar",
+            |        "is_template": true
+            |      }
+            |    }
+            |  ],
+            |  "template_data": {
+            |    "basis": "eligibility_basis",
+            |    "cooling_secs": 900,
+            |    "stable_secs": 900,
+            |    "foo": "bar"
+            |  }
+            |}"##
+            .trim_margin_with("|")
+            .unwrap();
 
-        assert_eq!(
-            actual,
-            r##"
-            | (
-            |     policies: [
-            |         (
-            |             source: "file",
-            |             policy: (
-            |                 path: "./resources/eligibility.polar",
-            |                 is_template: true,
-            |             ),
-            |         ),
-            |         (
-            |             source: "file",
-            |             policy: (
-            |                 path: "./resources/eligibility_basis.polar",
-            |                 is_template: true,
-            |             ),
-            |         ),
-            |     ],
-            |     template_data: Some((
-            |         basis: "eligibility_basis",
-            |         cooling_secs: Some(900),
-            |         stable_secs: Some(900),
-            |         custom: {
-            |             "foo": "bar",
-            |         },
-            |     )),
-            | )"##
-                .trim_margin_with("| ")
-                .unwrap()
-        );
+        assert_eq!(json_rep, expected_json);
+
+        let actual: EligibilitySettings = assert_ok!(serde_json::from_str(&json_rep));
+        assert_eq!(actual, settings);
     }
 
     #[test]
     fn test_deser_eligibility_setting() {
-        let rep = r##"
-        | (
-        |     policies: [
-        |         (
-        |             source: "file",
-        |             policy: (
-        |                 path: "./resources/eligibility.polar",
-        |                 is_template: true,
-        |             ),
-        |         ),
-        |         (
-        |             source: "file",
-        |             policy: (
-        |                 path: "./resources/eligibility_basis.polar",
-        |                 is_template: true,
-        |             ),
-        |         ),
-        |     ],
-        |     template_data: Some((
-        |         basis: "eligibility_basis",
-        |         cooling_secs: Some(900),
-        |         stable_secs: Some(900),
-        |         custom: {
-        |             "foo": "bar",
-        |         },
-        |     )),
-        | )"##
-            .trim_margin_with("| ")
+        let rep = r##"|{
+            |  "policies": [
+            |    {
+            |      "source": "file",
+            |      "policy": {
+            |        "path": "./resources/eligibility.polar",
+            |        "is_template": true
+            |      }
+            |    },
+            |    {
+            |      "source": "file",
+            |      "policy": {
+            |        "path": "./resources/eligibility_basis.polar",
+            |        "is_template": true
+            |      }
+            |    }
+            |  ],
+            |  "template_data": {
+            |    "basis": "eligibility_basis",
+            |    "cooling_secs": 900,
+            |    "stable_secs": 900,
+            |    "foo": "bar"
+            |  }
+            |}"##
+            .trim_margin_with("|")
             .unwrap();
 
-        let actual: EligibilitySettings = assert_ok!(ron::from_str(&rep));
+        let actual: EligibilitySettings = assert_ok!(serde_json::from_str(&rep));
         assert_eq!(
             actual,
             EligibilitySettings {
