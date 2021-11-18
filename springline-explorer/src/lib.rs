@@ -1,5 +1,6 @@
 pub mod app_menu;
 pub mod policy_explorer;
+pub mod settings;
 
 use std::sync::Mutex;
 
@@ -9,7 +10,7 @@ use dialoguer::theme::ColorfulTheme;
 use once_cell::sync::Lazy;
 use pretty_snowflake::{AlphabetCodec, IdPrettifier};
 use proctor::ProctorIdGenerator;
-use settings_loader::SettingsLoader;
+use settings_loader::{Environment, LoadingOptions, SettingsLoader};
 use springline::settings::{CliOptions, Settings};
 
 pub type Result<T> = anyhow::Result<T>;
@@ -31,7 +32,12 @@ pub struct ExplorerState {
 
 impl ExplorerState {
     pub fn new(options: CliOptions) -> Result<Self> {
-        let settings = Settings::load(&options)?;
+        let settings = Self::load_settings(&options)?;
         Ok(Self { options, settings })
+    }
+
+    pub fn load_settings(options: &CliOptions) -> Result<Settings> {
+        let settings = Settings::load(options)?;
+        Ok(settings)
     }
 }

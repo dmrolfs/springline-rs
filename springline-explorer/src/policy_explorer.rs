@@ -544,7 +544,7 @@ fn load_config_dialog() -> anyhow::Result<Settings> {
             builder.add_source(Settings::make_explicit_config_source(path))
         },
         None => {
-            let resources = Settings::resources();
+            let resources = Settings::resources_home();
             let basename = Settings::app_config_basename();
             eprintln!(
                 "Using implicit configuration found at {:?} for basename: {}",
@@ -564,7 +564,7 @@ fn load_config_dialog() -> anyhow::Result<Settings> {
             //     .interact()?;
             //
             // let env = *environments[env_pos];
-            match std::env::var(Settings::env_app_environment()) {
+            match std::env::var(CliOptions::env_app_environment()) {
                 Ok(env_rep) => {
                     eprintln!(
                         "Looking for {} environment override configuration in: {:?}",
@@ -576,7 +576,7 @@ fn load_config_dialog() -> anyhow::Result<Settings> {
                 Err(std::env::VarError::NotPresent) => {
                     eprintln!(
                         "no environment variable override of base specified at envvar: {}",
-                        Settings::env_app_environment()
+                        CliOptions::env_app_environment()
                     );
                     builder
                 },
