@@ -2,7 +2,7 @@ use clap::Parser;
 use console::style;
 use proctor::tracing::{get_subscriber, init_subscriber};
 use springline::settings::CliOptions;
-use springline_explorer::{AppMenu, ExplorerState};
+use springline_explorer::AppMenu;
 
 fn main() {
     let app_name = std::env::args().nth(0).unwrap();

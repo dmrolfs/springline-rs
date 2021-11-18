@@ -1,9 +1,9 @@
 use dialoguer::console::style;
 use dialoguer::FuzzySelect;
-use once_cell::sync::Lazy;
-use settings_loader::SettingsLoader;
-use springline::settings::{CliOptions, Settings};
+use springline::phases::eligibility::EligibilityPolicy;
+use springline::settings::CliOptions;
 
+use crate::policy::ExplorePolicy;
 use crate::settings::ReviseSettings;
 use crate::{ExplorerState, MenuAction, Result, THEME};
 
@@ -19,8 +19,8 @@ impl AppMenu {
     }
 
     pub fn interact(&mut self) -> anyhow::Result<()> {
-        let menu_actions: [(&str, MenuAction); 3] = [
-            ("Settings", Box::new(AppMenu::establish_settings)),
+        let menu_actions: [(&str, MenuAction<ExplorerState>); 3] = [
+            ("Settings", Box::new(AppMenu::explore_settings)),
             ("Eligibility", Box::new(AppMenu::explore_eligibility_policy)),
             ("exit", Box::new(AppMenu::exit_action)),
         ];
@@ -35,7 +35,6 @@ impl AppMenu {
                 .interact()
                 .expect("failed to select main menu action");
 
-            // match selected.and_then(|pos| SELECTION_ACTIONS.get(pos)) {
             match menu_actions.get(idx) {
                 Some((label, action)) => {
                     if let Err(err) = action(&mut self.state) {
@@ -50,15 +49,15 @@ impl AppMenu {
         }
     }
 
-    pub fn establish_settings(state: &mut ExplorerState) -> anyhow::Result<()> {
+    pub fn explore_settings(state: &mut ExplorerState) -> Result<()> {
         ReviseSettings.interact(state)
     }
 
-    pub fn explore_eligibility_policy(state: &mut ExplorerState) -> anyhow::Result<()> {
-        todo!()
+    pub fn explore_eligibility_policy(state: &mut ExplorerState) -> Result<()> {
+        ExplorePolicy::<EligibilityPolicy>::new("eligibility").interact(state)
     }
 
-    pub fn exit_action(_state: &mut ExplorerState) -> anyhow::Result<()> {
+    pub fn exit_action(_state: &mut ExplorerState) -> Result<()> {
         eprintln!(
             "\n{} {}",
             style("Exiting").bold(),

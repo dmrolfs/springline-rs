@@ -2,9 +2,8 @@ use config::builder::DefaultState;
 use config::ConfigBuilder;
 use dialoguer::console::style;
 use dialoguer::{Confirm, Editor, FuzzySelect};
-use ron::ser::PrettyConfig;
 use settings_loader::{Environment, LoadingOptions, SettingsLoader};
-use springline::settings::{CliOptions, Settings};
+use springline::settings::Settings;
 
 use crate::{ExplorerState, MenuAction, Result, THEME};
 
@@ -27,7 +26,7 @@ impl ReviseSettings {
             )
         );
 
-        let menu_actions: [(&str, Option<MenuAction>); 3] = [
+        let menu_actions: [(&str, Option<MenuAction<ExplorerState>>); 3] = [
             ("Change environment", Some(Box::new(ReviseSettings::change_environment))),
             ("Edit Settings", Some(Box::new(ReviseSettings::edit_settings))),
             ("return", None),
@@ -36,11 +35,11 @@ impl ReviseSettings {
         let selections: Vec<&str> = menu_actions.iter().map(|s| s.0).collect();
 
         loop {
-            eprintln!(
-                "{}: {}",
-                style("DMR: state:").bold().red(),
-                style(format!("{:?}", state)).bold().blue()
-            );
+            // eprintln!(
+            //     "{}: {}",
+            //     style("DMR: state:").bold().red(),
+            //     style(format!("{:?}", state)).bold().blue()
+            // );
 
             let idx = FuzzySelect::with_theme(&*THEME)
                 .with_prompt("What do you want to do with settings?")
@@ -55,7 +54,7 @@ impl ReviseSettings {
                         return Err(err.into());
                     }
                 },
-                Some((label, None)) => {
+                Some((_, None)) => {
                     eprintln!("\nreturning...\n");
                     break;
                 },

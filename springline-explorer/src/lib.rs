@@ -1,28 +1,23 @@
 pub mod app_menu;
-pub mod policy_explorer;
+pub mod policy;
 pub mod settings;
 
-use std::sync::Mutex;
-
 pub use app_menu::AppMenu;
+use console::style;
 use dialoguer::console::Style;
 use dialoguer::theme::ColorfulTheme;
 use once_cell::sync::Lazy;
-use pretty_snowflake::{AlphabetCodec, IdPrettifier};
-use proctor::ProctorIdGenerator;
-use settings_loader::{Environment, LoadingOptions, SettingsLoader};
+use settings_loader::SettingsLoader;
 use springline::settings::{CliOptions, Settings};
 
 pub type Result<T> = anyhow::Result<T>;
 
-pub type MenuAction = Box<dyn Fn(&mut ExplorerState) -> anyhow::Result<()> + Send + Sync>;
+pub type MenuAction<S> = Box<dyn Fn(&mut S) -> anyhow::Result<()> + Send + Sync>;
 
 static THEME: Lazy<ColorfulTheme> = Lazy::new(|| ColorfulTheme {
     values_style: Style::new().yellow().dim(),
     ..ColorfulTheme::default()
 });
-
-static ID_GENERATOR: Lazy<Mutex<ProctorIdGenerator<()>>> = Lazy::new(|| Mutex::new(ProctorIdGenerator::default()));
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExplorerState {
@@ -37,6 +32,7 @@ impl ExplorerState {
     }
 
     pub fn load_settings(options: &CliOptions) -> Result<Settings> {
+        eprintln!("\n{}\n", style(format!("DMR: OPTIONS: {:#?}", options)).bright().blue());
         let settings = Settings::load(options)?;
         Ok(settings)
     }
