@@ -1,12 +1,13 @@
+use std::collections::HashSet;
 use std::time::Duration;
 
 use oso::ToPolar;
 use pretty_assertions::assert_eq;
 use pretty_snowflake::MachineNode;
-use proctor::elements::QueryPolicy;
 use proctor::elements::{
     self, PolicyOutcome, PolicySource, PolicySubscription, Telemetry, TelemetryValue, ToTelemetry,
 };
+use proctor::elements::{PolicySettings, QueryPolicy};
 use proctor::graph::stage::{self, ThroughStage, WithApi, WithMonitor};
 use proctor::graph::{Connect, Graph, Inlet, SinkShape, SourceShape};
 use proctor::phases::collection::{self, Collect, SubscriptionRequirements, TelemetrySubscription};
@@ -255,7 +256,12 @@ async fn test_decision_carry_policy_result() -> anyhow::Result<()> {
             "###,
     )?));
 
-    let context_subscription = policy.subscription("decision_context");
+    let settings = DecisionSettings {
+        required_subscription_fields: maplit::hashset! { "all_sinks_healthy".to_string(), },
+        ..PolicySettings::default()
+    };
+
+    let context_subscription = policy.subscription("decision_context", &settings);
 
     let decision_stage = PolicyPhase::carry_policy_outcome("carry_policy_decision", policy).await?;
     let decision_context_inlet = decision_stage.context_inlet();
@@ -348,9 +354,10 @@ async fn test_decision_common() -> anyhow::Result<()> {
 
     let telemetry_subscription = TelemetrySubscription::new("measurements")
         .with_required_fields(<MetricCatalog as SubscriptionRequirements>::required_fields())
-        .with_optional_fields(maplit::hashset! {
-            "all_sinks_healthy",
-        });
+        // .with_optional_fields(maplit::hashset! {
+        //     "all_sinks_healthy",
+        // });
+    ;
 
     let policy = DecisionPolicy::new(&POLICY_SETTINGS.clone().with_source(PolicySource::from_template_string(
         format!("{}_basis", DecisionPolicy::base_template_name()),
@@ -361,7 +368,9 @@ async fn test_decision_common() -> anyhow::Result<()> {
             "###,
     )?));
 
-    let context_subscription = policy.subscription("decision_context");
+    let settings = DecisionSettings { ..PolicySettings::default() };
+
+    let context_subscription = policy.subscription("decision_context", &settings);
 
     let decision_stage = PolicyPhase::with_transform(
         "common_decision",
@@ -390,9 +399,10 @@ async fn test_decision_common() -> anyhow::Result<()> {
     })
     .await?;
 
-    let event = flow.recv_policy_event().await?;
-    tracing::info!(?event, "DMR: TESTING policy event for context change");
-    claim::assert_matches!(event, elements::PolicyFilterEvent::ContextChanged(_));
+    // decision context remains a zero definition for test
+    // let event = flow.recv_policy_event().await?;
+    // tracing::info!(?event, "DMR: TESTING policy event for context change");
+    // claim::assert_matches!(event, elements::PolicyFilterEvent::ContextChanged(_));
 
     tracing::info!("DMR: pushing metrics padding - req metrics subscriptions fields not used in test.");
     flow.push_telemetry(make_test_item_padding()).await?;

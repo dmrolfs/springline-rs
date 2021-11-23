@@ -54,6 +54,9 @@ pub fn register_metrics(registry: &Registry) -> Result<()> {
     ))?;
 
     registry.register(Box::new(
+        eligibility::context::ELIGIBILITY_CTX_ALL_SINKS_HEALTHY.clone(),
+    ))?;
+    registry.register(Box::new(
         eligibility::context::ELIGIBILITY_CTX_TASK_LAST_FAILURE.clone(),
     ))?;
     registry.register(Box::new(
@@ -62,9 +65,6 @@ pub fn register_metrics(registry: &Registry) -> Result<()> {
     registry.register(Box::new(
         eligibility::context::ELIGIBILITY_CTX_CLUSTER_LAST_DEPLOYMENT.clone(),
     ))?;
-
-    registry.register(Box::new(decision::context::DECISION_CTX_ALL_SINKS_HEALTHY.clone()))?;
-    registry.register(Box::new(decision::context::DECISION_CTX_NR_TASK_MANAGERS.clone()))?;
 
     registry.register(Box::new(governance::context::GOVERNANCE_CTX_MIN_CLUSTER_SIZE.clone()))?;
     registry.register(Box::new(governance::context::GOVERNANCE_CTX_MAX_CLUSTER_SIZE.clone()))?;

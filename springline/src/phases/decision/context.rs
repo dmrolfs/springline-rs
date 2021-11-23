@@ -20,31 +20,19 @@ pub struct DecisionContext {
     pub timestamp: Timestamp,
 
     #[polar(attribute)]
-    pub all_sinks_healthy: bool,
-
-    #[polar(attribute)]
-    #[serde(rename = "cluster.nr_task_managers")]
-    pub nr_task_managers: u16,
-
-    #[polar(attribute)]
     #[serde(flatten)] // flatten enables collection of extra properties
     pub custom: telemetry::TableType,
 }
 
 impl PartialEq for DecisionContext {
     fn eq(&self, other: &Self) -> bool {
-        self.all_sinks_healthy == other.all_sinks_healthy
-            && self.nr_task_managers == other.nr_task_managers
-            && self.custom == self.custom
+        self.custom == other.custom
     }
 }
 
 impl SubscriptionRequirements for DecisionContext {
     fn required_fields() -> HashSet<proctor::SharedString> {
-        maplit::hashset! {
-            "all_sinks_healthy".into(),
-            "cluster.nr_task_managers".into(),
-        }
+        HashSet::default()
     }
 }
 
@@ -63,8 +51,8 @@ impl UpdateMetrics for DecisionContext {
             .try_into::<DecisionContext>()
         {
             Ok(ctx) => {
-                DECISION_CTX_ALL_SINKS_HEALTHY.set(ctx.all_sinks_healthy as i64);
-                DECISION_CTX_NR_TASK_MANAGERS.set(ctx.nr_task_managers as i64);
+                // DECISION_CTX_ALL_SINKS_HEALTHY.set(ctx.all_sinks_healthy as i64);
+                // DECISION_CTX_NR_TASK_MANAGERS.set(ctx.nr_task_managers as i64);
             },
 
             Err(err) => {
@@ -109,8 +97,6 @@ mod tests {
         let context = DecisionContext {
             correlation_id: Id::direct("DecisionContext", 0, "A"),
             timestamp: Timestamp::new(0, 0),
-            all_sinks_healthy: true,
-            nr_task_managers: 4,
             custom: maplit::hashmap! {
                 "custom_foo".to_string() => "fred flintstone".into(),
                 "custom_bar".to_string() => "The Happy Barber".into(),
@@ -131,10 +117,6 @@ mod tests {
             Token::I64(0),
             Token::U32(0),
             Token::TupleStructEnd,
-            Token::Str("all_sinks_healthy"),
-            Token::Bool(true),
-            Token::Str("cluster.nr_task_managers"),
-            Token::U16(4),
             Token::Str("custom_foo"),
             Token::Str("fred flintstone"),
             Token::Str("custom_bar"),
@@ -147,8 +129,8 @@ mod tests {
         });
 
         if result.is_err() {
-            expected.swap(17, 19);
-            expected.swap(18, 20);
+            expected.swap(13, 15);
+            expected.swap(14, 16);
             assert_tokens(&context, expected.as_slice());
         }
     }
@@ -160,8 +142,6 @@ mod tests {
         let data: Telemetry = maplit::hashmap! {
             "correlation_id" => Id::<DecisionContext>::direct("DecisionContext", 0, "A").to_telemetry(),
             "timestamp" => Timestamp::new(0, 0).to_telemetry(),
-            "all_sinks_healthy" => false.to_telemetry(),
-            "cluster.nr_task_managers" => 4.to_telemetry(),
             "foo" => "bar".to_telemetry(),
         }
         .into_iter()
@@ -174,8 +154,6 @@ mod tests {
         let expected = DecisionContext {
             correlation_id: Id::direct("DecisionContext", 0, "A"),
             timestamp: Timestamp::new(0, 0),
-            all_sinks_healthy: false,
-            nr_task_managers: 4,
             custom: maplit::hashmap! {"foo".to_string() => "bar".into(),},
         };
         tracing::info!("actual: {:?}", actual);

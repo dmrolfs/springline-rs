@@ -11,6 +11,10 @@ impl PopulateContext for EligibilityContext {
         Self: Sized,
     {
         let settings = &settings.eligibility;
+        let all_sinks_healthy = Confirm::with_theme(&*THEME)
+            .with_prompt("Are all sinks healthy?")
+            .interact()?;
+
         let is_deploying = Confirm::with_theme(&*THEME)
             .with_prompt("Is the cluster actively deploying at policy evaluation?")
             .interact()?;
@@ -54,6 +58,7 @@ impl PopulateContext for EligibilityContext {
         Ok(EligibilityContext {
             correlation_id: id_gen.next_id(),
             timestamp: now.into(),
+            all_sinks_healthy,
             task_status: TaskStatus { last_failure },
             cluster_status: ClusterStatus { is_deploying, last_deployment },
             custom,

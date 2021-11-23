@@ -29,6 +29,9 @@ pub struct EligibilityContext {
     pub cluster_status: ClusterStatus,
 
     #[polar(attribute)]
+    pub all_sinks_healthy: bool,
+
+    #[polar(attribute)]
     #[serde(flatten)] // flatten to collect extra properties.
     pub custom: telemetry::TableType,
 }
@@ -48,6 +51,7 @@ impl SubscriptionRequirements for EligibilityContext {
             "task.last_failure".into(),
             "cluster.is_deploying".into(),
             "cluster.last_deployment".into(),
+            "all_sinks_healthy".into(),
         }
     }
 }
@@ -71,6 +75,7 @@ impl UpdateMetrics for EligibilityContext {
                     ELIGIBILITY_CTX_TASK_LAST_FAILURE.set(last_failure_ts);
                 }
 
+                ELIGIBILITY_CTX_ALL_SINKS_HEALTHY.set(ctx.all_sinks_healthy as i64);
                 ELIGIBILITY_CTX_CLUSTER_IS_DEPLOYING.set(ctx.cluster_status.is_deploying as i64);
                 ELIGIBILITY_CTX_CLUSTER_LAST_DEPLOYMENT.set(ctx.cluster_status.last_deployment.timestamp());
             },

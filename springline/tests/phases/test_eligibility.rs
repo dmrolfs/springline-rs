@@ -6,7 +6,6 @@ use claim::*;
 use lazy_static::lazy_static;
 use once_cell::sync::Lazy;
 use pretty_assertions::assert_eq;
-use pretty_snowflake::{AlphabetCodec, IdPrettifier, PrettyIdGenerator, RealTimeGenerator};
 use proctor::elements::{self, telemetry, PolicyFilterEvent, PolicySource, Timestamp, ToTelemetry};
 use proctor::graph::stage::{self, WithApi, WithMonitor};
 use proctor::graph::{Connect, Graph, SinkShape, SourceShape};
@@ -490,6 +489,7 @@ pub fn make_context(
     EligibilityContext {
         timestamp: Timestamp::now(),
         correlation_id: gen.next_id().relabel(),
+        all_sinks_healthy: true,
         task_status: TaskStatus { last_failure },
         cluster_status: ClusterStatus { is_deploying, last_deployment },
         custom,
