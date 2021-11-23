@@ -34,7 +34,7 @@ pub fn make_test_item_padding() -> Telemetry {
             "cluster.task_cpu_load".to_string() => (0.).into(),
             "cluster.task_heap_memory_used".to_string() => (0.).into(),
             "cluster.task_heap_memory_committed".to_string() => (0.).into(),
-            "cluster.nr_threads".to_string() => (0).into(),
+            "cluster.task_nr_threads".to_string() => (0).into(),
             "cluster.task_network_input_queue_len".to_string() => (0).into(),
             "cluster.task_network_input_pool_usage".to_string() => (0).into(),
             "cluster.task_network_output_queue_len".to_string() => (0).into(),

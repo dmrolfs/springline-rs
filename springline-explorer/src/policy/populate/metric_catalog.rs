@@ -85,8 +85,8 @@ impl PopulateData for MetricCatalog {
                 Some(MetricCatalogLens::Cluster(ClusterLens::TaskHeapMemoryCommitted)),
             ),
             (
-                "cluster.nr_threads",
-                Some(MetricCatalogLens::Cluster(ClusterLens::NrThreads)),
+                "cluster.task_nr_threads",
+                Some(MetricCatalogLens::Cluster(ClusterLens::TaskNrThreads)),
             ),
             (
                 "cluster.task_network_input_queue_len",
@@ -303,7 +303,7 @@ enum ClusterLens {
     TaskCpuLoad,
     TaskHeapMemoryUsed,
     TaskHeapMemoryCommitted,
-    NrThreads,
+    TaskNrThreads,
     TaskNetworkInputQueueLen,
     TaskNetworkInputPoolUsage,
     TaskNetworkOutputQueueLen,
@@ -319,7 +319,7 @@ impl Lens for ClusterLens {
             Self::TaskCpuLoad => format!("{}", telemetry.task_cpu_load),
             Self::TaskHeapMemoryUsed => format!("{}", telemetry.task_heap_memory_used),
             Self::TaskHeapMemoryCommitted => format!("{}", telemetry.task_heap_memory_committed),
-            Self::NrThreads => format!("{}", telemetry.nr_threads),
+            Self::TaskNrThreads => format!("{}", telemetry.task_nr_threads),
             Self::TaskNetworkInputQueueLen => format!("{}", telemetry.task_network_input_queue_len),
             Self::TaskNetworkInputPoolUsage => format!("{}", telemetry.task_network_input_pool_usage),
             Self::TaskNetworkOutputQueueLen => format!("{}", telemetry.task_network_output_queue_len),
@@ -333,7 +333,7 @@ impl Lens for ClusterLens {
             Self::TaskCpuLoad => telemetry.task_cpu_load = f64::from_str(value_rep.as_ref())?,
             Self::TaskHeapMemoryUsed => telemetry.task_heap_memory_used = f64::from_str(value_rep.as_ref())?,
             Self::TaskHeapMemoryCommitted => telemetry.task_heap_memory_committed = f64::from_str(value_rep.as_ref())?,
-            Self::NrThreads => telemetry.nr_threads = i64::from_str(value_rep.as_ref())?,
+            Self::TaskNrThreads => telemetry.task_nr_threads = i64::from_str(value_rep.as_ref())?,
             Self::TaskNetworkInputQueueLen => {
                 telemetry.task_network_input_queue_len = i64::from_str(value_rep.as_ref())?
             },

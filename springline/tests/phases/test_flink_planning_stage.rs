@@ -191,7 +191,7 @@ fn make_test_data(
             task_cpu_load: 0.65,
             task_heap_memory_used: 92_987_f64,
             task_heap_memory_committed: 103_929_920_f64,
-            nr_threads: 8,
+            task_nr_threads: 8,
             task_network_input_queue_len: 12,
             task_network_input_pool_usage: 8,
             task_network_output_queue_len: 12,

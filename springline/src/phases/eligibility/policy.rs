@@ -163,7 +163,7 @@ mod tests {
 
         let rep = assert_ok!(ron::ser::to_string_pretty(&settings, ron::ser::PrettyConfig::default()));
         let mut ron_deser = assert_ok!(ron::Deserializer::from_str(&rep));
-        let mut json_rep = vec![];
+        let json_rep = vec![];
         let mut json_ser = serde_json::Serializer::pretty(json_rep);
         assert_ok!(serde_transcode::transcode(&mut ron_deser, &mut json_ser));
         let json_rep = assert_ok!(String::from_utf8(json_ser.into_inner()));

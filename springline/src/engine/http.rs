@@ -50,7 +50,7 @@ async fn run_http_server(engine: Service<'static>, settings: &HttpServerSettings
     Ok(())
 }
 
-#[debug_handler]
+// #[debug_handler]
 #[tracing::instrument(level = "info", skip(engine))]
 async fn get_metrics<'r>(
     span: Option<Path<MetricsSpan>>, Extension(engine): Extension<Arc<State<'r>>>,
