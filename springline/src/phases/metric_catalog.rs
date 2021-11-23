@@ -43,24 +43,30 @@ pub struct MetricCatalog {
 
 #[derive(PolarClass, Debug, Default, PartialEq, Clone, Serialize, Deserialize)]
 pub struct JobHealthMetrics {
+    // todo per Flink doc's this metric does not work properly under Reactive mode. remove in favor of eligibility's
+    // last_failure?
     /// The time that the job has been running without interruption.
-    // Returns -1 for completed jobs (in milliseconds).
+    /// Flink REST API: /jobs/metrics?get=uptime&agg=max
+    /// Returns -1 for completed jobs (in milliseconds).
     #[polar(attribute)]
     #[serde(rename = "health.job_uptime_millis")]
     pub job_uptime_millis: i64,
 
     /// The total number of restarts since this job was submitted, including full restarts and
     /// fine-grained restarts.
+    /// Flink REST API: /jobs/metrics?get=numRestarts&agg=max
     #[polar(attribute)]
     #[serde(rename = "health.job_nr_restarts")]
     pub job_nr_restarts: i64,
 
     /// The number of successfully completed checkpoints.
+    /// Flink REST API: /jobs/metrics?get=numberOfCompletedCheckpoints&agg=max
     #[polar(attribute)]
     #[serde(rename = "health.job_nr_completed_checkpoints")]
     pub job_nr_completed_checkpoints: i64,
 
     /// The number of failed checkpoints.
+    /// Flink REST API: /jobs/metrics?get=numberOfCompletedCheckpoints&agg=max
     #[polar(attribute)]
     #[serde(rename = "health.job_nr_failed_checkpoints")]
     pub job_nr_failed_checkpoints: i64,
@@ -68,11 +74,22 @@ pub struct JobHealthMetrics {
 
 #[derive(PolarClass, Debug, Default, PartialEq, Clone, Serialize, Deserialize)]
 pub struct FlowMetrics {
-    // this will need to be in context:  historical_input_messages_per_sec: VecDeque<(f64, DateTime<Utc>)>,
+    /// max rate of records flow into kafka/kinesis related subtask
+    /// Flink REST API:
+    /// /jobs/<job-id>/vertices/<vertex-id>/subtasks/metrics?get=numRecordsInPerSecond&subtask=0&
+    /// agg=max Flink REST API:
+    /// /jobs/<job-id>/vertices/<vertex-id>?get=numRecordsInPerSecond&agg=max     and regex for
+    /// all subtask.metric fields
+    // todo: determine which vertices pertains to kafka/kinesis by:
     #[polar(attribute)]
     #[serde(rename = "flow.records_in_per_sec")]
     pub records_in_per_sec: f64,
 
+    /// max rate of records flow out of job kafka/kinesis related subtask
+    /// Flink REST API:
+    /// /jobs/<job-id>/vertices/<vertex-id>/subtasks/metrics?get=numRecordsInPerSecond&subtask=0&
+    /// agg=max
+    // todo: determine which vertices pertains to kafka/kinesis by:
     #[polar(attribute)]
     #[serde(rename = "flow.records_out_per_sec")]
     pub records_out_per_sec: f64,
@@ -100,29 +117,35 @@ pub struct FlowMetrics {
 
 #[derive(PolarClass, Debug, Default, PartialEq, Clone, Serialize, Deserialize)]
 pub struct ClusterMetrics {
+    /// 
+    /// - count of entries returned from Flink REST API /taskmanagers
     #[polar(attribute)]
     #[serde(rename = "cluster.nr_task_managers")]
     pub nr_task_managers: u16,
 
     /// The recent CPU usage of the JVM.
+    /// - Flink REST API /taskmanagers/metrics?get=Status.JVM.CPU.LOAD&agg=max
     #[polar(attribute)]
     #[serde(rename = "cluster.task_cpu_load")]
     pub task_cpu_load: f64,
 
     /// The amount of heap memory currently used (in bytes).
+    /// - Flink REST API /taskmanagers/metrics?get=Status.JVM.Memory.Heap.Used&agg=max
     #[polar(attribute)]
     #[serde(rename = "cluster.task_heap_memory_used")]
     pub task_heap_memory_used: f64,
 
     /// The amount of heap memory guaranteed to be available to the JVM (in bytes).
+    /// - Flink REST API /taskmanagers/metrics?get=Status.JVM.Memory.Committed.Used&agg=max
     #[polar(attribute)]
     #[serde(rename = "cluster.task_heap_memory_committed")]
     pub task_heap_memory_committed: f64,
 
     /// The total number of live threads.
+    /// - Flink REST API /taskmanagers/metrics?get=Status.JVM.Threads.Count&agg=max
     #[polar(attribute)]
-    #[serde(rename = "cluster.nr_threads")]
-    pub nr_threads: i64,
+    #[serde(rename = "cluster.task_nr_threads")]
+    pub task_nr_threads: i64,
 
     /// The number of queued input buffers.
     #[polar(attribute)]
@@ -150,8 +173,6 @@ use std::sync::Mutex;
 
 #[cfg(test)]
 use chrono::{DateTime, Utc};
-#[cfg(test)]
-use pretty_snowflake::{AlphabetCodec, IdPrettifier};
 #[cfg(test)]
 use proctor::ProctorIdGenerator;
 
@@ -231,7 +252,7 @@ impl SubscriptionRequirements for MetricCatalog {
             "cluster.task_cpu_load".into(),
             "cluster.task_heap_memory_used".into(),
             "cluster.task_heap_memory_committed".into(),
-            "cluster.nr_threads".into(),
+            "cluster.task_nr_threads".into(),
             "cluster.task_network_input_queue_len".into(),
             "cluster.task_network_input_pool_usage".into(),
             "cluster.task_network_output_queue_len".into(),
@@ -277,7 +298,7 @@ impl UpdateMetrics for MetricCatalog {
                 METRIC_CATALOG_CLUSTER_TASK_CPU_LOAD.set(catalog.cluster.task_cpu_load);
                 METRIC_CATALOG_CLUSTER_TASK_HEAP_MEMORY_USED.set(catalog.cluster.task_heap_memory_used);
                 METRIC_CATALOG_CLUSTER_TASK_HEAP_MEMORY_COMMITTED.set(catalog.cluster.task_heap_memory_committed);
-                METRIC_CATALOG_CLUSTER_TASK_NR_THREADS.set(catalog.cluster.nr_threads);
+                METRIC_CATALOG_CLUSTER_TASK_NR_THREADS.set(catalog.cluster.task_nr_threads);
                 METRIC_CATALOG_CLUSTER_TASK_NETWORK_INPUT_QUEUE_LEN.set(catalog.cluster.task_network_input_queue_len);
                 METRIC_CATALOG_CLUSTER_TASK_NETWORK_INPUT_POOL_USAGE.set(catalog.cluster.task_network_input_pool_usage);
                 METRIC_CATALOG_CLUSTER_TASK_NETWORK_OUTPUT_QUEUE_LEN.set(catalog.cluster.task_network_output_queue_len);
@@ -499,7 +520,7 @@ mod tests {
                 task_cpu_load: 0.65,
                 task_heap_memory_used: 92_987_f64,
                 task_heap_memory_committed: 103_929_920_f64,
-                nr_threads: 8,
+                task_nr_threads: 8,
                 task_network_input_queue_len: 12,
                 task_network_input_pool_usage: 8,
                 task_network_output_queue_len: 13,
@@ -549,7 +570,7 @@ mod tests {
                 Token::F64(92_987.),
                 Token::Str("cluster.task_heap_memory_committed"),
                 Token::F64(103_929_920.),
-                Token::Str("cluster.nr_threads"),
+                Token::Str("cluster.task_nr_threads"),
                 Token::I64(8),
                 Token::Str("cluster.task_network_input_queue_len"),
                 Token::I64(12),
@@ -594,7 +615,7 @@ mod tests {
                 task_cpu_load: 0.65,
                 task_heap_memory_used: 92_987_f64,
                 task_heap_memory_committed: 103_929_920_f64,
-                nr_threads: 8,
+                task_nr_threads: 8,
                 task_network_input_queue_len: 12,
                 task_network_input_pool_usage: 8,
                 task_network_output_queue_len: 13,
@@ -627,7 +648,7 @@ mod tests {
                 "cluster.task_cpu_load".to_string() => (0.65).to_telemetry(),
                 "cluster.task_heap_memory_used".to_string() => (92_987.).to_telemetry(),
                 "cluster.task_heap_memory_committed".to_string() => (103_929_920.).to_telemetry(),
-                "cluster.nr_threads".to_string() => (8).to_telemetry(),
+                "cluster.task_nr_threads".to_string() => (8).to_telemetry(),
                 "cluster.task_network_input_queue_len".to_string() => (12).to_telemetry(),
                 "cluster.task_network_input_pool_usage".to_string() => (8).to_telemetry(),
                 "cluster.task_network_output_queue_len".to_string() => (13).to_telemetry(),

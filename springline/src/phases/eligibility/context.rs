@@ -95,6 +95,9 @@ impl UpdateMetrics for EligibilityContext {
 
 #[derive(PolarClass, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TaskStatus {
+    // todo: I don't I can get this from Flink - maybe from deployment or k8s?
+    // todo: remove struct in favor of metric_catalog's job health uptime - probably not since that metric doesn work
+    // properly under reactive mode.
     #[serde(default)]
     #[serde(
         rename = "task.last_failure",
@@ -115,9 +118,18 @@ impl TaskStatus {
 
 #[derive(PolarClass, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ClusterStatus {
+    // todo: options to source property:
+    // query k8s to describe job-manager pod in json and filter for .status.conditions
+    // is_deploying is false until type:Ready has status:True
+    // - poll Flink readiness probe; i.e., k8s pod status
+    // - poll an ENVVAR or a cvs file; init-container can update accordingly
     #[polar(attribute)]
     #[serde(rename = "cluster.is_deploying")]
     pub is_deploying: bool,
+
+    // todo: source property via k8s describe job-manager pod in json and and
+    // filter for .status.conditions until type:Ready has status:True
+    // then last_deployment is lastTranstionTime; e.g., "2021-11-22T04:28:07Z"
     #[serde(with = "proctor::serde", rename = "cluster.last_deployment")]
     pub last_deployment: DateTime<Utc>,
 }
@@ -130,6 +142,11 @@ impl ClusterStatus {
 }
 
 lazy_static! {
+    pub(crate) static ref ELIGIBILITY_CTX_ALL_SINKS_HEALTHY: IntGauge = IntGauge::new(
+        "eligibility_ctx_all_sinks_healthy",
+        "Are all sinks for the FLink jobs healthy"
+    )
+    .expect("failed creating eligibility_ctx_all_sinks_healthy");
     pub(crate) static ref ELIGIBILITY_CTX_TASK_LAST_FAILURE: IntGauge = IntGauge::new(
         "eligibility_ctx_task_last_failure",
         "UNIX timestamp in seconds of last Flink Task Manager failure in environment",
@@ -174,6 +191,7 @@ mod tests {
         let context = EligibilityContext {
             correlation_id: Id::direct("EligibilityContext", 0, "A"),
             timestamp: Timestamp::new(0, 0),
+            all_sinks_healthy: true,
             task_status: TaskStatus { last_failure: Some(DT_1.clone()) },
             cluster_status: ClusterStatus { is_deploying: false, last_deployment: DT_2.clone() },
             custom: maplit::hashmap! {
@@ -196,6 +214,8 @@ mod tests {
             Token::I64(0),
             Token::U32(0),
             Token::TupleStructEnd,
+            Token::Str("all_sinks_healthy"),
+            Token::Bool(true),
             Token::Str("task.last_failure"),
             Token::Some,
             Token::Map { len: Some(2) },
@@ -260,6 +280,7 @@ mod tests {
         let data: Telemetry = maplit::hashmap! {
             "correlation_id" => Id::<EligibilityContext>::direct("EligibilityContext", 0, "A").to_telemetry(),
             "timestamp" => Timestamp::new(0, 0).to_telemetry(),
+            "all_sinks_healthy" => false.to_telemetry(),
             "task.last_failure" => DT_1_STR.as_str().to_telemetry(),
             "cluster.is_deploying" => false.to_telemetry(),
             "cluster.last_deployment" => DT_2_STR.as_str().to_telemetry(),
@@ -275,6 +296,7 @@ mod tests {
         let expected = EligibilityContext {
             correlation_id: Id::direct("EligibilityContext", 0, "A"),
             timestamp: Timestamp::new(0, 0),
+            all_sinks_healthy: false,
             task_status: TaskStatus { last_failure: Some(DT_1.clone()) },
             cluster_status: ClusterStatus { is_deploying: false, last_deployment: DT_2.clone() },
             custom: maplit::hashmap! {"foo".to_string() => "bar".into(),},
