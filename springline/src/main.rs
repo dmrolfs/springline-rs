@@ -1,6 +1,8 @@
 use std::future::Future;
 
 use clap::Parser;
+use proctor::elements::Telemetry;
+use proctor::graph::stage::SourceStage;
 use proctor::tracing::{get_subscriber, init_subscriber};
 use settings_loader::SettingsLoader;
 use springline::engine::Autoscaler;
@@ -20,6 +22,7 @@ fn main() -> Result<()> {
     // todo assemble and start pipeline in entry
     start_pipeline(async move {
         Autoscaler::builder("springline")
+            .add_source(make_settings_source(&settings))
             .finish(settings)
             .await?
             .run()
@@ -27,6 +30,18 @@ fn main() -> Result<()> {
             .await?;
         Ok(())
     })
+}
+
+fn make_settings_source(settings: &Settings) -> Box<dyn SourceStage<Telemetry>> {
+    let mut settings_telemetry = maplit::hashmap! {
+        "min_cluster_size".to_string() => settings.governance.rules.min_cluster_size.into(),
+        "max_cluster_size".to_string() => settings.governance.rules.max_cluster_size.into(),
+        "min_scaling_step".to_string() => settings.governance.rules.min_scaling_step.into(),
+        "max_scaling_step".to_string() => settings.governance.rules.max_scaling_step.into(),
+    };
+    settings_telemetry.extend(settings.governance.rules.custom.iter());
+
+    Box::new(proctor::graph::stage::Sequence::new("settings_source", settings_telemetry))
 }
 
 #[tracing::instrument(level="info", skip(future), fields(worker_threads=num_cpus::get()))]
