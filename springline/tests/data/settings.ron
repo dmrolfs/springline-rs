@@ -68,4 +68,13 @@
         ],
     ),
     execution: (),
+    governance_rules: (
+        min_cluster_size: 0,
+        max_cluster_size: 10,
+        min_scaling_step: 2,
+        max_scaling_step: 6,
+        custom: {
+            "foo": 17,
+        },
+    ),
 )

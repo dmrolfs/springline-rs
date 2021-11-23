@@ -1,17 +1,8 @@
-pub mod collection_settings;
-pub mod engine_settings;
-pub mod execution_settings;
-pub mod plan_settings;
-
 use std::path::PathBuf;
 
 use clap::Parser;
-pub use collection_settings::*;
 use config::builder::DefaultState;
 use config::ConfigBuilder;
-pub use engine_settings::*;
-pub use execution_settings::*;
-pub use plan_settings::*;
 use proctor::elements::PolicySettings;
 use serde::{Deserialize, Serialize};
 use settings_loader::common::http::HttpServerSettings;
@@ -20,6 +11,18 @@ use settings_loader::{Environment, LoadingOptions, SettingsError, SettingsLoader
 use crate::phases::decision::DecisionTemplateData;
 use crate::phases::eligibility::policy::EligibilityTemplateData;
 use crate::phases::governance::GovernanceTemplateData;
+
+mod collection_settings;
+mod engine_settings;
+mod execution_settings;
+mod governance_rule_settings;
+mod plan_settings;
+
+pub use collection_settings::*;
+pub use engine_settings::*;
+pub use execution_settings::*;
+pub use governance_rule_settings::*;
+pub use plan_settings::*;
 
 pub type EligibilitySettings = PolicySettings<EligibilityTemplateData>;
 pub type DecisionSettings = PolicySettings<DecisionTemplateData>;
@@ -41,6 +44,7 @@ pub struct Settings {
     #[serde(default)]
     pub governance: GovernanceSettings,
     pub execution: ExecutionSettings,
+    pub governance_rules: GovernanceRuleSettings,
 }
 
 impl SettingsLoader for Settings {
@@ -127,7 +131,7 @@ mod tests {
     use config::{Config, FileFormat};
     use lazy_static::lazy_static;
     use pretty_assertions::assert_eq;
-    use proctor::elements::PolicySource;
+    use proctor::elements::{PolicySource, ToTelemetry};
     use proctor::phases::collection::SourceSetting;
 
     use super::*;
@@ -268,6 +272,13 @@ mod tests {
                 ..GovernanceSettings::default()
             },
             execution: ExecutionSettings,
+            governance_rules: GovernanceRuleSettings {
+                min_cluster_size: 0,
+                max_cluster_size: 10,
+                min_scaling_step: 2,
+                max_scaling_step: 6,
+                custom: maplit::hashmap! { "foo".to_string() => 17.to_telemetry(), },
+            },
         };
 
         // let exp_rep = assert_ok!(ron::to_string(&expected));
@@ -396,6 +407,13 @@ mod tests {
                         PolicySource::from_complete_file("./resources/governance.polar")
                     )),
                     execution: ExecutionSettings,
+                    governance_rules: GovernanceRuleSettings {
+                        min_cluster_size: 0,
+                        max_cluster_size: 20,
+                        min_scaling_step: 2,
+                        max_scaling_step: 10,
+                        custom: HashMap::default(),
+                    },
                 };
 
                 assert_eq!(actual, expected);

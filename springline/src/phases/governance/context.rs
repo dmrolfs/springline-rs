@@ -19,6 +19,9 @@ pub struct GovernanceContext {
     pub correlation_id: Id<Self>,
     pub timestamp: Timestamp,
 
+    /// Minimal cluster size autoscaling will allow to scale down to.
+    // 
+    // - source from governance settings
     #[polar(attribute)]
     pub min_cluster_size: u16,
 
