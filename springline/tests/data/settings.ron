@@ -2,6 +2,13 @@
     // set engine.machine_id and engine.node_id via environment variable
     http: ( host: "0.0.0.0", port: 8000, ),
     collection: (
+        flink: (
+            job_manager_host: "dr-flink-jm-0",
+            job_metrics: [
+                "Status.JVM.Memory.NonHeap.Committed",
+                "uptime",
+            ],
+        ),
         sources: {
             "foo": ( type: "csv", path: "../resources/bar.toml", ),
         }

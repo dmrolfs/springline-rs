@@ -2,6 +2,31 @@
     http: (
         host: "127.0.0.1",
     ),
+    collection: (
+        flink: (
+            job_manager_host: "127.0.0.1",
+            // /jobs/metrics
+            job_metrics: [
+                "uptime",
+                "numRestarts",
+                "numberOfCompletedCheckpoints",
+                "numberOfFailedCheckpoints",
+            ],
+            // /jobs/<job-id>/vertices/<vertice-id>/subtasks/metrics
+            task_metrics: [
+                "numRecordsInPerSecond",  // first vertice
+                "numRecordsOutPerSecond", // last vertice
+            ],
+            // separate to request only from FlinkKafkaConsumer
+            kafka_metrics: [
+                "records-lag-max", // need to
+            ],
+            // separate to request only from FlinkKinesisConsumer
+            kinesis_metrics: [
+                "millisBehindLatest",
+            ]
+        ),
+    ),
     engine: (
         machine_id: 1,
         node_id: 1,

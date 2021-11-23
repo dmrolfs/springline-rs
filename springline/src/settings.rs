@@ -205,6 +205,12 @@ mod tests {
             http: HttpServerSettings { host: "0.0.0.0".to_string(), port: 8000 },
             engine: Default::default(),
             collection: CollectionSettings {
+                flink: FlinkSettings {
+                    job_manager_host: "dr-flink-jm-0".to_string(),
+                    job_manager_port: 8081,
+                    job_metrics: vec!["Status.JVM.Memory.NonHeap.Committed".to_string(), "uptime".to_string()],
+                    task_metrics: Vec::default(),
+                },
                 sources: maplit::hashmap! {
                     "foo".to_string() => SourceSetting::Csv { path: PathBuf::from("../resources/bar.toml"), },
                 },
@@ -332,6 +338,12 @@ mod tests {
                     http: HttpServerSettings { host: "0.0.0.0".to_string(), port: 8000 },
                     engine: EngineSettings { machine_id: 7, node_id: 3 },
                     collection: CollectionSettings {
+                        flink: FlinkSettings {
+                            job_manager_host: "dr-flink-jm-0".to_string(),
+                            job_manager_port: 8081,
+                            job_metrics: vec!["Status.JVM.Memory.NonHeap.Committed".to_string(), "uptime".to_string()],
+                            task_metrics: Vec::default(),
+                        },
                         sources: maplit::hashmap! {
                             "foo".to_string() => SourceSetting::Csv { path: PathBuf::from("./resources/bar.toml"),},
                         },

@@ -1,12 +1,47 @@
 use std::collections::HashMap;
+use std::net::{IpAddr, Ipv4Addr};
 
 use proctor::phases::collection::SourceSetting;
 use serde::{Deserialize, Serialize};
+use url::Url;
 
 #[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct CollectionSettings {
+    pub flink: FlinkSettings,
     pub sources: HashMap<String, SourceSetting>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct FlinkSettings {
+    pub job_manager_host: String,
+    pub job_manager_port: u16,
+    pub job_metrics: Vec<String>,
+    pub task_metrics: Vec<String>,
+}
+
+impl Default for FlinkSettings {
+    fn default() -> Self {
+        Self {
+            job_manager_host: "127.0.0.1".to_string(),
+            job_manager_port: 8081,
+            job_metrics: Vec::default(),
+            task_metrics: Vec::default(),
+        }
+    }
+}
+
+impl FlinkSettings {
+    pub fn job_manager_url(&self, scheme: impl AsRef<str>) -> Result<Url, url::ParseError> {
+        let rep = format!(
+            "{}//{}:{}",
+            scheme.as_ref(),
+            self.job_manager_host,
+            self.job_manager_port
+        );
+        Url::parse(rep.as_str())
+    }
 }
 
 #[cfg(test)]
@@ -25,6 +60,11 @@ mod tests {
     fn test_serde_collection_settings() {
         let settings_csv = CollectionSettings {
             // only doing one pair at a time until *convenient* way to pin order and test is determined
+            flink: FlinkSettings {
+                job_manager_host: "dr-flink-jm-0".to_string(),
+                job_metrics: vec!["Status.JVM.Memory.NonHeap.Committed".to_string(), "uptime".to_string()],
+                ..FlinkSettings::default()
+            },
             sources: maplit::hashmap! {
                 "foo".to_string() => SourceSetting::Csv { path: PathBuf::from("./resources/bar.toml"),},
             },
@@ -33,7 +73,22 @@ mod tests {
         assert_tokens(
             &settings_csv,
             &vec![
-                Token::Struct { name: "CollectionSettings", len: 1 },
+                Token::Struct { name: "CollectionSettings", len: 2 },
+                Token::Str("flink"),
+                Token::Struct { name: "FlinkSettings", len: 4 },
+                Token::Str("job_manager_host"),
+                Token::Str("dr-flink-jm-0"),
+                Token::Str("job_manager_port"),
+                Token::U16(8081),
+                Token::Str("job_metrics"),
+                Token::Seq { len: Some(2) },
+                Token::Str("Status.JVM.Memory.NonHeap.Committed"),
+                Token::Str("uptime"),
+                Token::SeqEnd,
+                Token::Str("task_metrics"),
+                Token::Seq { len: Some(0) },
+                Token::SeqEnd,
+                Token::StructEnd,
                 Token::Str("sources"),
                 Token::Map { len: Some(1) },
                 Token::Str("foo"),
@@ -49,6 +104,12 @@ mod tests {
         );
 
         let settings_rest = CollectionSettings {
+            flink: FlinkSettings {
+                job_manager_host: "dr-flink-jm-0".to_string(),
+                job_manager_port: 8081,
+                job_metrics: vec!["Status.JVM.Memory.NonHeap.Committed".to_string(), "uptime".to_string()],
+                task_metrics: Vec::default(),
+            },
             // only doing one pair at a time until *convenient* way to pin order and test is determined
             sources: maplit::hashmap! {
                 "foo".to_string() => SourceSetting::RestApi(HttpQuery {
@@ -67,7 +128,22 @@ mod tests {
         assert_tokens(
             &settings_rest,
             &vec![
-                Token::Struct { name: "CollectionSettings", len: 1 },
+                Token::Struct { name: "CollectionSettings", len: 2 },
+                Token::Str("flink"),
+                Token::Struct { name: "FlinkSettings", len: 4 },
+                Token::Str("job_manager_host"),
+                Token::Str("dr-flink-jm-0"),
+                Token::Str("job_manager_port"),
+                Token::U16(8081),
+                Token::Str("job_metrics"),
+                Token::Seq { len: Some(2) },
+                Token::Str("Status.JVM.Memory.NonHeap.Committed"),
+                Token::Str("uptime"),
+                Token::SeqEnd,
+                Token::Str("task_metrics"),
+                Token::Seq { len: Some(0) },
+                Token::SeqEnd,
+                Token::StructEnd,
                 Token::Str("sources"),
                 Token::Map { len: Some(1) },
                 Token::Str("foo"),
