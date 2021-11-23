@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::net::{IpAddr, Ipv4Addr};
 
 use proctor::phases::collection::SourceSetting;
 use serde::{Deserialize, Serialize};

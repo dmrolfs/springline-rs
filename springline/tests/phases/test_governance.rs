@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use claim::*;
+use once_cell::sync::Lazy;
 use pretty_assertions::assert_eq;
 use pretty_snowflake::Id;
 use proctor::elements::{self, PolicyFilterEvent, PolicySource, Timestamp};
@@ -11,17 +12,22 @@ use springline::phases::governance::{
     make_governance_transform, GovernanceContext, GovernancePolicy, GovernanceTemplateData,
 };
 use springline::phases::plan::ScalePlan;
-use springline::settings::GovernanceSettings;
+use springline::settings::{GovernancePolicySettings, GovernanceSettings};
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
 type Data = ScalePlan;
 type Context = GovernanceContext;
 
-lazy_static::lazy_static! {
-    static ref GOVERNANCE_PREAMBLE: PolicySource = PolicySource::from_complete_file("../resources/governance.polar").expect("failed to create governance policy source");
-    static ref POLICY_SETTINGS: GovernanceSettings = GovernanceSettings::default().with_source(GOVERNANCE_PREAMBLE.clone());
-}
+static GOVERNANCE_PREAMBLE: Lazy<PolicySource> = Lazy::new(|| {
+    PolicySource::from_complete_file("../resources/governance.polar")
+        .expect("failed to create governance policy source")
+});
+
+static POLICY_SETTINGS: Lazy<GovernanceSettings> = Lazy::new(|| GovernanceSettings {
+    policy: GovernancePolicySettings::default().with_source(GOVERNANCE_PREAMBLE.clone()),
+    ..GovernanceSettings::default()
+});
 
 #[allow(dead_code)]
 struct TestFlow {

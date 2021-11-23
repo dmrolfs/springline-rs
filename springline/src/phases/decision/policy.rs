@@ -1,8 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use once_cell::sync::Lazy;
 use oso::{Oso, PolarClass, PolarValue};
-use pretty_snowflake::Id;
 use proctor::elements::{PolicySource, PolicySubscription, QueryPolicy, QueryResult, Telemetry, Timestamp};
 use proctor::error::PolicyError;
 use proctor::phases::collection::TelemetrySubscription;

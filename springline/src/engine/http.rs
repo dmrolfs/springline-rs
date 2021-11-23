@@ -7,7 +7,6 @@ use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::routing::get;
 use axum::{AddExtensionLayer, BoxError, Router};
-use axum_debug::debug_handler;
 use settings_loader::common::http::HttpServerSettings;
 use tokio::net::TcpListener;
 use tower::timeout::TimeoutLayer;

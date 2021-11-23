@@ -99,11 +99,13 @@ pub struct GovernancePolicy {
 impl GovernancePolicy {
     pub fn new(settings: &GovernanceSettings) -> Self {
         let required_subscription_fields = settings
+            .policy
             .required_subscription_fields
             .iter()
             .map(|f| SharedString::from(f.to_string()))
             .collect();
         let optional_subscription_fields = settings
+            .policy
             .optional_subscription_fields
             .iter()
             .map(|f| SharedString::from(f.to_string()))
@@ -111,8 +113,8 @@ impl GovernancePolicy {
         Self {
             required_subscription_fields,
             optional_subscription_fields,
-            sources: settings.policies.clone(),
-            template_data: settings.template_data.clone(),
+            sources: settings.policy.policies.clone(),
+            template_data: settings.policy.template_data.clone(),
         }
     }
 }
@@ -184,14 +186,18 @@ mod tests {
     use trim_margin::MarginTrimmable;
 
     use super::*;
+    use crate::settings::GovernancePolicySettings;
 
     #[test]
     fn test_ser_governance_setting() {
         let settings = GovernanceSettings {
-            policies: vec![assert_ok!(PolicySource::from_template_file(
-                "./resources/governance.polar"
-            ))],
-            template_data: None,
+            policy: GovernancePolicySettings {
+                policies: vec![assert_ok!(PolicySource::from_template_file(
+                    "./resources/governance.polar"
+                ))],
+                template_data: None,
+                ..GovernancePolicySettings::default()
+            },
             ..GovernanceSettings::default()
         };
 
@@ -201,15 +207,24 @@ mod tests {
             actual_rep,
             r##"
             | (
-            |     policies: [
-            |         (
-            |             source: "file",
-            |             policy: (
-            |                 path: "./resources/governance.polar",
-            |                 is_template: true,
+            |     policy: (
+            |         policies: [
+            |             (
+            |                 source: "file",
+            |                 policy: (
+            |                     path: "./resources/governance.polar",
+            |                     is_template: true,
+            |                 ),
             |             ),
-            |         ),
-            |     ],
+            |         ],
+            |     ),
+            |     rules: (
+            |         min_cluster_size: 0,
+            |         max_cluster_size: 10,
+            |         min_scaling_step: 2,
+            |         max_scaling_step: 5,
+            |         custom: {},
+            |     ),
             | )"##
                 .trim_margin_with("| ")
                 .unwrap()

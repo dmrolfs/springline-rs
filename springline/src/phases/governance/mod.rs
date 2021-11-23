@@ -30,7 +30,7 @@ pub async fn make_governance_phase(
 ) -> Result<GovernancePhase> {
     let name: SharedString = "governance".into();
     let policy = GovernancePolicy::new(&settings);
-    let subscription = policy.subscription(name.as_ref(), settings);
+    let subscription = policy.subscription(name.as_ref(), &settings.policy);
     let governance = Box::new(
         PolicyPhase::with_transform(name.clone(), policy, make_governance_transform(name.into_owned())).await?,
     );
