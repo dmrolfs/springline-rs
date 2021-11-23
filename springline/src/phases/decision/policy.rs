@@ -1,10 +1,12 @@
 use std::collections::{HashMap, HashSet};
 
+use once_cell::sync::Lazy;
 use oso::{Oso, PolarClass, PolarValue};
-use proctor::elements::{PolicySource, PolicySubscription, QueryPolicy, QueryResult, Telemetry};
+use pretty_snowflake::Id;
+use proctor::elements::{PolicySource, PolicySubscription, QueryPolicy, QueryResult, Telemetry, Timestamp};
 use proctor::error::PolicyError;
 use proctor::phases::collection::TelemetrySubscription;
-use proctor::{ProctorContext, SharedString};
+use proctor::{ProctorContext, ProctorIdGenerator, SharedString};
 use serde::{Deserialize, Serialize};
 
 use super::context::DecisionContext;
@@ -126,6 +128,22 @@ impl QueryPolicy for DecisionPolicy {
 
     fn query_policy(&self, engine: &Oso, args: Self::Args) -> Result<QueryResult, PolicyError> {
         QueryResult::from_query(engine.query_rule("scale", args)?)
+    }
+
+    fn zero_context(&self) -> Option<Self::Context> {
+        if !self.required_subscription_fields.is_empty() {
+            None
+        } else {
+            // todo: context corr-id is generally created in clearinghouse, but this is special case,
+            // until consideration about how to pull in generator settings, use this to start.
+            let mut gen: ProctorIdGenerator<DecisionContext> = ProctorIdGenerator::default();
+
+            Some(Self::Context {
+                timestamp: Timestamp::now(),
+                correlation_id: gen.next_id(),
+                custom: HashMap::default(),
+            })
+        }
     }
 }
 

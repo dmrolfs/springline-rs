@@ -25,7 +25,7 @@ pub async fn make_eligibility_phase(
 ) -> Result<EligibilityPhase> {
     let name: SharedString = "eligibility".into();
     let policy = EligibilityPolicy::new(&settings);
-    let subscription = policy.subscription(name.as_ref());
+    let subscription = policy.subscription(name.as_ref(), settings);
     let eligibility = Box::new(PolicyPhase::strip_policy_outcome(name.as_ref(), policy).await?);
 
     phases::subscribe_policy_phase(subscription, &eligibility, magnet).await?;
