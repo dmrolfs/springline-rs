@@ -1,11 +1,6 @@
 (
     http: (
-        host: "127.0.0.1",
-    ),
-    collection: (
-        flink: (
-            job_manager_host: "127.0.0.1",
-        ),
+        host: "localhost",
     ),
     engine: (
         machine_id: 1,

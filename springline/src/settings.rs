@@ -432,9 +432,209 @@ mod tests {
         Ok(())
     }
 
-    #[ignore]
     #[test]
-    fn test_settings_specific_load() -> anyhow::Result<()> {
+    fn test_local_load() -> anyhow::Result<()> {
+        once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
+        let main_span = tracing::info_span!("test_local_load");
+        let _ = main_span.enter();
+
+        let options = CliOptions {
+            resources: Some("../resources".into()),
+            ..CliOptions::default()
+        };
+        let before_env = Settings::load(&options);
+        tracing::info!("from Settings::load: {:?}", before_env);
+        let before_env = assert_ok!(before_env);
+        assert_eq!(before_env.engine, EngineSettings { machine_id: 1, node_id: 1 });
+
+        with_env_vars("test_local_load", vec![("APP_ENVIRONMENT", Some("local"))], || {
+            let actual: Settings = assert_ok!(Settings::load(&options));
+            assert_eq!(actual.engine, EngineSettings { machine_id: 1, node_id: 1 });
+
+            let expected = Settings {
+                http: HttpServerSettings { host: "localhost".to_string(), port: 8000 },
+                engine: EngineSettings { machine_id: 1, node_id: 1 },
+                collection: CollectionSettings {
+                    flink: FlinkSettings {
+                        job_manager_host: "localhost".to_string(),
+                        job_manager_port: 8081,
+                        metric_orders: vec![FlinkMetricOrder(
+                            FlinkScope::Kafka,
+                            "records-lag-max".to_string(),
+                            FlinkMetricAggregatedValue::None,
+                        )],
+                    },
+                    sources: maplit::hashmap! {
+                        "foo".to_string() => SourceSetting::Csv { path: PathBuf::from("./resources/bar.toml"),},
+                    },
+                },
+                eligibility: EligibilitySettings::default()
+                    .with_source(assert_ok!(PolicySource::from_template_file(
+                        "./resources/eligibility.polar"
+                    )))
+                    .with_source(assert_ok!(PolicySource::from_template_file(
+                        "./resources/eligibility_basis.polar"
+                    )))
+                    .with_template_data(EligibilityTemplateData {
+                        basis: "eligibility_basis".to_string(),
+                        cooling_secs: Some(15 * 60),
+                        stable_secs: Some(15 * 60),
+                        custom: HashMap::default(),
+                    }),
+                decision: DecisionSettings::default()
+                    .with_source(assert_ok!(PolicySource::from_template_file(
+                        "./resources/decision.polar"
+                    )))
+                    .with_source(assert_ok!(PolicySource::from_template_file(
+                        "./resources/decision_basis.polar"
+                    )))
+                    .with_template_data(DecisionTemplateData {
+                        basis: "decision_basis".to_string(),
+                        max_healthy_lag: Some(133_f64),
+                        min_healthy_lag: 0_f64,
+                        max_healthy_cpu_load: Some(0.7),
+                        max_healthy_network_io: None,
+                        custom: HashMap::default(),
+                    }),
+                plan: PlanSettings {
+                    min_scaling_step: 2,
+                    restart: Duration::from_secs(2 * 60),
+                    max_catch_up: Duration::from_secs(10 * 60),
+                    recovery_valid: Duration::from_secs(5 * 60),
+                    performance_repository: PerformanceRepositorySettings {
+                        storage: PerformanceRepositoryType::File,
+                        storage_path: Some("./tests/data/performance.data".to_string()),
+                    },
+                    window: 20,
+                    spike: SpikeSettings {
+                        std_deviation_threshold: 5.,
+                        influence: 0.75,
+                        length_threshold: 3,
+                    },
+                },
+                governance: GovernanceSettings {
+                    policy: GovernancePolicySettings::default().with_source(assert_ok!(
+                        PolicySource::from_complete_file("./resources/governance.polar")
+                    )),
+                    rules: GovernanceRuleSettings {
+                        min_cluster_size: 0,
+                        max_cluster_size: 20,
+                        min_scaling_step: 2,
+                        max_scaling_step: 10,
+                        custom: HashMap::default(),
+                    },
+                },
+                execution: ExecutionSettings,
+            };
+
+            assert_eq!(actual, expected);
+        });
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_production_load() -> anyhow::Result<()> {
+        once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
+        let main_span = tracing::info_span!("test_production_load");
+        let _ = main_span.enter();
+
+        let options = CliOptions {
+            resources: Some("../resources".into()),
+            ..CliOptions::default()
+        };
+        let before_env = Settings::load(&options);
+        tracing::info!("from Settings::load: {:?}", before_env);
+        let before_env = assert_ok!(before_env);
+        assert_eq!(before_env.engine, EngineSettings { machine_id: 1, node_id: 1 });
+
+        with_env_vars(
+            "test_production_load",
+            vec![("APP_ENVIRONMENT", Some("production"))],
+            || {
+                let actual: Settings = assert_ok!(Settings::load(&options));
+                assert_eq!(actual.engine, EngineSettings { machine_id: 1, node_id: 1 });
+
+                let expected = Settings {
+                    http: HttpServerSettings { host: "0.0.0.0".to_string(), port: 8000 },
+                    engine: EngineSettings { machine_id: 1, node_id: 1 },
+                    collection: CollectionSettings {
+                        flink: FlinkSettings {
+                            job_manager_host: "dr-flink-jm-0".to_string(),
+                            job_manager_port: 8081,
+                            metric_orders: vec![FlinkMetricOrder(
+                                FlinkScope::Kafka,
+                                "records-lag-max".to_string(),
+                                FlinkMetricAggregatedValue::None,
+                            )],
+                        },
+                        sources: maplit::hashmap! {
+                            "foo".to_string() => SourceSetting::Csv { path: PathBuf::from("./resources/bar.toml"),},
+                        },
+                    },
+                    eligibility: EligibilitySettings::default()
+                        .with_source(assert_ok!(PolicySource::from_template_file(
+                            "./resources/eligibility.polar"
+                        )))
+                        .with_source(assert_ok!(PolicySource::from_template_file(
+                            "./resources/eligibility_basis.polar"
+                        )))
+                        .with_template_data(EligibilityTemplateData {
+                            basis: "eligibility_basis".to_string(),
+                            cooling_secs: Some(15 * 60),
+                            stable_secs: Some(15 * 60),
+                            custom: HashMap::default(),
+                        }),
+                    decision: DecisionSettings::default()
+                        .with_source(assert_ok!(PolicySource::from_template_file(
+                            "./resources/decision.polar"
+                        )))
+                        .with_source(assert_ok!(PolicySource::from_template_file(
+                            "./resources/decision_basis.polar"
+                        )))
+                        .with_template_data(DecisionTemplateData {
+                            basis: "decision_basis".to_string(),
+                            max_healthy_lag: Some(133_f64),
+                            min_healthy_lag: 0_f64,
+                            max_healthy_cpu_load: Some(0.7),
+                            max_healthy_network_io: None,
+                            custom: HashMap::default(),
+                        }),
+                    plan: PlanSettings {
+                        min_scaling_step: 2,
+                        restart: Duration::from_secs(2 * 60),
+                        max_catch_up: Duration::from_secs(10 * 60),
+                        recovery_valid: Duration::from_secs(5 * 60),
+                        performance_repository: PerformanceRepositorySettings {
+                            storage: PerformanceRepositoryType::File,
+                            storage_path: Some("./tests/data/performance.data".to_string()),
+                        },
+                        window: 20,
+                        spike: SpikeSettings {
+                            std_deviation_threshold: 5.,
+                            influence: 0.75,
+                            length_threshold: 3,
+                        },
+                    },
+                    governance: GovernanceSettings {
+                        policy: GovernancePolicySettings::default().with_source(assert_ok!(
+                            PolicySource::from_complete_file("./resources/governance.polar")
+                        )),
+                        rules: GovernanceRuleSettings {
+                            min_cluster_size: 0,
+                            max_cluster_size: 20,
+                            min_scaling_step: 2,
+                            max_scaling_step: 10,
+                            custom: HashMap::default(),
+                        },
+                    },
+                    execution: ExecutionSettings,
+                };
+
+                assert_eq!(actual, expected);
+            },
+        );
+
         Ok(())
     }
 }
