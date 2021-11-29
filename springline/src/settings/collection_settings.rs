@@ -16,17 +16,15 @@ pub struct CollectionSettings {
 pub struct FlinkSettings {
     pub job_manager_host: String,
     pub job_manager_port: u16,
-    pub job_metrics: Vec<String>,
-    pub task_metrics: Vec<String>,
+    pub metric_orders: Vec<FlinkMetricOrder>,
 }
 
 impl Default for FlinkSettings {
     fn default() -> Self {
         Self {
-            job_manager_host: "127.0.0.1".to_string(),
+            job_manager_host: "localhost".to_string(),
             job_manager_port: 8081,
-            job_metrics: Vec::default(),
-            task_metrics: Vec::default(),
+            metric_orders: Vec::default(),
         }
     }
 }
@@ -43,11 +41,36 @@ impl FlinkSettings {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FlinkMetricOrder(pub FlinkScope, pub String, pub FlinkMetricAggregatedValue);
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum FlinkScope {
+    Jobs,
+    Task,
+    TaskManagers,
+    Kafka,
+    Kinesis,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum FlinkMetricAggregatedValue {
+    None,
+    Max,
+    Min,
+    Sum,
+    Avg,
+}
+
+
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
     use std::time::Duration;
 
+    use claim::*;
+    use pretty_assertions::assert_eq;
     use proctor::phases::collection::HttpQuery;
     use reqwest::header::{AUTHORIZATION, CONTENT_LENGTH};
     use reqwest::{Method, Url};
@@ -56,12 +79,50 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_flink_metric_order_serde() {
+        let metric_orders = vec![
+            FlinkMetricOrder(FlinkScope::Jobs, "uptime".to_string(), FlinkMetricAggregatedValue::Max),
+            FlinkMetricOrder(
+                FlinkScope::Kafka,
+                "records-lag-max".to_string(),
+                FlinkMetricAggregatedValue::None,
+            ),
+            FlinkMetricOrder(
+                FlinkScope::TaskManagers,
+                "Status.JVM.Memory.Heap.Committed".to_string(),
+                FlinkMetricAggregatedValue::Sum,
+            ),
+        ];
+
+        let actual = assert_ok!(ron::to_string(&metric_orders));
+        assert_eq!(
+            actual,
+            r##"[(Jobs,"uptime",max),(Kafka,"records-lag-max",none),(TaskManagers,"Status.JVM.Memory.Heap.Committed",sum)]"##
+        );
+
+        let hydrated: Vec<FlinkMetricOrder> = assert_ok!(ron::from_str(actual.as_str()));
+        assert_eq!(hydrated, metric_orders);
+    }
+
+    #[test]
     fn test_serde_collection_settings() {
         let settings_csv = CollectionSettings {
             // only doing one pair at a time until *convenient* way to pin order and test is determined
             flink: FlinkSettings {
                 job_manager_host: "dr-flink-jm-0".to_string(),
-                job_metrics: vec!["Status.JVM.Memory.NonHeap.Committed".to_string(), "uptime".to_string()],
+                metric_orders: vec![
+                    FlinkMetricOrder(FlinkScope::Jobs, "uptime".to_string(), FlinkMetricAggregatedValue::Max),
+                    FlinkMetricOrder(
+                        FlinkScope::Kafka,
+                        "records-lag-max".to_string(),
+                        FlinkMetricAggregatedValue::None,
+                    ),
+                    FlinkMetricOrder(
+                        FlinkScope::TaskManagers,
+                        "Status.JVM.Memory.Heap.Committed".to_string(),
+                        FlinkMetricAggregatedValue::Sum,
+                    ),
+                ],
                 ..FlinkSettings::default()
             },
             sources: maplit::hashmap! {
@@ -74,18 +135,31 @@ mod tests {
             &vec![
                 Token::Struct { name: "CollectionSettings", len: 2 },
                 Token::Str("flink"),
-                Token::Struct { name: "FlinkSettings", len: 4 },
+                Token::Struct { name: "FlinkSettings", len: 3 },
                 Token::Str("job_manager_host"),
                 Token::Str("dr-flink-jm-0"),
                 Token::Str("job_manager_port"),
                 Token::U16(8081),
-                Token::Str("job_metrics"),
-                Token::Seq { len: Some(2) },
-                Token::Str("Status.JVM.Memory.NonHeap.Committed"),
+                Token::Str("metric_orders"),
+                Token::Seq { len: Some(3) },
+                Token::TupleStruct { name: "FlinkMetricOrder", len: 3 },
+                Token::UnitVariant { name: "FlinkScope", variant: "Jobs" },
                 Token::Str("uptime"),
-                Token::SeqEnd,
-                Token::Str("task_metrics"),
-                Token::Seq { len: Some(0) },
+                Token::UnitVariant { name: "FlinkMetricAggregatedValue", variant: "max" },
+                Token::TupleStructEnd,
+                Token::TupleStruct { name: "FlinkMetricOrder", len: 3 },
+                Token::UnitVariant { name: "FlinkScope", variant: "Kafka" },
+                Token::Str("records-lag-max"),
+                Token::UnitVariant {
+                    name: "FlinkMetricAggregatedValue",
+                    variant: "none",
+                },
+                Token::TupleStructEnd,
+                Token::TupleStruct { name: "FlinkMetricOrder", len: 3 },
+                Token::UnitVariant { name: "FlinkScope", variant: "TaskManagers" },
+                Token::Str("Status.JVM.Memory.Heap.Committed"),
+                Token::UnitVariant { name: "FlinkMetricAggregatedValue", variant: "sum" },
+                Token::TupleStructEnd,
                 Token::SeqEnd,
                 Token::StructEnd,
                 Token::Str("sources"),
@@ -106,8 +180,14 @@ mod tests {
             flink: FlinkSettings {
                 job_manager_host: "dr-flink-jm-0".to_string(),
                 job_manager_port: 8081,
-                job_metrics: vec!["Status.JVM.Memory.NonHeap.Committed".to_string(), "uptime".to_string()],
-                task_metrics: Vec::default(),
+                metric_orders: vec![
+                    FlinkMetricOrder(
+                        FlinkScope::Task,
+                        "Status.JVM.Memory.NonHeap.Committed".to_string(),
+                        FlinkMetricAggregatedValue::Max,
+                    ),
+                    FlinkMetricOrder(FlinkScope::Jobs, "uptime".to_string(), FlinkMetricAggregatedValue::Min),
+                ],
             },
             // only doing one pair at a time until *convenient* way to pin order and test is determined
             sources: maplit::hashmap! {
@@ -129,18 +209,23 @@ mod tests {
             &vec![
                 Token::Struct { name: "CollectionSettings", len: 2 },
                 Token::Str("flink"),
-                Token::Struct { name: "FlinkSettings", len: 4 },
+                Token::Struct { name: "FlinkSettings", len: 3 },
                 Token::Str("job_manager_host"),
                 Token::Str("dr-flink-jm-0"),
                 Token::Str("job_manager_port"),
                 Token::U16(8081),
-                Token::Str("job_metrics"),
+                Token::Str("metric_orders"),
                 Token::Seq { len: Some(2) },
+                Token::TupleStruct { name: "FlinkMetricOrder", len: 3 },
+                Token::UnitVariant { name: "FlinkScope", variant: "Task" },
                 Token::Str("Status.JVM.Memory.NonHeap.Committed"),
+                Token::UnitVariant { name: "FlinkMetricAggregatedValue", variant: "max" },
+                Token::TupleStructEnd,
+                Token::TupleStruct { name: "FlinkMetricOrder", len: 3 },
+                Token::UnitVariant { name: "FlinkScope", variant: "Jobs" },
                 Token::Str("uptime"),
-                Token::SeqEnd,
-                Token::Str("task_metrics"),
-                Token::Seq { len: Some(0) },
+                Token::UnitVariant { name: "FlinkMetricAggregatedValue", variant: "min" },
+                Token::TupleStructEnd,
                 Token::SeqEnd,
                 Token::StructEnd,
                 Token::Str("sources"),

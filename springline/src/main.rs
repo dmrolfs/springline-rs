@@ -19,7 +19,6 @@ fn main() -> Result<()> {
     let options = CliOptions::parse();
     let settings = Settings::load(&options)?;
 
-    // todo assemble and start pipeline in entry
     start_pipeline(async move {
         Autoscaler::builder("springline")
             .add_source(make_settings_source(&settings))
@@ -32,16 +31,15 @@ fn main() -> Result<()> {
     })
 }
 
-fn make_settings_source(settings: &Settings) -> Box<dyn SourceStage<Telemetry>> {
-    let mut settings_telemetry = maplit::hashmap! {
+fn make_settings_source(settings: &Settings) -> impl SourceStage<Telemetry> {
+    let mut settings_telemetry: proctor::elements::telemetry::TableType = maplit::hashmap! {
         "min_cluster_size".to_string() => settings.governance.rules.min_cluster_size.into(),
         "max_cluster_size".to_string() => settings.governance.rules.max_cluster_size.into(),
         "min_scaling_step".to_string() => settings.governance.rules.min_scaling_step.into(),
         "max_scaling_step".to_string() => settings.governance.rules.max_scaling_step.into(),
     };
-    settings_telemetry.extend(settings.governance.rules.custom.iter());
-
-    Box::new(proctor::graph::stage::Sequence::new("settings_source", settings_telemetry))
+    settings_telemetry.extend(settings.governance.rules.custom.clone());
+    proctor::graph::stage::Sequence::new("settings_source", vec![settings_telemetry.into()])
 }
 
 #[tracing::instrument(level="info", skip(future), fields(worker_threads=num_cpus::get()))]

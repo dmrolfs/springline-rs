@@ -60,13 +60,15 @@ pub struct JobHealthMetrics {
     pub job_nr_restarts: i64,
 
     /// The number of successfully completed checkpoints.
+    /// Note: this metrics does not work properly when Reactive Mode is enabled.
     /// Flink REST API: /jobs/metrics?get=numberOfCompletedCheckpoints&agg=max
     #[polar(attribute)]
     #[serde(rename = "health.job_nr_completed_checkpoints")]
     pub job_nr_completed_checkpoints: i64,
 
     /// The number of failed checkpoints.
-    /// Flink REST API: /jobs/metrics?get=numberOfCompletedCheckpoints&agg=max
+    /// Note: this metrics does not work properly when Reactive Mode is enabled.
+    /// Flink REST API: /jobs/metrics?get=numberOfFailedCheckpoints&agg=max
     #[polar(attribute)]
     #[serde(rename = "health.job_nr_failed_checkpoints")]
     pub job_nr_failed_checkpoints: i64,
@@ -78,8 +80,8 @@ pub struct FlowMetrics {
     /// Flink REST API:
     /// /jobs/<job-id>/vertices/<vertex-id>/subtasks/metrics?get=numRecordsInPerSecond&subtask=0&
     /// agg=max Flink REST API:
-    /// /jobs/<job-id>/vertices/<vertex-id>?get=numRecordsInPerSecond&agg=max     and regex for
-    /// all subtask.metric fields
+    /// /jobs/<job-id>/vertices/<vertex-id>?get=numRecordsInPerSecond&agg=max
+    /// and regex for all subtask.metric fields
     // todo: determine which vertices pertains to kafka/kinesis by:
     #[polar(attribute)]
     #[serde(rename = "flow.records_in_per_sec")]
@@ -87,7 +89,7 @@ pub struct FlowMetrics {
 
     /// max rate of records flow out of job kafka/kinesis related subtask
     /// Flink REST API:
-    /// /jobs/<job-id>/vertices/<vertex-id>/subtasks/metrics?get=numRecordsInPerSecond&subtask=0&
+    /// /jobs/<job-id>/vertices/<vertex-id>/subtasks/metrics?get=numRecordsOutPerSecond&subtask=0&
     /// agg=max
     // todo: determine which vertices pertains to kafka/kinesis by:
     #[polar(attribute)]
@@ -136,7 +138,7 @@ pub struct ClusterMetrics {
     pub task_heap_memory_used: f64,
 
     /// The amount of heap memory guaranteed to be available to the JVM (in bytes).
-    /// - Flink REST API /taskmanagers/metrics?get=Status.JVM.Memory.Committed.Used&agg=max
+    /// - Flink REST API /taskmanagers/metrics?get=Status.JVM.Memory.Heap.Committed&agg=max
     #[polar(attribute)]
     #[serde(rename = "cluster.task_heap_memory_committed")]
     pub task_heap_memory_committed: f64,

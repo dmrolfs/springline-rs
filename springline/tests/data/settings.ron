@@ -4,9 +4,9 @@
     collection: (
         flink: (
             job_manager_host: "dr-flink-jm-0",
-            job_metrics: [
-                "Status.JVM.Memory.NonHeap.Committed",
-                "uptime",
+            metric_orders: [
+                ("TaskManagers", "Status.JVM.Memory.NonHeap.Committed", "max"),
+                ("Jobs", "uptime", "min"),
             ],
         ),
         sources: {

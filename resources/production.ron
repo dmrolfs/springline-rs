@@ -4,7 +4,7 @@
     ),
     collection: (
         flink: (
-            job_manager_host: "127.0.0.1",
+            job_manager_host: "dr-flink-jm-0",
         ),
     ),
     engine: (

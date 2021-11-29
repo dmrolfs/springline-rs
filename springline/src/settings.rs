@@ -199,7 +199,7 @@ mod tests {
     fn test_basic_load() {
         let c = assert_ok!(config::Config::builder()
             .add_source(config::File::from(std::path::PathBuf::from("./tests/data/settings.ron")))
-            // .add_source(config::File::from(std::path::PathBuf::from("./resources/application.ron")))
+           // .add_source(config::File::from(std::path::PathBuf::from("./resources/application.ron")))
             .build());
 
         let expected = Settings {
@@ -209,8 +209,14 @@ mod tests {
                 flink: FlinkSettings {
                     job_manager_host: "dr-flink-jm-0".to_string(),
                     job_manager_port: 8081,
-                    job_metrics: vec!["Status.JVM.Memory.NonHeap.Committed".to_string(), "uptime".to_string()],
-                    task_metrics: Vec::default(),
+                    metric_orders: vec![
+                        FlinkMetricOrder(
+                            FlinkScope::TaskManagers,
+                            "Status.JVM.Memory.NonHeap.Committed".to_string(),
+                            FlinkMetricAggregatedValue::Max,
+                        ),
+                        FlinkMetricOrder(FlinkScope::Jobs, "uptime".to_string(), FlinkMetricAggregatedValue::Min),
+                    ],
                 },
                 sources: maplit::hashmap! {
                     "foo".to_string() => SourceSetting::Csv { path: PathBuf::from("../resources/bar.toml"), },
@@ -274,17 +280,16 @@ mod tests {
                     max_cluster_size: 10,
                     min_scaling_step: 2,
                     max_scaling_step: 6,
-                    custom: maplit::hashmap! { "foo".to_string() => 17.to_telemetry(), },
+                    custom: maplit::hashmap! { "foo".to_string() => 17_i64.to_telemetry(), },
                 },
             },
             execution: ExecutionSettings,
         };
 
-        // let exp_rep = assert_ok!(ron::to_string(&expected));
-        // assert_eq!(exp_rep.as_str(), "");
+        // let exp_rep = assert_ok!(ron::ser::to_string_pretty(&expected,
+        // ron::ser::PrettyConfig::default())); assert_eq!(exp_rep.as_str(), "");
 
         let actual: Settings = assert_ok!(c.try_into());
-
         assert_eq!(actual, expected);
     }
 
@@ -349,10 +354,13 @@ mod tests {
                     engine: EngineSettings { machine_id: 7, node_id: 3 },
                     collection: CollectionSettings {
                         flink: FlinkSettings {
-                            job_manager_host: "dr-flink-jm-0".to_string(),
+                            job_manager_host: "localhost".to_string(),
                             job_manager_port: 8081,
-                            job_metrics: vec!["Status.JVM.Memory.NonHeap.Committed".to_string(), "uptime".to_string()],
-                            task_metrics: Vec::default(),
+                            metric_orders: vec![FlinkMetricOrder(
+                                FlinkScope::Kafka,
+                                "records-lag-max".to_string(),
+                                FlinkMetricAggregatedValue::None,
+                            )],
                         },
                         sources: maplit::hashmap! {
                             "foo".to_string() => SourceSetting::Csv { path: PathBuf::from("./resources/bar.toml"),},

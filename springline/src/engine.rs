@@ -92,9 +92,9 @@ impl<'r> AutoscaleEngine<Building<'r>> {
         Self { inner: Building { sources, ..self.inner } }
     }
 
-    pub fn add_source(mut self, source: Box<dyn SourceStage<Telemetry>>) -> Self {
+    pub fn add_source(mut self, source: impl SourceStage<Telemetry>) -> Self {
         tracing::info!(?source, "added source to autoscale engine.");
-        self.inner.sources.push(source);
+        self.inner.sources.push(Box::new(source));
         self
     }
 

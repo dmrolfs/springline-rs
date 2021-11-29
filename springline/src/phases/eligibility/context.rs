@@ -96,8 +96,8 @@ impl UpdateMetrics for EligibilityContext {
 #[derive(PolarClass, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TaskStatus {
     // todo: I don't I can get this from Flink - maybe from deployment or k8s?
-    // todo: remove struct in favor of metric_catalog's job health uptime - probably not since that metric doesn work
-    // properly under reactive mode.
+    // todo: remove struct in favor of metric_catalog's job health uptime -
+    // probably not since that metric doesn't work properly under reactive mode.
     #[serde(default)]
     #[serde(
         rename = "task.last_failure",
