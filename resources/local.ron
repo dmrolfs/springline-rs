@@ -2,6 +2,12 @@
     http: (
         host: "localhost",
     ),
+    collection: (
+        flink: (
+            metrics_initial_delay_secs: 30,
+            max_retries: 0,
+        ),
+    ),
     engine: (
         machine_id: 1,
         node_id: 1,

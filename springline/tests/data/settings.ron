@@ -4,10 +4,12 @@
     collection: (
         flink: (
             job_manager_host: "dr-flink-jm-0",
+            metrics_initial_delay_secs: 300,
             metric_orders: [
                 ("TaskManagers", "Status.JVM.Memory.NonHeap.Committed", "max"),
                 ("Jobs", "uptime", "min"),
             ],
+            headers: [("accept", "*.json")],
         ),
         sources: {
             "foo": ( type: "csv", path: "../resources/bar.toml", ),

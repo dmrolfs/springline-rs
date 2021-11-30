@@ -3,24 +3,12 @@
     http: ( host: "0.0.0.0", port: 8000, ),
     collection: (
         flink: (
+            metrics_initial_delay_secs: 120,
+            metrics_interval_secs: 15,
             metric_orders: [
-                // ("Jobs", "uptime", "max"),                          // does not work w reactive mode
-                // ("Jobs", "numRestarts", "max"),
-                // ("Jobs", "numberOfCompletedCheckpoints", "max"),    // does not work w reactive mode
-                // ("Jobs", "numberOfFailedCheckpoints", "max"),       // does not work w reactive mode
-                // ("Task", "numRecordsInPerSecond", "max"),
-                // ("Task", "numRecordsOutPerSecond", "max"),
                 ("Kafka", "records-lag-max", "none"),
-                // ("Kinesis", "millisBehindLatest", "none"),
-                // ("TaskManagers", "Status.JVM.CPU.LOAD", "max"),
-                // ("TaskManagers", "Status.JVM.Memory.Heap.Used", "max"),
-                // ("TaskManagers", "Status.JVM.Memory.Heap.Committed", "max"),
-                // ("TaskManagers", "Status.JVM.Threads.Count", "max"),
-                // ("Task", "buffers.inputQueueLength", "max"), // verify,
-                // ("Task", "buffers.inPoolUsage", "max"), // verify,
-                // ("Task", "buffers.outputQueueLength", "max"), // verify,
-                // ("Task", "buffers.outPoolUsage", "max"), // verify,
             ],
+            max_retries: 3,
         ),
         sources: {
             "foo": ( type: "csv", path: "./resources/bar.toml", ),

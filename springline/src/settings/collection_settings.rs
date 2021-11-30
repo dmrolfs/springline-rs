@@ -1,7 +1,12 @@
 use std::collections::HashMap;
+use std::time::Duration;
+use std::str::FromStr;
+use proctor::error::IncompatibleSourceSettingsError;
 
 use proctor::phases::collection::SourceSetting;
+use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use serde::{Deserialize, Serialize};
+use serde_with::{serde_as, DurationSeconds};
 use url::Url;
 
 #[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
@@ -11,25 +16,63 @@ pub struct CollectionSettings {
     pub sources: HashMap<String, SourceSetting>,
 }
 
+#[serde_as]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct FlinkSettings {
+    #[serde(default = "FlinkSettings::default_job_manager_scheme")]
+    pub job_manager_scheme: String,
+
+    #[serde(default = "FlinkSettings::default_job_manager_host")]
     pub job_manager_host: String,
+
+    #[serde(default = "FlinkSettings::default_job_manager_port")]
     pub job_manager_port: u16,
+
+    #[serde(rename = "metrics_initial_delay_secs")]
+    #[serde_as(as = "DurationSeconds<u64>")]
+    pub metrics_initial_delay: Duration,
+
+    #[serde(rename = "metrics_interval_secs")]
+    #[serde_as(as = "DurationSeconds<u64>")]
+    pub metrics_interval: Duration,
+
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub metric_orders: Vec<FlinkMetricOrder>,
+
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub headers: Vec<(String, String)>,
+
+    #[serde(default = "FlinkSettings::default_max_retries")]
+    pub max_retries: u32,
 }
 
 impl Default for FlinkSettings {
     fn default() -> Self {
         Self {
-            job_manager_host: "localhost".to_string(),
-            job_manager_port: 8081,
+            job_manager_scheme: Self::DEFAULT_JOB_MANAGER_SCHEME.to_string(),
+            job_manager_host: Self::DEFAULT_JOB_MANAGER_HOST.to_string(),
+            job_manager_port: Self::DEFAULT_JOB_MANAGER_PORT,
+            metrics_initial_delay: Duration::from_secs(2 * 60),
+            metrics_interval: Duration::from_secs(15),
             metric_orders: Vec::default(),
+            headers: Vec::default(),
+            max_retries: Self::DEFAULT_MAX_RETRIES,
         }
     }
 }
 
 impl FlinkSettings {
+    const DEFAULT_JOB_MANAGER_SCHEME: &'static str = "https";
+    const DEFAULT_JOB_MANAGER_HOST: &'static str = "localhost";
+    const DEFAULT_JOB_MANAGER_PORT: u16 = 8081;
+    const DEFAULT_MAX_RETRIES: u32 = 3;
+
+    pub fn default_job_manager_scheme() -> String { Self::DEFAULT_JOB_MANAGER_SCHEME.to_string() }
+    pub fn default_job_manager_host() -> String { Self::DEFAULT_JOB_MANAGER_HOST.to_string() }
+    pub fn default_job_manager_port() -> u16 { Self::DEFAULT_JOB_MANAGER_PORT }
+    pub fn default_max_retries() -> u32 { Self::DEFAULT_MAX_RETRIES }
+
     pub fn job_manager_url(&self, scheme: impl AsRef<str>) -> Result<Url, url::ParseError> {
         let rep = format!(
             "{}//{}:{}",
@@ -39,12 +82,28 @@ impl FlinkSettings {
         );
         Url::parse(rep.as_str())
     }
+
+    pub fn header_map(&self) -> Result<HeaderMap, IncompatibleSourceSettingsError> {
+        let mut result = HeaderMap::with_capacity(self.headers.len());
+
+        for (k, v) in self.headers.iter() {
+            let name = HeaderName::from_str(k.as_str())?;
+            let value = HeaderValue::from_str(v.as_str())?;
+            result.insert(name, value);
+        }
+
+        Ok(result)
+    }
+
+    pub fn base_url(&self, scheme: String) -> Result<Url, url::ParseError> {
+        Url::parse(format!("{}://{}:{}", scheme, self.job_manager_host, self.job_manager_port).as_str())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FlinkMetricOrder(pub FlinkScope, pub String, pub FlinkMetricAggregatedValue);
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum FlinkScope {
     Jobs,
     Task,
@@ -77,6 +136,21 @@ mod tests {
     use serde_test::{assert_tokens, Token};
 
     use super::*;
+
+    #[test]
+    fn test_flink_settings_default() {
+        let actual: FlinkSettings = assert_ok!(ron::from_str("()"));
+        assert_eq!(actual, FlinkSettings::default());
+
+        let actual: FlinkSettings = assert_ok!(ron::from_str("(job_manager_port:80)"));
+        assert_eq!(
+            actual,
+            FlinkSettings {
+                job_manager_port: 80,
+                ..FlinkSettings::default()
+            }
+        );
+    }
 
     #[test]
     fn test_flink_metric_order_serde() {
@@ -135,11 +209,17 @@ mod tests {
             &vec![
                 Token::Struct { name: "CollectionSettings", len: 2 },
                 Token::Str("flink"),
-                Token::Struct { name: "FlinkSettings", len: 3 },
+                Token::Struct { name: "FlinkSettings", len: 7 },
+                Token::Str("job_manager_scheme"),
+                Token::Str("https"),
                 Token::Str("job_manager_host"),
                 Token::Str("dr-flink-jm-0"),
                 Token::Str("job_manager_port"),
                 Token::U16(8081),
+                Token::Str("metrics_initial_delay_secs"),
+                Token::U64(120),
+                Token::Str("metrics_interval_secs"),
+                Token::U64(15),
                 Token::Str("metric_orders"),
                 Token::Seq { len: Some(3) },
                 Token::TupleStruct { name: "FlinkMetricOrder", len: 3 },
@@ -161,6 +241,8 @@ mod tests {
                 Token::UnitVariant { name: "FlinkMetricAggregatedValue", variant: "sum" },
                 Token::TupleStructEnd,
                 Token::SeqEnd,
+                Token::Str("max_retries"),
+                Token::U32(3),
                 Token::StructEnd,
                 Token::Str("sources"),
                 Token::Map { len: Some(1) },
@@ -178,8 +260,11 @@ mod tests {
 
         let settings_rest = CollectionSettings {
             flink: FlinkSettings {
+                job_manager_scheme: "https".to_string(),
                 job_manager_host: "dr-flink-jm-0".to_string(),
                 job_manager_port: 8081,
+                metrics_initial_delay: Duration::from_secs(300),
+                metrics_interval: Duration::from_secs(15),
                 metric_orders: vec![
                     FlinkMetricOrder(
                         FlinkScope::Task,
@@ -188,6 +273,8 @@ mod tests {
                     ),
                     FlinkMetricOrder(FlinkScope::Jobs, "uptime".to_string(), FlinkMetricAggregatedValue::Min),
                 ],
+                headers: vec![(reqwest::header::AUTHORIZATION.to_string(), "foobar".to_string())],
+                max_retries: 5,
             },
             // only doing one pair at a time until *convenient* way to pin order and test is determined
             sources: maplit::hashmap! {
@@ -209,11 +296,17 @@ mod tests {
             &vec![
                 Token::Struct { name: "CollectionSettings", len: 2 },
                 Token::Str("flink"),
-                Token::Struct { name: "FlinkSettings", len: 3 },
+                Token::Struct { name: "FlinkSettings", len: 8 },
+                Token::Str("job_manager_scheme"),
+                Token::Str("https"),
                 Token::Str("job_manager_host"),
                 Token::Str("dr-flink-jm-0"),
                 Token::Str("job_manager_port"),
                 Token::U16(8081),
+                Token::Str("metrics_initial_delay_secs"),
+                Token::U64(300),
+                Token::Str("metrics_interval_secs"),
+                Token::U64(15),
                 Token::Str("metric_orders"),
                 Token::Seq { len: Some(2) },
                 Token::TupleStruct { name: "FlinkMetricOrder", len: 3 },
@@ -227,6 +320,15 @@ mod tests {
                 Token::UnitVariant { name: "FlinkMetricAggregatedValue", variant: "min" },
                 Token::TupleStructEnd,
                 Token::SeqEnd,
+                Token::Str("headers"),
+                Token::Seq { len: Some(1), },
+                Token::Tuple { len: 2, },
+                Token::Str("authorization"),
+                Token::Str("foobar"),
+                Token::TupleEnd,
+                Token::SeqEnd,
+                Token::Str("max_retries"),
+                Token::U32(5),
                 Token::StructEnd,
                 Token::Str("sources"),
                 Token::Map { len: Some(1) },
