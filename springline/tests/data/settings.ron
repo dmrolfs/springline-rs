@@ -6,8 +6,8 @@
             job_manager_host: "dr-flink-jm-0",
             metrics_initial_delay_secs: 300,
             metric_orders: [
-                ("TaskManagers", "Status.JVM.Memory.NonHeap.Committed", "max"),
-                ("Jobs", "uptime", "min"),
+                ("TaskManagers", "Status.JVM.Memory.NonHeap.Committed", "max", "cluster.task_nonheap_memory_committed", "Float"),
+                ("Jobs", "uptime", "min", "health.job_uptime_millis", "Integer"),
             ],
             headers: [("accept", "*.json")],
         ),

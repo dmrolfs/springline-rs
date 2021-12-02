@@ -3,8 +3,8 @@ use std::convert::TryFrom;
 use std::fmt::{self, Debug};
 
 use itertools::Itertools;
-use proctor::elements::{PolicyOutcome, TelemetryValue, ToTelemetry};
-use proctor::error::{DecisionError, TelemetryError, TypeExpectation};
+use proctor::elements::{PolicyOutcome, TelemetryType, TelemetryValue, ToTelemetry};
+use proctor::error::{DecisionError, TelemetryError};
 use proctor::graph::stage::{self, ThroughStage};
 use proctor::{AppData, ProctorContext};
 
@@ -186,14 +186,14 @@ where
             }
         } else if let TelemetryValue::Unit = value {
             Err(proctor::error::TelemetryError::TypeError {
-                expected: format!("telemetry {} value", TypeExpectation::Table),
+                expected: format!("telemetry {} value", TelemetryType::Table),
                 actual: Some(format!("{:?}", value)),
             }
             .into())
         } else {
             // todo resolves into DecisionError::Other. Improve precision?
             Err(proctor::error::TelemetryError::TypeError {
-                expected: format!("telemetry {} value", TypeExpectation::Table),
+                expected: format!("telemetry {} value", TelemetryType::Table),
                 actual: Some(format!("{:?}", value)),
             }
             .into())

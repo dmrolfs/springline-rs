@@ -129,7 +129,7 @@ mod tests {
     use lazy_static::lazy_static;
     use once_cell::sync::Lazy;
     use pretty_assertions::assert_eq;
-    use proctor::elements::{PolicySource, ToTelemetry};
+    use proctor::elements::{PolicySource, TelemetryType, ToTelemetry};
     use proctor::phases::collection::SourceSetting;
 
     use super::*;
@@ -214,12 +214,20 @@ mod tests {
                     metrics_initial_delay: Duration::from_secs(300),
                     metrics_interval: Duration::from_secs(15),
                     metric_orders: vec![
-                        FlinkMetricOrder(
-                            FlinkScope::TaskManagers,
-                            "Status.JVM.Memory.NonHeap.Committed".to_string(),
-                            FlinkMetricAggregatedValue::Max,
-                        ),
-                        FlinkMetricOrder(FlinkScope::Jobs, "uptime".to_string(), FlinkMetricAggregatedValue::Min),
+                        FlinkMetricOrder {
+                            scope: FlinkScope::TaskManagers,
+                            metric: "Status.JVM.Memory.NonHeap.Committed".to_string(),
+                            agg: Aggregation::Max,
+                            telemetry_path: "cluster.task_nonheap_memory_committed".to_string(),
+                            telemetry_type: TelemetryType::Float,
+                        },
+                        FlinkMetricOrder {
+                            scope: FlinkScope::Jobs,
+                            metric: "uptime".to_string(),
+                            agg: Aggregation::Min,
+                            telemetry_path: "health.job_uptime_millis".to_string(),
+                            telemetry_type: TelemetryType::Integer,
+                        },
                     ],
                     headers: vec![(reqwest::header::ACCEPT.to_string(), "*.json".to_string())],
                     max_retries: 3,
@@ -339,25 +347,27 @@ mod tests {
                 job_manager_port: 8081,
                 metrics_initial_delay: Duration::from_secs(300),
                 metrics_interval: Duration::from_secs(15),
-                metric_orders: vec![FlinkMetricOrder(
-                    FlinkScope::Kafka,
-                    "records-lag-max".to_string(),
-                    FlinkMetricAggregatedValue::None,
-                )],
+                metric_orders: vec![FlinkMetricOrder {
+                    scope: FlinkScope::Kafka,
+                    metric: "records-lag-max".to_string(),
+                    agg: Aggregation::None,
+                    telemetry_path: "flow.input_records_lag_max".to_string(),
+                    telemetry_type: TelemetryType::Integer,
+                }],
                 headers: vec![(reqwest::header::ACCEPT.to_string(), "*.json".to_string())],
                 max_retries: 3,
             },
             sources: maplit::hashmap! {
-                            "foo".to_string() => SourceSetting::Csv { path: PathBuf::from("./resources/bar.toml"),},
-                        },
+                "foo".to_string() => SourceSetting::Csv { path: PathBuf::from("./resources/bar.toml"),},
+            },
         },
         eligibility: EligibilitySettings::default()
             .with_source(assert_ok!(PolicySource::from_template_file(
-                            "./resources/eligibility.polar"
-                        )))
+                "./resources/eligibility.polar"
+            )))
             .with_source(assert_ok!(PolicySource::from_template_file(
-                            "./resources/eligibility_basis.polar"
-                        )))
+                "./resources/eligibility_basis.polar"
+            )))
             .with_template_data(EligibilityTemplateData {
                 basis: "eligibility_basis".to_string(),
                 cooling_secs: Some(15 * 60),
@@ -366,11 +376,11 @@ mod tests {
             }),
         decision: DecisionSettings::default()
             .with_source(assert_ok!(PolicySource::from_template_file(
-                            "./resources/decision.polar"
-                        )))
+                "./resources/decision.polar"
+            )))
             .with_source(assert_ok!(PolicySource::from_template_file(
-                            "./resources/decision_basis.polar"
-                        )))
+                "./resources/decision_basis.polar"
+            )))
             .with_template_data(DecisionTemplateData {
                 basis: "decision_basis".to_string(),
                 max_healthy_lag: Some(133_f64),
@@ -396,9 +406,9 @@ mod tests {
             },
         },
         governance: GovernanceSettings {
-            policy: GovernancePolicySettings::default().with_source(assert_ok!(
-                            PolicySource::from_complete_file("./resources/governance.polar")
-                        )),
+            policy: GovernancePolicySettings::default().with_source(assert_ok!(PolicySource::from_complete_file(
+                "./resources/governance.polar"
+            ))),
             rules: GovernanceRuleSettings {
                 min_cluster_size: 0,
                 max_cluster_size: 20,
@@ -479,10 +489,7 @@ mod tests {
                     host: "localhost".to_string(),
                     ..SETTINGS.http.clone()
                 },
-                engine: EngineSettings {
-                    machine_id: 1,
-                    node_id: 1,
-                },
+                engine: EngineSettings { machine_id: 1, node_id: 1 },
                 collection: CollectionSettings {
                     flink: FlinkSettings {
                         metrics_initial_delay: Duration::from_secs(30),

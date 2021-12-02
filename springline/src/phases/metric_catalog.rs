@@ -423,9 +423,7 @@ mod tests {
 
     use chrono::TimeZone;
     use pretty_assertions::assert_eq;
-    use proctor::elements::telemetry::ToTelemetry;
-    use proctor::elements::Telemetry;
-    use proctor::error::TypeExpectation;
+    use proctor::elements::{Telemetry, TelemetryType, ToTelemetry};
     use proctor::phases::collection::{SUBSCRIPTION_CORRELATION, SUBSCRIPTION_TIMESTAMP};
     use serde_test::{assert_tokens, Token};
 
@@ -441,7 +439,7 @@ mod tests {
             match value {
                 TelemetryValue::Text(rep) => Ok(Bar(rep)),
                 v => Err(TelemetryError::TypeError {
-                    expected: format!("telementry value {}", TypeExpectation::Text),
+                    expected: format!("telementry value {}", TelemetryType::Text),
                     actual: Some(format!("{:?}", v)),
                 }),
             }

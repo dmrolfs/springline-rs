@@ -6,7 +6,7 @@
             metrics_initial_delay_secs: 120,
             metrics_interval_secs: 15,
             metric_orders: [
-                ("Kafka", "records-lag-max", "none"),
+                ("Kafka", "records-lag-max", "value", "flow.input_records_lag_max", "Integer"),
             ],
             max_retries: 3,
         ),

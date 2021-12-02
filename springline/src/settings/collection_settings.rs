@@ -1,11 +1,16 @@
 use std::collections::HashMap;
-use std::time::Duration;
+use std::fmt::{self, Display};
 use std::str::FromStr;
-use proctor::error::IncompatibleSourceSettingsError;
+use std::time::Duration;
 
+use itertools::Itertools;
+use proctor::elements::TelemetryType;
+use proctor::error::IncompatibleSourceSettingsError;
 use proctor::phases::collection::SourceSetting;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
-use serde::{Deserialize, Serialize};
+use serde::de::{self, Deserializer, MapAccess, SeqAccess, Visitor};
+use serde::ser::SerializeTupleStruct;
+use serde::{Deserialize, Serialize, Serializer};
 use serde_with::{serde_as, DurationSeconds};
 use url::Url;
 
@@ -63,15 +68,26 @@ impl Default for FlinkSettings {
 }
 
 impl FlinkSettings {
-    const DEFAULT_JOB_MANAGER_SCHEME: &'static str = "https";
     const DEFAULT_JOB_MANAGER_HOST: &'static str = "localhost";
     const DEFAULT_JOB_MANAGER_PORT: u16 = 8081;
+    const DEFAULT_JOB_MANAGER_SCHEME: &'static str = "https";
     const DEFAULT_MAX_RETRIES: u32 = 3;
 
-    pub fn default_job_manager_scheme() -> String { Self::DEFAULT_JOB_MANAGER_SCHEME.to_string() }
-    pub fn default_job_manager_host() -> String { Self::DEFAULT_JOB_MANAGER_HOST.to_string() }
-    pub fn default_job_manager_port() -> u16 { Self::DEFAULT_JOB_MANAGER_PORT }
-    pub fn default_max_retries() -> u32 { Self::DEFAULT_MAX_RETRIES }
+    pub fn default_job_manager_scheme() -> String {
+        Self::DEFAULT_JOB_MANAGER_SCHEME.to_string()
+    }
+
+    pub fn default_job_manager_host() -> String {
+        Self::DEFAULT_JOB_MANAGER_HOST.to_string()
+    }
+
+    pub fn default_job_manager_port() -> u16 {
+        Self::DEFAULT_JOB_MANAGER_PORT
+    }
+
+    pub fn default_max_retries() -> u32 {
+        Self::DEFAULT_MAX_RETRIES
+    }
 
     pub fn job_manager_url(&self, scheme: impl AsRef<str>) -> Result<Url, url::ParseError> {
         let rep = format!(
@@ -95,15 +111,156 @@ impl FlinkSettings {
         Ok(result)
     }
 
-    pub fn base_url(&self, scheme: String) -> Result<Url, url::ParseError> {
-        Url::parse(format!("{}://{}:{}", scheme, self.job_manager_host, self.job_manager_port).as_str())
+    pub fn base_url(&self) -> Result<Url, url::ParseError> {
+        Url::parse(
+            format!(
+                "{}://{}:{}/",
+                self.job_manager_scheme, self.job_manager_host, self.job_manager_port
+            )
+            .as_str(),
+        )
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct FlinkMetricOrder(pub FlinkScope, pub String, pub FlinkMetricAggregatedValue);
+#[derive(Debug, Clone, PartialEq)]
+pub struct FlinkMetricOrder {
+    pub scope: FlinkScope,
+    pub metric: String,
+    pub agg: Aggregation,
+    pub telemetry_path: String,
+    pub telemetry_type: TelemetryType,
+}
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+impl FlinkMetricOrder {
+    pub fn organize_by_scope(orders: &[FlinkMetricOrder]) -> HashMap<FlinkScope, Vec<FlinkMetricOrder>> {
+        let mut result: HashMap<FlinkScope, Vec<FlinkMetricOrder>> = HashMap::default();
+
+        for (scope, group) in &orders.iter().group_by(|o| o.scope) {
+            let orders = result.entry(scope).or_insert_with(Vec::new);
+            let group: Vec<FlinkMetricOrder> = group.cloned().collect();
+            orders.extend(group);
+        }
+
+        result
+    }
+}
+
+impl Serialize for FlinkMetricOrder {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut state = serializer.serialize_tuple_struct("FlinkMetricOrder", 5)?;
+        state.serialize_field(&self.scope)?;
+        state.serialize_field(&self.metric)?;
+        state.serialize_field(&self.agg)?;
+        state.serialize_field(&self.telemetry_path)?;
+        state.serialize_field(&self.telemetry_type)?;
+        state.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for FlinkMetricOrder {
+    #[tracing::instrument(level = "debug", skip(deserializer))]
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(field_identifier, rename_all = "snake_case")]
+        enum Field {
+            Scope,
+            Metric,
+            Agg,
+            TelemetryPath,
+            TelemetryType,
+        }
+
+        struct OrderVisitor;
+
+        impl<'de> Visitor<'de> for OrderVisitor {
+            type Value = FlinkMetricOrder;
+
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str("struct FlinkMetricOrder")
+            }
+
+            #[tracing::instrument(level = "debug", skip(self, seq))]
+            fn visit_seq<V>(self, mut seq: V) -> Result<Self::Value, V::Error>
+            where
+                V: SeqAccess<'de>,
+            {
+                let scope = seq.next_element()?.ok_or_else(|| de::Error::invalid_length(0, &self))?;
+                let metric = seq.next_element()?.ok_or_else(|| de::Error::invalid_length(1, &self))?;
+                let agg = seq.next_element()?.ok_or_else(|| de::Error::invalid_length(2, &self))?;
+                let telemetry_path = seq.next_element()?.ok_or_else(|| de::Error::invalid_length(3, &self))?;
+                let telemetry_type = seq.next_element()?.ok_or_else(|| de::Error::invalid_length(4, &self))?;
+
+                Ok(FlinkMetricOrder { scope, metric, agg, telemetry_path, telemetry_type })
+            }
+
+            #[tracing::instrument(level = "debug", skip(self, map))]
+            fn visit_map<V>(self, mut map: V) -> Result<Self::Value, V::Error>
+            where
+                V: MapAccess<'de>,
+            {
+                let mut scope = None;
+                let mut metric = None;
+                let mut agg = None;
+                let mut telemetry_path = None;
+                let mut telemetry_type = None;
+
+                while let Some(key) = map.next_key()? {
+                    match key {
+                        Field::Scope => {
+                            if scope.is_some() {
+                                return Err(de::Error::duplicate_field("scope"));
+                            }
+                            scope = Some(map.next_value()?);
+                        },
+                        Field::Metric => {
+                            if metric.is_some() {
+                                return Err(de::Error::duplicate_field("metric"));
+                            }
+                            metric = Some(map.next_value()?);
+                        },
+                        Field::Agg => {
+                            if agg.is_some() {
+                                return Err(de::Error::duplicate_field("agg"));
+                            }
+                            agg = Some(map.next_value()?);
+                        },
+                        Field::TelemetryPath => {
+                            if telemetry_path.is_some() {
+                                return Err(de::Error::duplicate_field("telemetry_path"));
+                            }
+                            telemetry_path = Some(map.next_value()?);
+                        },
+                        Field::TelemetryType => {
+                            if telemetry_type.is_some() {
+                                return Err(de::Error::duplicate_field("telemetry_type"));
+                            }
+                            telemetry_type = Some(map.next_value()?);
+                        },
+                    }
+                }
+
+                let scope = scope.ok_or_else(|| de::Error::missing_field("scope"))?;
+                let metric = metric.ok_or_else(|| de::Error::missing_field("metric"))?;
+                let agg = agg.ok_or_else(|| de::Error::missing_field("agg"))?;
+                let telemetry_path = telemetry_path.ok_or_else(|| de::Error::missing_field("telemetry_path"))?;
+                let telemetry_type = telemetry_type.ok_or_else(|| de::Error::missing_field("telemetry_type"))?;
+
+                Ok(FlinkMetricOrder { scope, metric, agg, telemetry_path, telemetry_type })
+            }
+        }
+
+        const FIELDS: &'static [&'static str] = &["scope", "metric", "agg", "telemetry_path", "telemetry_type"];
+        deserializer.deserialize_tuple_struct("FlinkMetricOrder", 5, OrderVisitor)
+    }
+}
+
+#[derive(Debug, Display, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum FlinkScope {
     Jobs,
     Task,
@@ -112,9 +269,10 @@ pub enum FlinkScope {
     Kinesis,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Display, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-pub enum FlinkMetricAggregatedValue {
+pub enum Aggregation {
+    #[serde(rename = "value")]
     None,
     Max,
     Min,
@@ -145,33 +303,44 @@ mod tests {
         let actual: FlinkSettings = assert_ok!(ron::from_str("(job_manager_port:80)"));
         assert_eq!(
             actual,
-            FlinkSettings {
-                job_manager_port: 80,
-                ..FlinkSettings::default()
-            }
+            FlinkSettings { job_manager_port: 80, ..FlinkSettings::default() }
         );
     }
 
     #[test]
     fn test_flink_metric_order_serde() {
+        once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
+        let main_span = tracing::debug_span!("test_flink_metric_order_serde");
+        let _main_span_guard = main_span.enter();
+
         let metric_orders = vec![
-            FlinkMetricOrder(FlinkScope::Jobs, "uptime".to_string(), FlinkMetricAggregatedValue::Max),
-            FlinkMetricOrder(
-                FlinkScope::Kafka,
-                "records-lag-max".to_string(),
-                FlinkMetricAggregatedValue::None,
-            ),
-            FlinkMetricOrder(
-                FlinkScope::TaskManagers,
-                "Status.JVM.Memory.Heap.Committed".to_string(),
-                FlinkMetricAggregatedValue::Sum,
-            ),
+            FlinkMetricOrder {
+                scope: FlinkScope::Jobs,
+                metric: "uptime".to_string(),
+                agg: Aggregation::Max,
+                telemetry_path: "health.job_uptime_millis".to_string(),
+                telemetry_type: TelemetryType::Integer,
+            },
+            FlinkMetricOrder {
+                scope: FlinkScope::Kafka,
+                metric: "records-lag-max".to_string(),
+                agg: Aggregation::None,
+                telemetry_path: "flow.input_records_lag_max".to_string(),
+                telemetry_type: TelemetryType::Integer,
+            },
+            FlinkMetricOrder {
+                scope: FlinkScope::TaskManagers,
+                metric: "Status.JVM.Memory.Heap.Committed".to_string(),
+                agg: Aggregation::Sum,
+                telemetry_path: "cluster.task_heap_memory_committed".to_string(),
+                telemetry_type: TelemetryType::Float,
+            },
         ];
 
         let actual = assert_ok!(ron::to_string(&metric_orders));
         assert_eq!(
             actual,
-            r##"[(Jobs,"uptime",max),(Kafka,"records-lag-max",none),(TaskManagers,"Status.JVM.Memory.Heap.Committed",sum)]"##
+            r##"[(Jobs,"uptime",max,"health.job_uptime_millis",Integer),(Kafka,"records-lag-max",value,"flow.input_records_lag_max",Integer),(TaskManagers,"Status.JVM.Memory.Heap.Committed",sum,"cluster.task_heap_memory_committed",Float)]"##
         );
 
         let hydrated: Vec<FlinkMetricOrder> = assert_ok!(ron::from_str(actual.as_str()));
@@ -185,17 +354,27 @@ mod tests {
             flink: FlinkSettings {
                 job_manager_host: "dr-flink-jm-0".to_string(),
                 metric_orders: vec![
-                    FlinkMetricOrder(FlinkScope::Jobs, "uptime".to_string(), FlinkMetricAggregatedValue::Max),
-                    FlinkMetricOrder(
-                        FlinkScope::Kafka,
-                        "records-lag-max".to_string(),
-                        FlinkMetricAggregatedValue::None,
-                    ),
-                    FlinkMetricOrder(
-                        FlinkScope::TaskManagers,
-                        "Status.JVM.Memory.Heap.Committed".to_string(),
-                        FlinkMetricAggregatedValue::Sum,
-                    ),
+                    FlinkMetricOrder {
+                        scope: FlinkScope::Jobs,
+                        metric: "uptime".to_string(),
+                        agg: Aggregation::Max,
+                        telemetry_path: "health.job_uptime_millis".to_string(),
+                        telemetry_type: TelemetryType::Integer,
+                    },
+                    FlinkMetricOrder {
+                        scope: FlinkScope::Kafka,
+                        metric: "records-lag-max".to_string(),
+                        agg: Aggregation::None,
+                        telemetry_path: "flow.input_records_lag_max".to_string(),
+                        telemetry_type: TelemetryType::Integer,
+                    },
+                    FlinkMetricOrder {
+                        scope: FlinkScope::TaskManagers,
+                        metric: "Status.JVM.Memory.Heap.Committed".to_string(),
+                        agg: Aggregation::Sum,
+                        telemetry_path: "cluster.task_heap_memory_committed".to_string(),
+                        telemetry_type: TelemetryType::Float,
+                    },
                 ],
                 ..FlinkSettings::default()
             },
@@ -222,23 +401,26 @@ mod tests {
                 Token::U64(15),
                 Token::Str("metric_orders"),
                 Token::Seq { len: Some(3) },
-                Token::TupleStruct { name: "FlinkMetricOrder", len: 3 },
+                Token::TupleStruct { name: "FlinkMetricOrder", len: 5 },
                 Token::UnitVariant { name: "FlinkScope", variant: "Jobs" },
                 Token::Str("uptime"),
-                Token::UnitVariant { name: "FlinkMetricAggregatedValue", variant: "max" },
+                Token::UnitVariant { name: "Aggregation", variant: "max" },
+                Token::Str("health.job_uptime_millis"),
+                Token::UnitVariant { name: "TelemetryType", variant: "Integer" },
                 Token::TupleStructEnd,
-                Token::TupleStruct { name: "FlinkMetricOrder", len: 3 },
+                Token::TupleStruct { name: "FlinkMetricOrder", len: 5 },
                 Token::UnitVariant { name: "FlinkScope", variant: "Kafka" },
                 Token::Str("records-lag-max"),
-                Token::UnitVariant {
-                    name: "FlinkMetricAggregatedValue",
-                    variant: "none",
-                },
+                Token::UnitVariant { name: "Aggregation", variant: "value" },
+                Token::Str("flow.input_records_lag_max"),
+                Token::UnitVariant { name: "TelemetryType", variant: "Integer" },
                 Token::TupleStructEnd,
-                Token::TupleStruct { name: "FlinkMetricOrder", len: 3 },
+                Token::TupleStruct { name: "FlinkMetricOrder", len: 5 },
                 Token::UnitVariant { name: "FlinkScope", variant: "TaskManagers" },
                 Token::Str("Status.JVM.Memory.Heap.Committed"),
-                Token::UnitVariant { name: "FlinkMetricAggregatedValue", variant: "sum" },
+                Token::UnitVariant { name: "Aggregation", variant: "sum" },
+                Token::Str("cluster.task_heap_memory_committed"),
+                Token::UnitVariant { name: "TelemetryType", variant: "Float" },
                 Token::TupleStructEnd,
                 Token::SeqEnd,
                 Token::Str("max_retries"),
@@ -266,12 +448,20 @@ mod tests {
                 metrics_initial_delay: Duration::from_secs(300),
                 metrics_interval: Duration::from_secs(15),
                 metric_orders: vec![
-                    FlinkMetricOrder(
-                        FlinkScope::Task,
-                        "Status.JVM.Memory.NonHeap.Committed".to_string(),
-                        FlinkMetricAggregatedValue::Max,
-                    ),
-                    FlinkMetricOrder(FlinkScope::Jobs, "uptime".to_string(), FlinkMetricAggregatedValue::Min),
+                    FlinkMetricOrder {
+                        scope: FlinkScope::Task,
+                        metric: "Status.JVM.Memory.NonHeap.Committed".to_string(),
+                        agg: Aggregation::Max,
+                        telemetry_path: "cluster.task_heap_memory_committed".to_string(),
+                        telemetry_type: TelemetryType::Float,
+                    },
+                    FlinkMetricOrder {
+                        scope: FlinkScope::Jobs,
+                        metric: "uptime".to_string(),
+                        agg: Aggregation::Min,
+                        telemetry_path: "health.job_uptime_millis".to_string(),
+                        telemetry_type: TelemetryType::Integer,
+                    },
                 ],
                 headers: vec![(reqwest::header::AUTHORIZATION.to_string(), "foobar".to_string())],
                 max_retries: 5,
@@ -309,20 +499,24 @@ mod tests {
                 Token::U64(15),
                 Token::Str("metric_orders"),
                 Token::Seq { len: Some(2) },
-                Token::TupleStruct { name: "FlinkMetricOrder", len: 3 },
+                Token::TupleStruct { name: "FlinkMetricOrder", len: 5 },
                 Token::UnitVariant { name: "FlinkScope", variant: "Task" },
                 Token::Str("Status.JVM.Memory.NonHeap.Committed"),
-                Token::UnitVariant { name: "FlinkMetricAggregatedValue", variant: "max" },
+                Token::UnitVariant { name: "Aggregation", variant: "max" },
+                Token::Str("cluster.task_heap_memory_committed"),
+                Token::UnitVariant { name: "TelemetryType", variant: "Float" },
                 Token::TupleStructEnd,
-                Token::TupleStruct { name: "FlinkMetricOrder", len: 3 },
+                Token::TupleStruct { name: "FlinkMetricOrder", len: 5 },
                 Token::UnitVariant { name: "FlinkScope", variant: "Jobs" },
                 Token::Str("uptime"),
-                Token::UnitVariant { name: "FlinkMetricAggregatedValue", variant: "min" },
+                Token::UnitVariant { name: "Aggregation", variant: "min" },
+                Token::Str("health.job_uptime_millis"),
+                Token::UnitVariant { name: "TelemetryType", variant: "Integer" },
                 Token::TupleStructEnd,
                 Token::SeqEnd,
                 Token::Str("headers"),
-                Token::Seq { len: Some(1), },
-                Token::Tuple { len: 2, },
+                Token::Seq { len: Some(1) },
+                Token::Tuple { len: 2 },
                 Token::Str("authorization"),
                 Token::Str("foobar"),
                 Token::TupleEnd,

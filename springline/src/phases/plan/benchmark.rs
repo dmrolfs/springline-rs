@@ -4,8 +4,8 @@ use std::fmt;
 
 use ::serde_with::serde_as;
 use approx::{AbsDiffEq, RelativeEq};
-use proctor::elements::{RecordsPerSecond, TelemetryValue, ToTelemetry};
-use proctor::error::{PlanError, TelemetryError, TypeExpectation};
+use proctor::elements::{RecordsPerSecond, TelemetryType, TelemetryValue, ToTelemetry};
+use proctor::error::{PlanError, TelemetryError};
 use serde::{Deserialize, Serialize};
 
 use crate::phases::MetricCatalog;
@@ -266,7 +266,7 @@ impl TryFrom<TelemetryValue> for Benchmark {
             })
         } else {
             Err(TelemetryError::TypeError {
-                expected: format!("{}", TypeExpectation::Table),
+                expected: format!("{}", TelemetryType::Table),
                 actual: Some(format!("{:?}", telemetry)),
             }
             .into())
