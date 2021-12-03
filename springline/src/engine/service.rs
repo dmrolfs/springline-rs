@@ -10,7 +10,7 @@ mod protocol {
     use std::collections::HashMap;
     use std::fmt::Display;
 
-    use axum::body::Body;
+    use axum::body::{self, Body, BoxBody};
     use axum::http::{Response, StatusCode};
     use axum::response::IntoResponse;
     use enum_display_derive::Display;
@@ -78,14 +78,15 @@ mod protocol {
     }
 
     impl IntoResponse for EngineApiError {
-        type Body = Body;
-        type BodyError = <Self::Body as axum::body::HttpBody>::Error;
-
-        fn into_response(self) -> Response<Self::Body> {
+        fn into_response(self) -> Response<BoxBody> {
             tracing::error!(error=?self, "failure in autoscale engine API");
+            let body = match self {
+                err => body::boxed(body::Full::from(format!("Engine API Failure: {}", err))),
+            };
+
             Response::builder()
                 .status(StatusCode::INTERNAL_SERVER_ERROR)
-                .body(Body::from(self.to_string()))
+                .body(body)
                 .expect("Autoscale engine API failed to build error response.")
         }
     }
