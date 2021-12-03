@@ -214,14 +214,14 @@ mod tests {
                     metrics_initial_delay: Duration::from_secs(300),
                     metrics_interval: Duration::from_secs(15),
                     metric_orders: vec![
-                        FlinkMetricOrder {
+                        MetricOrder {
                             scope: FlinkScope::TaskManagers,
                             metric: "Status.JVM.Memory.NonHeap.Committed".to_string(),
                             agg: Aggregation::Max,
                             telemetry_path: "cluster.task_nonheap_memory_committed".to_string(),
                             telemetry_type: TelemetryType::Float,
                         },
-                        FlinkMetricOrder {
+                        MetricOrder {
                             scope: FlinkScope::Jobs,
                             metric: "uptime".to_string(),
                             agg: Aggregation::Min,
@@ -347,7 +347,7 @@ mod tests {
                 job_manager_port: 8081,
                 metrics_initial_delay: Duration::from_secs(300),
                 metrics_interval: Duration::from_secs(15),
-                metric_orders: vec![FlinkMetricOrder {
+                metric_orders: vec![MetricOrder {
                     scope: FlinkScope::Kafka,
                     metric: "records-lag-max".to_string(),
                     agg: Aggregation::None,

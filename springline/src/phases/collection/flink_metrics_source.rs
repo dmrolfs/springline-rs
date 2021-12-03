@@ -2,23 +2,21 @@ use std::collections::{HashMap, HashSet};
 use std::fmt;
 
 use futures::future::Future;
-use futures_util::future::FutureExt;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
-use proctor::elements::{Telemetry, TelemetryType, TelemetryValue};
+use proctor::elements::{Telemetry, TelemetryValue};
 use proctor::error::CollectionError;
 use proctor::graph::stage::WithApi;
 use proctor::phases::collection::TelemetrySource;
-use reqwest::header::{HeaderMap, HeaderValue};
 use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
 use reqwest_retry::policies::ExponentialBackoff;
 use reqwest_retry::RetryTransientMiddleware;
 use serde::{Deserialize, Serialize};
 use url::Url;
 
-use crate::settings::{Aggregation, FlinkMetricOrder, FlinkScope, FlinkSettings};
+use crate::settings::{Aggregation, FlinkScope, FlinkSettings, MetricOrder};
 
-static STD_METRIC_ORDERS: Lazy<Vec<FlinkMetricOrder>> = Lazy::new(|| {
+static STD_METRIC_ORDERS: Lazy<Vec<MetricOrder>> = Lazy::new(|| {
     use proctor::elements::TelemetryType::*;
 
     use crate::settings::{Aggregation::*, FlinkScope::*};
@@ -94,7 +92,7 @@ static STD_METRIC_ORDERS: Lazy<Vec<FlinkMetricOrder>> = Lazy::new(|| {
         ), // verify,
     ]
     .into_iter()
-    .map(|(scope, m, agg, tp, telemetry_type)| FlinkMetricOrder {
+    .map(|(scope, m, agg, tp, telemetry_type)| MetricOrder {
         scope,
         metric: m.to_string(),
         agg,
@@ -141,9 +139,9 @@ pub async fn make_flink_metrics_source(
     let mut orders = STD_METRIC_ORDERS.clone();
     orders.extend(settings.metric_orders.clone());
 
-    // let scope_orders = FlinkMetricOrder::organize_by_scope(&orders);
+    // let scope_orders = MetricOrder::organize_by_scope(&orders);
     let mut foo = Vec::default();
-    for (scope, scope_orders) in FlinkMetricOrder::organize_by_scope(&orders).into_iter() {
+    for (scope, scope_orders) in MetricOrder::organize_by_scope(&orders).into_iter() {
         match scope {
             FlinkScope::Jobs => {
                 let task = make_jobs_collection_task(&scope_orders, context.clone());
@@ -170,9 +168,9 @@ struct FlinkMetric {
 type TelemetryGenerator = Box<dyn Fn() -> Box<dyn Future<Output = Result<Telemetry, CollectionError>>>>;
 
 fn make_jobs_collection_task(
-    orders: &[FlinkMetricOrder], context: TaskContext,
+    orders: &[MetricOrder], context: TaskContext,
 ) -> Result<Option<TelemetryGenerator>, CollectionError> {
-    let mut metric_orders: HashMap<&str, &FlinkMetricOrder> = HashMap::default();
+    let mut metric_orders: HashMap<&str, &MetricOrder> = HashMap::default();
     let mut agg_span: HashSet<Aggregation> = HashSet::default();
     for o in orders.iter().filter(|o| o.scope == FlinkScope::Jobs) {
         agg_span.insert(o.agg);
@@ -191,7 +189,6 @@ fn make_jobs_collection_task(
 
 
     let gen: TelemetryGenerator = Box::new(move || {
-        // let method = reqwest::Method::GET;
         let client = context.client.clone();
         let url = url.clone();
 
