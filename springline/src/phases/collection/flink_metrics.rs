@@ -155,17 +155,17 @@ pub async fn make_flink_metrics_source(
 }
 
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
-struct FlinkMetricResponse(Vec<FlinkMetric>);
+pub struct FlinkMetricResponse(pub Vec<FlinkMetric>);
 
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
-struct FlinkMetric {
+pub struct FlinkMetric {
     pub id: String,
     #[serde(flatten)]
     pub values: HashMap<Aggregation, TelemetryValue>,
 }
 
 
-type TelemetryGenerator = Box<dyn Fn() -> Box<dyn Future<Output = Result<Telemetry, CollectionError>>>>;
+pub type TelemetryGenerator = Box<dyn Fn() -> Box<dyn Future<Output = Result<Telemetry, CollectionError>>>>;
 
 fn make_jobs_collection_task(
     orders: &[MetricOrder], context: TaskContext,

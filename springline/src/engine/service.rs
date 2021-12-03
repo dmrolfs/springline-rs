@@ -10,7 +10,7 @@ mod protocol {
     use std::collections::HashMap;
     use std::fmt::Display;
 
-    use axum::body::{self, Body, BoxBody};
+    use axum::body::{self, BoxBody};
     use axum::http::{Response, StatusCode};
     use axum::response::IntoResponse;
     use enum_display_derive::Display;
