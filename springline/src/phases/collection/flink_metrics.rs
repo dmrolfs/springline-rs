@@ -5,7 +5,7 @@ use std::pin::Pin;
 use futures::future::Future;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
-use proctor::elements::{Telemetry, TelemetryType, TelemetryValue};
+use proctor::elements::{Telemetry, TelemetryValue};
 use proctor::error::{CollectionError, TelemetryError};
 use proctor::graph::stage::WithApi;
 use proctor::phases::collection::TelemetrySource;
@@ -14,6 +14,7 @@ use reqwest_retry::policies::ExponentialBackoff;
 use reqwest_retry::RetryTransientMiddleware;
 use serde::{Deserialize, Serialize};
 use url::Url;
+use tracing_futures::Instrument;
 
 use crate::settings::{Aggregation, FlinkScope, FlinkSettings, MetricOrder};
 
@@ -155,7 +156,7 @@ where
                         Some(metric_value) => {
                             match metric_value.clone().try_cast(o.telemetry_type) {
                                 Err(err) => tracing::error!(
-                                    metric=%o.metric, ?metric_value, order=?o,
+                                    error=?err, metric=%o.metric, ?metric_value, order=?o,
                                     "flink metric response does not match ordered type - skipping."
                                 ),
                                 Ok(value) => {
@@ -219,7 +220,7 @@ pub async fn make_flink_metrics_source(
     for (scope, scope_orders) in MetricOrder::organize_by_scope(&orders).into_iter() {
         match scope {
             FlinkScope::Jobs => {
-                let task = make_jobs_collection_task(&scope_orders, context.clone());
+                let task = make_root_scope_collection_task(FlinkScope::Jobs, &scope_orders, context.clone());
                 foo.push(Box::new(task));
             },
             _ => unimplemented!(),
@@ -228,6 +229,48 @@ pub async fn make_flink_metrics_source(
 
     todo!()
 }
+
+pub fn make_root_scope_collection_task(
+    scope: FlinkScope,
+    orders: &[MetricOrder],
+    context: TaskContext,
+) -> Result<Option<TelemetryGenerator>, CollectionError> {
+    let scope = scope.to_string().to_lowercase();
+    let (metric_orders, agg_span) = distill_metric_orders_and_agg(orders);
+    if metric_orders.is_empty() {
+        return Ok(None);
+    }
+
+    let mut url = context.base_url.join(format!("{}/metrics", scope).as_str())?;
+    url.query_pairs_mut()
+        .clear()
+        .append_pair("get", metric_orders.keys().join(",").as_str())
+        .append_pair("agg", agg_span.iter().join(",").as_str());
+
+
+    let gen: TelemetryGenerator = Box::new(move || {
+        let client = context.client.clone();
+        let url = url.clone();
+        let orders = metric_orders.clone();
+
+        Box::pin(
+            async move {
+                let resp: FlinkMetricResponse = client.request(reqwest::Method::GET, url).send().await?.json().await?;
+                let telemetry = build_telemetry(resp, orders)?;
+                std::result::Result::<Telemetry, CollectionError>::Ok(telemetry)
+            }
+                .instrument(tracing::info_span!("Flink collection", %scope))
+        )
+    });
+
+    Ok(Some(gen))
+}
+
+// pub fn make_taskmanagers_collection_task(
+//     orders: &[MetricOrder], context: TaskContext,
+// ) -> Result<Option<TelemetryGenerator>, CollectionError>> {
+// todo!()
+// }
 
 /// Distills the simple list for a given Flink collection scope to target specific metrics and
 /// aggregation span.
@@ -244,36 +287,6 @@ fn distill_metric_orders_and_agg(
     }
 
     (order_domain, agg_span)
-}
-
-pub fn make_jobs_collection_task(
-    orders: &[MetricOrder], context: TaskContext,
-) -> Result<Option<TelemetryGenerator>, CollectionError> {
-    let (metric_orders, agg_span) = distill_metric_orders_and_agg(orders);
-    if metric_orders.is_empty() {
-        return Ok(None);
-    }
-
-    let mut url = context.base_url.join("jobs/metrics")?;
-    url.query_pairs_mut()
-        .clear()
-        .append_pair("get", metric_orders.keys().join(",").as_str())
-        .append_pair("agg", agg_span.iter().join(",").as_str());
-
-
-    let gen: TelemetryGenerator = Box::new(move || {
-        let client = context.client.clone();
-        let url = url.clone();
-        let orders = metric_orders.clone();
-
-        Box::pin(async move {
-            let resp: FlinkMetricResponse = client.request(reqwest::Method::GET, url).send().await?.json().await?;
-            let telemetry = build_telemetry(resp, orders)?;
-            std::result::Result::<Telemetry, CollectionError>::Ok(telemetry)
-        })
-    });
-
-    Ok(Some(gen))
 }
 
 #[cfg(test)]
