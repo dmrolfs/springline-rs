@@ -136,6 +136,31 @@ pub struct FlinkMetric {
     pub values: HashMap<Aggregation, TelemetryValue>,
 }
 
+impl FlinkMetric {
+    fn populate_telemetry<'m, O>(&self, telemetry: &mut Telemetry, orders: O, )
+    where
+        O: IntoIterator<Item = &'m MetricOrder>,
+    {
+        for o in orders.into_iter() {
+            let agg = o.agg;
+            match self.values.get(&agg) {
+                None => tracing::warn!(metric=%o.metric, %agg, "metric order not found in flink response."),
+                Some(metric_value) => {
+                    match metric_value.clone().try_cast(o.telemetry_type) {
+                        Err(err) => tracing::error!(
+                            error=?err, metric=%o.metric, ?metric_value, order=?o,
+                            "Unable to read ordered type in flink metric response - skipping."
+                        ),
+                        Ok(value) => {
+                            let _ = telemetry.insert(o.telemetry_path.clone(), value);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 #[tracing::instrument(level="debug", skip(metrics, orders))]
 pub fn build_telemetry<M>(metrics: M, orders: HashMap<String, Vec<MetricOrder>>) -> Result<Telemetry, TelemetryError>
 where
@@ -149,23 +174,7 @@ where
         match orders.get(m.id.as_str()) {
             Some(os) => {
                 satisfied.insert(m.id.clone());
-
-                for o in os {
-                    match m.values.get(&o.agg) {
-                        None => tracing::warn!(metric=%o.metric, agg=%o.agg, "metric order not found in flink response."),
-                        Some(metric_value) => {
-                            match metric_value.clone().try_cast(o.telemetry_type) {
-                                Err(err) => tracing::error!(
-                                    error=?err, metric=%o.metric, ?metric_value, order=?o,
-                                    "flink metric response does not match ordered type - skipping."
-                                ),
-                                Ok(value) => {
-                                    let _ = telemetry.insert(o.telemetry_path.clone(), value);
-                                }
-                            }
-                        }
-                    }
-                }
+                m.populate_telemetry(&mut telemetry, os);
             },
             None => {
                 tracing::warn!(unexpected_metric=?m, "unexpected metric in response not ordered - adding with minimal translation");
@@ -265,6 +274,7 @@ pub fn make_root_scope_collection_task(
 
     Ok(Some(gen))
 }
+
 
 // pub fn make_taskmanagers_collection_task(
 //     orders: &[MetricOrder], context: TaskContext,
