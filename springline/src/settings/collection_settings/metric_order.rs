@@ -158,8 +158,7 @@ pub enum FlinkScope {
 #[derive(Debug, Display, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Aggregation {
-    #[serde(rename = "value")]
-    None,
+    Value,
     Max,
     Min,
     Sum,

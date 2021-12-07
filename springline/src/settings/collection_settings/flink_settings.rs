@@ -147,7 +147,7 @@ mod tests {
             MetricOrder {
                 scope: FlinkScope::Kafka,
                 metric: "records-lag-max".to_string(),
-                agg: Aggregation::None,
+                agg: Aggregation::Value,
                 telemetry_path: "flow.input_records_lag_max".to_string(),
                 telemetry_type: TelemetryType::Integer,
             },
