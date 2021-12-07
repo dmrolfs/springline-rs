@@ -42,7 +42,7 @@ pub static STD_METRIC_ORDERS: Lazy<Vec<MetricOrder>> = Lazy::new(|| {
         ), // does not work w reactive mode
         (Task, "numRecordsInPerSecond", Max, "flow.records_in_per_sec", Float),
         (Task, "numRecordsOutPerSecond", Max, "flow.records_out_per_sec", Float),
-        (TaskManagers, "Status.JVM.CPU.LOAD", Max, "cluster.task_cpu_load", Float),
+        (TaskManagers, "Status.JVM.CPU.Load", Max, "cluster.task_cpu_load", Float),
         (
             TaskManagers,
             "Status.JVM.Memory.Heap.Used",
@@ -161,6 +161,28 @@ impl FlinkMetric {
     }
 }
 
+/// sigh -- each flink scope follows it's own metric format convention. This function attempts to
+/// fashion a corresponding aggregation suffix.
+fn suffix_for(id: &str, agg: Aggregation) -> String {
+    let forms: Lazy<regex::RegexSet> = Lazy::new(|| regex::RegexSet::new(&[
+        r##"^[a-z]+[a-zA-Z]+$"##, // camelCase: Jobs, Kinesis
+        r##"^[a-z]+[a-zA-Z]*(\.[a-z]+[a-zA-Z]*)+$"##, // .camelCase: Task vertix
+        r##"^[a-z]+[-a-z]+$"##, // kabab-case: Kafka
+        r##"^[A-Z]+[a-zA-Z]*(\.[A-Z]+[a-zA-Z]*)*$"##, // .PascalCase: TaskManagers
+    ]).unwrap());
+
+    match forms.matches(id).into_iter().take(1).next() {
+        Some(0) => format!("{}", agg), // camelCase - Jobs and Kinesis
+        Some(1) => format!(".{}", agg.to_string().to_lowercase()), // .camelCase - Task vertix
+        Some(2) => format!("-{}", agg.to_string().to_lowercase()), // kabab-case - Kafka
+        Some(3) => format!(".{}", agg), // .PascalCase - TaskManagers
+        _ => {
+            tracing::warn!(%id, %agg, "failed to correlate metric form to known Flink scopes - defaulting to camelCase");
+            format!("{}", agg)
+        }
+    }
+}
+
 #[tracing::instrument(level="debug", skip(metrics, orders))]
 pub fn build_telemetry<M>(metrics: M, orders: HashMap<String, Vec<MetricOrder>>) -> Result<Telemetry, TelemetryError>
 where
@@ -181,7 +203,7 @@ where
                 m.values
                     .into_iter()
                     .for_each(|(agg, val)| {
-                        let key = format!("{}_{}", m.id, agg);
+                        let key = format!("{}{}", m.id, suffix_for(m.id.as_str(), agg));
                         let _ = telemetry.insert(key, val);
                     });
             }
@@ -352,5 +374,19 @@ mod tests {
                 },
             ])
         );
+    }
+
+    #[test]
+    fn test_suffix_for() {
+        use self::Aggregation::*;
+
+        assert_eq!(&suffix_for("", Min), "Min");
+        assert_eq!(&suffix_for("*&^@(*#(*", Value), "Value");
+        assert_eq!(&suffix_for("uptime", Max), "Max");
+        assert_eq!(&suffix_for("numRestarts", Max), "Max");
+        assert_eq!(&suffix_for("numberOfCompletedCheckpoints", Max), "Max");
+        assert_eq!(&suffix_for("Status.JVM.CPU.Load", Max), ".Max");
+        assert_eq!(&suffix_for("buffers.inputQueueLength", Max), ".max");
+        assert_eq!(&suffix_for("records-lag-max", Value), "-value");
     }
 }
