@@ -5,7 +5,7 @@ use std::pin::Pin;
 use futures::future::Future;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
-use proctor::elements::{Telemetry, TelemetryValue};
+use proctor::elements::{Telemetry, TelemetryValue, telemetry};
 use proctor::error::{CollectionError, TelemetryError};
 use proctor::graph::stage::WithApi;
 use proctor::phases::collection::TelemetrySource;
@@ -251,7 +251,7 @@ pub async fn make_flink_metrics_source(
     for (scope, scope_orders) in MetricOrder::organize_by_scope(&orders).into_iter() {
         match scope {
             FlinkScope::Jobs => {
-                let task = make_root_scope_collection_task(FlinkScope::Jobs, &scope_orders, context.clone());
+                let task = make_root_scope_collection_generator(FlinkScope::Jobs, &scope_orders, context.clone());
                 foo.push(Box::new(task));
             },
             _ => unimplemented!(),
@@ -261,7 +261,7 @@ pub async fn make_flink_metrics_source(
     todo!()
 }
 
-pub fn make_root_scope_collection_task(
+pub fn make_root_scope_collection_generator(
     scope: FlinkScope,
     orders: &[MetricOrder],
     context: TaskContext,
@@ -298,11 +298,25 @@ pub fn make_root_scope_collection_task(
 }
 
 
-// pub fn make_taskmanagers_collection_task(
-//     orders: &[MetricOrder], context: TaskContext,
-// ) -> Result<Option<TelemetryGenerator>, CollectionError>> {
-// todo!()
-// }
+pub fn make_taskmanagers_collection_generator(context: TaskContext) -> Result<Option<TelemetryGenerator>, CollectionError> {
+    let mut url = context.base_url.join("taskmanagers/")?;
+    let gen: TelemetryGenerator = Box::new(move || {
+        let client = context.client.clone();
+        let url = url.clone();
+
+        Box::pin(
+            async move {
+                let resp: serde_json::Value = client.request(reqwest::Method::GET, url).send().await?.json().await?;
+                let taskmanagers = resp["taskmanagers"].as_array().map(|tms| tms.len()).unwrap_or(0);
+                let mut telemetry: telemetry::TableType = HashMap::default();
+                telemetry.insert("cluster.nr_task_managers".to_string(), taskmanagers.into());
+                Ok(telemetry.into())
+            }
+                .instrument(tracing::info_span!("Flink taskmanager collection", ))
+        )
+    });
+    Ok(Some(gen))
+}
 
 /// Distills the simple list for a given Flink collection scope to target specific metrics and
 /// aggregation span.

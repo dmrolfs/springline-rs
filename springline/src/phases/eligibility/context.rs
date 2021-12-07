@@ -127,9 +127,9 @@ pub struct ClusterStatus {
     #[serde(rename = "cluster.is_deploying")]
     pub is_deploying: bool,
 
-    // todo: source property via k8s describe job-manager pod in json and and
+    // todo: source property via k8s describe job-manager pod in json then
     // filter for .status.conditions until type:Ready has status:True
-    // then last_deployment is lastTranstionTime; e.g., "2021-11-22T04:28:07Z"
+    // then last_deployment is lastTransitionTime; e.g., "2021-11-22T04:28:07Z"
     #[serde(with = "proctor::serde", rename = "cluster.last_deployment")]
     pub last_deployment: DateTime<Utc>,
 }

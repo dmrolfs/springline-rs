@@ -67,7 +67,7 @@ async fn test_flink_collect_failure() {
     let url = format!("{}/", &mock_server.uri());
     let context = TaskContext { client, base_url: assert_ok!(Url::parse(url.as_str())), };
 
-    let gen = assert_some!(assert_ok!(springline::phases::collection::flink_metrics::make_root_scope_collection_task(
+    let gen = assert_some!(assert_ok!(springline::phases::collection::flink_metrics::make_root_scope_collection_generator(
         FlinkScope::Jobs,
         &orders,
         context
@@ -145,7 +145,7 @@ async fn test_flink_simple_jobs_collect() {
     let url = format!("{}/", &mock_server.uri());
     let context = TaskContext { client, base_url: assert_ok!(Url::parse(url.as_str())), };
 
-    let gen = assert_some!(assert_ok!(springline::phases::collection::flink_metrics::make_root_scope_collection_task(
+    let gen = assert_some!(assert_ok!(springline::phases::collection::flink_metrics::make_root_scope_collection_generator(
         FlinkScope::Jobs,
         &orders,
         context
@@ -224,7 +224,7 @@ async fn test_flink_retry_jobs_collect() {
     let url = format!("{}/", &mock_server.uri());
     let context = TaskContext { client, base_url: assert_ok!(Url::parse(url.as_str())), };
 
-    let gen = assert_some!(assert_ok!(springline::phases::collection::flink_metrics::make_root_scope_collection_task(
+    let gen = assert_some!(assert_ok!(springline::phases::collection::flink_metrics::make_root_scope_collection_generator(
         FlinkScope::Jobs,
         &orders,
         context
@@ -255,9 +255,9 @@ async fn test_flink_retry_jobs_collect() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 8)]
-async fn test_flink_simple_taskmanagers_collect() {
+async fn test_flink_simple_taskmanagers_scope_collect() {
     once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
-    let main_span = tracing::info_span!("test_flink_simple_taskmanagers_collect");
+    let main_span = tracing::info_span!("test_flink_simple_taskmanagers_scope_collect");
     let _ = main_span.enter();
 
     let mock_server = MockServer::start().await;
@@ -292,7 +292,7 @@ async fn test_flink_simple_taskmanagers_collect() {
     let url = format!("{}/", &mock_server.uri());
     let context = TaskContext { client, base_url: assert_ok!(Url::parse(url.as_str())), };
 
-    let gen = assert_some!(assert_ok!(springline::phases::collection::flink_metrics::make_root_scope_collection_task(
+    let gen = assert_some!(assert_ok!(springline::phases::collection::flink_metrics::make_root_scope_collection_generator(
         FlinkScope::TaskManagers,
         &orders,
         context
@@ -322,5 +322,146 @@ async fn test_flink_simple_taskmanagers_collect() {
 
     let status = assert_ok!(reqwest::get(format!("{}/missing", &mock_server.uri())).await).status();
     assert_eq!(status, 404);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 8)]
+async fn test_flink_taskmanagers_admin_collect() {
+    once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
+    let main_span = tracing::info_span!("test_flink_taskmanagers_admin_collect");
+    let _ = main_span.enter();
+
+    let mock_server = MockServer::start().await;
+
+    let b = json!({
+        "taskmanagers": [
+            {
+                "id": "100.97.247.74:43435-69a783",
+                "path": "akka.tcp://flink@100.97.247.74:43435/user/rpc/taskmanager_0",
+                "dataPort": 42381,
+                "jmxPort": -1,
+                "timeSinceLastHeartbeat": 1638856220901_i64,
+                "slotsNumber": 1,
+                "freeSlots": 0,
+                "totalResource": {
+                    "cpuCores": 1.0,
+                    "taskHeapMemory": 3327,
+                    "taskOffHeapMemory": 0,
+                    "managedMemory": 2867,
+                    "networkMemory": 716,
+                    "extendedResources": {}
+                },
+                "freeResource": {
+                    "cpuCores": 0.0,
+                    "taskHeapMemory": 0,
+                    "taskOffHeapMemory": 0,
+                    "managedMemory": 0,
+                    "networkMemory": 0,
+                    "extendedResources": {}
+                },
+                "hardware": {
+                    "cpuCores": 1,
+                    "physicalMemory": 267929460736_i64,
+                    "freeMemory": 3623878656_i64,
+                    "managedMemory": 3006477152_i64
+                },
+                "memoryConfiguration": {
+                    "frameworkHeap": 134217728_i64,
+                    "taskHeap": 3489660872_i64,
+                    "frameworkOffHeap": 134217728_i64,
+                    "taskOffHeap": 0,
+                    "networkMemory": 751619288_i64,
+                    "managedMemory": 3006477152_i64,
+                    "jvmMetaspace": 268435456_i64,
+                    "jvmOverhead": 864958705_i64,
+                    "totalFlinkMemory": 7516192768_i64,
+                    "totalProcessMemory": 8649586929_i64
+                }
+            },
+            {
+                "id": "100.97.247.74:43435-69a798",
+                "path": "akka.tcp://flink@100.97.247.74:43435/user/rpc/taskmanager_1",
+                "dataPort": 42381,
+                "jmxPort": -1,
+                "timeSinceLastHeartbeat": 1638856220901_i64,
+                "slotsNumber": 1,
+                "freeSlots": 0,
+                "totalResource": {
+                    "cpuCores": 1.0,
+                    "taskHeapMemory": 3327,
+                    "taskOffHeapMemory": 0,
+                    "managedMemory": 2867,
+                    "networkMemory": 716,
+                    "extendedResources": {}
+                },
+                "freeResource": {
+                    "cpuCores": 0.0,
+                    "taskHeapMemory": 0,
+                    "taskOffHeapMemory": 0,
+                    "managedMemory": 0,
+                    "networkMemory": 0,
+                    "extendedResources": {}
+                },
+                "hardware": {
+                    "cpuCores": 1,
+                    "physicalMemory": 267929460736_i64,
+                    "freeMemory": 3623878656_i64,
+                    "managedMemory": 3006477152_i64
+                },
+                "memoryConfiguration": {
+                    "frameworkHeap": 134217728_i64,
+                    "taskHeap": 3489660872_i64,
+                    "frameworkOffHeap": 134217728_i64,
+                    "taskOffHeap": 0,
+                    "networkMemory": 751619288_i64,
+                    "managedMemory": 3006477152_i64,
+                    "jvmMetaspace": 268435456_i64,
+                    "jvmOverhead": 864958705_i64,
+                    "totalFlinkMemory": 7516192768_i64,
+                    "totalProcessMemory": 8649586929_i64
+                }
+            }
+        ]
+    });
+
+    let metric_response = ResponseTemplate::new(200).set_body_json(b);
+
+    Mock::given(method("GET"))
+        .and(path("/taskmanagers/"))
+        .respond_with(metric_response)
+        .expect(2)
+        .mount(&mock_server)
+        .await;
+
+    let client = assert_ok!(reqwest::Client::builder().default_headers(HeaderMap::default()).build());
+    let retry_policy = ExponentialBackoff::builder().build_with_max_retries(3);
+    let client = ClientBuilder::new(client)
+        .with(RetryTransientMiddleware::new_with_policy(retry_policy))
+        .build();
+    let url = format!("{}/", &mock_server.uri());
+    let context = TaskContext {
+        client,
+        // base_url: assert_ok!(Url::parse("http://localhost:8081/")),
+        base_url: assert_ok!(Url::parse(url.as_str())),
+    };
+
+    let gen = assert_some!(assert_ok!(springline::phases::collection::flink_metrics::make_taskmanagers_collection_generator(
+        context
+    )));
+
+    let actual: Telemetry = assert_ok!(gen().await);
+    assert_eq!(
+        actual,
+        maplit::hashmap! {
+            "cluster.nr_task_managers".to_string() => 2.into(),
+        }.into()
+    );
+
+    let actual: Telemetry = assert_ok!(gen().await);
+    assert_eq!(
+        actual,
+        maplit::hashmap! {
+            "cluster.nr_task_managers".to_string() => 2.into(),
+        }.into()
+    );
 }
 
