@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::time::Duration;
 
 use claim::*;
@@ -119,7 +120,7 @@ impl TestFlow {
         Ok(command_rx.1.await?)
     }
 
-    pub async fn recv_policy_event(&mut self) -> anyhow::Result<elements::PolicyFilterEvent<Data, Context>> {
+    pub async fn recv_policy_event(&mut self) -> anyhow::Result<Arc<elements::PolicyFilterEvent<Data, Context>>> {
         Ok(self.rx_governance_monitor.recv().await?)
     }
 
@@ -160,8 +161,8 @@ impl TestFlow {
 
         assert_ok!(self.push_data(data).await);
         claim::assert_matches!(
-            assert_ok!(self.rx_governance_monitor.recv().await),
-            PolicyFilterEvent::ItemPassed(_)
+            &*assert_ok!(self.rx_governance_monitor.recv().await),
+            &PolicyFilterEvent::ItemPassed(_)
         );
 
         let result = assert_ok!(
@@ -305,9 +306,9 @@ async fn test_flink_governance_flow_simple_and_happy() -> anyhow::Result<()> {
     tracing::info!(?context, "pushing test context...");
     assert_ok!(flow.push_context(context).await);
 
-    let event = assert_ok!(flow.recv_policy_event().await);
+    let event = &*assert_ok!(flow.recv_policy_event().await);
     tracing::info!(?event, "received policy event.");
-    claim::assert_matches!(event, elements::PolicyFilterEvent::ContextChanged(_));
+    claim::assert_matches!(event, &elements::PolicyFilterEvent::ContextChanged(_));
 
     let timestamp = Timestamp::new_secs(*super::fixtures::DT_1_TS);
     assert_ok!(
@@ -363,9 +364,9 @@ async fn test_flink_governance_flow_simple_below_min_cluster_size() -> anyhow::R
     tracing::info!(?context, "pushing test context...");
     assert_ok!(flow.push_context(context).await);
 
-    let event = assert_ok!(flow.recv_policy_event().await);
+    let event = &*assert_ok!(flow.recv_policy_event().await);
     tracing::info!(?event, "received policy event.");
-    claim::assert_matches!(event, elements::PolicyFilterEvent::ContextChanged(_));
+    claim::assert_matches!(event, &elements::PolicyFilterEvent::ContextChanged(_));
 
     let timestamp = Timestamp::new_secs(*super::fixtures::DT_1_TS);
     assert_ok!(
@@ -421,9 +422,9 @@ async fn test_flink_governance_flow_simple_above_max_cluster_size() -> anyhow::R
     tracing::info!(?context, "pushing test context...");
     assert_ok!(flow.push_context(context).await);
 
-    let event = assert_ok!(flow.recv_policy_event().await);
+    let event = &*assert_ok!(flow.recv_policy_event().await);
     tracing::info!(?event, "received policy event.");
-    claim::assert_matches!(event, elements::PolicyFilterEvent::ContextChanged(_));
+    claim::assert_matches!(event, &elements::PolicyFilterEvent::ContextChanged(_));
 
     let timestamp = Timestamp::new_secs(*super::fixtures::DT_1_TS);
     assert_ok!(
@@ -479,9 +480,9 @@ async fn test_flink_governance_flow_simple_step_up_too_big() -> anyhow::Result<(
     tracing::info!(?context, "pushing test context...");
     assert_ok!(flow.push_context(context).await);
 
-    let event = assert_ok!(flow.recv_policy_event().await);
+    let event = &*assert_ok!(flow.recv_policy_event().await);
     tracing::info!(?event, "received policy event.");
-    claim::assert_matches!(event, elements::PolicyFilterEvent::ContextChanged(_));
+    claim::assert_matches!(event, &elements::PolicyFilterEvent::ContextChanged(_));
 
     let timestamp = Timestamp::new_secs(*super::fixtures::DT_1_TS);
     assert_ok!(
@@ -537,9 +538,9 @@ async fn test_flink_governance_flow_simple_step_down_too_big() -> anyhow::Result
     tracing::info!(?context, "pushing test context...");
     assert_ok!(flow.push_context(context).await);
 
-    let event = assert_ok!(flow.recv_policy_event().await);
+    let event = &*assert_ok!(flow.recv_policy_event().await);
     tracing::info!(?event, "received policy event.");
-    claim::assert_matches!(event, elements::PolicyFilterEvent::ContextChanged(_));
+    claim::assert_matches!(event, &elements::PolicyFilterEvent::ContextChanged(_));
 
     let timestamp = Timestamp::new_secs(*super::fixtures::DT_1_TS);
     assert_ok!(
@@ -598,9 +599,9 @@ async fn test_flink_governance_flow_simple_step_up_before_max() -> anyhow::Resul
     tracing::info!(?context, "pushing test context...");
     assert_ok!(flow.push_context(context).await);
 
-    let event = assert_ok!(flow.recv_policy_event().await);
+    let event = &*assert_ok!(flow.recv_policy_event().await);
     tracing::info!(?event, "received policy event.");
-    claim::assert_matches!(event, elements::PolicyFilterEvent::ContextChanged(_));
+    claim::assert_matches!(event, &elements::PolicyFilterEvent::ContextChanged(_));
 
     let timestamp = Timestamp::new_secs(*super::fixtures::DT_1_TS);
     assert_ok!(
@@ -656,9 +657,9 @@ async fn test_flink_governance_flow_simple_step_down_before_min() -> anyhow::Res
     tracing::info!(?context, "pushing test context...");
     assert_ok!(flow.push_context(context).await);
 
-    let event = assert_ok!(flow.recv_policy_event().await);
+    let event = &*assert_ok!(flow.recv_policy_event().await);
     tracing::info!(?event, "received policy event.");
-    claim::assert_matches!(event, elements::PolicyFilterEvent::ContextChanged(_));
+    claim::assert_matches!(event, &elements::PolicyFilterEvent::ContextChanged(_));
 
     let timestamp = Timestamp::new_secs(*super::fixtures::DT_1_TS);
     assert_ok!(

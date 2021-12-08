@@ -1,6 +1,7 @@
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
+
 use claim::*;
 use fake::{Fake, Faker};
 use pretty_assertions::assert_eq;
@@ -10,11 +11,11 @@ use reqwest_middleware::ClientBuilder;
 use reqwest_retry::policies::ExponentialBackoff;
 use reqwest_retry::RetryTransientMiddleware;
 use serde_json::json;
-use url::Url;
+use springline::phases::collection::flink_metrics::TaskContext;
 use springline::settings::FlinkScope;
+use url::Url;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, Respond, ResponseTemplate};
-use springline::phases::collection::flink_metrics::TaskContext;
 
 pub struct RetryResponder(Arc<AtomicU32>, u32, ResponseTemplate, u16);
 
@@ -25,7 +26,7 @@ impl RetryResponder {
 }
 
 impl Respond for RetryResponder {
-    #[tracing::instrument(level="info", skip(self),)]
+    #[tracing::instrument(level = "info", skip(self))]
     fn respond(&self, _request: &wiremock::Request) -> ResponseTemplate {
         let mut attempts = self.0.load(Ordering::SeqCst);
         attempts += 1;
@@ -59,19 +60,23 @@ async fn test_flink_collect_failure() {
 
     let orders = &springline::phases::collection::flink_metrics::STD_METRIC_ORDERS;
     let client = assert_ok!(reqwest::Client::builder().default_headers(HeaderMap::default()).build());
-    let retry_policy = ExponentialBackoff::builder()
-        .build_with_total_retry_duration(Duration::from_secs(2));
+    let retry_policy = ExponentialBackoff::builder().build_with_total_retry_duration(Duration::from_secs(2));
     let client = ClientBuilder::new(client)
         .with(RetryTransientMiddleware::new_with_policy(retry_policy))
         .build();
     let url = format!("{}/", &mock_server.uri());
-    let context = TaskContext { client, base_url: assert_ok!(Url::parse(url.as_str())), };
+    let context = TaskContext {
+        client,
+        base_url: assert_ok!(Url::parse(url.as_str())),
+    };
 
-    let gen = assert_some!(assert_ok!(springline::phases::collection::flink_metrics::make_root_scope_collection_generator(
-        FlinkScope::Jobs,
-        &orders,
-        context
-    )));
+    let gen = assert_some!(assert_ok!(
+        springline::phases::collection::flink_metrics::make_root_scope_collection_generator(
+            FlinkScope::Jobs,
+            &orders,
+            context
+        )
+    ));
 
     assert_err!(gen().await, "Checking for error passed back after retries.");
 }
@@ -143,13 +148,18 @@ async fn test_flink_simple_jobs_collect() {
         .with(RetryTransientMiddleware::new_with_policy(retry_policy))
         .build();
     let url = format!("{}/", &mock_server.uri());
-    let context = TaskContext { client, base_url: assert_ok!(Url::parse(url.as_str())), };
+    let context = TaskContext {
+        client,
+        base_url: assert_ok!(Url::parse(url.as_str())),
+    };
 
-    let gen = assert_some!(assert_ok!(springline::phases::collection::flink_metrics::make_root_scope_collection_generator(
-        FlinkScope::Jobs,
-        &orders,
-        context
-    )));
+    let gen = assert_some!(assert_ok!(
+        springline::phases::collection::flink_metrics::make_root_scope_collection_generator(
+            FlinkScope::Jobs,
+            &orders,
+            context
+        )
+    ));
 
     let actual: Telemetry = assert_ok!(gen().await);
     assert_eq!(
@@ -158,7 +168,8 @@ async fn test_flink_simple_jobs_collect() {
             "health.job_uptime_millis".to_string() => uptime.into(),
             "health.job_nr_restarts".to_string() => restarts.into(),
             "health.job_nr_failed_checkpoints".to_string() => failed_checkpts.into(),
-        }.into()
+        }
+        .into()
     );
 
     let actual: Telemetry = assert_ok!(gen().await);
@@ -168,7 +179,8 @@ async fn test_flink_simple_jobs_collect() {
             "health.job_uptime_millis".to_string() => uptime.into(),
             "health.job_nr_restarts".to_string() => restarts.into(),
             "health.job_nr_failed_checkpoints".to_string() => failed_checkpts.into(),
-        }.into()
+        }
+        .into()
     );
 
     let status = assert_ok!(reqwest::get(format!("{}/missing", &mock_server.uri())).await).status();
@@ -202,11 +214,7 @@ async fn test_flink_retry_jobs_collect() {
         }
     ]);
 
-    let metric_response = RetryResponder::new(
-        1,
-        500,
-        ResponseTemplate::new(200).set_body_json(b)
-    );
+    let metric_response = RetryResponder::new(1, 500, ResponseTemplate::new(200).set_body_json(b));
 
     Mock::given(method("GET"))
         .and(path("/jobs/metrics"))
@@ -222,13 +230,18 @@ async fn test_flink_retry_jobs_collect() {
         .with(RetryTransientMiddleware::new_with_policy(retry_policy))
         .build();
     let url = format!("{}/", &mock_server.uri());
-    let context = TaskContext { client, base_url: assert_ok!(Url::parse(url.as_str())), };
+    let context = TaskContext {
+        client,
+        base_url: assert_ok!(Url::parse(url.as_str())),
+    };
 
-    let gen = assert_some!(assert_ok!(springline::phases::collection::flink_metrics::make_root_scope_collection_generator(
-        FlinkScope::Jobs,
-        &orders,
-        context
-    )));
+    let gen = assert_some!(assert_ok!(
+        springline::phases::collection::flink_metrics::make_root_scope_collection_generator(
+            FlinkScope::Jobs,
+            &orders,
+            context
+        )
+    ));
 
     let actual: Telemetry = assert_ok!(gen().await);
     assert_eq!(
@@ -237,7 +250,8 @@ async fn test_flink_retry_jobs_collect() {
             "health.job_uptime_millis".to_string() => uptime.into(),
             "health.job_nr_restarts".to_string() => restarts.into(),
             "health.job_nr_failed_checkpoints".to_string() => failed_checkpts.into(),
-        }.into()
+        }
+        .into()
     );
 
     let actual: Telemetry = assert_ok!(gen().await);
@@ -247,7 +261,8 @@ async fn test_flink_retry_jobs_collect() {
             "health.job_uptime_millis".to_string() => uptime.into(),
             "health.job_nr_restarts".to_string() => restarts.into(),
             "health.job_nr_failed_checkpoints".to_string() => failed_checkpts.into(),
-        }.into()
+        }
+        .into()
     );
 
     let status = assert_ok!(reqwest::get(format!("{}/missing", &mock_server.uri())).await).status();
@@ -290,13 +305,18 @@ async fn test_flink_simple_taskmanagers_scope_collect() {
         .with(RetryTransientMiddleware::new_with_policy(retry_policy))
         .build();
     let url = format!("{}/", &mock_server.uri());
-    let context = TaskContext { client, base_url: assert_ok!(Url::parse(url.as_str())), };
+    let context = TaskContext {
+        client,
+        base_url: assert_ok!(Url::parse(url.as_str())),
+    };
 
-    let gen = assert_some!(assert_ok!(springline::phases::collection::flink_metrics::make_root_scope_collection_generator(
-        FlinkScope::TaskManagers,
-        &orders,
-        context
-    )));
+    let gen = assert_some!(assert_ok!(
+        springline::phases::collection::flink_metrics::make_root_scope_collection_generator(
+            FlinkScope::TaskManagers,
+            &orders,
+            context
+        )
+    ));
 
     let actual: Telemetry = assert_ok!(gen().await);
     assert_eq!(
@@ -306,7 +326,8 @@ async fn test_flink_simple_taskmanagers_scope_collect() {
             "cluster.task_heap_memory_used".to_string() => heap_used.into(),
             "cluster.task_heap_memory_committed".to_string() => heap_committed.into(),
             "cluster.task_nr_threads".to_string() => nr_threads.into(),
-        }.into()
+        }
+        .into()
     );
 
     let actual: Telemetry = assert_ok!(gen().await);
@@ -317,7 +338,8 @@ async fn test_flink_simple_taskmanagers_scope_collect() {
             "cluster.task_heap_memory_used".to_string() => heap_used.into(),
             "cluster.task_heap_memory_committed".to_string() => heap_committed.into(),
             "cluster.task_nr_threads".to_string() => nr_threads.into(),
-        }.into()
+        }
+        .into()
     );
 
     let status = assert_ok!(reqwest::get(format!("{}/missing", &mock_server.uri())).await).status();
@@ -444,16 +466,17 @@ async fn test_flink_taskmanagers_admin_collect() {
         base_url: assert_ok!(Url::parse(url.as_str())),
     };
 
-    let gen = assert_some!(assert_ok!(springline::phases::collection::flink_metrics::make_taskmanagers_collection_generator(
-        context
-    )));
+    let gen = assert_some!(assert_ok!(
+        springline::phases::collection::flink_metrics::make_taskmanagers_collection_generator(context)
+    ));
 
     let actual: Telemetry = assert_ok!(gen().await);
     assert_eq!(
         actual,
         maplit::hashmap! {
             "cluster.nr_task_managers".to_string() => 2.into(),
-        }.into()
+        }
+        .into()
     );
 
     let actual: Telemetry = assert_ok!(gen().await);
@@ -461,7 +484,7 @@ async fn test_flink_taskmanagers_admin_collect() {
         actual,
         maplit::hashmap! {
             "cluster.nr_task_managers".to_string() => 2.into(),
-        }.into()
+        }
+        .into()
     );
 }
-

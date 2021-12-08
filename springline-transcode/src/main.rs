@@ -1,6 +1,6 @@
 use std::io::Write;
 use std::str::FromStr;
-use std::{env, fs, io, path};
+use std::{fs, io, path};
 
 use clap::{App, Arg};
 use thiserror::Error;

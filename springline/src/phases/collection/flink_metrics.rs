@@ -5,7 +5,7 @@ use std::pin::Pin;
 use futures::future::Future;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
-use proctor::elements::{Telemetry, TelemetryValue, telemetry};
+use proctor::elements::{telemetry, Telemetry, TelemetryValue};
 use proctor::error::{CollectionError, TelemetryError};
 use proctor::graph::stage::WithApi;
 use proctor::phases::collection::TelemetrySource;
@@ -13,8 +13,8 @@ use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
 use reqwest_retry::policies::ExponentialBackoff;
 use reqwest_retry::RetryTransientMiddleware;
 use serde::{Deserialize, Serialize};
-use url::Url;
 use tracing_futures::Instrument;
+use url::Url;
 
 use crate::settings::{Aggregation, FlinkScope, FlinkSettings, MetricOrder};
 
@@ -120,13 +120,13 @@ impl fmt::Debug for TaskContext {
 pub struct FlinkMetricResponse(pub Vec<FlinkMetric>);
 
 impl IntoIterator for FlinkMetricResponse {
-    type Item = FlinkMetric;
     type IntoIter = std::vec::IntoIter<Self::Item>;
+    type Item = FlinkMetric;
+
     fn into_iter(self) -> Self::IntoIter {
         self.0.into_iter()
     }
 }
-
 
 
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -137,7 +137,7 @@ pub struct FlinkMetric {
 }
 
 impl FlinkMetric {
-    fn populate_telemetry<'m, O>(&self, telemetry: &mut Telemetry, orders: O, )
+    fn populate_telemetry<'m, O>(&self, telemetry: &mut Telemetry, orders: O)
     where
         O: IntoIterator<Item = &'m MetricOrder>,
     {
@@ -145,17 +145,15 @@ impl FlinkMetric {
             let agg = o.agg;
             match self.values.get(&agg) {
                 None => tracing::warn!(metric=%o.metric, %agg, "metric order not found in flink response."),
-                Some(metric_value) => {
-                    match metric_value.clone().try_cast(o.telemetry_type) {
-                        Err(err) => tracing::error!(
-                            error=?err, metric=%o.metric, ?metric_value, order=?o,
-                            "Unable to read ordered type in flink metric response - skipping."
-                        ),
-                        Ok(value) => {
-                            let _ = telemetry.insert(o.telemetry_path.clone(), value);
-                        }
-                    }
-                }
+                Some(metric_value) => match metric_value.clone().try_cast(o.telemetry_type) {
+                    Err(err) => tracing::error!(
+                        error=?err, metric=%o.metric, ?metric_value, order=?o,
+                        "Unable to read ordered type in flink metric response - skipping."
+                    ),
+                    Ok(value) => {
+                        let _ = telemetry.insert(o.telemetry_path.clone(), value);
+                    },
+                },
             }
         }
     }
@@ -164,26 +162,29 @@ impl FlinkMetric {
 /// sigh -- each flink scope follows it's own metric format convention. This function attempts to
 /// fashion a corresponding aggregation suffix.
 fn suffix_for(id: &str, agg: Aggregation) -> String {
-    let forms: Lazy<regex::RegexSet> = Lazy::new(|| regex::RegexSet::new(&[
-        r##"^[a-z]+[a-zA-Z]+$"##, // camelCase: Jobs, Kinesis
-        r##"^[a-z]+[a-zA-Z]*(\.[a-z]+[a-zA-Z]*)+$"##, // .camelCase: Task vertix
-        r##"^[a-z]+[-a-z]+$"##, // kabab-case: Kafka
-        r##"^[A-Z]+[a-zA-Z]*(\.[A-Z]+[a-zA-Z]*)*$"##, // .PascalCase: TaskManagers
-    ]).unwrap());
+    let forms: Lazy<regex::RegexSet> = Lazy::new(|| {
+        regex::RegexSet::new(&[
+            r##"^[a-z]+[a-zA-Z]+$"##,                     // camelCase: Jobs, Kinesis
+            r##"^[a-z]+[a-zA-Z]*(\.[a-z]+[a-zA-Z]*)+$"##, // .camelCase: Task vertix
+            r##"^[a-z]+[-a-z]+$"##,                       // kabab-case: Kafka
+            r##"^[A-Z]+[a-zA-Z]*(\.[A-Z]+[a-zA-Z]*)*$"##, // .PascalCase: TaskManagers
+        ])
+        .unwrap()
+    });
 
     match forms.matches(id).into_iter().take(1).next() {
-        Some(0) => format!("{}", agg), // camelCase - Jobs and Kinesis
+        Some(0) => format!("{}", agg),                             // camelCase - Jobs and Kinesis
         Some(1) => format!(".{}", agg.to_string().to_lowercase()), // .camelCase - Task vertix
         Some(2) => format!("-{}", agg.to_string().to_lowercase()), // kabab-case - Kafka
-        Some(3) => format!(".{}", agg), // .PascalCase - TaskManagers
+        Some(3) => format!(".{}", agg),                            // .PascalCase - TaskManagers
         _ => {
             tracing::warn!(%id, %agg, "failed to correlate metric form to known Flink scopes - defaulting to camelCase");
             format!("{}", agg)
-        }
+        },
     }
 }
 
-#[tracing::instrument(level="debug", skip(metrics, orders))]
+#[tracing::instrument(level = "debug", skip(metrics, orders))]
 pub fn build_telemetry<M>(metrics: M, orders: HashMap<String, Vec<MetricOrder>>) -> Result<Telemetry, TelemetryError>
 where
     M: IntoIterator<Item = FlinkMetric>,
@@ -200,13 +201,11 @@ where
             },
             None => {
                 tracing::warn!(unexpected_metric=?m, "unexpected metric in response not ordered - adding with minimal translation");
-                m.values
-                    .into_iter()
-                    .for_each(|(agg, val)| {
-                        let key = format!("{}{}", m.id, suffix_for(m.id.as_str(), agg));
-                        let _ = telemetry.insert(key, val);
-                    });
-            }
+                m.values.into_iter().for_each(|(agg, val)| {
+                    let key = format!("{}{}", m.id, suffix_for(m.id.as_str(), agg));
+                    let _ = telemetry.insert(key, val);
+                });
+            },
         }
     }
 
@@ -262,9 +261,7 @@ pub async fn make_flink_metrics_source(
 }
 
 pub fn make_root_scope_collection_generator(
-    scope: FlinkScope,
-    orders: &[MetricOrder],
-    context: TaskContext,
+    scope: FlinkScope, orders: &[MetricOrder], context: TaskContext,
 ) -> Result<Option<TelemetryGenerator>, CollectionError> {
     let scope = scope.to_string().to_lowercase();
     let (metric_orders, agg_span) = distill_metric_orders_and_agg(orders);
@@ -290,7 +287,7 @@ pub fn make_root_scope_collection_generator(
                 let telemetry = build_telemetry(resp, orders)?;
                 std::result::Result::<Telemetry, CollectionError>::Ok(telemetry)
             }
-                .instrument(tracing::info_span!("Flink collection", %scope))
+            .instrument(tracing::info_span!("Flink collection", %scope)),
         )
     });
 
@@ -298,7 +295,9 @@ pub fn make_root_scope_collection_generator(
 }
 
 
-pub fn make_taskmanagers_collection_generator(context: TaskContext) -> Result<Option<TelemetryGenerator>, CollectionError> {
+pub fn make_taskmanagers_collection_generator(
+    context: TaskContext,
+) -> Result<Option<TelemetryGenerator>, CollectionError> {
     let mut url = context.base_url.join("taskmanagers/")?;
     let gen: TelemetryGenerator = Box::new(move || {
         let client = context.client.clone();
@@ -312,7 +311,7 @@ pub fn make_taskmanagers_collection_generator(context: TaskContext) -> Result<Op
                 telemetry.insert("cluster.nr_task_managers".to_string(), taskmanagers.into());
                 Ok(telemetry.into())
             }
-                .instrument(tracing::info_span!("Flink taskmanager collection", ))
+            .instrument(tracing::info_span!("Flink taskmanager collection",)),
         )
     });
     Ok(Some(gen))
@@ -320,10 +319,8 @@ pub fn make_taskmanagers_collection_generator(context: TaskContext) -> Result<Op
 
 /// Distills the simple list for a given Flink collection scope to target specific metrics and
 /// aggregation span.
-fn distill_metric_orders_and_agg(
-    orders: &[MetricOrder]
-) -> (HashMap<String, Vec<MetricOrder>>, HashSet<Aggregation>) {
-    let mut order_domain= HashMap::default();
+fn distill_metric_orders_and_agg(orders: &[MetricOrder]) -> (HashMap<String, Vec<MetricOrder>>, HashSet<Aggregation>) {
+    let mut order_domain = HashMap::default();
     let mut agg_span = HashSet::default();
 
     for o in orders {

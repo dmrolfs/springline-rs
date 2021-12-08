@@ -1,4 +1,4 @@
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
@@ -117,7 +117,7 @@ impl TestFlow {
         Ok(command_rx.1.await?)
     }
 
-    pub async fn recv_policy_event(&mut self) -> anyhow::Result<elements::PolicyFilterEvent<Data, Context>> {
+    pub async fn recv_policy_event(&mut self) -> anyhow::Result<Arc<elements::PolicyFilterEvent<Data, Context>>> {
         Ok(self.rx_stage_monitor.recv().await?)
     }
 
@@ -156,8 +156,8 @@ impl TestFlow {
 
         assert_ok!(self.push_data(data).await);
         claim::assert_matches!(
-            assert_ok!(self.rx_stage_monitor.recv().await),
-            PolicyFilterEvent::ItemPassed(_)
+            &*assert_ok!(self.rx_stage_monitor.recv().await),
+            &PolicyFilterEvent::ItemPassed(_)
         );
 
         let result = assert_ok!(
@@ -308,16 +308,16 @@ async fn test_flink_eligibility_happy_flow() -> anyhow::Result<()> {
     tracing::info!(?ctx_1, "pushing test context...");
     assert_ok!(flow.push_context(ctx_1).await);
 
-    let event = assert_ok!(flow.recv_policy_event().await);
+    let event = &*assert_ok!(flow.recv_policy_event().await);
     tracing::info!(?event, "received policy event.");
-    claim::assert_matches!(event, elements::PolicyFilterEvent::ContextChanged(_));
+    claim::assert_matches!(event, &elements::PolicyFilterEvent::ContextChanged(_));
 
     let data_1 = make_test_item(maplit::hashmap! {"foo".to_string() => "bar".into()});
     flow.push_data(data_1.clone()).await?;
 
-    let event = assert_ok!(flow.recv_policy_event().await);
+    let event = &*assert_ok!(flow.recv_policy_event().await);
     tracing::info!(?event, "received policy event.");
-    claim::assert_matches!(event, elements::PolicyFilterEvent::ItemPassed(_));
+    claim::assert_matches!(event, &elements::PolicyFilterEvent::ItemPassed(_));
     Ok(())
 }
 
@@ -357,16 +357,16 @@ async fn test_flink_eligibility_block_on_active_deployment() -> anyhow::Result<(
     tracing::info!(?ctx_1, "pushing test context...");
     assert_ok!(flow.push_context(ctx_1).await);
 
-    let event = assert_ok!(flow.recv_policy_event().await);
+    let event = &*assert_ok!(flow.recv_policy_event().await);
     tracing::info!(?event, "received policy event.");
-    claim::assert_matches!(event, elements::PolicyFilterEvent::ContextChanged(_));
+    claim::assert_matches!(event, &elements::PolicyFilterEvent::ContextChanged(_));
 
     let data_1 = make_test_item(maplit::hashmap! {"foo".to_string() => "bar".into()});
     flow.push_data(data_1.clone()).await?;
 
-    let event = assert_ok!(flow.recv_policy_event().await);
+    let event = &*assert_ok!(flow.recv_policy_event().await);
     tracing::info!(?event, "received policy event.");
-    claim::assert_matches!(event, elements::PolicyFilterEvent::ItemBlocked(_));
+    claim::assert_matches!(event, &elements::PolicyFilterEvent::ItemBlocked(_));
     Ok(())
 }
 
@@ -410,16 +410,16 @@ async fn test_flink_eligibility_block_on_recent_deployment() -> anyhow::Result<(
     tracing::info!(?ctx_cold, "pushing test context...");
     assert_ok!(flow.push_context(ctx_cold).await);
 
-    let event = assert_ok!(flow.recv_policy_event().await);
+    let event = &*assert_ok!(flow.recv_policy_event().await);
     tracing::info!(?event, "received policy event.");
-    claim::assert_matches!(event, elements::PolicyFilterEvent::ContextChanged(_));
+    claim::assert_matches!(event, &elements::PolicyFilterEvent::ContextChanged(_));
 
     let data_1 = make_test_item(maplit::hashmap! {"foo".to_string() => "bar".into()});
     flow.push_data(data_1.clone()).await?;
 
-    let event = assert_ok!(flow.recv_policy_event().await);
+    let event = &*assert_ok!(flow.recv_policy_event().await);
     tracing::info!(?event, "received policy event.");
-    claim::assert_matches!(event, elements::PolicyFilterEvent::ItemBlocked(_));
+    claim::assert_matches!(event, &elements::PolicyFilterEvent::ItemBlocked(_));
 
     Ok(())
 }
@@ -464,16 +464,16 @@ async fn test_flink_eligibility_block_on_recent_failure() -> anyhow::Result<()> 
     tracing::info!(?ctx, "pushing test context...");
     assert_ok!(flow.push_context(ctx).await);
 
-    let event = assert_ok!(flow.recv_policy_event().await);
+    let event = &*assert_ok!(flow.recv_policy_event().await);
     tracing::info!(?event, "received policy event.");
-    claim::assert_matches!(event, elements::PolicyFilterEvent::ContextChanged(_));
+    claim::assert_matches!(event, &elements::PolicyFilterEvent::ContextChanged(_));
 
     let data_1 = make_test_item(maplit::hashmap! {"foo".to_string() => "bar".into()});
     flow.push_data(data_1.clone()).await?;
 
-    let event = assert_ok!(flow.recv_policy_event().await);
+    let event = &*assert_ok!(flow.recv_policy_event().await);
     tracing::info!(?event, "received policy event.");
-    claim::assert_matches!(event, elements::PolicyFilterEvent::ItemBlocked(_));
+    claim::assert_matches!(event, &elements::PolicyFilterEvent::ItemBlocked(_));
 
     Ok(())
 }

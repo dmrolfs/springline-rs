@@ -1,6 +1,7 @@
 use proctor::elements::PolicyOutcome;
 use proctor::graph::stage;
 use proctor::graph::stage::ThroughStage;
+use proctor::SharedString;
 
 use super::policy::ADJUSTED_TARGET;
 use crate::phases::governance::context::GovernanceContext;
@@ -9,7 +10,9 @@ use crate::phases::plan::ScalePlan;
 type Item = ScalePlan;
 type Context = GovernanceContext;
 
-pub fn make_governance_transform(name: impl Into<String>) -> impl ThroughStage<PolicyOutcome<Item, Context>, Item> {
+pub fn make_governance_transform(
+    name: impl Into<SharedString>,
+) -> impl ThroughStage<PolicyOutcome<Item, Context>, Item> {
     let stage = stage::FilterMap::new(name, move |outcome: PolicyOutcome<Item, Context>| {
         let adjusted_target = outcome
             .policy_results

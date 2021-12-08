@@ -6,7 +6,7 @@ use itertools::Itertools;
 use proctor::elements::{PolicyOutcome, TelemetryType, TelemetryValue, ToTelemetry};
 use proctor::error::{DecisionError, TelemetryError};
 use proctor::graph::stage::{self, ThroughStage};
-use proctor::{AppData, ProctorContext};
+use proctor::{AppData, ProctorContext, SharedString};
 
 pub const DECISION_BINDING: &'static str = "direction";
 pub const SCALE_UP: &'static str = "up";
@@ -17,7 +17,7 @@ pub fn make_decision_transform<T, C, S>(name: S) -> impl ThroughStage<PolicyOutc
 where
     T: AppData + PartialEq,
     C: ProctorContext,
-    S: Into<String>,
+    S: Into<SharedString>,
 {
     stage::Map::new(name, move |outcome: PolicyOutcome<T, C>| {
         let transform_span = tracing::info_span!(

@@ -1,5 +1,7 @@
 use std::fmt;
+use std::sync::Arc;
 
+use enumflags2::{bitflags, BitFlags};
 use lazy_static::lazy_static;
 use proctor::phases::plan::PlanMonitor;
 use prometheus::{IntCounter, IntCounterVec, IntGauge, Opts};
@@ -10,6 +12,19 @@ use crate::phases::decision::{DecisionEvent, DecisionMonitor};
 use crate::phases::eligibility::{EligibilityEvent, EligibilityMonitor};
 use crate::phases::governance::{GovernanceEvent, GovernanceMonitor};
 use crate::phases::plan::{PlanEvent, PlanningStrategy};
+
+#[bitflags(default = Collection | Plan | Execution)]
+#[repr(u8)]
+#[derive(Debug, Copy, Clone, PartialEq)]
+enum PhaseLoaded {
+    Collection = 1 << 0,
+    Eligibility = 1 << 1,
+    Decision = 1 << 2,
+    Plan = 1 << 3,
+    Governance = 1 << 4,
+    Execution = 1 << 5,
+}
+
 
 pub struct Monitor {
     rx_eligibility_monitor: EligibilityMonitor,
@@ -44,41 +59,57 @@ impl Monitor {
 
     #[tracing::instrument(level = "info", skip(self))]
     pub async fn run(mut self) {
+        let mut loaded = BitFlags::<PhaseLoaded>::default();
+
         loop {
             tokio::select! {
-                Ok(e) = self.rx_eligibility_monitor.recv() => Self::handle_eligibility_event(e),
-                Ok(e) = self.rx_decision_monitor.recv() => Self::handle_decision_event(e),
+                Ok(e) = self.rx_eligibility_monitor.recv() => Self::handle_eligibility_event(e, &mut loaded),
+                Ok(e) = self.rx_decision_monitor.recv() => Self::handle_decision_event(e, &mut loaded),
                 Ok(e) = self.rx_plan_monitor.recv() => Self::handle_plan_event(e),
-                Ok(e) = self.rx_governance_monitor.recv() => Self::handle_governance_event(e),
+                Ok(e) = self.rx_governance_monitor.recv() => Self::handle_governance_event(e, &mut loaded),
                 else => {
                     tracing::info!("springline monitor stopping...");
                     break;
                 }
             }
+
+            if loaded.is_all() {
+                tracing::info!("All Phases have loaded initial set of context data.");
+            } else {
+                tracing::info!(status=?loaded, "Phase first-loading not complete.")
+            }
         }
     }
 
     #[tracing::instrument(level = "info")]
-    fn handle_eligibility_event(event: EligibilityEvent) {
-        match event {
+    fn handle_eligibility_event(event: Arc<EligibilityEvent>, loaded: &mut BitFlags<PhaseLoaded>) {
+        match &*event {
             EligibilityEvent::ItemPassed(_) => ELIGIBILITY_IS_ELIGIBLE_FOR_SCALING.set(true as i64),
             EligibilityEvent::ItemBlocked(_) => ELIGIBILITY_IS_ELIGIBLE_FOR_SCALING.set(false as i64),
-            _ => {},
+            EligibilityEvent::ContextChanged(Some(_)) if !loaded.contains(PhaseLoaded::Eligibility) => {
+                tracing::info!("Eligibility Phase initial context loaded!");
+                loaded.toggle(PhaseLoaded::Eligibility);
+            },
+            _ => (),
         }
     }
 
     #[tracing::instrument(level = "info")]
-    fn handle_decision_event(event: DecisionEvent) {
-        match event {
+    fn handle_decision_event(event: Arc<DecisionEvent>, loaded: &mut BitFlags<PhaseLoaded>) {
+        match &*event {
             DecisionEvent::ItemPassed(_) => DECISION_SHOULD_PLAN_FOR_SCALING.set(true as i64),
             DecisionEvent::ItemBlocked(_) => DECISION_SHOULD_PLAN_FOR_SCALING.set(false as i64),
-            _ => {},
+            DecisionEvent::ContextChanged(Some(_)) if !loaded.contains(PhaseLoaded::Decision) => {
+                tracing::info!("Decision Phase initial context loaded!");
+                loaded.toggle(PhaseLoaded::Decision);
+            },
+            _ => (),
         }
     }
 
     #[tracing::instrument(level = "info")]
-    fn handle_plan_event(event: PlanEvent) {
-        match event {
+    fn handle_plan_event(event: Arc<PlanEvent>) {
+        match &*event {
             PlanEvent::ObservationAdded(_) => PLAN_OBSERVATION_COUNT.inc(),
             PlanEvent::DecisionPlanned(decision, plan) => {
                 match decision {
@@ -104,11 +135,15 @@ impl Monitor {
     }
 
     #[tracing::instrument(level = "info")]
-    fn handle_governance_event(event: GovernanceEvent) {
-        match event {
+    fn handle_governance_event(event: Arc<GovernanceEvent>, loaded: &mut BitFlags<PhaseLoaded>) {
+        match &*event {
             GovernanceEvent::ItemPassed(_) => GOVERNANCE_PLAN_ACCEPTED.set(true as i64),
             GovernanceEvent::ItemBlocked(_) => GOVERNANCE_PLAN_ACCEPTED.set(false as i64),
-            _ => {},
+            GovernanceEvent::ContextChanged(Some(_)) if !loaded.contains(PhaseLoaded::Governance) => {
+                tracing::info!("Governance Phase initial context loaded!");
+                loaded.toggle(PhaseLoaded::Governance);
+            },
+            _ => (),
         }
     }
 }
