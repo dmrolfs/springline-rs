@@ -165,7 +165,7 @@ fn suffix_for(id: &str, agg: Aggregation) -> String {
     let forms: Lazy<regex::RegexSet> = Lazy::new(|| {
         regex::RegexSet::new(&[
             r##"^[a-z]+[a-zA-Z]+$"##,                     // camelCase: Jobs, Kinesis
-            r##"^[a-z]+[a-zA-Z]*(\.[a-z]+[a-zA-Z]*)+$"##, // .camelCase: Task vertix
+            r##"^[a-z]+[a-zA-Z]*(\.[a-z]+[a-zA-Z]*)+$"##, // .camelCase: Task vertex
             r##"^[a-z]+[-a-z]+$"##,                       // kabab-case: Kafka
             r##"^[A-Z]+[a-zA-Z]*(\.[A-Z]+[a-zA-Z]*)*$"##, // .PascalCase: TaskManagers
         ])
@@ -174,7 +174,7 @@ fn suffix_for(id: &str, agg: Aggregation) -> String {
 
     match forms.matches(id).into_iter().take(1).next() {
         Some(0) => format!("{}", agg),                             // camelCase - Jobs and Kinesis
-        Some(1) => format!(".{}", agg.to_string().to_lowercase()), // .camelCase - Task vertix
+        Some(1) => format!(".{}", agg.to_string().to_lowercase()), // .camelCase - Task vertex
         Some(2) => format!("-{}", agg.to_string().to_lowercase()), // kabab-case - Kafka
         Some(3) => format!(".{}", agg),                            // .PascalCase - TaskManagers
         _ => {
@@ -246,16 +246,16 @@ pub async fn make_flink_metrics_source(
     orders.extend(settings.metric_orders.clone());
 
     // let scope_orders = MetricOrder::organize_by_scope(&orders);
-    let mut foo = Vec::default();
-    for (scope, scope_orders) in MetricOrder::organize_by_scope(&orders).into_iter() {
-        match scope {
-            FlinkScope::Jobs => {
-                let task = make_root_scope_collection_generator(FlinkScope::Jobs, &scope_orders, context.clone());
-                foo.push(Box::new(task));
-            },
-            _ => unimplemented!(),
-        }
-    }
+    // let mut foo = Vec::default();
+    // for (scope, scope_orders) in MetricOrder::organize_by_scope(&orders).into_iter() {
+    //     match scope {
+    //         FlinkScope::Jobs => {
+    //             let task = make_root_scope_collection_generator(FlinkScope::Jobs, &scope_orders, context.clone());
+    //             foo.push(Box::new(task));
+    //         },
+    //         _ => unimplemented!(),
+    //     }
+    // }
 
     todo!()
 }
@@ -269,8 +269,12 @@ pub fn make_root_scope_collection_generator(
         return Ok(None);
     }
 
-    let mut url = context.base_url.join(format!("{}/metrics", scope).as_str())?;
-    url.query_pairs_mut()
+    let mut url = context.base_url.clone();
+    url.path_segments_mut().unwrap()
+        .push(scope.to_string().to_lowercase().as_str())
+        .push("metrics");
+    url
+        .query_pairs_mut()
         .clear()
         .append_pair("get", metric_orders.keys().join(",").as_str())
         .append_pair("agg", agg_span.iter().join(",").as_str());
@@ -295,10 +299,12 @@ pub fn make_root_scope_collection_generator(
 }
 
 
-pub fn make_taskmanagers_collection_generator(
+pub fn make_taskmanagers_admin_generator(
     context: TaskContext,
 ) -> Result<Option<TelemetryGenerator>, CollectionError> {
-    let mut url = context.base_url.join("taskmanagers/")?;
+    let mut url = context.base_url.clone();
+    url.path_segments_mut().unwrap().push("taskmanagers");
+
     let gen: TelemetryGenerator = Box::new(move || {
         let client = context.client.clone();
         let url = url.clone();
@@ -316,6 +322,20 @@ pub fn make_taskmanagers_collection_generator(
     });
     Ok(Some(gen))
 }
+
+// pub fn make_vertex_collection_generator(
+//     scope: FlinkScope,
+//     orders: &[MetricOrder],
+//     context: TaskContext
+// ) -> Result<Option<TelemetryGenerator>, CollectionError> {
+//     let mut url = context.base_url.join("jobs")
+//     for j in job {
+//         for v in j.vertices {
+//             metrics
+//         }
+//     }
+//     todo!()
+// }
 
 /// Distills the simple list for a given Flink collection scope to target specific metrics and
 /// aggregation span.

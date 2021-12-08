@@ -448,7 +448,7 @@ async fn test_flink_taskmanagers_admin_collect() {
     let metric_response = ResponseTemplate::new(200).set_body_json(b);
 
     Mock::given(method("GET"))
-        .and(path("/taskmanagers/"))
+        .and(path("/taskmanagers"))
         .respond_with(metric_response)
         .expect(2)
         .mount(&mock_server)
@@ -467,7 +467,7 @@ async fn test_flink_taskmanagers_admin_collect() {
     };
 
     let gen = assert_some!(assert_ok!(
-        springline::phases::collection::flink_metrics::make_taskmanagers_collection_generator(context)
+        springline::phases::collection::flink_metrics::make_taskmanagers_admin_generator(context)
     ));
 
     let actual: Telemetry = assert_ok!(gen().await);

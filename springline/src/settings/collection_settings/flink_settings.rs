@@ -98,14 +98,20 @@ impl FlinkSettings {
         Ok(result)
     }
 
-    pub fn base_url(&self) -> Result<Url, url::ParseError> {
-        Url::parse(
+    pub fn base_url(&self) -> Result<Url, IncompatibleSourceSettingsError> {
+        let url = Url::parse(
             format!(
                 "{}://{}:{}/",
                 self.job_manager_scheme, self.job_manager_host, self.job_manager_port
             )
             .as_str(),
-        )
+        )?;
+
+        if url.cannot_be_a_base() {
+            return Err(IncompatibleSourceSettingsError::UrlCannotBeBase(url));
+        }
+
+        Ok(url)
     }
 }
 

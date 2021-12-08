@@ -49,7 +49,8 @@ impl SettingsLoader for Settings {
 }
 
 #[derive(Parser, Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[clap(version = "0.1.0", author = "Damon Rolfs")]
+#[clap(author, version, about)]
+// #[clap(version = "0.1.0", author = "Damon Rolfs")]
 pub struct CliOptions {
     /// override environment-based configuration file to load.
     /// Default behavior is to load configuration based on `APP_ENVIRONMENT` envvar.
