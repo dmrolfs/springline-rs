@@ -310,7 +310,7 @@ async fn test_flink_governance_flow_simple_and_happy() -> anyhow::Result<()> {
     tracing::info!(?event, "received policy event.");
     claim::assert_matches!(event, &elements::PolicyFilterEvent::ContextChanged(_));
 
-    let timestamp = Timestamp::new_secs(*super::fixtures::DT_1_TS);
+    let timestamp = Timestamp::from_secs(*super::fixtures::DT_1_TS);
     assert_ok!(
         flow.check_scenario(
             "happy_1",
@@ -368,7 +368,7 @@ async fn test_flink_governance_flow_simple_below_min_cluster_size() -> anyhow::R
     tracing::info!(?event, "received policy event.");
     claim::assert_matches!(event, &elements::PolicyFilterEvent::ContextChanged(_));
 
-    let timestamp = Timestamp::new_secs(*super::fixtures::DT_1_TS);
+    let timestamp = Timestamp::from_secs(*super::fixtures::DT_1_TS);
     assert_ok!(
         flow.check_scenario(
             "below min cluster size",
@@ -426,7 +426,7 @@ async fn test_flink_governance_flow_simple_above_max_cluster_size() -> anyhow::R
     tracing::info!(?event, "received policy event.");
     claim::assert_matches!(event, &elements::PolicyFilterEvent::ContextChanged(_));
 
-    let timestamp = Timestamp::new_secs(*super::fixtures::DT_1_TS);
+    let timestamp = Timestamp::from_secs(*super::fixtures::DT_1_TS);
     assert_ok!(
         flow.check_scenario(
             "above max cluster size",
@@ -484,7 +484,7 @@ async fn test_flink_governance_flow_simple_step_up_too_big() -> anyhow::Result<(
     tracing::info!(?event, "received policy event.");
     claim::assert_matches!(event, &elements::PolicyFilterEvent::ContextChanged(_));
 
-    let timestamp = Timestamp::new_secs(*super::fixtures::DT_1_TS);
+    let timestamp = Timestamp::from_secs(*super::fixtures::DT_1_TS);
     assert_ok!(
         flow.check_scenario(
             "too big a scale up step",
@@ -542,7 +542,7 @@ async fn test_flink_governance_flow_simple_step_down_too_big() -> anyhow::Result
     tracing::info!(?event, "received policy event.");
     claim::assert_matches!(event, &elements::PolicyFilterEvent::ContextChanged(_));
 
-    let timestamp = Timestamp::new_secs(*super::fixtures::DT_1_TS);
+    let timestamp = Timestamp::from_secs(*super::fixtures::DT_1_TS);
     assert_ok!(
         flow.check_scenario(
             "too big a scale down step",
@@ -603,7 +603,7 @@ async fn test_flink_governance_flow_simple_step_up_before_max() -> anyhow::Resul
     tracing::info!(?event, "received policy event.");
     claim::assert_matches!(event, &elements::PolicyFilterEvent::ContextChanged(_));
 
-    let timestamp = Timestamp::new_secs(*super::fixtures::DT_1_TS);
+    let timestamp = Timestamp::from_secs(*super::fixtures::DT_1_TS);
     assert_ok!(
         flow.check_scenario(
             "too big a scale up step before max",
@@ -661,7 +661,7 @@ async fn test_flink_governance_flow_simple_step_down_before_min() -> anyhow::Res
     tracing::info!(?event, "received policy event.");
     claim::assert_matches!(event, &elements::PolicyFilterEvent::ContextChanged(_));
 
-    let timestamp = Timestamp::new_secs(*super::fixtures::DT_1_TS);
+    let timestamp = Timestamp::from_secs(*super::fixtures::DT_1_TS);
     assert_ok!(
         flow.check_scenario(
             "too big a scale down step before min",

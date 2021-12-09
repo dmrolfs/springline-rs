@@ -10,7 +10,7 @@ use crate::phases::MetricCatalog;
 use crate::settings::CollectionSettings;
 use crate::Result;
 
-pub mod flink_metrics;
+pub mod flink;
 
 #[tracing::instrument(level = "info", skip(settings, auxiliary_sources))]
 pub async fn make_collection_phase(
