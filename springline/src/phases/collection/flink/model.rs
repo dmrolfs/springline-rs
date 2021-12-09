@@ -7,7 +7,6 @@ use std::time::Duration;
 use once_cell::sync::Lazy;
 use proctor::elements::{Telemetry, TelemetryValue, Timestamp};
 use proctor::error::TelemetryError;
-use serde::de::Error;
 use serde::{de, Deserialize, Deserializer, Serialize};
 use serde_with::{formats::Flexible, serde_as, DurationMilliSeconds};
 
@@ -116,14 +115,14 @@ fn suffix_for(id: &str, agg: Aggregation) -> String {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-struct Job {
+pub struct JobSummary {
     pub id: String,
     pub status: JobState,
 }
 
 #[derive(Debug, Display, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
-enum JobState {
+pub enum JobState {
     Initializing,
     Created,
     Running,
@@ -137,9 +136,18 @@ enum JobState {
     Reconciling,
 }
 
+impl JobState {
+    pub fn is_active(&self) -> bool {
+        match self {
+            Self::Finished | Self::Failed | Self::Canceled | Self::Suspended  => false,
+            _ => true,
+        }
+    }
+}
+
 #[derive(Debug, Display, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
-enum TaskState {
+pub enum TaskState {
     Scheduled,
     Created,
     Running,
@@ -152,9 +160,18 @@ enum TaskState {
     Initializing,
 }
 
+impl TaskState {
+    pub fn is_active(&self) -> bool {
+        match self {
+            Self::Finished | Self::Failed | Self::Canceled => false,
+            _ => true,
+        }
+    }
+}
+
 #[serde_as]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-struct JobDetail {
+pub struct JobDetail {
     pub jid: String,
     pub name: String,
     #[serde(alias = "isStoppable")]
@@ -181,7 +198,7 @@ struct JobDetail {
 
 #[serde_as]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-struct VertexDetail {
+pub struct VertexDetail {
     pub id: String,
     pub name: String,
     #[serde(alias = "maxParallelism", deserialize_with = "deserialize_i64_as_opt_usize")]
@@ -350,7 +367,7 @@ mod tests {
             .unwrap();
 
         let my_jobs: serde_json::Value = assert_ok!(serde_json::from_str(&jobs_json));
-        let jobs: Vec<Job> = match my_jobs["jobs"].as_array() {
+        let jobs: Vec<JobSummary> = match my_jobs["jobs"].as_array() {
             Some(js) => js.iter().map(|j| assert_ok!(serde_json::from_value(j.clone()))).collect(),
             None => Vec::default(),
         };
@@ -358,11 +375,11 @@ mod tests {
         assert_eq!(
             jobs,
             vec![
-                Job {
+                JobSummary {
                     id: "0771e8332dc401d254a140a707169a48".to_string(),
                     status: JobState::Running,
                 },
-                Job {
+                JobSummary {
                     id: "08734e8332dc401d254a140a707169c98".to_string(),
                     status: JobState::Cancelling,
                 },

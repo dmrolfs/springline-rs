@@ -93,14 +93,3 @@ pub static STD_METRIC_ORDERS: Lazy<Vec<MetricOrder>> = Lazy::new(|| {
     })
     .collect()
 });
-
-// #[cfg(test)]
-// mod tests {
-//     use claim::*;
-//     use pretty_assertions::assert_eq;
-//     use trim_margin::MarginTrimmable;
-//     use serde_json::json;
-//
-//     use super::*;
-//
-// }

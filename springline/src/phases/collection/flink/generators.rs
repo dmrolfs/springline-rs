@@ -8,17 +8,18 @@ use proctor::elements::{telemetry, Telemetry};
 use proctor::error::CollectionError;
 use proctor::graph::stage::WithApi;
 use proctor::phases::collection::TelemetrySource;
+use reqwest::Method;
 use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
 use reqwest_retry::policies::ExponentialBackoff;
 use reqwest_retry::RetryTransientMiddleware;
 use tracing_futures::Instrument;
 use url::Url;
 
-use super::model::{build_telemetry, FlinkMetricResponse};
+use super::model::{build_telemetry, FlinkMetricResponse, JobSummary};
 use super::STD_METRIC_ORDERS;
 use crate::settings::{Aggregation, FlinkScope, FlinkSettings, MetricOrder};
 
-pub type TelemetryGenerator = Box<dyn Fn() -> Pin<Box<dyn Future<Output = Result<Telemetry, CollectionError>>>>>;
+pub type Generator<T> = Box<dyn Fn() -> Pin<Box<dyn Future<Output = Result<T, CollectionError>>>>>;
 
 #[derive(Clone)]
 pub struct TaskContext {
@@ -73,8 +74,9 @@ pub async fn make_flink_metrics_source(
 }
 
 pub fn make_root_scope_collection_generator(
-    scope: FlinkScope, orders: &[MetricOrder], context: TaskContext,
-) -> Result<Option<TelemetryGenerator>, CollectionError> {
+    scope: FlinkScope, orders: &[MetricOrder], context: &TaskContext,
+) -> Result<Option<Generator<Telemetry>>, CollectionError> {
+    let client = context.client.clone();
     let scope = scope.to_string().to_lowercase();
     let (metric_orders, agg_span) = distill_metric_orders_and_agg(orders);
     if metric_orders.is_empty() {
@@ -92,18 +94,18 @@ pub fn make_root_scope_collection_generator(
         .append_pair("agg", agg_span.iter().join(",").as_str());
 
 
-    let gen: TelemetryGenerator = Box::new(move || {
-        let client = context.client.clone();
-        let url = url.clone();
+    let gen: Generator<Telemetry> = Box::new(move || {
+        let client = client.clone();
         let orders = metric_orders.clone();
+        let url = url.clone();
 
         Box::pin(
             async move {
-                let resp: FlinkMetricResponse = client.request(reqwest::Method::GET, url).send().await?.json().await?;
+                let resp: FlinkMetricResponse = client.request(Method::GET, url).send().await?.json().await?;
                 let telemetry = build_telemetry(resp, orders)?;
                 std::result::Result::<Telemetry, CollectionError>::Ok(telemetry)
             }
-            .instrument(tracing::info_span!("Flink collection", %scope)),
+            .instrument(tracing::info_span!("collect Flink scope telemetry", %scope)),
         )
     });
 
@@ -111,39 +113,65 @@ pub fn make_root_scope_collection_generator(
 }
 
 
-pub fn make_taskmanagers_admin_generator(context: TaskContext) -> Result<Option<TelemetryGenerator>, CollectionError> {
+pub fn make_taskmanagers_admin_generator(context: &TaskContext) -> Result<Option<Generator<Telemetry>>, CollectionError> {
+    let client = context.client.clone();
+
     let mut url = context.base_url.clone();
     url.path_segments_mut().unwrap().push("taskmanagers");
 
-    let gen: TelemetryGenerator = Box::new(move || {
-        let client = context.client.clone();
+    let gen: Generator<Telemetry> = Box::new(move || {
+        let client = client.clone();
         let url = url.clone();
 
         Box::pin(
             async move {
-                let resp: serde_json::Value = client.request(reqwest::Method::GET, url).send().await?.json().await?;
+                let resp: serde_json::Value = client.request(Method::GET, url).send().await?.json().await?;
                 let taskmanagers = resp["taskmanagers"].as_array().map(|tms| tms.len()).unwrap_or(0);
                 let mut telemetry: telemetry::TableType = HashMap::default();
                 telemetry.insert("cluster.nr_task_managers".to_string(), taskmanagers.into());
                 Ok(telemetry.into())
             }
-            .instrument(tracing::info_span!("Flink taskmanager collection",)),
+            .instrument(tracing::info_span!("collect Flink taskmanagers telemetry",)),
         )
     });
     Ok(Some(gen))
 }
 
-pub fn make_vertex_collection_generator(
-    scope: FlinkScope, orders: &[MetricOrder], context: TaskContext,
-) -> Result<Option<TelemetryGenerator>, CollectionError> {
-    let mut jobs_url = context.base_url.clone();
-    jobs_url.path_segments_mut().unwrap().push("jobs");
+// pub fn make_vertex_collection_generator(
+//     orders: &[MetricOrder], context: &TaskContext,
+// ) -> Result<Option<Generator<Telemetry>>, CollectionError> {
+//
+//     let jobs_gen: Ge = move || {
+//         let client = context.client.clone();
+//         let mut jobs_url = context.base_url.clone();
+//         jobs_url.path_segments_mut().unwrap().push("jobs");
+//
+//         async move {
+//             let jobs: Vec<JobSummary> = client
+//                 .request(Method::GET, jobs_url)
+//                 .send()
+//                 .await?
+//                 .json()
+//                 .await?;
+//
+//             let active_jobs: Vec<JobSummary> = jobs
+//                 .into_iter()
+//                 .filter(|j| j.status.is_active())
+//                 .collect();
+//
+//             Ok(active_jobs)
+//         }
+//             .instrument(tracing::info_span!("collect Flink active jobs"))
+//     };
+//     // for j in job {
+//     //     for v in j.vertices {
+//     //         metrics
+//     //     }
+//     // }
+//     todo!()
+// }
 
-    // for j in job {
-    //     for v in j.vertices {
-    //         metrics
-    //     }
-    // }
+fn make_active_jobs_generator(context: &TaskContext) -> Result<Generator<Vec<JobSummary>>, CollectionError> {
     todo!()
 }
 
@@ -154,7 +182,7 @@ pub fn make_vertex_collection_generator(
 //     url.path_segments_mut().unwrap().push("jobs");
 //
 //     async move {
-//         let resp: serde_json::Value = client.request(reqwest::Method::GET,
+//         let resp: serde_json::Value = client.request(Method::GET,
 // url).send().await?.json().await?;         let job_ids = if let Some(jobs) =
 // resp["jobs"].as_array() {           // let foo = jobs.iter().map(|j| )
 //         } else {
@@ -256,7 +284,7 @@ mod tests {
             let gen = assert_some!(assert_ok!(make_root_scope_collection_generator(
                 FlinkScope::Jobs,
                 &STD_METRIC_ORDERS,
-                context
+                &context
             )));
 
             assert_err!(gen().await, "Checking for error passed back after retries.");
@@ -314,7 +342,7 @@ mod tests {
             let gen = assert_some!(assert_ok!(make_root_scope_collection_generator(
                 FlinkScope::Jobs,
                 &STD_METRIC_ORDERS,
-                context
+                &context
             )));
 
             let actual: Telemetry = assert_ok!(gen().await);
@@ -395,7 +423,7 @@ mod tests {
             let gen = assert_some!(assert_ok!(make_root_scope_collection_generator(
                 FlinkScope::Jobs,
                 &STD_METRIC_ORDERS,
-                context
+                &context
             )));
 
             let actual: Telemetry = assert_ok!(gen().await);
@@ -469,7 +497,7 @@ mod tests {
             let gen = assert_some!(assert_ok!(make_root_scope_collection_generator(
                 FlinkScope::TaskManagers,
                 &STD_METRIC_ORDERS,
-                context
+                &context
             )));
 
             let actual: Telemetry = assert_ok!(gen().await);
@@ -622,7 +650,7 @@ mod tests {
                 base_url: assert_ok!(Url::parse(url.as_str())),
             };
 
-            let gen = assert_some!(assert_ok!(make_taskmanagers_admin_generator(context)));
+            let gen = assert_some!(assert_ok!(make_taskmanagers_admin_generator(&context)));
 
             let actual: Telemetry = assert_ok!(gen().await);
             assert_eq!(
