@@ -12,8 +12,10 @@ use reqwest::Method;
 use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
 use reqwest_retry::policies::ExponentialBackoff;
 use reqwest_retry::RetryTransientMiddleware;
+use tokio::sync::Mutex;
 use tracing_futures::Instrument;
 use url::Url;
+use crate::phases::collection::flink::model::{JobDetail, JobId, VertexId};
 
 use super::model::{build_telemetry, FlinkMetricResponse, JobSummary};
 use super::STD_METRIC_ORDERS;
@@ -77,8 +79,9 @@ pub fn make_root_scope_collection_generator(
     scope: FlinkScope, orders: &[MetricOrder], context: &TaskContext,
 ) -> Result<Option<Generator<Telemetry>>, CollectionError> {
     let client = context.client.clone();
-    let scope = scope.to_string().to_lowercase();
-    let (metric_orders, agg_span) = distill_metric_orders_and_agg(orders);
+    let scope_rep = scope.to_string().to_lowercase();
+    let scopes = maplit::hashset! { scope };
+    let (metric_orders, agg_span) = distill_metric_orders_and_agg(&scopes, orders);
     if metric_orders.is_empty() {
         return Ok(None);
     }
@@ -86,7 +89,7 @@ pub fn make_root_scope_collection_generator(
     let mut url = context.base_url.clone();
     url.path_segments_mut()
         .unwrap()
-        .push(scope.to_string().to_lowercase().as_str())
+        .push(scope_rep.as_str())
         .push("metrics");
     url.query_pairs_mut()
         .clear()
@@ -105,7 +108,7 @@ pub fn make_root_scope_collection_generator(
                 let telemetry = build_telemetry(resp, orders)?;
                 std::result::Result::<Telemetry, CollectionError>::Ok(telemetry)
             }
-            .instrument(tracing::info_span!("collect Flink scope telemetry", %scope)),
+            .instrument(tracing::info_span!("collect Flink scope telemetry", %scope_rep)),
         )
     });
 
@@ -139,30 +142,75 @@ pub fn make_taskmanagers_admin_generator(context: &TaskContext) -> Result<Option
 
 // pub fn make_vertex_collection_generator(
 //     orders: &[MetricOrder], context: &TaskContext,
-// ) -> Result<Option<Generator<Telemetry>>, CollectionError> {
+// ) -> Result<Generator<Telemetry>, CollectionError> {
+//     let (metric_orders, agg_span) = distill_metric_orders_and_agg(orders);
 //
-//     let jobs_gen: Ge = move || {
-//         let client = context.client.clone();
-//         let mut jobs_url = context.base_url.clone();
-//         jobs_url.path_segments_mut().unwrap().push("jobs");
+//     let gen = Box::new(move || {
+//         let context = context.clone();
 //
-//         async move {
-//             let jobs: Vec<JobSummary> = client
-//                 .request(Method::GET, jobs_url)
-//                 .send()
-//                 .await?
-//                 .json()
-//                 .await?;
+//         Box::pin(
+//             async move {
+//                 let active_jobs = query_active_jobs(&context).await?;
+//                 let job_details: Vec<JobDetail> = active_jobs.into_iter()
+//                     .map(|j| {
+//                         let detail = query_job_details(j.id, &context).await?;
+//                         Ok(detail)
+//                     })
+//                     .collect();
 //
-//             let active_jobs: Vec<JobSummary> = jobs
-//                 .into_iter()
-//                 .filter(|j| j.status.is_active())
-//                 .collect();
+//                 let criteria: Vec<(JobId, VertexId)> = job_details
+//                     .into_iter()
+//                     .flat_map(|job| {
+//                         job.vertices
+//                             .into_iter()
+//                             .filter_map(|vertex| {
+//                                 if vertex.status.is_active() {
+//                                    Some((job.jid, vertex.id))
+//                                 } else {
+//                                     None
+//                                 }
+//                             })
+//                     })
+//                     .collect();
 //
-//             Ok(active_jobs)
-//         }
-//             .instrument(tracing::info_span!("collect Flink active jobs"))
-//     };
+//                 let vertices_telemetry= Mutex::new(Telemetry::new());
+//
+//                 let tasks = criteria
+//                     .into_iter()
+//                     .map(|(jid, vid)| {
+//                         let mut url = context.base_url.clone();
+//                         url.path_segments_mut()?
+//                             .push("jobs")
+//                             .push(jid.into())
+//                             .push("vertices")
+//                             .push(vid.into())
+//                             .push("subtasks")
+//                             .push("metrics");
+//
+//                         context.client
+//                             .request(Method::GET, url)
+//                             .send()
+//                             .await?
+//
+//                     })
+//
+//                     for job in job_details {
+//                     for vertex in job.vertices.into_iter().filter(|v| v.status.is_active()) {
+//                         ()
+//                     }
+//                 }
+//
+//                     = job_details
+//                     .into_iter()
+//                     .fold(
+//                         Telemetry::new(),
+//                         |acc, job| {
+//
+//                         });
+//             }
+//                 .instrument(tracing::info_span!("collect Flink vertices telemetry"))
+//         )
+//     });
 //     // for j in job {
 //     //     for v in j.vertices {
 //     //         metrics
@@ -171,9 +219,83 @@ pub fn make_taskmanagers_admin_generator(context: &TaskContext) -> Result<Option
 //     todo!()
 // }
 
-fn make_active_jobs_generator(context: &TaskContext) -> Result<Generator<Vec<JobSummary>>, CollectionError> {
+#[tracing::instrument(level="info", skip(context))]
+async fn query_active_jobs(context: &TaskContext) -> Result<Vec<JobSummary>, CollectionError> {
+    let mut url = context.base_url.clone();
+    url.path_segments_mut().unwrap().push("jobs");
+
+    let jobs: Vec<JobSummary> = context.client
+        .request(Method::GET, url)
+        .send()
+        .await?
+        .json()
+        .await?;
+
+    let active_jobs: Vec<JobSummary> = jobs
+        .into_iter()
+        .filter(|j| j.status.is_active())
+        .collect();
+
+    Ok(active_jobs)
+}
+
+#[tracing::instrument(level="info", skip(context))]
+async fn query_job_details(job_id: &str, context: &TaskContext) -> Result<JobDetail, CollectionError> {
+    let mut url = context.base_url.clone();
+    url.path_segments_mut().unwrap().push("jobs").push(job_id);
+
+    let detail: JobDetail = context.client
+        .request(Method::GET, url)
+        .send()
+        .await?
+        .json()
+        .await?;
+
+    Ok(detail)
+}
+
+#[tracing::instrument(level="info", skip(orders))]
+async fn query_vertex_telemetry(
+    scope: FlinkScope,
+    orders: &[MetricOrder],
+    job_id: &str,
+    vertex_id: &str
+) -> Result<Telemetry, CollectionError> {
     todo!()
 }
+
+// fn make_active_jobs_generator(context: &TaskContext) -> Result<Generator<Vec<JobSummary>>, CollectionError> {
+//     let client = context.client.clone();
+//     let mut jobs_url = context.base_url.clone();
+//     jobs_url.path_segments_mut()?.push("jobs");
+//
+//     let gen: Generator<Vec<JobSummary>> = Box::new(move || {
+//         let client = client.clone();
+//         let url = url.clone();
+//
+//         Box::pin(
+//             async move {
+//                 let jobs: Vec<JobSummary> = client
+//                     .request(Method::GET, url)
+//                     .send()
+//                     .await?
+//                     .json()
+//                     .await?;
+//
+//                 let active_jobs: Vec<JobSummary> = jobs
+//                     .into_iter()
+//                     .filter(|j| j.status.is_active())
+//                     .collect();
+//
+//                 Ok(active_jobs)
+//             }
+//                 .instrument(tracing::info_span!("collect Flink active jobs"))
+//         )
+//     });
+//
+//     Ok(gen)
+// }
+
 
 // fn make_jobs_generator(context: &TaskContext) -> impl Fn() -> serde_json::Value {
 // let foo = move || {
@@ -193,13 +315,13 @@ fn make_active_jobs_generator(context: &TaskContext) -> Result<Generator<Vec<Job
 // todo!()
 // }
 
-/// Distills the simple list for a given Flink collection scope to target specific metrics and
-/// aggregation span.
-fn distill_metric_orders_and_agg(orders: &[MetricOrder]) -> (HashMap<String, Vec<MetricOrder>>, HashSet<Aggregation>) {
+/// Distills orders to requested scope and reorganizes them (order has metric+agg) to metric and
+/// consolidates aggregation span.
+fn distill_metric_orders_and_agg(scopes: &HashSet<FlinkScope>, orders: &[MetricOrder]) -> (HashMap<String, Vec<MetricOrder>>, HashSet<Aggregation>) {
     let mut order_domain = HashMap::default();
     let mut agg_span = HashSet::default();
 
-    for o in orders {
+    for o in orders.into_iter().filter(|o| scopes.contains(&o.scope)) {
         agg_span.insert(o.agg);
         let entry = order_domain.entry(o.metric.clone()).or_insert(Vec::new());
         entry.push(o.clone());

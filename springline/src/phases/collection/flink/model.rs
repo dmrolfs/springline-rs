@@ -169,10 +169,19 @@ impl TaskState {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct JobId(String);
+
+impl Into<String> for JobId {
+    fn into(self) -> String {
+        self.0
+    }
+}
+
 #[serde_as]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct JobDetail {
-    pub jid: String,
+    pub jid: JobId,
     pub name: String,
     #[serde(alias = "isStoppable")]
     pub is_stoppable: bool,
@@ -196,10 +205,19 @@ pub struct JobDetail {
 }
 
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct VertexId(String);
+
+impl Into<String> for VertexId {
+    fn into(self) -> String {
+        self.0
+    }
+}
+
 #[serde_as]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct VertexDetail {
-    pub id: String,
+    pub id: VertexId,
     pub name: String,
     #[serde(alias = "maxParallelism", deserialize_with = "deserialize_i64_as_opt_usize")]
     pub max_parallelism: Option<usize>,
@@ -432,7 +450,7 @@ mod tests {
         assert_eq!(
             actual,
             VertexDetail {
-                id: "cbc357ccb763df2852fee8c4fc7d55f2".to_string(),
+                id: VertexId("cbc357ccb763df2852fee8c4fc7d55f2".to_string()),
                 name: "Source: Custom Source -> Timestamps/Watermarks".to_string(),
                 max_parallelism: Some(128),
                 parallelism: 1,
@@ -609,7 +627,7 @@ mod tests {
         assert_eq!(
             actual,
             JobDetail {
-                jid: "0771e8332dc401d254a140a707169a48".to_string(),
+                jid: JobId("0771e8332dc401d254a140a707169a48".to_string()),
                 name: "CarTopSpeedWindowingExample".to_string(),
                 is_stoppable: false,
                 state: JobState::Running,
@@ -633,7 +651,7 @@ mod tests {
                 },
                 vertices: vec![
                     VertexDetail {
-                        id: "cbc357ccb763df2852fee8c4fc7d55f2".to_string(),
+                        id: VertexId("cbc357ccb763df2852fee8c4fc7d55f2".to_string()),
                         name: "Source: Custom Source -> Timestamps/Watermarks".to_string(),
                         max_parallelism: Some(128),
                         parallelism: 1,
@@ -665,7 +683,7 @@ mod tests {
                         },
                     },
                     VertexDetail {
-                        id: "90bea66de1c231edf33913ecd54406c1".to_string(),
+                        id: VertexId("90bea66de1c231edf33913ecd54406c1".to_string()),
                         name: "Window(GlobalWindows(), DeltaTrigger, TimeEvictor, ComparableAggregator, \
                                PassThroughWindowFunction) -> Sink: Print to Std. Out"
                             .to_string(),
