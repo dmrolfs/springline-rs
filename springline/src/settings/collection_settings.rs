@@ -5,10 +5,8 @@ use proctor::phases::collection::SourceSetting;
 use serde::{Deserialize, Serialize};
 
 mod flink_settings;
-mod metric_order;
 
 pub use flink_settings::FlinkSettings;
-pub use metric_order::{Aggregation, FlinkScope, MetricOrder};
 
 #[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -28,6 +26,7 @@ mod tests {
     use reqwest::header::{AUTHORIZATION, CONTENT_LENGTH};
     use reqwest::{Method, Url};
     use serde_test::{assert_tokens, Token};
+    use crate::phases::collection::flink::{MetricOrder, FlinkScope, Aggregation};
 
     use super::*;
 

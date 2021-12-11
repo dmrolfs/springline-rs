@@ -1,9 +1,10 @@
 use once_cell::sync::Lazy;
 
-use crate::settings::MetricOrder;
-
 mod generators;
-mod model;
+mod api_model;
+mod metric_order;
+
+pub use metric_order::{MetricOrder, FlinkScope, Aggregation};
 
 // pub use model::{FlinkMetric, FlinkMetricResponse, build_telemetry};
 // pub use generators::{TaskContext};
@@ -11,7 +12,7 @@ mod model;
 pub static STD_METRIC_ORDERS: Lazy<Vec<MetricOrder>> = Lazy::new(|| {
     use proctor::elements::TelemetryType::*;
 
-    use crate::settings::{Aggregation::*, FlinkScope::*};
+    use self::{Aggregation::*, FlinkScope::*};
 
     [
         (Jobs, "uptime", Max, "health.job_uptime_millis", Integer), // does not work w reactive mode

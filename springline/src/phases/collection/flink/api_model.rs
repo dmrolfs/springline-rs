@@ -10,7 +10,7 @@ use proctor::error::TelemetryError;
 use serde::{de, Deserialize, Deserializer, Serialize};
 use serde_with::{formats::Flexible, serde_as, DurationMilliSeconds};
 
-use crate::settings::{Aggregation, MetricOrder};
+use super::{Aggregation, MetricOrder};
 
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FlinkMetricResponse(pub Vec<FlinkMetric>);
@@ -56,7 +56,7 @@ impl FlinkMetric {
 }
 
 #[tracing::instrument(level = "debug", skip(metrics, orders))]
-pub fn build_telemetry<M>(metrics: M, orders: HashMap<String, Vec<MetricOrder>>) -> Result<Telemetry, TelemetryError>
+pub fn build_telemetry<M>(metrics: M, orders: &HashMap<String, Vec<MetricOrder>>) -> Result<Telemetry, TelemetryError>
 where
     M: IntoIterator<Item = FlinkMetric>,
 {
@@ -116,7 +116,7 @@ fn suffix_for(id: &str, agg: Aggregation) -> String {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct JobSummary {
-    pub id: String,
+    pub id: JobId,
     pub status: JobState,
 }
 
@@ -172,6 +172,22 @@ impl TaskState {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct JobId(String);
 
+impl JobId {
+    pub fn new(id: impl Into<String>) -> Self { Self(id.into()) }
+}
+
+impl fmt::Display for JobId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl AsRef<str> for JobId {
+    fn as_ref(&self) -> &str {
+        self.0.as_str()
+    }
+}
+
 impl Into<String> for JobId {
     fn into(self) -> String {
         self.0
@@ -208,6 +224,22 @@ pub struct JobDetail {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct VertexId(String);
 
+impl VertexId {
+    pub fn new(id: impl Into<String>) -> Self { Self(id.into()) }
+}
+
+impl fmt::Display for VertexId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl AsRef<str> for VertexId {
+    fn as_ref(&self) -> &str {
+        self.0.as_str()
+    }
+}
+
 impl Into<String> for VertexId {
     fn into(self) -> String {
         self.0
@@ -222,7 +254,7 @@ pub struct VertexDetail {
     #[serde(alias = "maxParallelism", deserialize_with = "deserialize_i64_as_opt_usize")]
     pub max_parallelism: Option<usize>,
     pub parallelism: usize,
-    pub status: JobState,
+    pub status: TaskState,
     #[serde(alias = "start-time", deserialize_with = "deserialize_timestamp_millis")]
     pub start_time: Timestamp,
     #[serde(alias = "end-time", deserialize_with = "deserialize_opt_timestamp_millis")]
@@ -394,11 +426,11 @@ mod tests {
             jobs,
             vec![
                 JobSummary {
-                    id: "0771e8332dc401d254a140a707169a48".to_string(),
+                    id: JobId::new("0771e8332dc401d254a140a707169a48"),
                     status: JobState::Running,
                 },
                 JobSummary {
-                    id: "08734e8332dc401d254a140a707169c98".to_string(),
+                    id: JobId::new("08734e8332dc401d254a140a707169c98"),
                     status: JobState::Cancelling,
                 },
             ]
@@ -454,7 +486,7 @@ mod tests {
                 name: "Source: Custom Source -> Timestamps/Watermarks".to_string(),
                 max_parallelism: Some(128),
                 parallelism: 1,
-                status: JobState::Running,
+                status: TaskState::Running,
                 start_time: Timestamp::new(1638989054, 310 * 1_000_000),
                 end_time: None,
                 duration: Duration::from_millis(35010565),
@@ -655,7 +687,7 @@ mod tests {
                         name: "Source: Custom Source -> Timestamps/Watermarks".to_string(),
                         max_parallelism: Some(128),
                         parallelism: 1,
-                        status: JobState::Running,
+                        status: TaskState::Running,
                         start_time: Timestamp::new(1638989054, 310 * 1_000_000),
                         end_time: None,
                         duration: Duration::from_millis(35010565),
@@ -689,7 +721,7 @@ mod tests {
                             .to_string(),
                         max_parallelism: Some(128),
                         parallelism: 1,
-                        status: JobState::Running,
+                        status: TaskState::Running,
                         start_time: Timestamp::new(1638989054, 320 * 1_000_000),
                         end_time: None,
                         duration: Duration::from_millis(35010555),
