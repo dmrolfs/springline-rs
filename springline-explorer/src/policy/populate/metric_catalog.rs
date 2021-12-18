@@ -38,19 +38,19 @@ impl PopulateData for MetricCatalog {
             ),
             (
                 "health.job_uptime_millis",
-                Some(MetricCatalogLens::Health(JobHealthLens::JobUptimeMillis)),
+                Some(MetricCatalogLens::Health(JobHealthLens::UptimeMillis)),
             ),
             (
                 "health.job_nr_restarts",
-                Some(MetricCatalogLens::Health(JobHealthLens::JobNrRestarts)),
+                Some(MetricCatalogLens::Health(JobHealthLens::NrRestarts)),
             ),
             (
                 "health.job_nr_completed_checkpoints",
-                Some(MetricCatalogLens::Health(JobHealthLens::JobNrCompletedCheckpoints)),
+                Some(MetricCatalogLens::Health(JobHealthLens::NrCompletedCheckpoints)),
             ),
             (
                 "health.job_nr_failed_checkpoints",
-                Some(MetricCatalogLens::Health(JobHealthLens::JobNrFailedCheckpoints)),
+                Some(MetricCatalogLens::Health(JobHealthLens::NrFailedCheckpoints)),
             ),
             (
                 "flow.records_in_per_sec",
@@ -217,10 +217,10 @@ impl Lens for MetricCatalogRootLens {
 }
 
 enum JobHealthLens {
-    JobUptimeMillis,
-    JobNrRestarts,
-    JobNrCompletedCheckpoints,
-    JobNrFailedCheckpoints,
+    UptimeMillis,
+    NrRestarts,
+    NrCompletedCheckpoints,
+    NrFailedCheckpoints,
 }
 
 impl Lens for JobHealthLens {
@@ -228,21 +228,19 @@ impl Lens for JobHealthLens {
 
     fn get(&self, telemetry: &Self::T) -> String {
         match self {
-            Self::JobUptimeMillis => format!("{}", telemetry.job_uptime_millis),
-            Self::JobNrRestarts => format!("{}", telemetry.job_nr_restarts),
-            Self::JobNrCompletedCheckpoints => format!("{}", telemetry.job_nr_completed_checkpoints),
-            Self::JobNrFailedCheckpoints => format!("{}", telemetry.job_nr_failed_checkpoints),
+            Self::UptimeMillis => format!("{}", telemetry.job_uptime_millis),
+            Self::NrRestarts => format!("{}", telemetry.job_nr_restarts),
+            Self::NrCompletedCheckpoints => format!("{}", telemetry.job_nr_completed_checkpoints),
+            Self::NrFailedCheckpoints => format!("{}", telemetry.job_nr_failed_checkpoints),
         }
     }
 
     fn set(&self, telemetry: &mut Self::T, value_rep: impl AsRef<str>) -> anyhow::Result<()> {
         match self {
-            Self::JobUptimeMillis => telemetry.job_uptime_millis = i64::from_str(value_rep.as_ref())?,
-            Self::JobNrRestarts => telemetry.job_nr_restarts = i64::from_str(value_rep.as_ref())?,
-            Self::JobNrCompletedCheckpoints => {
-                telemetry.job_nr_completed_checkpoints = i64::from_str(value_rep.as_ref())?
-            },
-            Self::JobNrFailedCheckpoints => telemetry.job_nr_failed_checkpoints = i64::from_str(value_rep.as_ref())?,
+            Self::UptimeMillis => telemetry.job_uptime_millis = i64::from_str(value_rep.as_ref())?,
+            Self::NrRestarts => telemetry.job_nr_restarts = i64::from_str(value_rep.as_ref())?,
+            Self::NrCompletedCheckpoints => telemetry.job_nr_completed_checkpoints = i64::from_str(value_rep.as_ref())?,
+            Self::NrFailedCheckpoints => telemetry.job_nr_failed_checkpoints = i64::from_str(value_rep.as_ref())?,
         }
 
         Ok(())
@@ -266,11 +264,11 @@ impl Lens for FlowLens {
             Self::InputRecordsLagMax => telemetry
                 .input_records_lag_max
                 .map(|t| format!("{}", t))
-                .unwrap_or(String::default()),
+                .unwrap_or_default(),
             Self::InputMillisBehindLatest => telemetry
                 .input_millis_behind_latest
                 .map(|t| format!("{}", t))
-                .unwrap_or(String::default()),
+                .unwrap_or_default(),
         }
     }
 
@@ -349,5 +347,16 @@ impl Lens for ClusterLens {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[ignore]
+    #[test]
+    fn test_metric_catalog_populate_data() {
+        todo!()
     }
 }

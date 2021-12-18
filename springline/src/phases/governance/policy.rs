@@ -12,7 +12,7 @@ use crate::phases::plan::ScalePlan;
 use crate::phases::UpdateMetrics;
 use crate::settings::GovernanceSettings;
 
-pub const ADJUSTED_TARGET: &'static str = "adjusted_target";
+pub const ADJUSTED_TARGET: &str = "adjusted_target";
 
 // pub const GOVERNANCE_POLICY_PREAMBLE: &'static str = r#"
 //     accept(plan, context, adjusted_target)

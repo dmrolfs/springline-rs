@@ -59,30 +59,28 @@ mod protocol {
     #[derive(Debug, Error)]
     pub enum EngineApiError {
         #[error("Failed to start autoscale engine API: {0}")]
-        BootstrapError(#[from] hyper::Error),
+        Bootstrap(#[from] hyper::Error),
 
         #[error("Could not connect to autoscale engine API: {0}")]
-        EngineSendError(#[from] mpsc::error::SendError<EngineCmd>),
+        EngineSend(#[from] mpsc::error::SendError<EngineCmd>),
 
         #[error("Failure in prometheus: {0}")]
-        PrometheusError(#[from] prometheus::Error),
+        Prometheus(#[from] prometheus::Error),
 
         #[error("Could not receive response from telemetry clearinghouse: {0}")]
-        ClearinghouseSendError(#[from] mpsc::error::SendError<ClearinghouseCmd>),
+        ClearinghouseSend(#[from] mpsc::error::SendError<ClearinghouseCmd>),
 
         #[error("Could not send command to telemetry clearinghouse: {0}")]
-        ClearinghouseRecvError(#[from] oneshot::error::RecvError),
+        ClearinghouseRecv(#[from] oneshot::error::RecvError),
 
         #[error("Could not open or bind to a TCP address for the autoscale engine's API: {0}")]
-        IOError(#[from] std::io::Error),
+        IO(#[from] std::io::Error),
     }
 
     impl IntoResponse for EngineApiError {
         fn into_response(self) -> Response<BoxBody> {
             tracing::error!(error=?self, "failure in autoscale engine API");
-            let body = match self {
-                err => body::boxed(body::Full::from(format!("Engine API Failure: {}", err))),
-            };
+            let body = body::boxed(body::Full::from(format!("Engine API Failure: {}", self)));
 
             Response::builder()
                 .status(StatusCode::INTERNAL_SERVER_ERROR)
@@ -229,7 +227,7 @@ impl<'r> Service<'r> {
         let (cmd, rx) = subscription
             .as_ref()
             .map(ClearinghouseCmd::get_subscription_snapshot)
-            .unwrap_or(ClearinghouseCmd::get_clearinghouse_snapshot());
+            .unwrap_or_else(ClearinghouseCmd::get_clearinghouse_snapshot);
         let _ = self.tx_clearinghouse_api.send(cmd)?;
         let snapshot = rx.await?;
         Ok(snapshot)

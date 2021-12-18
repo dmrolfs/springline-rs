@@ -5,7 +5,7 @@ use springline::settings::CliOptions;
 use springline_explorer::AppMenu;
 
 fn main() {
-    let app_name = std::env::args().nth(0).unwrap();
+    let app_name = std::env::args().next().unwrap();
     let subscriber = get_subscriber(app_name.as_str(), "warn", std::io::stdout);
     init_subscriber(subscriber);
 

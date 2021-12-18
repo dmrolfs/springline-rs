@@ -138,9 +138,9 @@ impl LeastSquaresWorkloadForecastBuilder {
 
     #[tracing::instrument(level = "debug", skip(data))]
     fn do_select_model(data: &[Point]) -> Box<dyn WorkloadForecast> {
-        let linear = LinearRegression::from_data(&data);
+        let linear = LinearRegression::from_data(data);
         let linear_r = linear.correlation_coefficient;
-        if let Some(quadratic) = QuadraticRegression::from_data(&data) {
+        if let Some(quadratic) = QuadraticRegression::from_data(data) {
             let quadratic_r = quadratic.correlation_coefficient;
 
             let model: Box<dyn WorkloadForecast> = match (linear_r, quadratic_r) {
@@ -154,8 +154,7 @@ impl LeastSquaresWorkloadForecastBuilder {
             model
         } else {
             tracing::debug!(
-                "failed to calculate the quadratic model due to a matrix decomposition issue - using linear \
-                 model."
+                "failed to calculate the quadratic model due to a matrix decomposition issue - using linear model."
             );
             Box::new(linear)
         }

@@ -16,14 +16,11 @@ impl ReviseSettings {
             "\n\n{}...\n  {}: {}\n",
             style("Revise Settings").bold().green(),
             style("Environment").bold().blue(),
-            format!(
-                "{}",
-                state
-                    .options
-                    .environment()
-                    .map(|e| style(e.to_string()).blue())
-                    .unwrap_or(style("not supplied".to_string()).italic().dim())
-            )
+            state
+                .options
+                .environment()
+                .map(|e| style(e.to_string()).blue())
+                .unwrap_or_else(|| style("not supplied".to_string()).italic().dim())
         );
 
         let menu_actions: [(&str, Option<MenuAction<ExplorerState>>); 3] = [
@@ -51,7 +48,7 @@ impl ReviseSettings {
                 Some((label, Some(action))) => {
                     if let Err(err) = action(state) {
                         eprintln!("action {} failed: {:?}", style(label).bold().red(), err);
-                        return Err(err.into());
+                        return Err(err);
                     }
                 },
                 Some((_, None)) => {
@@ -114,7 +111,7 @@ impl ReviseSettings {
                         .options
                         .environment
                         .map(|e| style(e.to_string()).bold().blue())
-                        .unwrap_or(style("none specified".to_string()).dim())
+                        .unwrap_or_else(|| style("none specified".to_string()).dim())
                 ))
                 .bold()
             );
@@ -205,7 +202,7 @@ impl ReviseSettings {
             "\n\tAdding overrides from CLI options:\n\t{:?}",
             style(&state.options).dim().green()
         );
-        eprintln!("");
+        eprintln!();
         builder = state.options.load_overrides(builder)?;
 
         let config = builder.build()?;

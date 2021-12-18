@@ -1,6 +1,6 @@
 // use fix_hidden_lifetime_bug;
 pub use metric_catalog::*;
-use proctor::elements::Telemetry;
+use proctor::elements::telemetry::UpdateMetricsFn;
 use proctor::graph::{Connect, SourceShape};
 use proctor::phases::collection::{ClearinghouseSubscriptionMagnet, SubscriptionChannel, TelemetrySubscription};
 use proctor::phases::policy_phase::PolicyPhase;
@@ -18,12 +18,12 @@ pub mod metric_catalog;
 pub mod plan;
 
 pub trait UpdateMetrics {
-    fn update_metrics_for(name: SharedString) -> Box<dyn Fn(&str, &Telemetry) -> () + Send + Sync + 'static>;
+    fn update_metrics_for(name: SharedString) -> UpdateMetricsFn;
 }
 
 #[tracing::instrument(level = "info")]
 pub async fn subscribe_policy_phase<In, Out, C, D>(
-    subscription: TelemetrySubscription, phase: &Box<PolicyPhase<In, Out, C, D>>,
+    subscription: TelemetrySubscription, phase: &PolicyPhase<In, Out, C, D>,
     magnet: ClearinghouseSubscriptionMagnet<'_>,
 ) -> Result<()>
 where

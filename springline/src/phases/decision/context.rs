@@ -4,6 +4,7 @@ use std::fmt::Debug;
 use lazy_static::lazy_static;
 use oso::PolarClass;
 use pretty_snowflake::{Id, Label};
+use proctor::elements::telemetry::UpdateMetricsFn;
 use proctor::elements::{telemetry, Telemetry, Timestamp};
 use proctor::error::DecisionError;
 use proctor::phases::collection::SubscriptionRequirements;
@@ -45,7 +46,7 @@ impl ProctorContext for DecisionContext {
 }
 
 impl UpdateMetrics for DecisionContext {
-    fn update_metrics_for(phase_name: SharedString) -> Box<dyn Fn(&str, &Telemetry) -> () + Send + Sync + 'static> {
+    fn update_metrics_for(phase_name: SharedString) -> UpdateMetricsFn {
         let update_fn = move |subscription_name: &str, telemetry: &Telemetry| match telemetry
             .clone()
             .try_into::<DecisionContext>()

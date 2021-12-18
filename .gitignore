@@ -11,3 +11,5 @@ Cargo.lock
 *.log
 .idea/
 springline/src/.DS_Store
+springline/src/phases/.DS_Store
+**/.DS_Store

@@ -26,9 +26,9 @@ mod tests {
     use reqwest::header::{AUTHORIZATION, CONTENT_LENGTH};
     use reqwest::{Method, Url};
     use serde_test::{assert_tokens, Token};
-    use crate::phases::collection::flink::{MetricOrder, FlinkScope, Aggregation};
 
     use super::*;
+    use crate::phases::collection::flink::{Aggregation, FlinkScope, MetricOrder};
 
     #[test]
     fn test_serde_collection_settings() {

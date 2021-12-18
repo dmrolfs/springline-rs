@@ -4,22 +4,21 @@ use std::pin::Pin;
 
 use futures::future::Future;
 use itertools::Itertools;
-use proctor::elements::{telemetry, Telemetry};
-use proctor::error::CollectionError;
+use proctor::elements::{telemetry, Telemetry, TelemetryValue};
+use proctor::error::{CollectionError, TelemetryError};
 use proctor::graph::stage::WithApi;
 use proctor::phases::collection::TelemetrySource;
 use reqwest::Method;
 use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
 use reqwest_retry::policies::ExponentialBackoff;
 use reqwest_retry::RetryTransientMiddleware;
-use tokio::sync::Mutex;
 use tracing_futures::Instrument;
 use url::Url;
-use crate::phases::collection::flink::model::{JobDetail, JobId, VertexId};
 
-use super::model::{build_telemetry, FlinkMetricResponse, JobSummary};
-use super::STD_METRIC_ORDERS;
-use crate::settings::{Aggregation, FlinkScope, FlinkSettings, MetricOrder};
+use super::api_model::{build_telemetry, FlinkMetricResponse, JobSummary};
+use super::{Aggregation, FlinkScope, MetricOrder, STD_METRIC_ORDERS};
+use crate::phases::collection::flink::api_model::{JobDetail, JobId, VertexId};
+use crate::settings::FlinkSettings;
 
 pub type Generator<T> = Box<dyn Fn() -> Pin<Box<dyn Future<Output = Result<T, CollectionError>>>>>;
 
@@ -78,7 +77,6 @@ pub async fn make_flink_metrics_source(
 pub fn make_root_scope_collection_generator(
     scope: FlinkScope, orders: &[MetricOrder], context: &TaskContext,
 ) -> Result<Option<Generator<Telemetry>>, CollectionError> {
-    let client = context.client.clone();
     let scope_rep = scope.to_string().to_lowercase();
     let scopes = maplit::hashset! { scope };
     let (metric_orders, agg_span) = distill_metric_orders_and_agg(&scopes, orders);
@@ -87,15 +85,14 @@ pub fn make_root_scope_collection_generator(
     }
 
     let mut url = context.base_url.clone();
-    url.path_segments_mut()
-        .unwrap()
-        .push(scope_rep.as_str())
-        .push("metrics");
+    url.path_segments_mut().unwrap().push(scope_rep.as_str()).push("metrics");
     url.query_pairs_mut()
         .clear()
         .append_pair("get", metric_orders.keys().join(",").as_str())
         .append_pair("agg", agg_span.iter().join(",").as_str());
 
+
+    let client = context.client.clone();
 
     let gen: Generator<Telemetry> = Box::new(move || {
         let client = client.clone();
@@ -105,7 +102,7 @@ pub fn make_root_scope_collection_generator(
         Box::pin(
             async move {
                 let resp: FlinkMetricResponse = client.request(Method::GET, url).send().await?.json().await?;
-                let telemetry = build_telemetry(resp, orders)?;
+                let telemetry = build_telemetry(resp, &orders)?;
                 std::result::Result::<Telemetry, CollectionError>::Ok(telemetry)
             }
             .instrument(tracing::info_span!("collect Flink scope telemetry", %scope_rep)),
@@ -116,7 +113,9 @@ pub fn make_root_scope_collection_generator(
 }
 
 
-pub fn make_taskmanagers_admin_generator(context: &TaskContext) -> Result<Option<Generator<Telemetry>>, CollectionError> {
+pub fn make_taskmanagers_admin_generator(
+    context: &TaskContext,
+) -> Result<Option<Generator<Telemetry>>, CollectionError> {
     let client = context.client.clone();
 
     let mut url = context.base_url.clone();
@@ -140,190 +139,180 @@ pub fn make_taskmanagers_admin_generator(context: &TaskContext) -> Result<Option
     Ok(Some(gen))
 }
 
-// pub fn make_vertex_collection_generator(
-//     orders: &[MetricOrder], context: &TaskContext,
-// ) -> Result<Generator<Telemetry>, CollectionError> {
-//     let (metric_orders, agg_span) = distill_metric_orders_and_agg(orders);
-//
-//     let gen = Box::new(move || {
-//         let context = context.clone();
-//
-//         Box::pin(
-//             async move {
-//                 let active_jobs = query_active_jobs(&context).await?;
-//                 let job_details: Vec<JobDetail> = active_jobs.into_iter()
-//                     .map(|j| {
-//                         let detail = query_job_details(j.id, &context).await?;
-//                         Ok(detail)
-//                     })
-//                     .collect();
-//
-//                 let criteria: Vec<(JobId, VertexId)> = job_details
-//                     .into_iter()
-//                     .flat_map(|job| {
-//                         job.vertices
-//                             .into_iter()
-//                             .filter_map(|vertex| {
-//                                 if vertex.status.is_active() {
-//                                    Some((job.jid, vertex.id))
-//                                 } else {
-//                                     None
-//                                 }
-//                             })
-//                     })
-//                     .collect();
-//
-//                 let vertices_telemetry= Mutex::new(Telemetry::new());
-//
-//                 let tasks = criteria
-//                     .into_iter()
-//                     .map(|(jid, vid)| {
-//                         let mut url = context.base_url.clone();
-//                         url.path_segments_mut()?
-//                             .push("jobs")
-//                             .push(jid.into())
-//                             .push("vertices")
-//                             .push(vid.into())
-//                             .push("subtasks")
-//                             .push("metrics");
-//
-//                         context.client
-//                             .request(Method::GET, url)
-//                             .send()
-//                             .await?
-//
-//                     })
-//
-//                     for job in job_details {
-//                     for vertex in job.vertices.into_iter().filter(|v| v.status.is_active()) {
-//                         ()
-//                     }
-//                 }
-//
-//                     = job_details
-//                     .into_iter()
-//                     .fold(
-//                         Telemetry::new(),
-//                         |acc, job| {
-//
-//                         });
-//             }
-//                 .instrument(tracing::info_span!("collect Flink vertices telemetry"))
-//         )
-//     });
-//     // for j in job {
-//     //     for v in j.vertices {
-//     //         metrics
-//     //     }
-//     // }
-//     todo!()
-// }
+pub fn make_vertex_collection_generator(
+    orders: &[MetricOrder], context: &TaskContext,
+) -> Result<Option<Generator<Telemetry>>, CollectionError> {
+    let scopes = maplit::hashset! {
+        FlinkScope::Task, FlinkScope::Kafka, FlinkScope::Kinesis,
+    };
 
-#[tracing::instrument(level="info", skip(context))]
+    let orders = orders.to_vec();
+    let (metric_orders, agg_span) = distill_metric_orders_and_agg(&scopes, &orders);
+    if metric_orders.is_empty() {
+        return Ok(None);
+    }
+
+    let context = context.clone();
+
+    let gen: Generator<Telemetry> = Box::new(move || {
+        let context = context.clone();
+        let orders = orders.clone();
+        let metric_orders = metric_orders.clone();
+        let agg_span = agg_span.clone();
+
+        Box::pin(
+            async move {
+                let active_jobs = query_active_jobs(&context).await?;
+
+                let mut job_details = Vec::with_capacity(active_jobs.len());
+                for job in active_jobs {
+                    let detail = query_job_details(job.id.as_ref(), &context).await?;
+                    job_details.push(detail);
+                }
+
+                let mut metric_points: HashMap<String, Vec<TelemetryValue>> = HashMap::new();
+                for job in job_details {
+                    for vertex in job.vertices.into_iter().filter(|v| v.status.is_active()) {
+                        let vertex_telemetry =
+                            query_vertex_telemetry(&job.jid, &vertex.id, &metric_orders, &agg_span, &context).await?;
+
+                        collect_metric_points(&mut metric_points, vertex_telemetry);
+                    }
+                }
+
+                let telemetry = merge_telemetry_per_order(metric_points, &orders)?;
+                std::result::Result::<Telemetry, CollectionError>::Ok(telemetry)
+            }
+            .instrument(tracing::info_span!("collect Flink vertices telemetry")),
+        )
+    });
+
+    Ok(Some(gen))
+}
+
+fn collect_metric_points(metric_points: &mut HashMap<String, Vec<TelemetryValue>>, vertex_telemetry: Telemetry) {
+    for (metric, vertex_val) in vertex_telemetry.into_iter() {
+        metric_points.entry(metric).or_insert_with(Vec::default).push(vertex_val);
+    }
+}
+
+fn merge_telemetry_per_order(
+    metric_points: HashMap<String, Vec<TelemetryValue>>, orders: &[MetricOrder],
+) -> Result<Telemetry, TelemetryError> {
+    // to avoid repeated linear searches, reorg strategy data based on metrics
+    let mut telemetry_agg = HashMap::with_capacity(orders.len());
+    for o in orders {
+        telemetry_agg.insert(o.telemetry_path.as_str(), o.agg);
+    }
+
+    // merge via order aggregation
+    let telemetry: Telemetry = metric_points
+        .into_iter()
+        .map(
+            |(metric, values)| match telemetry_agg.get(metric.as_str()).map(|agg| agg.combinator()) {
+                None => Ok(Some((metric, TelemetryValue::Seq(values)))),
+                Some(combo) => combo.combine(values).map(|combined| combined.map(|c| (metric, c))),
+            },
+        )
+        .collect::<Result<Vec<_>, TelemetryError>>()?
+        .into_iter()
+        .flatten()
+        .collect::<telemetry::TableType>()
+        .into();
+
+    Ok(telemetry)
+
+    // for (metric, values) in metric_points.into_iter() {
+    //
+    //     acc
+    //         .entry(vertex_key)
+    //         .and_modify(|acc_val| {
+    //             match telemetry_agg.get(&vertex_key) {
+    //                 None => (),
+    //                 Some(o) => {
+    //                     let combine = |lhs: &TelemetryValue, rhs: &TelemetryValue| {
+    // o.combine(vec![lhs, rhs])}                     o.combine(vec![acc_val, vertex_val])
+    //                 },
+    //             }
+    //         })
+    // }
+    // todo!()
+}
+
+#[tracing::instrument(level = "info", skip(context))]
 async fn query_active_jobs(context: &TaskContext) -> Result<Vec<JobSummary>, CollectionError> {
     let mut url = context.base_url.clone();
     url.path_segments_mut().unwrap().push("jobs");
 
-    let jobs: Vec<JobSummary> = context.client
-        .request(Method::GET, url)
-        .send()
-        .await?
-        .json()
-        .await?;
+    let resp: serde_json::Value = context.client.request(Method::GET, url).send().await?.json().await?;
 
-    let active_jobs: Vec<JobSummary> = jobs
-        .into_iter()
-        .filter(|j| j.status.is_active())
-        .collect();
+    let jobs: Vec<JobSummary> = match resp.get("jobs") {
+        None => Vec::default(),
+        Some(js) => serde_json::from_value(js.clone())?,
+    };
+
+    let active_jobs = jobs.into_iter().filter(|j| j.status.is_active()).collect();
 
     Ok(active_jobs)
 }
 
-#[tracing::instrument(level="info", skip(context))]
+#[tracing::instrument(level = "info", skip(context))]
 async fn query_job_details(job_id: &str, context: &TaskContext) -> Result<JobDetail, CollectionError> {
     let mut url = context.base_url.clone();
     url.path_segments_mut().unwrap().push("jobs").push(job_id);
 
-    let detail: JobDetail = context.client
-        .request(Method::GET, url)
-        .send()
-        .await?
-        .json()
-        .await?;
+    let detail: JobDetail = context.client.request(Method::GET, url).send().await?.json().await?;
 
     Ok(detail)
 }
 
-#[tracing::instrument(level="info", skip(orders))]
+#[tracing::instrument(level = "info", skip(metric_orders, agg_span, context))]
 async fn query_vertex_telemetry(
-    scope: FlinkScope,
-    orders: &[MetricOrder],
-    job_id: &str,
-    vertex_id: &str
+    job_id: &JobId, vertex_id: &VertexId, metric_orders: &HashMap<String, Vec<MetricOrder>>,
+    agg_span: &HashSet<Aggregation>, context: &TaskContext,
 ) -> Result<Telemetry, CollectionError> {
-    todo!()
+    let mut url = context.base_url.clone();
+    url.path_segments_mut()
+        .unwrap()
+        .push("jobs")
+        .push(job_id.as_ref())
+        .push("vertices")
+        .push(vertex_id.as_ref())
+        .push("subtasks")
+        .push("metrics");
+
+    let mut url2 = url.clone();
+
+    let avail_resp: FlinkMetricResponse = context.client.request(Method::GET, url).send().await?.json().await?;
+
+    let target_metrics: HashSet<String> = avail_resp
+        .into_iter()
+        .filter_map(|m| metric_orders.get(&m.id).and(Some(m.id)))
+        .collect();
+
+    url2.query_pairs_mut()
+        .clear()
+        .append_pair("get", target_metrics.into_iter().join(",").as_str())
+        .append_pair("agg", agg_span.iter().join(",").as_str());
+
+    let resp: FlinkMetricResponse = context.client.request(Method::GET, url2).send().await?.json().await?;
+
+    let telemetry = build_telemetry(resp, metric_orders)?;
+    Ok(telemetry)
 }
 
-// fn make_active_jobs_generator(context: &TaskContext) -> Result<Generator<Vec<JobSummary>>, CollectionError> {
-//     let client = context.client.clone();
-//     let mut jobs_url = context.base_url.clone();
-//     jobs_url.path_segments_mut()?.push("jobs");
-//
-//     let gen: Generator<Vec<JobSummary>> = Box::new(move || {
-//         let client = client.clone();
-//         let url = url.clone();
-//
-//         Box::pin(
-//             async move {
-//                 let jobs: Vec<JobSummary> = client
-//                     .request(Method::GET, url)
-//                     .send()
-//                     .await?
-//                     .json()
-//                     .await?;
-//
-//                 let active_jobs: Vec<JobSummary> = jobs
-//                     .into_iter()
-//                     .filter(|j| j.status.is_active())
-//                     .collect();
-//
-//                 Ok(active_jobs)
-//             }
-//                 .instrument(tracing::info_span!("collect Flink active jobs"))
-//         )
-//     });
-//
-//     Ok(gen)
-// }
-
-
-// fn make_jobs_generator(context: &TaskContext) -> impl Fn() -> serde_json::Value {
-// let foo = move || {
-//     let client = context.client.clone();
-//     let mut url = context.base_url.clone();
-//     url.path_segments_mut().unwrap().push("jobs");
-//
-//     async move {
-//         let resp: serde_json::Value = client.request(Method::GET,
-// url).send().await?.json().await?;         let job_ids = if let Some(jobs) =
-// resp["jobs"].as_array() {           // let foo = jobs.iter().map(|j| )
-//         } else {
-//             // Vec::default()
-//         };
-//     }
-// };
-// todo!()
-// }
 
 /// Distills orders to requested scope and reorganizes them (order has metric+agg) to metric and
 /// consolidates aggregation span.
-fn distill_metric_orders_and_agg(scopes: &HashSet<FlinkScope>, orders: &[MetricOrder]) -> (HashMap<String, Vec<MetricOrder>>, HashSet<Aggregation>) {
+fn distill_metric_orders_and_agg(
+    scopes: &HashSet<FlinkScope>, orders: &[MetricOrder],
+) -> (HashMap<String, Vec<MetricOrder>>, HashSet<Aggregation>) {
     let mut order_domain = HashMap::default();
     let mut agg_span = HashSet::default();
 
-    for o in orders.into_iter().filter(|o| scopes.contains(&o.scope)) {
+    for o in orders.iter().filter(|o| scopes.contains(&o.scope)) {
         agg_span.insert(o.agg);
-        let entry = order_domain.entry(o.metric.clone()).or_insert(Vec::new());
+        let entry = order_domain.entry(o.metric.clone()).or_insert_with(Vec::new);
         entry.push(o.clone());
     }
 
@@ -332,6 +321,7 @@ fn distill_metric_orders_and_agg(scopes: &HashSet<FlinkScope>, orders: &[MetricO
 
 #[cfg(test)]
 mod tests {
+    use std::borrow::Cow;
     use std::sync::atomic::{AtomicU32, Ordering};
     use std::sync::Arc;
     use std::time::Duration;
@@ -339,14 +329,16 @@ mod tests {
     use claim::*;
     use fake::{Fake, Faker};
     use pretty_assertions::assert_eq;
+    use proctor::elements::{TelemetryType, Timestamp};
     use reqwest::header::HeaderMap;
     use serde_json::json;
     use tokio_test::block_on;
     use trim_margin::MarginTrimmable;
-    use wiremock::matchers::{method, path};
-    use wiremock::{Mock, MockServer, Respond, ResponseTemplate};
+    use wiremock::matchers::{method, path, query_param};
+    use wiremock::{Match, Mock, MockServer, Request, Respond, ResponseTemplate};
 
     use super::*;
+    use crate::phases::collection::flink::api_model::{JobId, JobState, TaskState, VertexDetail};
 
 
     pub struct RetryResponder(Arc<AtomicU32>, u32, ResponseTemplate, u16);
@@ -375,6 +367,16 @@ mod tests {
         }
     }
 
+    fn context_for(mock_server: &MockServer) -> anyhow::Result<TaskContext> {
+        let client = reqwest::Client::builder().default_headers(HeaderMap::default()).build()?;
+        let retry_policy = ExponentialBackoff::builder().build_with_max_retries(2);
+        let client = ClientBuilder::new(client)
+            .with(RetryTransientMiddleware::new_with_policy(retry_policy))
+            .build();
+        let url = format!("{}/", &mock_server.uri());
+        Ok(TaskContext { client, base_url: Url::parse(url.as_str())? })
+    }
+
     #[test]
     fn test_flink_collect_failure() {
         once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
@@ -392,16 +394,7 @@ mod tests {
                 .mount(&mock_server)
                 .await;
 
-            let client = assert_ok!(reqwest::Client::builder().default_headers(HeaderMap::default()).build());
-            let retry_policy = ExponentialBackoff::builder().build_with_total_retry_duration(Duration::from_secs(2));
-            let client = ClientBuilder::new(client)
-                .with(RetryTransientMiddleware::new_with_policy(retry_policy))
-                .build();
-            let url = format!("{}/", &mock_server.uri());
-            let context = TaskContext {
-                client,
-                base_url: assert_ok!(Url::parse(url.as_str())),
-            };
+            let context = assert_ok!(context_for(&mock_server));
 
             let gen = assert_some!(assert_ok!(make_root_scope_collection_generator(
                 FlinkScope::Jobs,
@@ -450,16 +443,7 @@ mod tests {
                 .mount(&mock_server)
                 .await;
 
-            let client = assert_ok!(reqwest::Client::builder().default_headers(HeaderMap::default()).build());
-            let retry_policy = ExponentialBackoff::builder().build_with_max_retries(3);
-            let client = ClientBuilder::new(client)
-                .with(RetryTransientMiddleware::new_with_policy(retry_policy))
-                .build();
-            let url = format!("{}/", &mock_server.uri());
-            let context = TaskContext {
-                client,
-                base_url: assert_ok!(Url::parse(url.as_str())),
-            };
+            let context = assert_ok!(context_for(&mock_server));
 
             let gen = assert_some!(assert_ok!(make_root_scope_collection_generator(
                 FlinkScope::Jobs,
@@ -531,16 +515,7 @@ mod tests {
                 .mount(&mock_server)
                 .await;
 
-            let client = assert_ok!(reqwest::Client::builder().default_headers(HeaderMap::default()).build());
-            let retry_policy = ExponentialBackoff::builder().build_with_total_retry_duration(Duration::from_secs(2));
-            let client = ClientBuilder::new(client)
-                .with(RetryTransientMiddleware::new_with_policy(retry_policy))
-                .build();
-            let url = format!("{}/", &mock_server.uri());
-            let context = TaskContext {
-                client,
-                base_url: assert_ok!(Url::parse(url.as_str())),
-            };
+            let context = assert_ok!(context_for(&mock_server));
 
             let gen = assert_some!(assert_ok!(make_root_scope_collection_generator(
                 FlinkScope::Jobs,
@@ -605,16 +580,7 @@ mod tests {
                 .mount(&mock_server)
                 .await;
 
-            let client = assert_ok!(reqwest::Client::builder().default_headers(HeaderMap::default()).build());
-            let retry_policy = ExponentialBackoff::builder().build_with_max_retries(3);
-            let client = ClientBuilder::new(client)
-                .with(RetryTransientMiddleware::new_with_policy(retry_policy))
-                .build();
-            let url = format!("{}/", &mock_server.uri());
-            let context = TaskContext {
-                client,
-                base_url: assert_ok!(Url::parse(url.as_str())),
-            };
+            let context = assert_ok!(context_for(&mock_server));
 
             let gen = assert_some!(assert_ok!(make_root_scope_collection_generator(
                 FlinkScope::TaskManagers,
@@ -760,17 +726,7 @@ mod tests {
                 .mount(&mock_server)
                 .await;
 
-            let client = assert_ok!(reqwest::Client::builder().default_headers(HeaderMap::default()).build());
-            let retry_policy = ExponentialBackoff::builder().build_with_max_retries(3);
-            let client = ClientBuilder::new(client)
-                .with(RetryTransientMiddleware::new_with_policy(retry_policy))
-                .build();
-            let url = format!("{}/", &mock_server.uri());
-            let context = TaskContext {
-                client,
-                // base_url: assert_ok!(Url::parse("http://localhost:8081/")),
-                base_url: assert_ok!(Url::parse(url.as_str())),
-            };
+            let context = assert_ok!(context_for(&mock_server));
 
             let gen = assert_some!(assert_ok!(make_taskmanagers_admin_generator(&context)));
 
@@ -792,5 +748,481 @@ mod tests {
                 .into()
             );
         });
+    }
+
+    #[test]
+    fn test_query_active_jobs() {
+        once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
+        let main_span = tracing::info_span!("test_query_active_jobs");
+        let _ = main_span.enter();
+
+        block_on(async {
+            let mock_server = MockServer::start().await;
+
+            let b = json!({
+                "jobs": [
+                    {
+                        "id": "0771e8332dc401d254a140a707169a48",
+                        "status": "RUNNING"
+                    },
+                    {
+                        "id": "5226h8332dc401d254a140a707114f93",
+                        "status": "CREATED"
+                    }
+                ]
+            });
+
+            let response = ResponseTemplate::new(200).set_body_json(b);
+
+            Mock::given(method("GET"))
+                .and(path("/jobs"))
+                .respond_with(response)
+                .expect(1)
+                .mount(&mock_server)
+                .await;
+
+            let context = assert_ok!(context_for(&mock_server));
+
+            let actual = assert_ok!(query_active_jobs(&context).await);
+            assert_eq!(
+                actual,
+                vec![
+                    JobSummary {
+                        id: JobId::new("0771e8332dc401d254a140a707169a48"),
+                        status: JobState::Running,
+                    },
+                    JobSummary {
+                        id: JobId::new("5226h8332dc401d254a140a707114f93"),
+                        status: JobState::Created,
+                    },
+                ]
+            )
+        })
+    }
+
+    #[test]
+    fn test_query_job_details() {
+        once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
+        let main_span = tracing::info_span!("test_query_job_details");
+        let _ = main_span.enter();
+
+        block_on(async {
+            let mock_server = MockServer::start().await;
+
+            let b = json!({
+                "jid": "a97b6344d775aafe03e55a8e812d2713",
+                "name": "CarTopSpeedWindowingExample",
+                "isStoppable": false,
+                "state": "RUNNING",
+                "start-time": 1639156793312_i64,
+                "end-time": -1,
+                "duration": 23079,
+                "maxParallelism": -1,
+                "now": 1639156816391_i64,
+                "timestamps": {
+                    "CREATED": 1639156793320_i64,
+                    "FAILED": 0,
+                    "RUNNING": 1639156794159_i64,
+                    "CANCELED": 0,
+                    "CANCELLING": 0,
+                    "SUSPENDED": 0,
+                    "FAILING": 0,
+                    "RESTARTING": 0,
+                    "FINISHED": 0,
+                    "INITIALIZING": 1639156793312_i64,
+                    "RECONCILING": 0
+                },
+                "vertices": [
+                    {
+                        "id": "cbc357ccb763df2852fee8c4fc7d55f2",
+                        "name": "Source: Custom Source -> Timestamps/Watermarks",
+                        "maxParallelism": 128,
+                        "parallelism": 1,
+                        "status": "RUNNING",
+                        "start-time": 1639156794188_i64,
+                        "end-time": -1,
+                        "duration": 22203,
+                        "tasks": {
+                            "SCHEDULED": 0,
+                            "FINISHED": 0,
+                            "FAILED": 0,
+                            "CANCELING": 0,
+                            "CANCELED": 0,
+                            "DEPLOYING": 0,
+                            "RECONCILING": 0,
+                            "CREATED": 0,
+                            "RUNNING": 1,
+                            "INITIALIZING": 0
+                        },
+                        "metrics": {
+                            "read-bytes": 0,
+                            "read-bytes-complete": false,
+                            "write-bytes": 0,
+                            "write-bytes-complete": false,
+                            "read-records": 0,
+                            "read-records-complete": false,
+                            "write-records": 0,
+                            "write-records-complete": false
+                        }
+                    },
+                    {
+                        "id": "90bea66de1c231edf33913ecd54406c1",
+                        "name": "Window(GlobalWindows(), DeltaTrigger, TimeEvictor, ComparableAggregator, PassThroughWindowFunction) -> Sink: Print to Std. Out",
+                        "maxParallelism": 128,
+                        "parallelism": 1,
+                        "status": "RUNNING",
+                        "start-time": 1639156794193_i64,
+                        "end-time": -1,
+                        "duration": 22198,
+                        "tasks": {
+                            "SCHEDULED": 0,
+                            "FINISHED": 0,
+                            "FAILED": 0,
+                            "CANCELING": 0,
+                            "CANCELED": 0,
+                            "DEPLOYING": 0,
+                            "RECONCILING": 0,
+                            "CREATED": 0,
+                            "RUNNING": 1,
+                            "INITIALIZING": 0
+                        },
+                        "metrics": {
+                            "read-bytes": 0,
+                            "read-bytes-complete": false,
+                            "write-bytes": 0,
+                            "write-bytes-complete": false,
+                            "read-records": 0,
+                            "read-records-complete": false,
+                            "write-records": 0,
+                            "write-records-complete": false
+                        }
+                    }
+                ],
+                "status-counts": {
+                    "SCHEDULED": 0,
+                    "FINISHED": 0,
+                    "FAILED": 0,
+                    "CANCELING": 0,
+                    "CANCELED": 0,
+                    "DEPLOYING": 0,
+                    "RECONCILING": 0,
+                    "CREATED": 0,
+                    "RUNNING": 2,
+                    "INITIALIZING": 0
+                },
+                "plan": {
+                    "jid": "a97b6344d775aafe03e55a8e812d2713",
+                    "name": "CarTopSpeedWindowingExample",
+                    "nodes": [
+                        {
+                            "id": "90bea66de1c231edf33913ecd54406c1",
+                            "parallelism": 1,
+                            "operator": "",
+                            "operator_strategy": "",
+                            "description": "Window(GlobalWindows(), DeltaTrigger, TimeEvictor, ComparableAggregator, PassThroughWindowFunction) -&gt; Sink: Print to Std. Out",
+                            "inputs": [
+                                {
+                                    "num": 0,
+                                    "id": "cbc357ccb763df2852fee8c4fc7d55f2",
+                                    "ship_strategy": "HASH",
+                                    "exchange": "pipelined_bounded"
+                                }
+                            ],
+                            "optimizer_properties": {}
+                        },
+                        {
+                            "id": "cbc357ccb763df2852fee8c4fc7d55f2",
+                            "parallelism": 1,
+                            "operator": "",
+                            "operator_strategy": "",
+                            "description": "Source: Custom Source -&gt; Timestamps/Watermarks",
+                            "optimizer_properties": {}
+                        }
+                    ]
+                }
+            });
+
+            let response = ResponseTemplate::new(200).set_body_json(b);
+
+            Mock::given(method("GET"))
+                .and(path("/jobs/a97b6344d775aafe03e55a8e812d2713"))
+                .respond_with(response)
+                .expect(1)
+                .mount(&mock_server)
+                .await;
+
+            let context = assert_ok!(context_for(&mock_server));
+
+            let actual = assert_ok!(query_job_details("a97b6344d775aafe03e55a8e812d2713", &context).await);
+            assert_eq!(
+                actual,
+                JobDetail {
+                    jid: JobId::new("a97b6344d775aafe03e55a8e812d2713"),
+                    name: "CarTopSpeedWindowingExample".to_string(),
+                    is_stoppable: false,
+                    state: JobState::Running,
+                    start_time: Timestamp::new(1639156793, 312_000_000),
+                    end_time: None,
+                    duration: Duration::from_millis(23079),
+                    max_parallelism: None,
+                    now: Timestamp::new(1639156816, 391_000_000),
+                    timestamps: maplit::hashmap! {
+                        JobState::Created => Timestamp::new(1639156793, 320_000_000),
+                        JobState::Failed => Timestamp::ZERO,
+                        JobState::Running => Timestamp::new(1639156794, 159_000_000),
+                        JobState::Canceled => Timestamp::ZERO,
+                        JobState::Cancelling => Timestamp::ZERO,
+                        JobState::Suspended => Timestamp::ZERO,
+                        JobState::Failing => Timestamp::ZERO,
+                        JobState::Restarting => Timestamp::ZERO,
+                        JobState::Finished => Timestamp::ZERO,
+                        JobState::Initializing => Timestamp::new(1639156793, 312_000_000),
+                        JobState::Reconciling => Timestamp::ZERO,
+                    },
+                    vertices: vec![
+                        VertexDetail {
+                            id: VertexId::new("cbc357ccb763df2852fee8c4fc7d55f2"),
+                            name: "Source: Custom Source -> Timestamps/Watermarks".to_string(),
+                            max_parallelism: Some(128),
+                            parallelism: 1,
+                            status: TaskState::Running,
+                            start_time: Timestamp::new(1639156794, 188_000_000),
+                            end_time: None,
+                            duration: Duration::from_millis(22203),
+                            tasks: maplit::hashmap! {
+                                TaskState::Scheduled => 0,
+                                TaskState::Finished => 0,
+                                TaskState::Failed => 0,
+                                TaskState::Canceling => 0,
+                                TaskState::Canceled => 0,
+                                TaskState::Deploying => 0,
+                                TaskState::Reconciling => 0,
+                                TaskState::Created => 0,
+                                TaskState::Running => 1,
+                                TaskState::Initializing => 0,
+                            },
+                            metrics: maplit::hashmap! {
+                                "read-bytes".to_string() => 0_i64.into(),
+                                "read-bytes-complete".to_string() => false.into(),
+                                "write-bytes".to_string() => 0_i64.into(),
+                                "write-bytes-complete".to_string() => false.into(),
+                                "read-records".to_string() => 0_i64.into(),
+                                "read-records-complete".to_string() => false.into(),
+                                "write-records".to_string() => 0_i64.into(),
+                                "write-records-complete".to_string() => false.into(),
+                            }
+                        },
+                        VertexDetail {
+                            id: VertexId::new("90bea66de1c231edf33913ecd54406c1"),
+                            name: "Window(GlobalWindows(), DeltaTrigger, TimeEvictor, ComparableAggregator, \
+                                   PassThroughWindowFunction) -> Sink: Print to Std. Out"
+                                .to_string(),
+                            max_parallelism: Some(128),
+                            parallelism: 1,
+                            status: TaskState::Running,
+                            start_time: Timestamp::new(1639156794, 193_000_000),
+                            end_time: None,
+                            duration: Duration::from_millis(22198),
+                            tasks: maplit::hashmap! {
+                                TaskState::Scheduled => 0,
+                                TaskState::Finished => 0,
+                                TaskState::Failed => 0,
+                                TaskState::Canceling => 0,
+                                TaskState::Canceled => 0,
+                                TaskState::Deploying => 0,
+                                TaskState::Reconciling => 0,
+                                TaskState::Created => 0,
+                                TaskState::Running => 1,
+                                TaskState::Initializing => 0,
+                            },
+                            metrics: maplit::hashmap! {
+                                "read-bytes".to_string() => 0_i64.into(),
+                                "read-bytes-complete".to_string() => false.into(),
+                                "write-bytes".to_string() => 0_i64.into(),
+                                "write-bytes-complete".to_string() => false.into(),
+                                "read-records".to_string() => 0_i64.into(),
+                                "read-records-complete".to_string() => false.into(),
+                                "write-records".to_string() => 0_i64.into(),
+                                "write-records-complete".to_string() => false.into(),
+                            }
+                        },
+                    ],
+                    status_counts: maplit::hashmap! {
+                        TaskState::Scheduled => 0,
+                        TaskState::Finished => 0,
+                        TaskState::Failed => 0,
+                        TaskState::Canceling => 0,
+                        TaskState::Canceled => 0,
+                        TaskState::Deploying => 0,
+                        TaskState::Reconciling => 0,
+                        TaskState::Created => 0,
+                        TaskState::Running => 2,
+                        TaskState::Initializing => 0,
+                    }
+                }
+            )
+        })
+    }
+
+    struct EmptyQueryParamMatcher;
+    impl Match for EmptyQueryParamMatcher {
+        fn matches(&self, request: &Request) -> bool {
+            request.url.query().is_none()
+        }
+    }
+
+    struct QueryParamKeyMatcher(String);
+
+    impl QueryParamKeyMatcher {
+        pub fn new(key: impl Into<String>) -> Self {
+            Self(key.into())
+        }
+    }
+
+    impl Match for QueryParamKeyMatcher {
+        fn matches(&self, request: &Request) -> bool {
+            let query_keys: HashSet<Cow<str>> = request.url.query_pairs().map(|(k, _)| k).collect();
+            query_keys.contains(self.0.as_str())
+        }
+    }
+
+    #[test]
+    fn test_query_vertex_telemetry() {
+        once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
+        let main_span = tracing::info_span!("test_query_vertex_telemetry");
+        let _ = main_span.enter();
+
+        block_on(async {
+            let mock_server = MockServer::start().await;
+
+            let summary = json!([
+                { "id": "Shuffle.Netty.Output.Buffers.outPoolUsage" },
+                { "id": "checkpointStartDelayNanos" },
+                { "id": "numBytesInLocal" },
+                { "id": "numBytesInRemotePerSecond" },
+                { "id": "Shuffle.Netty.Input.numBytesInRemotePerSecond" },
+                { "id": "Source__Custom_Source.numRecordsInPerSecond" },
+                { "id": "numBytesOut" },
+                { "id": "Timestamps/Watermarks.currentInputWatermark" },
+                { "id": "numBytesIn" },
+                { "id": "Timestamps/Watermarks.numRecordsOutPerSecond" },
+                { "id": "numBuffersOut" },
+                { "id": "Shuffle.Netty.Input.numBuffersInLocal" },
+                { "id": "numBuffersInRemotePerSecond" },
+                { "id": "numBytesOutPerSecond" },
+                { "id": "Timestamps/Watermarks.numRecordsOut" },
+                { "id": "buffers.outputQueueLength" },
+                { "id": "Timestamps/Watermarks.numRecordsIn" },
+                { "id": "numBuffersOutPerSecond" },
+                { "id": "Shuffle.Netty.Input.Buffers.inputExclusiveBuffersUsage" },
+                { "id": "isBackPressured" },
+                { "id": "numBytesInLocalPerSecond" },
+                { "id": "buffers.inPoolUsage" },
+                { "id": "idleTimeMsPerSecond" },
+                { "id": "Shuffle.Netty.Input.numBytesInLocalPerSecond" },
+                { "id": "numBytesInRemote" },
+                { "id": "Source__Custom_Source.numRecordsOut" },
+                { "id": "Shuffle.Netty.Input.numBytesInLocal" },
+                { "id": "Shuffle.Netty.Input.numBytesInRemote" },
+                { "id": "busyTimeMsPerSecond" },
+                { "id": "Shuffle.Netty.Output.Buffers.outputQueueLength" },
+                { "id": "buffers.inputFloatingBuffersUsage" },
+                { "id": "Shuffle.Netty.Input.Buffers.inPoolUsage" },
+                { "id": "numBuffersInLocalPerSecond" },
+                { "id": "numRecordsOut" },
+                { "id": "numBuffersInLocal" },
+                { "id": "Timestamps/Watermarks.currentOutputWatermark" },
+                { "id": "Source__Custom_Source.currentOutputWatermark" },
+                { "id": "numBuffersInRemote" },
+                { "id": "buffers.inputQueueLength" },
+                { "id": "Source__Custom_Source.numRecordsOutPerSecond" },
+                { "id": "Timestamps/Watermarks.numRecordsInPerSecond" },
+                { "id": "numRecordsIn" },
+                { "id": "Shuffle.Netty.Input.numBuffersInRemote" },
+                { "id": "numBytesInPerSecond" },
+                { "id": "backPressuredTimeMsPerSecond" },
+                { "id": "Shuffle.Netty.Input.Buffers.inputQueueLength" },
+                { "id": "Source__Custom_Source.numRecordsIn" },
+                { "id": "buffers.inputExclusiveBuffersUsage" },
+                { "id": "Shuffle.Netty.Input.numBuffersInRemotePerSecond" },
+                { "id": "numRecordsOutPerSecond" },
+                { "id": "buffers.outPoolUsage" },
+                { "id": "Shuffle.Netty.Input.numBuffersInLocalPerSecond" },
+                { "id": "numRecordsInPerSecond" },
+                { "id": "Shuffle.Netty.Input.Buffers.inputFloatingBuffersUsage" }
+            ] );
+
+            let summary_response = ResponseTemplate::new(200).set_body_json(summary);
+
+            let metrics = json!([
+                { "id": "numRecordsInPerSecond", "max": 0.0 },
+                { "id": "numRecordsOutPerSecond", "max": 20.0 },
+                { "id": "buffers.inputQueueLength", "max": 0.0 },
+                { "id": "buffers.inPoolUsage", "max": 0.0 },
+                { "id": "buffers.outputQueueLength", "max": 1.0 },
+                { "id": "buffers.outPoolUsage", "max": 0.1 }
+            ] );
+
+            let metrics_response = ResponseTemplate::new(200).set_body_json(metrics);
+
+            let job_id = JobId::new("a97b6344d775aafe03e55a8e812d2713");
+            let vertex_id = VertexId::new("cbc357ccb763df2852fee8c4fc7d55f2");
+
+            let query_path = format!(
+                "/jobs/{jid}/vertices/{vid}/subtasks/metrics",
+                jid = job_id,
+                vid = vertex_id
+            );
+
+            Mock::given(method("GET"))
+                .and(path(query_path.clone()))
+                .and(EmptyQueryParamMatcher)
+                .respond_with(summary_response)
+                .expect(1)
+                .mount(&mock_server)
+                .await;
+
+            Mock::given(method("GET"))
+                .and(path(query_path))
+                .and(QueryParamKeyMatcher::new("get"))
+                .respond_with(metrics_response)
+                .expect(1)
+                .mount(&mock_server)
+                .await;
+
+            let context = assert_ok!(context_for(&mock_server));
+
+            let scopes = maplit::hashset! {
+                FlinkScope::Task, FlinkScope::Kafka, FlinkScope::Kinesis,
+            };
+
+            let mut orders = STD_METRIC_ORDERS.clone();
+            let kafka_order = MetricOrder {
+                scope: FlinkScope::Kafka,
+                metric: "records-lag-max".to_string(),
+                agg: Aggregation::Value,
+                telemetry_path: "flow.input_records_lag_max".to_string(),
+                telemetry_type: TelemetryType::Integer,
+            };
+            orders.extend(vec![kafka_order.clone()]);
+
+            let (metric_orders, agg_span) = distill_metric_orders_and_agg(&scopes, &orders);
+
+            let actual =
+                assert_ok!(query_vertex_telemetry(&job_id, &vertex_id, &metric_orders, &agg_span, &context).await);
+
+            assert_eq!(
+                actual,
+                maplit::hashmap! {
+                    "flow.records_in_per_sec".to_string() => 0_f64.into(),
+                    "flow.records_out_per_sec".to_string() => 20_f64.into(),
+                    "cluster.task_network_input_queue_len".to_string() => 0_f64.into(),
+                    "cluster.task_network_input_pool_usage".to_string() => 0_f64.into(),
+                    "cluster.task_network_output_queue_len".to_string() => 1_f64.into(),
+                    "cluster.task_network_output_pool_usage".to_string() => 0.1_f64.into(),
+                }
+                .into()
+            )
+        })
     }
 }

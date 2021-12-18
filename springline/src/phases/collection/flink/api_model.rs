@@ -138,10 +138,7 @@ pub enum JobState {
 
 impl JobState {
     pub fn is_active(&self) -> bool {
-        match self {
-            Self::Finished | Self::Failed | Self::Canceled | Self::Suspended  => false,
-            _ => true,
-        }
+        !matches!(self, Self::Finished | Self::Failed | Self::Canceled | Self::Suspended)
     }
 }
 
@@ -162,10 +159,7 @@ pub enum TaskState {
 
 impl TaskState {
     pub fn is_active(&self) -> bool {
-        match self {
-            Self::Finished | Self::Failed | Self::Canceled => false,
-            _ => true,
-        }
+        !matches!(self, Self::Finished | Self::Failed | Self::Canceled)
     }
 }
 
@@ -173,7 +167,9 @@ impl TaskState {
 pub struct JobId(String);
 
 impl JobId {
-    pub fn new(id: impl Into<String>) -> Self { Self(id.into()) }
+    pub fn new(id: impl Into<String>) -> Self {
+        Self(id.into())
+    }
 }
 
 impl fmt::Display for JobId {
@@ -188,9 +184,9 @@ impl AsRef<str> for JobId {
     }
 }
 
-impl Into<String> for JobId {
-    fn into(self) -> String {
-        self.0
+impl From<JobId> for String {
+    fn from(jid: JobId) -> Self {
+        jid.0
     }
 }
 
@@ -225,7 +221,9 @@ pub struct JobDetail {
 pub struct VertexId(String);
 
 impl VertexId {
-    pub fn new(id: impl Into<String>) -> Self { Self(id.into()) }
+    pub fn new(id: impl Into<String>) -> Self {
+        Self(id.into())
+    }
 }
 
 impl fmt::Display for VertexId {
@@ -240,9 +238,9 @@ impl AsRef<str> for VertexId {
     }
 }
 
-impl Into<String> for VertexId {
-    fn into(self) -> String {
-        self.0
+impl From<VertexId> for String {
+    fn from(vid: VertexId) -> Self {
+        vid.0
     }
 }
 

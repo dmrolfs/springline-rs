@@ -51,7 +51,7 @@ impl WorkloadForecast for LinearRegression {
 
     fn workload_at(&self, timestamp: Timestamp) -> Result<RecordsPerSecond, PlanError> {
         let x: f64 = timestamp.into();
-        Ok(RecordsPerSecond::new(self.slope * x + self.y_intercept).into())
+        Ok(RecordsPerSecond::new(self.slope * x + self.y_intercept))
     }
 
     fn total_records_between(&self, start: Timestamp, end: Timestamp) -> Result<f64, PlanError> {

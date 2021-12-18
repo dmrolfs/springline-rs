@@ -1,10 +1,10 @@
 use once_cell::sync::Lazy;
 
-mod generators;
 mod api_model;
+mod generators;
 mod metric_order;
 
-pub use metric_order::{MetricOrder, FlinkScope, Aggregation};
+pub use metric_order::{Aggregation, FlinkScope, MetricOrder};
 
 // pub use model::{FlinkMetric, FlinkMetricResponse, build_telemetry};
 // pub use generators::{TaskContext};
@@ -60,28 +60,28 @@ pub static STD_METRIC_ORDERS: Lazy<Vec<MetricOrder>> = Lazy::new(|| {
             "buffers.inputQueueLength",
             Max,
             "cluster.task_network_input_queue_len",
-            Integer,
+            Float, // Integer,
         ), // verify,
         (
             Task,
             "buffers.inPoolUsage",
             Max,
             "cluster.task_network_input_pool_usage",
-            Integer,
+            Float, // Integer,
         ), // verify,
         (
             Task,
             "buffers.outputQueueLength",
             Max,
             "cluster.task_network_output_queue_len",
-            Integer,
+            Float, // Integer,
         ), // verify,
         (
             Task,
             "buffers.outPoolUsage",
             Max,
             "cluster.task_network_output_pool_usage",
-            Integer,
+            Float, // Integer,
         ), // verify,
     ]
     .into_iter()

@@ -108,7 +108,7 @@ where
                 Some((label, Some(action))) => {
                     if let Err(err) = action(&mut policy_state) {
                         eprintln!("action {} failed: {:?}", style(label).bold().red(), err);
-                        return Err(err.into());
+                        return Err(err);
                     }
                 },
                 Some((_, None)) => {

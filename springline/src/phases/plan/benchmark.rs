@@ -230,8 +230,8 @@ impl RelativeEq for Benchmark {
     }
 }
 
-const T_NR_TASK_MANAGERS: &'static str = "nr_task_managers";
-const T_RECORDS_OUT_PER_SEC: &'static str = "records_out_per_sec";
+const T_NR_TASK_MANAGERS: &str = "nr_task_managers";
+const T_RECORDS_OUT_PER_SEC: &str = "records_out_per_sec";
 
 impl From<Benchmark> for TelemetryValue {
     fn from(that: Benchmark) -> Self {
@@ -253,12 +253,12 @@ impl TryFrom<TelemetryValue> for Benchmark {
             let nr_task_managers = rep
                 .get(T_NR_TASK_MANAGERS)
                 .map(|v| u16::try_from(v.clone()))
-                .ok_or(PlanError::DataNotFound(T_NR_TASK_MANAGERS.to_string()))??;
+                .ok_or_else(|| PlanError::DataNotFound(T_NR_TASK_MANAGERS.to_string()))??;
 
             let records_out_per_sec = rep
                 .get(T_RECORDS_OUT_PER_SEC)
                 .map(|v| f64::try_from(v.clone()))
-                .ok_or(PlanError::DataNotFound(T_RECORDS_OUT_PER_SEC.to_string()))??;
+                .ok_or_else(|| PlanError::DataNotFound(T_RECORDS_OUT_PER_SEC.to_string()))??;
 
             Ok(Benchmark {
                 nr_task_managers,
@@ -266,7 +266,7 @@ impl TryFrom<TelemetryValue> for Benchmark {
             })
         } else {
             Err(TelemetryError::TypeError {
-                expected: format!("{}", TelemetryType::Table),
+                expected: TelemetryType::Table,
                 actual: Some(format!("{:?}", telemetry)),
             }
             .into())

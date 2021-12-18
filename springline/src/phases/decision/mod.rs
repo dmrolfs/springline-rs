@@ -27,7 +27,7 @@ pub async fn make_decision_phase(
     settings: &DecisionSettings, magnet: ClearinghouseSubscriptionMagnet<'_>,
 ) -> Result<DecisionPhase> {
     let name: SharedString = "decision".into();
-    let policy = DecisionPolicy::new(&settings);
+    let policy = DecisionPolicy::new(settings);
     let subscription = policy.subscription(name.as_ref(), settings);
     let decision =
         Box::new(PolicyPhase::with_transform(name.clone(), policy, make_decision_transform(name.into_owned())).await?);

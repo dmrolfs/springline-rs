@@ -43,7 +43,7 @@ impl<F: WorkloadForecastBuilder> FlinkPlanning<F> {
         let performance_history = performance_repository
             .load(planning_name.as_ref())
             .await?
-            .unwrap_or(PerformanceHistory::default());
+            .unwrap_or_default();
 
         // todo: this needs to be worked into Plan stage...  Need to determine best design
         // todo: let (tx_api, rx_api) = mpsc::unbounded_channel();

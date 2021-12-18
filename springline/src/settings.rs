@@ -132,9 +132,9 @@ mod tests {
     use pretty_assertions::assert_eq;
     use proctor::elements::{PolicySource, TelemetryType, ToTelemetry};
     use proctor::phases::collection::SourceSetting;
-    use crate::phases::collection::flink::{Aggregation, FlinkScope, MetricOrder};
 
     use super::*;
+    use crate::phases::collection::flink::{Aggregation, FlinkScope, MetricOrder};
     use crate::phases::plan::{PerformanceRepositorySettings, PerformanceRepositoryType, SpikeSettings};
 
     lazy_static! {

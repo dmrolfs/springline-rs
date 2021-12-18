@@ -77,7 +77,7 @@ impl<F: WorkloadForecastBuilder> ForecastCalculator<F> {
         let forecast = self.forecast_builder.build_forecast()?;
         tracing::debug!(?forecast, "workload forecast model calculated.");
 
-        let total_records = self.total_records_between(&forecast, trigger, recovery)? + buffered_records;
+        let total_records = self.total_records_between(&*forecast, trigger, recovery)? + buffered_records;
         tracing::debug!(total_records_at_valid_time=%total_records, "estimated total records to process before valid time");
 
         let recovery_rate = self.recovery_rate(total_records);
@@ -103,7 +103,7 @@ impl<F: WorkloadForecastBuilder> ForecastCalculator<F> {
     }
 
     fn total_records_between(
-        &self, forecast: &Box<dyn WorkloadForecast>, start: Timestamp, end: Timestamp,
+        &self, forecast: &dyn WorkloadForecast, start: Timestamp, end: Timestamp,
     ) -> Result<f64, PlanError> {
         let total = forecast.total_records_between(start, end)?;
         tracing::debug!("total records between [{}, {}] = {}", start, end, total);

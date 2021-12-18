@@ -10,19 +10,19 @@ fn main() -> anyhow::Result<()> {
     let matches = App::new("Springline transcode")
         .arg(
             Arg::new("config")
-                .about("Source config document to transcode")
+                .help("Source config document to transcode")
                 .required(true)
                 .index(1),
         )
         .arg(
             Arg::new("from")
-                .about("from format - defaults to Ron")
+                .help("from format - defaults to Ron")
                 .short('f')
                 .long("from")
                 .required(false)
                 .takes_value(true),
         )
-        .arg(Arg::new("to").about("to format").short('t').long("to").takes_value(true))
+        .arg(Arg::new("to").help("to format").short('t').long("to").takes_value(true))
         .get_matches();
 
     let target = path::PathBuf::from(matches.value_of("config").unwrap());

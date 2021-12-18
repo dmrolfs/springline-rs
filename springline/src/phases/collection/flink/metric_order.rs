@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::fmt::{self, Display};
 
 use itertools::Itertools;
+use proctor::elements::telemetry::combine::{self, TelemetryCombinator};
 use proctor::elements::TelemetryType;
 use serde::de::{self, Deserializer, MapAccess, SeqAccess, Visitor};
 use serde::ser::SerializeTupleStruct;
@@ -163,4 +164,16 @@ pub enum Aggregation {
     Min,
     Sum,
     Avg,
+}
+
+impl Aggregation {
+    pub fn combinator(&self) -> Box<dyn TelemetryCombinator> {
+        match self {
+            Self::Value => Box::new(combine::First),
+            Self::Max => Box::new(combine::Max),
+            Self::Min => Box::new(combine::Min),
+            Self::Sum => Box::new(combine::Sum),
+            Self::Avg => Box::new(combine::Average),
+        }
+    }
 }

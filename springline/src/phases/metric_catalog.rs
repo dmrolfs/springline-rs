@@ -175,6 +175,7 @@ use std::sync::Mutex;
 
 #[cfg(test)]
 use chrono::{DateTime, Utc};
+use proctor::elements::telemetry::UpdateMetricsFn;
 #[cfg(test)]
 use proctor::ProctorIdGenerator;
 
@@ -272,7 +273,7 @@ impl SubscriptionRequirements for MetricCatalog {
 }
 
 impl UpdateMetrics for MetricCatalog {
-    fn update_metrics_for(name: SharedString) -> Box<dyn Fn(&str, &Telemetry) -> () + Send + Sync + 'static> {
+    fn update_metrics_for(name: SharedString) -> UpdateMetricsFn {
         let update_fn = move |subscription_name: &str, telemetry: &Telemetry| match telemetry
             .clone()
             .try_into::<MetricCatalog>()
@@ -439,7 +440,7 @@ mod tests {
             match value {
                 TelemetryValue::Text(rep) => Ok(Bar(rep)),
                 v => Err(TelemetryError::TypeError {
-                    expected: format!("telementry value {}", TelemetryType::Text),
+                    expected: TelemetryType::Text,
                     actual: Some(format!("{:?}", v)),
                 }),
             }

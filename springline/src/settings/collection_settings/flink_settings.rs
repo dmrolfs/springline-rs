@@ -5,9 +5,9 @@ use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use serde::{Deserialize, Serialize};
 use serde_with::{serde_as, DurationSeconds};
 use url::Url;
-use crate::phases::collection::flink::MetricOrder;
 
 use super::IncompatibleSourceSettingsError;
+use crate::phases::collection::flink::MetricOrder;
 
 #[serde_as]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -121,9 +121,9 @@ mod tests {
     use claim::*;
     use pretty_assertions::assert_eq;
     use proctor::elements::telemetry::TelemetryType;
-    use crate::phases::collection::flink::{Aggregation, FlinkScope};
 
     use super::*;
+    use crate::phases::collection::flink::{Aggregation, FlinkScope};
 
     #[test]
     fn test_flink_settings_default() {

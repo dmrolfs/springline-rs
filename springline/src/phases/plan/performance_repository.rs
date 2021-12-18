@@ -25,7 +25,7 @@ pub fn make_performance_repository(
             let path = settings
                 .storage_path
                 .clone()
-                .unwrap_or("performance_history.data".to_string());
+                .unwrap_or_else(|| "performance_history.data".to_string());
             Ok(Box::new(PerformanceFileRepository::new(path)))
         },
     }
@@ -134,7 +134,8 @@ impl PerformanceFileRepository {
         if read_write {
             options.write(true).create(true);
         }
-        Ok(options.open(path)?)
+
+        options.open(path)
     }
 }
 

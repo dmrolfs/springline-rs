@@ -8,10 +8,10 @@ use proctor::error::{DecisionError, TelemetryError};
 use proctor::graph::stage::{self, ThroughStage};
 use proctor::{AppData, ProctorContext, SharedString};
 
-pub const DECISION_BINDING: &'static str = "direction";
-pub const SCALE_UP: &'static str = "up";
-pub const SCALE_DOWN: &'static str = "down";
-pub const NO_ACTION: &'static str = "no action";
+pub const DECISION_BINDING: &str = "direction";
+pub const SCALE_UP: &str = "up";
+pub const SCALE_DOWN: &str = "down";
+pub const NO_ACTION: &str = "no action";
 
 pub fn make_decision_transform<T, C, S>(name: S) -> impl ThroughStage<PolicyOutcome<T, C>, DecisionResult<T>>
 where
@@ -39,12 +39,10 @@ where
                         let cmp = lhs.1.cmp(&rhs.1);
                         if cmp != Ordering::Equal {
                             cmp
+                        } else if lhs.0 == SCALE_UP {
+                            Ordering::Less
                         } else {
-                            if lhs.0 == SCALE_UP {
-                                Ordering::Less
-                            } else {
-                                Ordering::Greater
-                            }
+                            Ordering::Greater
                         }
                     });
 
@@ -74,8 +72,8 @@ where
     })
 }
 
-const T_ITEM: &'static str = "item";
-const T_SCALE_DECISION: &'static str = "scale_decision";
+const T_ITEM: &str = "item";
+const T_SCALE_DECISION: &str = "scale_decision";
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum DecisionResult<T>
@@ -124,12 +122,12 @@ where
     }
 }
 
-impl<T> Into<TelemetryValue> for DecisionResult<T>
+impl<T> From<DecisionResult<T>> for TelemetryValue
 where
     T: Into<TelemetryValue> + Debug + Clone + PartialEq,
 {
-    fn into(self) -> TelemetryValue {
-        match self {
+    fn from(result: DecisionResult<T>) -> Self {
+        match result {
             DecisionResult::ScaleUp(item) => TelemetryValue::Table(
                 maplit::hashmap! {
                     T_ITEM.to_string() => item.to_telemetry(),
@@ -154,6 +152,7 @@ where
         }
     }
 }
+
 
 impl<T> TryFrom<TelemetryValue> for DecisionResult<T>
 where
@@ -184,16 +183,10 @@ where
                 SCALE_DOWN => Ok(DecisionResult::ScaleDown(item)),
                 rep => Err(DecisionError::ParseError(rep.to_string())),
             }
-        } else if let TelemetryValue::Unit = value {
-            Err(proctor::error::TelemetryError::TypeError {
-                expected: format!("telemetry {} value", TelemetryType::Table),
-                actual: Some(format!("{:?}", value)),
-            }
-            .into())
         } else {
             // todo resolves into DecisionError::Other. Improve precision?
             Err(proctor::error::TelemetryError::TypeError {
-                expected: format!("telemetry {} value", TelemetryType::Table),
+                expected: TelemetryType::Table,
                 actual: Some(format!("{:?}", value)),
             }
             .into())

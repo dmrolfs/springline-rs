@@ -60,8 +60,9 @@ impl From<Point> for WorkloadMeasurement {
     }
 }
 
-impl Into<Point> for WorkloadMeasurement {
-    fn into(self) -> Point {
-        (self.timestamp_secs as f64, self.workload.into())
+
+impl From<WorkloadMeasurement> for Point {
+    fn from(measurement: WorkloadMeasurement) -> Self {
+        (measurement.timestamp_secs as f64, measurement.workload.into())
     }
 }
