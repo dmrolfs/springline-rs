@@ -33,6 +33,7 @@ pub struct FlinkMetric {
 }
 
 impl FlinkMetric {
+    #[allow(dead_code)]
     fn populate_telemetry<'m, O>(&self, telemetry: &mut Telemetry, orders: O)
     where
         O: IntoIterator<Item = &'m MetricOrder>,
@@ -91,6 +92,7 @@ where
 
 /// sigh -- each flink scope follows it's own metric format convention. This function attempts to
 /// fashion a corresponding aggregation suffix.
+#[allow(dead_code)]
 fn suffix_for(id: &str, agg: Aggregation) -> String {
     let forms: Lazy<regex::RegexSet> = Lazy::new(|| {
         regex::RegexSet::new(&[
@@ -137,6 +139,7 @@ pub enum JobState {
 }
 
 impl JobState {
+    #[allow(dead_code)]
     pub fn is_active(&self) -> bool {
         !matches!(self, Self::Finished | Self::Failed | Self::Canceled | Self::Suspended)
     }
@@ -158,6 +161,7 @@ pub enum TaskState {
 }
 
 impl TaskState {
+    #[allow(dead_code)]
     pub fn is_active(&self) -> bool {
         !matches!(self, Self::Finished | Self::Failed | Self::Canceled)
     }
@@ -280,7 +284,6 @@ where
     Ok(result)
 }
 
-#[tracing::instrument(level = "debug", skip(deserializer))]
 fn deserialize_i64_as_opt_usize<'de, D>(deserializer: D) -> Result<Option<usize>, D::Error>
 where
     D: Deserializer<'de>,
@@ -337,7 +340,6 @@ where
 mod tests {
     use claim::*;
     use pretty_assertions::assert_eq;
-    use serde_json::json;
     use trim_margin::MarginTrimmable;
 
     use super::*;

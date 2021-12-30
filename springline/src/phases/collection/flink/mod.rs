@@ -1,6 +1,7 @@
 use once_cell::sync::Lazy;
 
 mod api_model;
+#[allow(dead_code)]
 mod generators;
 mod metric_order;
 

@@ -210,7 +210,7 @@ mod tests {
             engine: Default::default(),
             collection: CollectionSettings {
                 flink: FlinkSettings {
-                    job_manager_scheme: "https".to_string(),
+                    job_manager_uri_scheme: "https".to_string(),
                     job_manager_host: "dr-flink-jm-0".to_string(),
                     job_manager_port: 8081,
                     metrics_initial_delay: Duration::from_secs(300),
@@ -344,7 +344,7 @@ mod tests {
         engine: EngineSettings { machine_id: 7, node_id: 3 },
         collection: CollectionSettings {
             flink: FlinkSettings {
-                job_manager_scheme: "https".to_string(),
+                job_manager_uri_scheme: "https".to_string(),
                 job_manager_host: "localhost".to_string(),
                 job_manager_port: 8081,
                 metrics_initial_delay: Duration::from_secs(300),

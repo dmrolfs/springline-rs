@@ -6,12 +6,15 @@ use futures::future::Future;
 use itertools::Itertools;
 use proctor::elements::{telemetry, Telemetry, TelemetryValue};
 use proctor::error::{CollectionError, TelemetryError};
-use proctor::graph::stage::WithApi;
+use proctor::graph::stage::{self, SourceStage, WithApi};
+use proctor::graph::{Connect, Graph, SinkShape, SourceShape};
 use proctor::phases::collection::TelemetrySource;
+use proctor::SharedString;
 use reqwest::Method;
 use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
 use reqwest_retry::policies::ExponentialBackoff;
 use reqwest_retry::RetryTransientMiddleware;
+use tokio::task::JoinHandle;
 use tracing_futures::Instrument;
 use url::Url;
 
@@ -20,7 +23,8 @@ use super::{Aggregation, FlinkScope, MetricOrder, STD_METRIC_ORDERS};
 use crate::phases::collection::flink::api_model::{JobDetail, JobId, VertexId};
 use crate::settings::FlinkSettings;
 
-pub type Generator<T> = Box<dyn Fn() -> Pin<Box<dyn Future<Output = Result<T, CollectionError>>>>>;
+pub type Generator<T> =
+    Box<(dyn Fn() -> Pin<Box<(dyn Future<Output = Result<T, CollectionError>> + Send)>> + Send + Sync)>;
 
 #[derive(Clone)]
 pub struct TaskContext {
@@ -38,16 +42,52 @@ impl fmt::Debug for TaskContext {
 pub async fn make_flink_metrics_source(
     name: impl AsRef<str>, settings: &FlinkSettings,
 ) -> Result<TelemetrySource, CollectionError> {
-    // scheduler
-    let tick = proctor::graph::stage::Tick::new(
-        format!("flink_source_{}_tick", name.as_ref()),
+    let name = SharedString::Owned(format!("{}_flink_source", name.as_ref()));
+
+    let scheduler = make_scheduler_source(name.as_ref(), settings);
+    let tx_scheduler_api = scheduler.tx_api();
+
+    let gen = make_flink_generator(settings)?;
+
+    let collect_flink_telemetry = stage::TriggeredGenerator::new(name.clone(), gen);
+
+    let filter = stage::FilterMap::<_, Option<Telemetry>, Telemetry>::new(
+        format!("{}_filter_errors", name),
+        std::convert::identity,
+    )
+    .with_block_logging();
+
+    (scheduler.outlet(), collect_flink_telemetry.inlet()).connect().await;
+    (collect_flink_telemetry.outlet(), filter.inlet()).connect().await;
+    let composite_outlet = filter.outlet();
+
+    let mut cg = Graph::default();
+    cg.push_back(Box::new(scheduler)).await;
+    cg.push_back(Box::new(collect_flink_telemetry)).await;
+    cg.push_back(Box::new(filter)).await;
+
+    let composite: stage::CompositeSource<Telemetry> =
+        stage::CompositeSource::new(name.clone(), cg, composite_outlet).await;
+    let stage: Option<Box<dyn SourceStage<Telemetry>>> = Some(Box::new(composite));
+    Ok(TelemetrySource {
+        name: name.into_owned(),
+        stage,
+        tx_stop: Some(tx_scheduler_api),
+    })
+}
+
+fn make_scheduler_source(name: &str, settings: &FlinkSettings) -> stage::Tick<()> {
+    stage::Tick::new(
+        format!("flink_source_{}_tick", name),
         settings.metrics_initial_delay,
         settings.metrics_interval,
         (),
-    );
-    let tx_tick_api = tick.tx_api();
+    )
+}
 
-    // flink metric rest generator
+fn make_flink_generator(
+    settings: &FlinkSettings,
+) -> Result<impl FnMut(()) -> Pin<Box<(dyn Future<Output = Option<Telemetry>> + Send)>>, CollectionError> {
     let headers = settings.header_map()?;
     let client = reqwest::Client::builder().default_headers(headers).build()?;
     let retry_policy = ExponentialBackoff::builder().build_with_max_retries(settings.max_retries);
@@ -59,25 +99,87 @@ pub async fn make_flink_metrics_source(
     let mut orders = STD_METRIC_ORDERS.clone();
     orders.extend(settings.metric_orders.clone());
 
-    // let scope_orders = MetricOrder::organize_by_scope(&orders);
-    // let mut foo = Vec::default();
-    // for (scope, scope_orders) in MetricOrder::organize_by_scope(&orders).into_iter() {
-    //     match scope {
-    //         FlinkScope::Jobs => {
-    //             let task = make_root_scope_collection_generator(FlinkScope::Jobs, &scope_orders,
-    // context.clone());             foo.push(Box::new(task));
-    //         },
-    //         _ => unimplemented!(),
-    //     }
-    // }
+    let gen = move |_: ()| {
+        let jobs_gen = make_root_scope_collection_generator(FlinkScope::Jobs, &orders, &context);
+        let tm_gen = make_root_scope_collection_generator(FlinkScope::TaskManagers, &orders, &context);
+        let tm_admin_gen = make_taskmanagers_admin_generator(&context);
+        let vertex_gen = make_vertex_collection_generator(&orders, &context);
 
-    todo!()
+        let task: Pin<Box<dyn Future<Output = Option<Telemetry>> + Send>> = Box::pin(async move {
+            let flink_span = tracing::info_span!("collect flink telemetry");
+            let _flink_span_guardian = flink_span.enter();
+
+            let generators = vec![jobs_gen, tm_gen, tm_admin_gen, vertex_gen];
+            for (idx, gen) in generators.iter().enumerate() {
+                if let Err(err) = gen {
+                    const GEN_LABEL: [&str; 4] = ["Jobs", "TaskManager", "TaskManagerAdmin", "Vertex"];
+                    tracing::error!(error=?err, "failed to create {} generator", GEN_LABEL[idx]);
+                }
+            }
+
+
+            let tasks: Vec<JoinHandle<Result<Telemetry, CollectionError>>> = generators
+                .into_iter()
+                .flatten()
+                .flatten()
+                // .into_iter()
+                .map(|g| tokio::spawn(async move { g().await }))
+                .collect::<Vec<_>>();
+
+            let results: Vec<Result<Result<Telemetry, CollectionError>, tokio::task::JoinError>> =
+                futures::future::join_all(tasks).await;
+            let results: Result<Vec<Result<Telemetry, CollectionError>>, tokio::task::JoinError> =
+                results.into_iter().collect();
+
+            let span = tracing::info_span!("consolidate telemetry parts");
+            let _ = span.enter();
+            match results {
+                Err(err) => {
+                    tracing::error!(error=?err, "failed to join Flink telemetry collection tasks");
+                    None
+                },
+                Ok(results) => {
+                    let mut telemetry = Telemetry::default();
+                    for (idx, result) in results.into_iter().enumerate() {
+                        match result {
+                            Err(err) => {
+                                tracing::error!(error=?err, "failed to collect Flink telemetry portion:{}", idx);
+                            },
+                            Ok(t) => {
+                                tracing::info!(acc_telemetry=?telemetry, new_part=?t, "adding flink telemetry part");
+                                telemetry.extend(t);
+                            },
+                        }
+                    }
+
+                    Some(telemetry)
+                },
+            }
+        });
+
+        task
+    };
+
+    Ok(gen)
+}
+
+#[inline]
+fn log_response(label: &str, response: &reqwest::Response) {
+    const PREAMBLE: &str = "flink telemetry response received";
+    let status = response.status();
+    if status.is_success() || status.is_informational() {
+        tracing::info!(?response, "{}:{}", PREAMBLE, label);
+    } else if status.is_client_error() {
+        tracing::error!(?response, "{}:{}", PREAMBLE, label);
+    } else {
+        tracing::warn!(?response, "{}:{}", PREAMBLE, label);
+    }
 }
 
 pub fn make_root_scope_collection_generator(
     scope: FlinkScope, orders: &[MetricOrder], context: &TaskContext,
 ) -> Result<Option<Generator<Telemetry>>, CollectionError> {
-    let scope_rep = scope.to_string().to_lowercase();
+    let scope_rep = SharedString::Owned(scope.to_string().to_lowercase());
     let scopes = maplit::hashset! { scope };
     let (metric_orders, agg_span) = distill_metric_orders_and_agg(&scopes, orders);
     if metric_orders.is_empty() {
@@ -85,7 +187,7 @@ pub fn make_root_scope_collection_generator(
     }
 
     let mut url = context.base_url.clone();
-    url.path_segments_mut().unwrap().push(scope_rep.as_str()).push("metrics");
+    url.path_segments_mut().unwrap().push(scope_rep.as_ref()).push("metrics");
     url.query_pairs_mut()
         .clear()
         .append_pair("get", metric_orders.keys().join(",").as_str())
@@ -98,11 +200,15 @@ pub fn make_root_scope_collection_generator(
         let client = client.clone();
         let orders = metric_orders.clone();
         let url = url.clone();
+        let scope_rep = scope_rep.clone();
+        let scope_rep2 = scope_rep.clone();
 
         Box::pin(
             async move {
-                let resp: FlinkMetricResponse = client.request(Method::GET, url).send().await?.json().await?;
-                let telemetry = build_telemetry(resp, &orders)?;
+                let scope_resp = client.request(Method::GET, url).send().await?;
+                log_response(format!("{} scope response", scope_rep2).as_str(), &scope_resp);
+                let scope_resp: FlinkMetricResponse = scope_resp.json().await?;
+                let telemetry = build_telemetry(scope_resp, &orders)?;
                 std::result::Result::<Telemetry, CollectionError>::Ok(telemetry)
             }
             .instrument(tracing::info_span!("collect Flink scope telemetry", %scope_rep)),
@@ -127,13 +233,18 @@ pub fn make_taskmanagers_admin_generator(
 
         Box::pin(
             async move {
-                let resp: serde_json::Value = client.request(Method::GET, url).send().await?.json().await?;
-                let taskmanagers = resp["taskmanagers"].as_array().map(|tms| tms.len()).unwrap_or(0);
+                let taskmanagers_admin_resp = client.request(Method::GET, url).send().await?;
+                log_response("taskmanagers admin", &taskmanagers_admin_resp);
+                let taskmanagers_admin_resp: serde_json::Value = taskmanagers_admin_resp.json().await?;
+                let taskmanagers = taskmanagers_admin_resp["taskmanagers"]
+                    .as_array()
+                    .map(|tms| tms.len())
+                    .unwrap_or(0);
                 let mut telemetry: telemetry::TableType = HashMap::default();
                 telemetry.insert("cluster.nr_task_managers".to_string(), taskmanagers.into());
                 Ok(telemetry.into())
             }
-            .instrument(tracing::info_span!("collect Flink taskmanagers telemetry",)),
+            .instrument(tracing::info_span!("collect Flink taskmanagers admin telemetry",)),
         )
     });
     Ok(Some(gen))
@@ -147,7 +258,7 @@ pub fn make_vertex_collection_generator(
     };
 
     let orders = orders.to_vec();
-    let (metric_orders, agg_span) = distill_metric_orders_and_agg(&scopes, &orders);
+    let (metric_orders, _agg_span) = distill_metric_orders_and_agg(&scopes, &orders);
     if metric_orders.is_empty() {
         return Ok(None);
     }
@@ -158,7 +269,6 @@ pub fn make_vertex_collection_generator(
         let context = context.clone();
         let orders = orders.clone();
         let metric_orders = metric_orders.clone();
-        let agg_span = agg_span.clone();
 
         Box::pin(
             async move {
@@ -174,14 +284,13 @@ pub fn make_vertex_collection_generator(
                 for job in job_details {
                     for vertex in job.vertices.into_iter().filter(|v| v.status.is_active()) {
                         let vertex_telemetry =
-                            query_vertex_telemetry(&job.jid, &vertex.id, &metric_orders, &agg_span, &context).await?;
+                            query_vertex_telemetry(&job.jid, &vertex.id, &metric_orders, &context).await?;
 
                         collect_metric_points(&mut metric_points, vertex_telemetry);
                     }
                 }
 
-                let telemetry = merge_telemetry_per_order(metric_points, &orders)?;
-                std::result::Result::<Telemetry, CollectionError>::Ok(telemetry)
+                merge_telemetry_per_order(metric_points, &orders).map_err(|err| err.into())
             }
             .instrument(tracing::info_span!("collect Flink vertices telemetry")),
         )
@@ -196,6 +305,7 @@ fn collect_metric_points(metric_points: &mut HashMap<String, Vec<TelemetryValue>
     }
 }
 
+#[tracing::instrument(level = "info", skip(orders))]
 fn merge_telemetry_per_order(
     metric_points: HashMap<String, Vec<TelemetryValue>>, orders: &[MetricOrder],
 ) -> Result<Telemetry, TelemetryError> {
@@ -209,9 +319,13 @@ fn merge_telemetry_per_order(
     let telemetry: Telemetry = metric_points
         .into_iter()
         .map(
-            |(metric, values)| match telemetry_agg.get(metric.as_str()).map(|agg| agg.combinator()) {
+            |(metric, values)| match telemetry_agg.get(metric.as_str()).map(|agg| (agg, agg.combinator())) {
                 None => Ok(Some((metric, TelemetryValue::Seq(values)))),
-                Some(combo) => combo.combine(values).map(|combined| combined.map(|c| (metric, c))),
+                Some((agg, combo)) => {
+                    let merger = combo.combine(values.clone()).map(|combined| combined.map(|c| (metric, c)));
+                    tracing::info!(?merger, ?values, %agg, "merging metric values per order aggregator");
+                    merger
+                },
             },
         )
         .collect::<Result<Vec<_>, TelemetryError>>()?
@@ -221,22 +335,6 @@ fn merge_telemetry_per_order(
         .into();
 
     Ok(telemetry)
-
-    // for (metric, values) in metric_points.into_iter() {
-    //
-    //     acc
-    //         .entry(vertex_key)
-    //         .and_modify(|acc_val| {
-    //             match telemetry_agg.get(&vertex_key) {
-    //                 None => (),
-    //                 Some(o) => {
-    //                     let combine = |lhs: &TelemetryValue, rhs: &TelemetryValue| {
-    // o.combine(vec![lhs, rhs])}                     o.combine(vec![acc_val, vertex_val])
-    //                 },
-    //             }
-    //         })
-    // }
-    // todo!()
 }
 
 #[tracing::instrument(level = "info", skip(context))]
@@ -244,32 +342,31 @@ async fn query_active_jobs(context: &TaskContext) -> Result<Vec<JobSummary>, Col
     let mut url = context.base_url.clone();
     url.path_segments_mut().unwrap().push("jobs");
 
-    let resp: serde_json::Value = context.client.request(Method::GET, url).send().await?.json().await?;
+    let active_jobs_resp = context.client.request(Method::GET, url).send().await?;
+    log_response("active jobs", &active_jobs_resp);
+    let active_jobs_resp: serde_json::Value = active_jobs_resp.json().await?;
 
-    let jobs: Vec<JobSummary> = match resp.get("jobs") {
+    let jobs: Vec<JobSummary> = match active_jobs_resp.get("jobs") {
         None => Vec::default(),
         Some(js) => serde_json::from_value(js.clone())?,
     };
 
-    let active_jobs = jobs.into_iter().filter(|j| j.status.is_active()).collect();
-
-    Ok(active_jobs)
+    Ok(jobs.into_iter().filter(|j| j.status.is_active()).collect())
 }
 
 #[tracing::instrument(level = "info", skip(context))]
 async fn query_job_details(job_id: &str, context: &TaskContext) -> Result<JobDetail, CollectionError> {
     let mut url = context.base_url.clone();
     url.path_segments_mut().unwrap().push("jobs").push(job_id);
-
-    let detail: JobDetail = context.client.request(Method::GET, url).send().await?.json().await?;
-
-    Ok(detail)
+    let job_details_resp = context.client.request(Method::GET, url).send().await?;
+    log_response("job details", &job_details_resp);
+    let job_details_resp = job_details_resp.json().await?;
+    Ok(job_details_resp)
 }
 
-#[tracing::instrument(level = "info", skip(metric_orders, agg_span, context))]
+#[tracing::instrument(level = "info", skip(metric_orders, context))]
 async fn query_vertex_telemetry(
-    job_id: &JobId, vertex_id: &VertexId, metric_orders: &HashMap<String, Vec<MetricOrder>>,
-    agg_span: &HashSet<Aggregation>, context: &TaskContext,
+    job_id: &JobId, vertex_id: &VertexId, metric_orders: &HashMap<String, Vec<MetricOrder>>, context: &TaskContext,
 ) -> Result<Telemetry, CollectionError> {
     let mut url = context.base_url.clone();
     url.path_segments_mut()
@@ -283,24 +380,60 @@ async fn query_vertex_telemetry(
 
     let mut url2 = url.clone();
 
-    let avail_resp: FlinkMetricResponse = context.client.request(Method::GET, url).send().await?.json().await?;
+    let available_metrics_resp = context.client.request(Method::GET, url).send().await?;
+    log_response("available metrics", &available_metrics_resp);
+    let available_metrics_resp: FlinkMetricResponse = available_metrics_resp.json().await?;
 
-    let target_metrics: HashSet<String> = avail_resp
+    let available_vertex_metrics: HashSet<String> = available_metrics_resp
         .into_iter()
         .filter_map(|m| metric_orders.get(&m.id).and(Some(m.id)))
         .collect();
+    let vertex_agg_span = agg_span_for(&available_vertex_metrics, metric_orders);
+    tracing::info!(
+        ?available_vertex_metrics,
+        ?vertex_agg_span,
+        "available vertex metrics identified per order"
+    );
 
-    url2.query_pairs_mut()
-        .clear()
-        .append_pair("get", target_metrics.into_iter().join(",").as_str())
-        .append_pair("agg", agg_span.iter().join(",").as_str());
+    let telemetry = if !available_vertex_metrics.is_empty() {
+        url2.query_pairs_mut()
+            .clear()
+            .append_pair("get", available_vertex_metrics.into_iter().join(",").as_str());
 
-    let resp: FlinkMetricResponse = context.client.request(Method::GET, url2).send().await?.json().await?;
+        if !vertex_agg_span.is_empty() {
+            url2.query_pairs_mut()
+                .append_pair("agg", vertex_agg_span.iter().join(",").as_str());
+        }
 
-    let telemetry = build_telemetry(resp, metric_orders)?;
+        let vertex_telemetry_resp = context.client.request(Method::GET, url2).send().await?;
+        log_response("job vertex telemetry", &vertex_telemetry_resp);
+        let vertex_telemetry_resp: FlinkMetricResponse = vertex_telemetry_resp.json().await?;
+        build_telemetry(vertex_telemetry_resp, metric_orders)?
+    } else {
+        Telemetry::default()
+    };
+
+
     Ok(telemetry)
 }
 
+fn agg_span_for(target: &HashSet<String>, metric_orders: &HashMap<String, Vec<MetricOrder>>) -> HashSet<Aggregation> {
+    let result: HashSet<Aggregation> = target
+        .iter()
+        .flat_map(|metric| {
+            metric_orders
+                .get(metric)
+                .cloned()
+                .unwrap_or_else(Vec::new)
+                .into_iter()
+                .map(|order| order.agg)
+                .filter(|agg| *agg != Aggregation::Value)
+                .collect::<HashSet<_>>()
+        })
+        .collect();
+
+    result
+}
 
 /// Distills orders to requested scope and reorganizes them (order has metric+agg) to metric and
 /// consolidates aggregation span.
@@ -326,15 +459,17 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
 
+    use cast_trait_object::DynCastExt;
     use claim::*;
     use fake::{Fake, Faker};
     use pretty_assertions::assert_eq;
     use proctor::elements::{TelemetryType, Timestamp};
+    use proctor::graph::stage::tick::TickMsg;
+    use proctor::graph::Graph;
     use reqwest::header::HeaderMap;
     use serde_json::json;
     use tokio_test::block_on;
-    use trim_margin::MarginTrimmable;
-    use wiremock::matchers::{method, path, query_param};
+    use wiremock::matchers::{method, path};
     use wiremock::{Match, Mock, MockServer, Request, Respond, ResponseTemplate};
 
     use super::*;
@@ -374,6 +509,7 @@ mod tests {
             .with(RetryTransientMiddleware::new_with_policy(retry_policy))
             .build();
         let url = format!("{}/", &mock_server.uri());
+        // let url = "http://localhost:8081/".to_string();
         Ok(TaskContext { client, base_url: Url::parse(url.as_str())? })
     }
 
@@ -1149,7 +1285,7 @@ mod tests {
                 { "id": "buffers.outPoolUsage" },
                 { "id": "Shuffle.Netty.Input.numBuffersInLocalPerSecond" },
                 { "id": "numRecordsInPerSecond" },
-                { "id": "Shuffle.Netty.Input.Buffers.inputFloatingBuffersUsage" }
+                { "id": "Shuffle.Netty.Input.Buffers.inputFloatingBuffersUsage" },
             ] );
 
             let summary_response = ResponseTemplate::new(200).set_body_json(summary);
@@ -1160,12 +1296,12 @@ mod tests {
                 { "id": "buffers.inputQueueLength", "max": 0.0 },
                 { "id": "buffers.inPoolUsage", "max": 0.0 },
                 { "id": "buffers.outputQueueLength", "max": 1.0 },
-                { "id": "buffers.outPoolUsage", "max": 0.1 }
+                { "id": "buffers.outPoolUsage", "max": 0.1 },
             ] );
 
             let metrics_response = ResponseTemplate::new(200).set_body_json(metrics);
 
-            let job_id = JobId::new("a97b6344d775aafe03e55a8e812d2713");
+            let job_id = JobId::new("f3f10c679805d35fbed73a08c37d03cc");
             let vertex_id = VertexId::new("cbc357ccb763df2852fee8c4fc7d55f2");
 
             let query_path = format!(
@@ -1207,9 +1343,9 @@ mod tests {
             orders.extend(vec![kafka_order.clone()]);
 
             let (metric_orders, agg_span) = distill_metric_orders_and_agg(&scopes, &orders);
+            tracing::info!(?metric_orders, ?agg_span, "orders distilled");
 
-            let actual =
-                assert_ok!(query_vertex_telemetry(&job_id, &vertex_id, &metric_orders, &agg_span, &context).await);
+            let actual = assert_ok!(query_vertex_telemetry(&job_id, &vertex_id, &metric_orders, &context).await);
 
             assert_eq!(
                 actual,
@@ -1223,6 +1359,673 @@ mod tests {
                 }
                 .into()
             )
+        })
+    }
+
+    #[test]
+    fn test_flink_metrics_generator() {
+        once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
+        let main_span = tracing::info_span!("test_flink_metrics_generator");
+        let _ = main_span.enter();
+
+        block_on(async {
+            let mock_server = MockServer::start().await;
+
+            // -- jobs telemetry --
+            let uptime: i64 = Faker.fake::<chrono::Duration>().num_milliseconds();
+            let restarts: i64 = (0..99).fake();
+            let failed_checkpts: i64 = (0..99).fake();
+            let jobs_json = json!([
+                { "id": "uptime", "max":  uptime as f64,},
+                { "id": "numRestarts", "max":  restarts as f64,},
+                { "id": "numberOfFailedCheckpoints", "max":  failed_checkpts as f64,},
+            ]);
+            let jobs_response = ResponseTemplate::new(200).set_body_json(jobs_json);
+            Mock::given(method("GET"))
+                .and(path("/jobs/metrics"))
+                .respond_with(jobs_response)
+                .expect(1)
+                .mount(&mock_server)
+                .await;
+
+            // -- taskmanagers telemetry --
+            let cpu_load: f64 = 16. * ((0..100_000_000).fake::<i64>() as f64 / 100_000_000.);
+            let heap_used: f64 = 1_000_000_000. * ((0..100_000_000).fake::<i64>() as f64 / 100_000_000.);
+            let heap_committed: f64 = 1_000_000_000. * ((0..100_000_000).fake::<i64>() as f64 / 100_000_000.);
+            let nr_threads: i32 = (1..150).fake();
+            let tm_json = json!([
+                { "id": "Status.JVM.CPU.Load", "max":  cpu_load,},
+                { "id": "Status.JVM.Memory.Heap.Used", "max":  heap_used,},
+                { "id": "Status.JVM.Memory.Heap.Committed", "max":  heap_committed,},
+                { "id": "Status.JVM.Threads.Count", "max":  nr_threads as f64,},
+            ]);
+            let tm_response = ResponseTemplate::new(200).set_body_json(tm_json);
+            Mock::given(method("GET"))
+                .and(path("/taskmanagers/metrics"))
+                .respond_with(tm_response)
+                .expect(1)
+                .mount(&mock_server)
+                .await;
+
+            // -- taskmanager admin telemetry --
+            let tm_admin_json = json!({
+                "taskmanagers": [
+                    {
+                        "id": "100.97.247.74:43435-69a783",
+                        "path": "akka.tcp://flink@100.97.247.74:43435/user/rpc/taskmanager_0",
+                        "dataPort": Faker.fake::<i32>(),
+                        "jmxPort": Faker.fake::<i32>(),
+                        "timeSinceLastHeartbeat": Faker.fake::<i64>(), // 1638856220901_i64,
+                        "slotsNumber": Faker.fake::<i32>(), // 1,
+                        "freeSlots": Faker.fake::<i32>(), // 0,
+                        "totalResource": {
+                            "cpuCores": Faker.fake::<f64>(), // 1.0,
+                            "taskHeapMemory": Faker.fake::<i32>(), // 3327,
+                            "taskOffHeapMemory": Faker.fake::<i32>(), //0,
+                            "managedMemory": Faker.fake::<i32>(), //2867,
+                            "networkMemory": Faker.fake::<i32>(), //716,
+                            "extendedResources": {}
+                        },
+                        "freeResource": {
+                            "cpuCores": Faker.fake::<f64>(), //0.0,
+                            "taskHeapMemory": Faker.fake::<i32>(), //0,
+                            "taskOffHeapMemory": Faker.fake::<i32>(), //0,
+                            "managedMemory": Faker.fake::<i32>(), //0,
+                            "networkMemory": Faker.fake::<i32>(), //0,
+                            "extendedResources": {}
+                        },
+                        "hardware": {
+                            "cpuCores": Faker.fake::<i32>(), //1,
+                            "physicalMemory": Faker.fake::<i64>(), //267929460736_i64,
+                            "freeMemory": Faker.fake::<i64>(), //3623878656_i64,
+                            "managedMemory": Faker.fake::<i64>(), //3006477152_i64
+                        },
+                        "memoryConfiguration": {
+                            "frameworkHeap": Faker.fake::<i64>(), //134217728_i64,
+                            "taskHeap": Faker.fake::<i64>(), //3489660872_i64,
+                            "frameworkOffHeap": Faker.fake::<i64>(), //134217728_i64,
+                            "taskOffHeap": Faker.fake::<i64>(), //0,
+                            "networkMemory": Faker.fake::<i64>(), //751619288_i64,
+                            "managedMemory": Faker.fake::<i64>(), //3006477152_i64,
+                            "jvmMetaspace": Faker.fake::<i64>(), //268435456_i64,
+                            "jvmOverhead": Faker.fake::<i64>(), //864958705_i64,
+                            "totalFlinkMemory": Faker.fake::<i64>(), //7516192768_i64,
+                            "totalProcessMemory": Faker.fake::<i64>(), //8649586929_i64
+                        }
+                    },
+                    {
+                        "id": "100.97.247.74:43435-69a798",
+                        "path": "akka.tcp://flink@100.97.247.74:43435/user/rpc/taskmanager_1",
+                        "dataPort": Faker.fake::<i32>(), //42381,
+                        "jmxPort": Faker.fake::<i32>(), //-1,
+                        "timeSinceLastHeartbeat": 1638856220901_i64,
+                        "slotsNumber": Faker.fake::<i32>(), //1,
+                        "freeSlots": Faker.fake::<i32>(), //0,
+                        "totalResource": {
+                            "cpuCores": Faker.fake::<f64>(), //1.0,
+                            "taskHeapMemory": Faker.fake::<i32>(), //3327,
+                            "taskOffHeapMemory": Faker.fake::<i32>(), //0,
+                            "managedMemory": Faker.fake::<i32>(), //2867,
+                            "networkMemory": Faker.fake::<i32>(), //716,
+                            "extendedResources": {}
+                        },
+                        "freeResource": {
+                            "cpuCores": Faker.fake::<f64>(), //0.0,
+                            "taskHeapMemory": Faker.fake::<i32>(), //0,
+                            "taskOffHeapMemory": Faker.fake::<i32>(), //0,
+                            "managedMemory": Faker.fake::<i32>(), //0,
+                            "networkMemory": Faker.fake::<i32>(), //0,
+                            "extendedResources": {}
+                        },
+                        "hardware": {
+                            "cpuCores": Faker.fake::<i32>(), //1,
+                            "physicalMemory": Faker.fake::<i64>(), //267929460736_i64,
+                            "freeMemory": Faker.fake::<i64>(), //3623878656_i64,
+                            "managedMemory": Faker.fake::<i64>(), //3006477152_i64
+                        },
+                        "memoryConfiguration": {
+                            "frameworkHeap": Faker.fake::<i64>(), //134217728_i64,
+                            "taskHeap": Faker.fake::<i64>(), //3489660872_i64,
+                            "frameworkOffHeap": Faker.fake::<i64>(), //134217728_i64,
+                            "taskOffHeap": Faker.fake::<i32>(), //0,
+                            "networkMemory": Faker.fake::<i64>(), //751619288_i64,
+                            "managedMemory": Faker.fake::<i64>(), //3006477152_i64,
+                            "jvmMetaspace": Faker.fake::<i64>(), //268435456_i64,
+                            "jvmOverhead": Faker.fake::<i64>(), //864958705_i64,
+                            "totalFlinkMemory": Faker.fake::<i64>(), //7516192768_i64,
+                            "totalProcessMemory": Faker.fake::<i64>(), //8649586929_i64
+                        }
+                    }
+                ]
+            });
+            let tm_admin_response = ResponseTemplate::new(200).set_body_json(tm_admin_json);
+            Mock::given(method("GET"))
+                .and(path("/taskmanagers"))
+                .respond_with(tm_admin_response)
+                .expect(1)
+                .mount(&mock_server)
+                .await;
+
+            // -- query active jobs
+            let job_1 = "0771e8332dc401d254a140a707169a48";
+            let job_2 = "5226h8332dc401d254a140a707114f93";
+            let active_jobs_json = json!({
+                "jobs": [ { "id": job_1, "status": "RUNNING" }, { "id": job_2, "status": "CREATED" } ]
+            });
+            let active_jobs_response = ResponseTemplate::new(200).set_body_json(active_jobs_json);
+            Mock::given(method("GET"))
+                .and(path("/jobs"))
+                .respond_with(active_jobs_response)
+                .expect(1)
+                .mount(&mock_server)
+                .await;
+
+            // -- query active job running --
+            let vertex_1_1 = "cbc357ccb763df2852fee8c4fc7d55f2";
+            let vertex_1_2 = "90bea66de1c231edf33913ecd54406c1";
+
+            let active_job_1_json = json!({
+                "jid": job_1,
+                "name": "CarTopSpeedWindowingExample",
+                "isStoppable": false,
+                "state": "RUNNING",
+                "start-time": 1639156793312_i64,
+                "end-time": -1,
+                "duration": 23079,
+                "maxParallelism": -1,
+                "now": 1639156816391_i64,
+                "timestamps": {
+                    "CREATED": 1639156793320_i64,
+                    "FAILED": 0,
+                    "RUNNING": 1639156794159_i64,
+                    "CANCELED": 0,
+                    "CANCELLING": 0,
+                    "SUSPENDED": 0,
+                    "FAILING": 0,
+                    "RESTARTING": 0,
+                    "FINISHED": 0,
+                    "INITIALIZING": 1639156793312_i64,
+                    "RECONCILING": 0
+                },
+                "vertices": [
+                    {
+                        "id": vertex_1_1,
+                        "name": "Source: Custom Source -> Timestamps/Watermarks",
+                        "maxParallelism": 128,
+                        "parallelism": 1,
+                        "status": "RUNNING",
+                        "start-time": 1639156794188_i64,
+                        "end-time": -1,
+                        "duration": 22203,
+                        "tasks": {
+                            "SCHEDULED": 0,
+                            "FINISHED": 0,
+                            "FAILED": 0,
+                            "CANCELING": 0,
+                            "CANCELED": 0,
+                            "DEPLOYING": 0,
+                            "RECONCILING": 0,
+                            "CREATED": 0,
+                            "RUNNING": 1,
+                            "INITIALIZING": 0
+                        },
+                        "metrics": {
+                            "read-bytes": 0,
+                            "read-bytes-complete": false,
+                            "write-bytes": 0,
+                            "write-bytes-complete": false,
+                            "read-records": 0,
+                            "read-records-complete": false,
+                            "write-records": 0,
+                            "write-records-complete": false
+                        }
+                    },
+                    {
+                        "id": vertex_1_2,
+                        "name": "Window(GlobalWindows(), DeltaTrigger, TimeEvictor, ComparableAggregator, PassThroughWindowFunction) -> Sink: Print to Std. Out",
+                        "maxParallelism": 128,
+                        "parallelism": 1,
+                        "status": "RUNNING",
+                        "start-time": 1639156794193_i64,
+                        "end-time": -1,
+                        "duration": 22198,
+                        "tasks": {
+                            "SCHEDULED": 0,
+                            "FINISHED": 0,
+                            "FAILED": 0,
+                            "CANCELING": 0,
+                            "CANCELED": 0,
+                            "DEPLOYING": 0,
+                            "RECONCILING": 0,
+                            "CREATED": 0,
+                            "RUNNING": 1,
+                            "INITIALIZING": 0
+                        },
+                        "metrics": {
+                            "read-bytes": 0,
+                            "read-bytes-complete": false,
+                            "write-bytes": 0,
+                            "write-bytes-complete": false,
+                            "read-records": 0,
+                            "read-records-complete": false,
+                            "write-records": 0,
+                            "write-records-complete": false
+                        }
+                    }
+                ],
+                "status-counts": {
+                    "SCHEDULED": 0,
+                    "FINISHED": 0,
+                    "FAILED": 0,
+                    "CANCELING": 0,
+                    "CANCELED": 0,
+                    "DEPLOYING": 0,
+                    "RECONCILING": 0,
+                    "CREATED": 0,
+                    "RUNNING": 2,
+                    "INITIALIZING": 0
+                },
+                "plan": {
+                    "jid": "a97b6344d775aafe03e55a8e812d2713",
+                    "name": "CarTopSpeedWindowingExample",
+                    "nodes": [
+                        {
+                            "id": vertex_1_2,
+                            "parallelism": 1,
+                            "operator": "",
+                            "operator_strategy": "",
+                            "description": "Window(GlobalWindows(), DeltaTrigger, TimeEvictor, ComparableAggregator, PassThroughWindowFunction) -&gt; Sink: Print to Std. Out",
+                            "inputs": [
+                                {
+                                    "num": 0,
+                                    "id": "cbc357ccb763df2852fee8c4fc7d55f2",
+                                    "ship_strategy": "HASH",
+                                    "exchange": "pipelined_bounded"
+                                }
+                            ],
+                            "optimizer_properties": {}
+                        },
+                        {
+                            "id": vertex_1_1,
+                            "parallelism": 1,
+                            "operator": "",
+                            "operator_strategy": "",
+                            "description": "Source: Custom Source -&gt; Timestamps/Watermarks",
+                            "optimizer_properties": {}
+                        }
+                    ]
+                }
+            });
+
+            let active_job_1_response = ResponseTemplate::new(200).set_body_json(active_job_1_json);
+            Mock::given(method("GET"))
+                .and(path(format!("/jobs/{}", job_1)))
+                .respond_with(active_job_1_response)
+                .expect(1)
+                .mount(&mock_server)
+                .await;
+
+            // -- active job 2 --
+            let active_job_2_json = json!({
+                "jid": job_2,
+                "name": "Stubby Job",
+                "isStoppable": false,
+                "state": "CREATED",
+                "start-time": 1639156793312_i64,
+                "end-time": -1,
+                "duration": 23079,
+                "maxParallelism": -1,
+                "now": 1639156816391_i64,
+                "timestamps": {
+                    "CREATED": 1639156793320_i64,
+                    "FAILED": 0,
+                    "RUNNING": 0,
+                    "CANCELED": 0,
+                    "CANCELLING": 0,
+                    "SUSPENDED": 0,
+                    "FAILING": 0,
+                    "RESTARTING": 0,
+                    "FINISHED": 0,
+                    "INITIALIZING": 1639156793312_i64,
+                    "RECONCILING": 0
+                },
+                "vertices": [ ],
+                "status-counts": {
+                    "SCHEDULED": 0,
+                    "FINISHED": 0,
+                    "FAILED": 0,
+                    "CANCELING": 0,
+                    "CANCELED": 0,
+                    "DEPLOYING": 0,
+                    "RECONCILING": 0,
+                    "CREATED": 0,
+                    "RUNNING": 0,
+                    "INITIALIZING": 0
+                },
+                "plan": {
+                    "jid": "a97b6344d775aafe03e55a8e812d2713",
+                    "name": "Stubby_1",
+                    "nodes": []
+                }
+            });
+            let active_job_2_response = ResponseTemplate::new(200).set_body_json(active_job_2_json);
+            Mock::given(method("GET"))
+                .and(path(format!("/jobs/{}", job_2)))
+                .respond_with(active_job_2_response)
+                .expect(1)
+                .mount(&mock_server)
+                .await;
+
+            let num_records_in_per_second_1 = Faker.fake::<f64>();
+            let num_records_in_per_second_2 = Faker.fake::<f64>();
+            let max_num_records_in_per_second = num_records_in_per_second_1.max(num_records_in_per_second_2);
+            tracing::info!(%num_records_in_per_second_1, %num_records_in_per_second_2, %max_num_records_in_per_second, "flow.records_in_per_sec");
+
+            let num_records_out_per_second_1 = Faker.fake::<f64>();
+            let num_records_out_per_second_2 = Faker.fake::<f64>();
+            let max_num_records_out_per_second = num_records_out_per_second_1.max(num_records_out_per_second_2);
+            tracing::info!(%num_records_out_per_second_1, %num_records_out_per_second_2, %max_num_records_out_per_second, "flow.records_out_per_sec");
+
+            let buf_input_queue_len_1 = Faker.fake::<f64>();
+            let buf_input_queue_len_2 = Faker.fake::<f64>();
+            let max_buf_input_queue_len = buf_input_queue_len_1.max(buf_input_queue_len_2);
+            tracing::info!(%buf_input_queue_len_1, %buf_input_queue_len_2, %max_buf_input_queue_len, "cluster.task_network_input_queue_len");
+
+            let buf_input_pool_usage_1 = Faker.fake::<f64>();
+            let buf_input_pool_usage_2 = Faker.fake::<f64>();
+            let max_buf_input_pool_usage = buf_input_pool_usage_1.max(buf_input_pool_usage_2);
+            tracing::info!(%buf_input_pool_usage_1, %buf_input_pool_usage_2, %max_buf_input_pool_usage, "cluster.task_network_input_pool_usage");
+
+            let buf_output_queue_len_1 = Faker.fake::<f64>();
+            let buf_output_queue_len_2 = Faker.fake::<f64>();
+            let max_buf_output_queue_len = buf_output_queue_len_1.max(buf_output_queue_len_2);
+            tracing::info!(%buf_output_queue_len_1, %buf_output_queue_len_2, %max_buf_output_queue_len, "cluster.task_network_output_queue_len");
+
+            let buf_output_pool_usage_1 = Faker.fake::<f64>();
+            let buf_output_pool_usage_2 = Faker.fake::<f64>();
+            let max_buf_output_pool_usage = buf_output_pool_usage_1.max(buf_output_pool_usage_2);
+            tracing::info!(%buf_output_pool_usage_1, %buf_output_pool_usage_2, %max_buf_output_pool_usage, "cluster.task_network_output_pool_usage");
+
+            // -- job 1
+            let summary_1_json = json!([
+                { "id": "Shuffle.Netty.Output.Buffers.outPoolUsage" },
+                { "id": "checkpointStartDelayNanos" },
+                { "id": "numBytesInLocal" },
+                { "id": "numBytesInRemotePerSecond" },
+                { "id": "Shuffle.Netty.Input.numBytesInRemotePerSecond" },
+                { "id": "Source__Custom_Source.numRecordsInPerSecond" },
+                { "id": "numBytesOut" },
+                { "id": "Timestamps/Watermarks.currentInputWatermark" },
+                { "id": "numBytesIn" },
+                { "id": "Timestamps/Watermarks.numRecordsOutPerSecond" },
+                { "id": "numBuffersOut" },
+                { "id": "Shuffle.Netty.Input.numBuffersInLocal" },
+                { "id": "numBuffersInRemotePerSecond" },
+                { "id": "numBytesOutPerSecond" },
+                { "id": "Timestamps/Watermarks.numRecordsOut" },
+                { "id": "buffers.outputQueueLength" },
+                { "id": "Timestamps/Watermarks.numRecordsIn" },
+                { "id": "numBuffersOutPerSecond" },
+                { "id": "Shuffle.Netty.Input.Buffers.inputExclusiveBuffersUsage" },
+                { "id": "isBackPressured" },
+                { "id": "numBytesInLocalPerSecond" },
+                { "id": "buffers.inPoolUsage" },
+                { "id": "idleTimeMsPerSecond" },
+                { "id": "Shuffle.Netty.Input.numBytesInLocalPerSecond" },
+                { "id": "numBytesInRemote" },
+                { "id": "Source__Custom_Source.numRecordsOut" },
+                { "id": "Shuffle.Netty.Input.numBytesInLocal" },
+                { "id": "Shuffle.Netty.Input.numBytesInRemote" },
+                { "id": "busyTimeMsPerSecond" },
+                { "id": "Shuffle.Netty.Output.Buffers.outputQueueLength" },
+                { "id": "buffers.inputFloatingBuffersUsage" },
+                { "id": "Shuffle.Netty.Input.Buffers.inPoolUsage" },
+                { "id": "numBuffersInLocalPerSecond" },
+                { "id": "numRecordsOut" },
+                { "id": "numBuffersInLocal" },
+                { "id": "Timestamps/Watermarks.currentOutputWatermark" },
+                { "id": "Source__Custom_Source.currentOutputWatermark" },
+                { "id": "numBuffersInRemote" },
+                { "id": "buffers.inputQueueLength" },
+                { "id": "Source__Custom_Source.numRecordsOutPerSecond" },
+                { "id": "Timestamps/Watermarks.numRecordsInPerSecond" },
+                { "id": "numRecordsIn" },
+                { "id": "Shuffle.Netty.Input.numBuffersInRemote" },
+                { "id": "numBytesInPerSecond" },
+                { "id": "backPressuredTimeMsPerSecond" },
+                { "id": "Shuffle.Netty.Input.Buffers.inputQueueLength" },
+                { "id": "Source__Custom_Source.numRecordsIn" },
+                { "id": "buffers.inputExclusiveBuffersUsage" },
+                { "id": "Shuffle.Netty.Input.numBuffersInRemotePerSecond" },
+                { "id": "numRecordsOutPerSecond" },
+                { "id": "buffers.outPoolUsage" },
+                { "id": "Shuffle.Netty.Input.numBuffersInLocalPerSecond" },
+                { "id": "numRecordsInPerSecond" },
+                { "id": "Shuffle.Netty.Input.Buffers.inputFloatingBuffersUsage" },
+            ]);
+
+            let summary_1_response = ResponseTemplate::new(200).set_body_json(summary_1_json);
+
+            let metrics_1_json = json!([
+                { "id": "numRecordsInPerSecond", "max": num_records_in_per_second_1 },
+                { "id": "numRecordsOutPerSecond", "max": num_records_out_per_second_1 },
+                { "id": "buffers.inputQueueLength", "max": buf_input_queue_len_1 },
+                { "id": "buffers.inPoolUsage", "max": buf_input_pool_usage_1 },
+                { "id": "buffers.outputQueueLength", "max": buf_output_queue_len_1 },
+                { "id": "buffers.outPoolUsage", "max": buf_output_pool_usage_1 },
+            ] );
+
+            let metrics_1_response = ResponseTemplate::new(200).set_body_json(metrics_1_json);
+
+            let job_id = JobId::new(job_1.clone());
+            let vertex_id = VertexId::new(vertex_1_1.clone());
+
+            let query_path = format!(
+                "/jobs/{jid}/vertices/{vid}/subtasks/metrics",
+                jid = job_id,
+                vid = vertex_id
+            );
+
+            Mock::given(method("GET"))
+                .and(path(query_path.clone()))
+                .and(EmptyQueryParamMatcher)
+                .respond_with(summary_1_response)
+                .expect(1)
+                .mount(&mock_server)
+                .await;
+
+            Mock::given(method("GET"))
+                .and(path(query_path))
+                .and(QueryParamKeyMatcher::new("get"))
+                .respond_with(metrics_1_response)
+                .expect(1)
+                .mount(&mock_server)
+                .await;
+
+            // -- job 2
+            let summary_2_json = json!([
+                { "id": "Shuffle.Netty.Output.Buffers.outPoolUsage" },
+                { "id": "checkpointStartDelayNanos" },
+                { "id": "numBytesInLocal" },
+                { "id": "checkpointAlignmentTime" },
+                { "id": "numBytesInRemotePerSecond" },
+                { "id": "Shuffle.Netty.Input.numBytesInRemotePerSecond" },
+                { "id": "numBytesOut" },
+                { "id": "Window(GlobalWindows()__DeltaTrigger__TimeEvictor__ComparableAggregator__PassThr.numRecordsInPerSecond" },
+                { "id": "Window(GlobalWindows()__DeltaTrigger__TimeEvictor__ComparableAggregator__PassThr.currentOutputWatermark" },
+                { "id": "numBytesIn" },
+                { "id": "Window(GlobalWindows()__DeltaTrigger__TimeEvictor__ComparableAggregator__PassThr.currentInputWatermark" },
+                { "id": "Sink__Print_to_Std__Out.numRecordsOutPerSecond" },
+                { "id": "numBuffersOut" },
+                { "id": "Shuffle.Netty.Input.numBuffersInLocal" },
+                { "id": "numBuffersInRemotePerSecond" },
+                { "id": "numBytesOutPerSecond" },
+                { "id": "Window(GlobalWindows()__DeltaTrigger__TimeEvictor__ComparableAggregator__PassThr.numLateRecordsDropped" },
+                { "id": "buffers.outputQueueLength" },
+                { "id": "numBuffersOutPerSecond" },
+                { "id": "Shuffle.Netty.Input.Buffers.inputExclusiveBuffersUsage" },
+                { "id": "isBackPressured" },
+                { "id": "Window(GlobalWindows()__DeltaTrigger__TimeEvictor__ComparableAggregator__PassThr.numRecordsOut" },
+                { "id": "Sink__Print_to_Std__Out.currentInputWatermark" },
+                { "id": "numBytesInLocalPerSecond" },
+                { "id": "buffers.inPoolUsage" },
+                { "id": "idleTimeMsPerSecond" },
+                { "id": "Shuffle.Netty.Input.numBytesInLocalPerSecond" },
+                { "id": "Sink__Print_to_Std__Out.numRecordsInPerSecond" },
+                { "id": "numBytesInRemote" },
+                { "id": "Shuffle.Netty.Input.numBytesInLocal" },
+                { "id": "Sink__Print_to_Std__Out.currentOutputWatermark" },
+                { "id": "Shuffle.Netty.Input.numBytesInRemote" },
+                { "id": "busyTimeMsPerSecond" },
+                { "id": "Shuffle.Netty.Output.Buffers.outputQueueLength" },
+                { "id": "buffers.inputFloatingBuffersUsage" },
+                { "id": "currentInputWatermark" },
+                { "id": "Window(GlobalWindows()__DeltaTrigger__TimeEvictor__ComparableAggregator__PassThr.numRecordsIn" },
+                { "id": "Shuffle.Netty.Input.Buffers.inPoolUsage" },
+                { "id": "numBuffersInLocalPerSecond" },
+                { "id": "numRecordsOut" },
+                { "id": "numBuffersInLocal" },
+                { "id": "Sink__Print_to_Std__Out.numRecordsOut" },
+                { "id": "numBuffersInRemote" },
+                { "id": "buffers.inputQueueLength" },
+                { "id": "Sink__Print_to_Std__Out.numRecordsIn" },
+                { "id": "Window(GlobalWindows()__DeltaTrigger__TimeEvictor__ComparableAggregator__PassThr.numRecordsOutPerSecond" },
+                { "id": "numRecordsIn" },
+                { "id": "Shuffle.Netty.Input.numBuffersInRemote" },
+                { "id": "numBytesInPerSecond" },
+                { "id": "Shuffle.Netty.Input.Buffers.inputQueueLength" },
+                { "id": "backPressuredTimeMsPerSecond" },
+                { "id": "buffers.inputExclusiveBuffersUsage" },
+                { "id": "Shuffle.Netty.Input.numBuffersInRemotePerSecond" },
+                { "id": "numRecordsOutPerSecond" },
+                { "id": "buffers.outPoolUsage" },
+                { "id": "Shuffle.Netty.Input.numBuffersInLocalPerSecond" },
+                { "id": "numRecordsInPerSecond" },
+                { "id": "Shuffle.Netty.Input.Buffers.inputFloatingBuffersUsage" }
+            ]);
+
+            let summary_2_response = ResponseTemplate::new(200).set_body_json(summary_2_json);
+
+            let metrics_2_json = json!([
+                { "id": "numRecordsInPerSecond", "max": num_records_in_per_second_2 },
+                { "id": "numRecordsOutPerSecond", "max": num_records_out_per_second_2 },
+                { "id": "buffers.inputQueueLength", "max": buf_input_queue_len_2 },
+                { "id": "buffers.inPoolUsage", "max": buf_input_pool_usage_2 },
+                { "id": "buffers.outputQueueLength", "max": buf_output_queue_len_2 },
+                { "id": "buffers.outPoolUsage", "max": buf_output_pool_usage_2 },
+            ]);
+
+            let metrics_2_response = ResponseTemplate::new(200).set_body_json(metrics_2_json);
+
+            let job_id = JobId::new(job_1.clone());
+            let vertex_id = VertexId::new(vertex_1_2.clone());
+
+            let query_path = format!(
+                "/jobs/{jid}/vertices/{vid}/subtasks/metrics",
+                jid = job_id,
+                vid = vertex_id
+            );
+
+            Mock::given(method("GET"))
+                .and(path(query_path.clone()))
+                .and(EmptyQueryParamMatcher)
+                .respond_with(summary_2_response)
+                .expect(1)
+                .mount(&mock_server)
+                .await;
+
+            Mock::given(method("GET"))
+                .and(path(query_path))
+                .and(QueryParamKeyMatcher::new("get"))
+                .respond_with(metrics_2_response)
+                .expect(1)
+                .mount(&mock_server)
+                .await;
+
+
+            let mock_uri = assert_ok!(Url::parse(mock_server.uri().as_str()));
+            let job_manager_host = assert_some!(mock_uri.host());
+            let job_manager_port = assert_some!(mock_uri.port());
+
+            let settings = FlinkSettings {
+                job_manager_uri_scheme: "http".to_string(),
+                job_manager_host: job_manager_host.to_string(), //"localhost".to_string(),
+                job_manager_port,                               //: 8081,
+                metrics_initial_delay: Duration::ZERO,
+                metrics_interval: Duration::from_secs(120),
+                metric_orders: STD_METRIC_ORDERS.clone(),
+                ..FlinkSettings::default()
+            };
+
+            let mut gen = assert_ok!(make_flink_metrics_source("test_flink", &settings).await);
+            let gen_source = assert_some!(gen.stage.take());
+            let tick_api = assert_some!(gen.tx_stop.take());
+
+            let mut sink = proctor::graph::stage::Fold::<_, Telemetry, Vec<Telemetry>>::new(
+                "sink",
+                Vec::default(),
+                |mut acc, item| {
+                    acc.push(item);
+                    acc
+                },
+            );
+            let rx_acc = assert_some!(sink.take_final_rx());
+
+            (gen_source.outlet(), sink.inlet()).connect().await;
+            let mut g = Graph::default();
+            g.push_back(gen_source.dyn_upcast()).await;
+            g.push_back(Box::new(sink)).await;
+            tracing::warn!("RUNNING GRAPH...");
+            tokio::spawn(async move {
+                assert_ok!(g.run().await);
+            });
+            tracing::warn!("SLEEP BEFORE STOPPING...");
+
+            tokio::time::sleep(Duration::from_millis(10)).await;
+            tracing::warn!("STOPPING...");
+            let (stop_cmd, stop_rx) = TickMsg::stop();
+            assert_ok!(tick_api.send(stop_cmd));
+            assert_ok!(assert_ok!(stop_rx.await));
+            tracing::warn!("ASSESSING...");
+
+            let actual = assert_some!(assert_ok!(rx_acc.await).pop());
+
+            let expected: HashMap<String, TelemetryValue> = maplit::hashmap! {
+                "health.job_uptime_millis".to_string() => uptime.into(),
+                "health.job_nr_restarts".to_string() => restarts.into(),
+                "health.job_nr_failed_checkpoints".to_string() => failed_checkpts.into(),
+                "cluster.task_cpu_load".to_string() => cpu_load.into(),
+                "cluster.task_heap_memory_used".to_string() => heap_used.into(),
+                "cluster.task_heap_memory_committed".to_string() => heap_committed.into(),
+                "cluster.task_nr_threads".to_string() => nr_threads.into(),
+                "cluster.nr_task_managers".to_string() => 2.into(),
+                "flow.records_in_per_sec".to_string() => max_num_records_in_per_second.into(),
+                "flow.records_out_per_sec".to_string() => max_num_records_out_per_second.into(),
+                "cluster.task_network_input_queue_len".to_string() => max_buf_input_queue_len.into(),
+                "cluster.task_network_input_pool_usage".to_string() => max_buf_input_pool_usage.into(),
+                "cluster.task_network_output_queue_len".to_string() => max_buf_output_queue_len.into(),
+                "cluster.task_network_output_pool_usage".to_string() => max_buf_output_pool_usage.into(),
+            };
+
+            for (key, expected_v) in expected.iter() {
+                match assert_some!(actual.get(key)) {
+                    TelemetryValue::Float(actual) => {
+                        let ev: f64 = assert_ok!(expected_v.try_into());
+                        if !approx::relative_eq!(*actual, ev) {
+                            assert_eq!(*actual, ev, "metric: {}", key);
+                        }
+                    },
+                    actual => {
+                        assert_eq!((key, actual), (key, expected_v));
+                    },
+                };
+                // assert_eq!((key, actual_v), (key, expected_v));
+            }
+
+            use std::collections::BTreeSet;
+            let expected_keys: BTreeSet<&String> = expected.keys().collect();
+            let actual_keys: BTreeSet<&String> = actual.keys().collect();
+            assert_eq!(actual_keys, expected_keys);
         })
     }
 }

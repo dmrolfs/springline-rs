@@ -352,8 +352,6 @@ impl Lens for ClusterLens {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[ignore]
     #[test]
     fn test_metric_catalog_populate_data() {

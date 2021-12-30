@@ -82,6 +82,7 @@ where
                 query_policy.bold().dim()
             };
 
+            #[allow(clippy::type_complexity)]
             let menu_actions: [(StyledObject<&str>, Option<MenuAction<State<P>>>); 4] = [
                 (set_context.clone(), Some(Box::new(Self::set_context))),
                 (set_data.clone(), Some(Box::new(Self::set_data))),

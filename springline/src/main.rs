@@ -10,6 +10,10 @@ use springline::settings::{CliOptions, Settings};
 use springline::Result;
 
 fn main() -> Result<()> {
+    console_subscriber::ConsoleLayer::builder()
+        // .retention(std::time::Duration::from_secs(60))
+        .init();
+
     let subscriber = get_subscriber("springline", "info", std::io::stdout);
     init_subscriber(subscriber);
 

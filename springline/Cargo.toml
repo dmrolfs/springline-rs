@@ -33,6 +33,7 @@ config = { git = "https://github.com/dmrolfs/config-rs" } # until ron feature an
 #config = { version = "^0.11", default_features = true, features = ["ron"] }
 #config = { version = "^0.11" }
 console = "0.15.0"
+console-subscriber = "0.1.0"
 dashmap = "5.0.0"
 dialoguer = { version = "0.9.0", features = ["fuzzy-select"] }
 enum-display-derive = "0.1.1"
@@ -68,7 +69,7 @@ settings_loader = { git = "https://github.com/dmrolfs/settings-loader-rs", featu
 splines = "4.0.3"
 tailcall = "0.1.6"
 thiserror = "1.0.30"
-tokio = { version = "1.15.0", features = ["full", "net"] }
+tokio = { version = "1.15.0", features = ["full", "net", "tracing"] }
 tower = { version = "0.4.11", features = ["timeout", "limit"] }
 tower-http = { version = "0.2.0", features = ["trace"] }
 tracing = "0.1.29"

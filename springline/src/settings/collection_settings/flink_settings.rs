@@ -14,7 +14,7 @@ use crate::phases::collection::flink::MetricOrder;
 #[serde(default)]
 pub struct FlinkSettings {
     #[serde(default = "FlinkSettings::default_job_manager_scheme")]
-    pub job_manager_scheme: String,
+    pub job_manager_uri_scheme: String,
 
     #[serde(default = "FlinkSettings::default_job_manager_host")]
     pub job_manager_host: String,
@@ -43,7 +43,7 @@ pub struct FlinkSettings {
 impl Default for FlinkSettings {
     fn default() -> Self {
         Self {
-            job_manager_scheme: Self::DEFAULT_JOB_MANAGER_SCHEME.to_string(),
+            job_manager_uri_scheme: Self::DEFAULT_JOB_MANAGER_SCHEME.to_string(),
             job_manager_host: Self::DEFAULT_JOB_MANAGER_HOST.to_string(),
             job_manager_port: Self::DEFAULT_JOB_MANAGER_PORT,
             metrics_initial_delay: Duration::from_secs(2 * 60),
@@ -103,7 +103,7 @@ impl FlinkSettings {
         let url = Url::parse(
             format!(
                 "{}://{}:{}/",
-                self.job_manager_scheme, self.job_manager_host, self.job_manager_port
+                self.job_manager_uri_scheme, self.job_manager_host, self.job_manager_port
             )
             .as_str(),
         )?;

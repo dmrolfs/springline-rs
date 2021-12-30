@@ -28,8 +28,7 @@ async fn do_make_telemetry_sources(
     let mut sources = TelemetrySource::collect_from_settings::<MetricCatalog>(settings)
         .await?
         .into_iter()
-        .flat_map(|mut s| s.take())
-        .map(|(s, _api)| s)
+        .flat_map(|mut s| s.stage.take())
         .collect::<Vec<_>>();
 
     auxiliary.into_iter().for_each(|s| sources.push(s));

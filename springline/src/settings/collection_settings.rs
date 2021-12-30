@@ -72,7 +72,7 @@ mod tests {
                 Token::Struct { name: "CollectionSettings", len: 2 },
                 Token::Str("flink"),
                 Token::Struct { name: "FlinkSettings", len: 7 },
-                Token::Str("job_manager_scheme"),
+                Token::Str("job_manager_uri_scheme"),
                 Token::Str("https"),
                 Token::Str("job_manager_host"),
                 Token::Str("dr-flink-jm-0"),
@@ -125,7 +125,7 @@ mod tests {
 
         let settings_rest = CollectionSettings {
             flink: FlinkSettings {
-                job_manager_scheme: "https".to_string(),
+                job_manager_uri_scheme: "https".to_string(),
                 job_manager_host: "dr-flink-jm-0".to_string(),
                 job_manager_port: 8081,
                 metrics_initial_delay: Duration::from_secs(300),
@@ -170,7 +170,7 @@ mod tests {
                 Token::Struct { name: "CollectionSettings", len: 2 },
                 Token::Str("flink"),
                 Token::Struct { name: "FlinkSettings", len: 8 },
-                Token::Str("job_manager_scheme"),
+                Token::Str("job_manager_uri_scheme"),
                 Token::Str("https"),
                 Token::Str("job_manager_host"),
                 Token::Str("dr-flink-jm-0"),
