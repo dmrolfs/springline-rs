@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use pretty_snowflake::MachineNode;
 use proctor::elements::Telemetry;
 use proctor::graph::stage::SourceStage;
+use proctor::graph::stage::tick::TickApi;
 use proctor::phases::collection::builder::CollectBuilder;
 use proctor::phases::collection::{Collect, SourceSetting, TelemetrySource};
 
@@ -15,10 +16,17 @@ pub mod flink;
 #[tracing::instrument(level = "info", skip(settings, auxiliary_sources))]
 pub async fn make_collection_phase(
     settings: &CollectionSettings, auxiliary_sources: Vec<Box<dyn SourceStage<Telemetry>>>, machine_node: MachineNode,
-) -> Result<CollectBuilder<MetricCatalog>> {
+) -> Result<(CollectBuilder<MetricCatalog>, Option<TickApi>)> {
     let name = "collection";
-    let sources = do_make_telemetry_sources(&settings.sources, auxiliary_sources).await?;
-    Ok(Collect::builder(name, sources, machine_node))
+    let mut sources = do_make_telemetry_sources(&settings.sources, auxiliary_sources).await?;
+
+    let mut flink_source = flink::make_flink_metrics_source("metrics", &settings.flink).await?;
+    let tx_stop_flink_source = flink_source.tx_stop.take();
+    if let Some(source) = flink_source.stage.take() {
+        sources.push(source);
+    }
+
+    Ok((Collect::builder(name, sources, machine_node), tx_stop_flink_source))
 }
 
 #[tracing::instrument(level = "info", skip())]

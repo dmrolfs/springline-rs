@@ -10,6 +10,7 @@ use proctor::graph::stage::{SinkStage, SourceStage, WithApi, WithMonitor};
 use proctor::graph::{Connect, Graph, SinkShape, SourceShape};
 use proctor::phases::collection::ClearinghouseApi;
 use proctor::{ProctorResult, SharedString};
+use proctor::graph::stage::tick::TickApi;
 use prometheus::Registry;
 use tokio::task::JoinHandle;
 
@@ -54,6 +55,7 @@ pub struct Ready<'r> {
     name: SharedString,
     graph: Graph,
     monitor: Monitor,
+    tx_stop_flink_source: Option<TickApi>,
     tx_clearinghouse_api: ClearinghouseApi,
     metrics_registry: Option<&'r Registry>,
 }
@@ -64,6 +66,7 @@ pub struct Running<'r> {
     name: SharedString,
     graph_handle: JoinHandle<ProctorResult<()>>,
     monitor_handle: JoinHandle<()>,
+    tx_stop_flink_source: Option<TickApi>,
     tx_clearinghouse_api: ClearinghouseApi,
     metrics_registry: Option<&'r Registry>,
 }
@@ -116,9 +119,8 @@ impl<'r> AutoscaleEngine<Building<'r>> {
             crate::metrics::register_metrics(registry)?;
         }
 
-        let mut collection_builder =
+        let (mut collection_builder, tx_stop_flink_source) =
             collection::make_collection_phase(&settings.collection, self.inner.sources, machine_node).await?;
-
         let eligibility =
             eligibility::make_eligibility_phase(&settings.eligibility, (&mut collection_builder).into()).await?;
         let rx_eligibility_monitor = eligibility.rx_monitor();
@@ -164,6 +166,7 @@ impl<'r> AutoscaleEngine<Building<'r>> {
             inner: Ready {
                 name: self.inner.name,
                 graph,
+                tx_stop_flink_source,
                 tx_clearinghouse_api,
                 monitor: Monitor::new(
                     rx_eligibility_monitor,
@@ -189,6 +192,7 @@ impl<'r> AutoscaleEngine<Ready<'r>> {
                 name: self.inner.name,
                 graph_handle,
                 monitor_handle,
+                tx_stop_flink_source: self.inner.tx_stop_flink_source,
                 tx_clearinghouse_api: self.inner.tx_clearinghouse_api,
                 metrics_registry: self.inner.metrics_registry,
             },

@@ -6,6 +6,7 @@ mod generators;
 mod metric_order;
 
 pub use metric_order::{Aggregation, FlinkScope, MetricOrder};
+pub use generators::make_flink_metrics_source;
 
 // pub use model::{FlinkMetric, FlinkMetricResponse, build_telemetry};
 // pub use generators::{TaskContext};

@@ -1,4 +1,5 @@
 use std::fmt;
+use proctor::graph::stage::tick::TickApi;
 
 use proctor::phases::collection::{ClearinghouseApi, ClearinghouseCmd, ClearinghouseSnapshot};
 use prometheus::{Registry, TextEncoder};
@@ -133,6 +134,7 @@ mod protocol {
 pub struct Service<'r> {
     tx_api: EngineServiceApi,
     rx_api: mpsc::UnboundedReceiver<EngineCmd>,
+    tx_stop_flink_source: Option<TickApi>,
     tx_clearinghouse_api: ClearinghouseApi,
     metrics_registry: Option<&'r Registry>,
 }
@@ -146,11 +148,16 @@ impl<'r> fmt::Debug for Service<'r> {
 }
 
 impl<'r> Service<'r> {
-    pub fn new(tx_clearinghouse_api: ClearinghouseApi, metrics_registry: Option<&'r Registry>) -> Self {
+    pub fn new(
+        tx_stop_flink_source: Option<TickApi>,
+        tx_clearinghouse_api: ClearinghouseApi,
+        metrics_registry: Option<&'r Registry>
+    ) -> Self {
         let (tx_api, rx_api) = mpsc::unbounded_channel();
         Self {
             tx_api,
             rx_api,
+            tx_stop_flink_source,
             tx_clearinghouse_api,
             metrics_registry,
         }
