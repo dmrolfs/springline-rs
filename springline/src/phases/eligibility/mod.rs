@@ -1,7 +1,7 @@
 pub use context::{ClusterStatus, EligibilityContext, TaskStatus};
 pub use policy::{EligibilityPolicy, EligibilityTemplateData};
 use proctor::elements::{PolicyFilterEvent, PolicySubscription};
-use proctor::phases::collection::ClearinghouseSubscriptionMagnet;
+use proctor::phases::collection::{ClearinghouseSubscriptionMagnet, SubscriptionChannel};
 use proctor::phases::policy_phase::PolicyPhase;
 use proctor::SharedString;
 
@@ -15,8 +15,10 @@ pub mod policy;
 pub type EligibilityOutcome = MetricCatalog;
 pub type EligibilityApi = proctor::elements::PolicyFilterApi<EligibilityContext, EligibilityTemplateData>;
 pub type EligibilityMonitor = proctor::elements::PolicyFilterMonitor<MetricCatalog, EligibilityContext>;
-pub type EligibilityPhase =
-    Box<PolicyPhase<MetricCatalog, EligibilityOutcome, EligibilityContext, EligibilityTemplateData>>;
+pub type EligibilityPhase = (
+    Box<PolicyPhase<MetricCatalog, EligibilityOutcome, EligibilityContext, EligibilityTemplateData>>,
+    SubscriptionChannel<EligibilityContext>,
+);
 pub type EligibilityEvent = PolicyFilterEvent<MetricCatalog, EligibilityContext>;
 
 #[tracing::instrument(level = "info")]
@@ -27,9 +29,8 @@ pub async fn make_eligibility_phase(
     let policy = EligibilityPolicy::new(settings);
     let subscription = policy.subscription(name.as_ref(), settings);
     let eligibility = Box::new(PolicyPhase::strip_policy_outcome(name.as_ref(), policy).await?);
-
-    phases::subscribe_policy_phase(subscription, &eligibility, magnet).await?;
-    Ok(eligibility)
+    let channel = phases::subscribe_policy_phase(subscription, &eligibility, magnet).await?;
+    Ok((eligibility, channel))
 }
 
 // #[tracing::instrument(level = "info")]

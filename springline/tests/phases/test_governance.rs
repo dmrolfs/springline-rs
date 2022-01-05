@@ -17,6 +17,8 @@ use springline::settings::{GovernancePolicySettings, GovernanceSettings};
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
+use crate::CORRELATION_ID;
+
 type Data = ScalePlan;
 type Context = GovernanceContext;
 
@@ -316,11 +318,13 @@ async fn test_flink_governance_flow_simple_and_happy() -> anyhow::Result<()> {
             "happy_1",
             ScalePlan {
                 timestamp,
+                correlation_id: CORRELATION_ID.clone(),
                 target_nr_task_managers: 8,
                 current_nr_task_managers: 4
             },
             vec![ScalePlan {
                 timestamp,
+                correlation_id: CORRELATION_ID.clone(),
                 target_nr_task_managers: 8,
                 current_nr_task_managers: 4
             }]
@@ -374,11 +378,13 @@ async fn test_flink_governance_flow_simple_below_min_cluster_size() -> anyhow::R
             "below min cluster size",
             ScalePlan {
                 timestamp,
+                correlation_id: CORRELATION_ID.clone(),
                 target_nr_task_managers: 0,
                 current_nr_task_managers: 4
             },
             vec![ScalePlan {
                 timestamp,
+                correlation_id: CORRELATION_ID.clone(),
                 target_nr_task_managers: min_cluster_size,
                 current_nr_task_managers: 4
             }]
@@ -432,11 +438,13 @@ async fn test_flink_governance_flow_simple_above_max_cluster_size() -> anyhow::R
             "above max cluster size",
             ScalePlan {
                 timestamp,
+                correlation_id: CORRELATION_ID.clone(),
                 target_nr_task_managers: 999,
                 current_nr_task_managers: 6
             },
             vec![ScalePlan {
                 timestamp,
+                correlation_id: CORRELATION_ID.clone(),
                 target_nr_task_managers: max_cluster_size,
                 current_nr_task_managers: 6
             }]
@@ -490,11 +498,13 @@ async fn test_flink_governance_flow_simple_step_up_too_big() -> anyhow::Result<(
             "too big a scale up step",
             ScalePlan {
                 timestamp,
+                correlation_id: CORRELATION_ID.clone(),
                 target_nr_task_managers: 9,
                 current_nr_task_managers: 0
             },
             vec![ScalePlan {
                 timestamp,
+                correlation_id: CORRELATION_ID.clone(),
                 target_nr_task_managers: max_scaling_step,
                 current_nr_task_managers: 0
             }]
@@ -548,11 +558,13 @@ async fn test_flink_governance_flow_simple_step_down_too_big() -> anyhow::Result
             "too big a scale down step",
             ScalePlan {
                 timestamp,
+                correlation_id: CORRELATION_ID.clone(),
                 target_nr_task_managers: min_cluster_size,
                 current_nr_task_managers: max_cluster_size
             },
             vec![ScalePlan {
                 timestamp,
+                correlation_id: CORRELATION_ID.clone(),
                 target_nr_task_managers: max_cluster_size - max_scaling_step,
                 current_nr_task_managers: max_cluster_size
             }]
@@ -609,11 +621,13 @@ async fn test_flink_governance_flow_simple_step_up_before_max() -> anyhow::Resul
             "too big a scale up step before max",
             ScalePlan {
                 timestamp,
+                correlation_id: CORRELATION_ID.clone(),
                 target_nr_task_managers: 999,
                 current_nr_task_managers: 0
             },
             vec![ScalePlan {
                 timestamp,
+                correlation_id: CORRELATION_ID.clone(),
                 target_nr_task_managers: max_scaling_step,
                 current_nr_task_managers: 0
             }]
@@ -667,11 +681,13 @@ async fn test_flink_governance_flow_simple_step_down_before_min() -> anyhow::Res
             "too big a scale down step before min",
             ScalePlan {
                 timestamp,
+                correlation_id: CORRELATION_ID.clone(),
                 target_nr_task_managers: 0,
                 current_nr_task_managers: max_cluster_size
             },
             vec![ScalePlan {
                 timestamp,
+                correlation_id: CORRELATION_ID.clone(),
                 target_nr_task_managers: max_cluster_size - max_scaling_step,
                 current_nr_task_managers: max_cluster_size
             }]

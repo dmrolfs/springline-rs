@@ -1,4 +1,5 @@
 use oso::PolarClass;
+use pretty_snowflake::Id;
 use proctor::elements::Timestamp;
 use serde::{Deserialize, Serialize};
 
@@ -8,6 +9,8 @@ use crate::phases::MetricCatalog;
 
 #[derive(PolarClass, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ScalePlan {
+    pub correlation_id: Id<MetricCatalog>,
+
     #[polar(attribute)]
     pub timestamp: Timestamp,
 
@@ -26,8 +29,10 @@ impl ScalePlan {
 
         let current_nr_task_managers = decision.item().cluster.nr_task_managers;
         let timestamp = decision.item().timestamp;
+        let correlation_id = decision.item().correlation_id.clone();
         let scale_plan_for = |target_nr_task_managers: u16| {
             Some(ScalePlan {
+                correlation_id,
                 timestamp,
                 target_nr_task_managers,
                 current_nr_task_managers,

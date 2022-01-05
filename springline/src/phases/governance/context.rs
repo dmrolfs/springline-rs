@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use std::fmt::Debug;
 
-use lazy_static::lazy_static;
+use once_cell::sync::Lazy;
 use oso::PolarClass;
 use pretty_snowflake::{Id, Label};
 use proctor::elements::telemetry::UpdateMetricsFn;
@@ -94,19 +94,24 @@ impl UpdateMetrics for GovernanceContext {
     }
 }
 
-lazy_static! {
-    pub(crate) static ref GOVERNANCE_CTX_MIN_CLUSTER_SIZE: IntGauge =
-        IntGauge::new("governance_ctx_min_cluster_size", "Minimum cluster size allowed",)
-            .expect("failed creating governance_ctx_min_cluster_size metric");
-    pub(crate) static ref GOVERNANCE_CTX_MAX_CLUSTER_SIZE: IntGauge =
-        IntGauge::new("governance_ctx_max_cluster_size", "Maximum cluster size allowed",)
-            .expect("failed creating governance_ctx_max_cluster_size metric");
-    pub(crate) static ref GOVERNANCE_CTX_MAX_SCALING_STEP: IntGauge = IntGauge::new(
+pub(crate) static GOVERNANCE_CTX_MIN_CLUSTER_SIZE: Lazy<IntGauge> = Lazy::new(|| {
+    IntGauge::new("governance_ctx_min_cluster_size", "Minimum cluster size allowed")
+        .expect("failed creating governance_ctx_min_cluster_size metric")
+});
+
+pub(crate) static GOVERNANCE_CTX_MAX_CLUSTER_SIZE: Lazy<IntGauge> = Lazy::new(|| {
+    IntGauge::new("governance_ctx_max_cluster_size", "Maximum cluster size allowed")
+        .expect("failed creating governance_ctx_max_cluster_size metric")
+});
+
+pub(crate) static GOVERNANCE_CTX_MAX_SCALING_STEP: Lazy<IntGauge> = Lazy::new(|| {
+    IntGauge::new(
         "governance_ctx_max_scaling_step",
         "Maximum change in cluster size allowed.",
     )
-    .expect("failed creating governance_ctx_max_scaling_step metric");
-}
+    .expect("failed creating governance_ctx_max_scaling_step metric")
+});
+
 
 #[cfg(test)]
 mod tests {

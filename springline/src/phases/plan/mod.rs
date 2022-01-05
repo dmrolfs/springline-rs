@@ -28,20 +28,20 @@ const MINIMAL_CLUSTER_SIZE: u16 = 1;
 
 pub type PlanningStrategy = FlinkPlanning<LeastSquaresWorkloadForecastBuilder>;
 pub type PlanningOutcome = <PlanningStrategy as Planning>::Out;
-pub type PlanningPhase = Box<Plan<PlanningStrategy>>;
+pub type PlanningPhase = (Box<Plan<PlanningStrategy>>, SubscriptionChannel<MetricCatalog>);
 pub type PlanEvent = proctor::phases::plan::PlanEvent<MetricCatalog, DecisionResult<MetricCatalog>, ScalePlan>;
 
 #[tracing::instrument(level = "info", skip(settings, clearinghouse_magnet))]
 pub async fn make_plan_phase(
     settings: &PlanSettings, clearinghouse_magnet: ClearinghouseSubscriptionMagnet<'_>,
 ) -> Result<PlanningPhase> {
-    let name: SharedString = "autoscale_planning".into();
+    let name: SharedString = "planning".into();
     let data_channel = do_connect_plan_data(name.clone(), clearinghouse_magnet).await?;
     let flink_planning = do_make_planning_strategy(name.as_ref(), settings).await?;
-    let plan: PlanningPhase = Box::new(Plan::new(name.into_owned(), flink_planning));
+    let plan = Box::new(Plan::new(name.into_owned(), flink_planning));
 
     (data_channel.outlet(), plan.inlet()).connect().await;
-    Ok(plan)
+    Ok((plan, data_channel))
 }
 
 #[tracing::instrument(level = "info")]

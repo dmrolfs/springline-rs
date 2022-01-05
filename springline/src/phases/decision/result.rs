@@ -8,7 +8,8 @@ use proctor::error::{DecisionError, TelemetryError};
 use proctor::graph::stage::{self, ThroughStage};
 use proctor::{AppData, ProctorContext, SharedString};
 
-pub const DECISION_BINDING: &str = "direction";
+pub const DECISION_DIRECTION: &str = "direction";
+pub const DECISION_REASON: &str = "reason";
 pub const SCALE_UP: &str = "up";
 pub const SCALE_DOWN: &str = "down";
 pub const NO_ACTION: &str = "no action";
@@ -29,7 +30,7 @@ where
         if outcome.passed() {
             outcome
                 .policy_results
-                .binding(DECISION_BINDING)
+                .binding(DECISION_DIRECTION)
                 .map(|directions: Vec<String>| {
                     let mut grouped: Vec<(String, usize)> = vec![];
                     for (direction, votes) in &directions.into_iter().group_by(|d| d.clone()) {

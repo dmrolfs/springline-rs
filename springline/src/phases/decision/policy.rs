@@ -8,7 +8,7 @@ use proctor::{ProctorContext, ProctorIdGenerator, SharedString};
 use serde::{Deserialize, Serialize};
 
 use super::context::DecisionContext;
-use crate::phases::decision::result::DECISION_BINDING;
+use crate::phases::decision::result::{DECISION_DIRECTION, DECISION_REASON};
 use crate::phases::{MetricCatalog, UpdateMetrics};
 use crate::settings::DecisionSettings;
 
@@ -16,13 +16,27 @@ use crate::settings::DecisionSettings;
 #[serde(default)]
 pub struct DecisionTemplateData {
     pub basis: String,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_healthy_lag: Option<f64>,
-    pub min_healthy_lag: f64,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub min_healthy_lag: Option<f64>,
+
+    // todo: use lag for both kafka and kinesis -- units obviously different but uses are mutually exclusive?
+    // #[serde(skip_serializing_if = "Option::is_none")]
+    // pub max_healthy_millis_behind_latest: Option<f64>,
+    // #[serde(skip_serializing_if = "Option::is_none")]
+    // pub min_healthy_millis_behind_latest: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_healthy_cpu_load: Option<f64>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub max_healthy_network_io: Option<f64>,
+    pub max_healthy_heap_memory_load: Option<f64>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_healthy_network_io_utilization: Option<f64>,
+
     #[serde(flatten, skip_serializing_if = "HashMap::is_empty")]
     pub custom: HashMap<String, String>,
 }
@@ -32,9 +46,10 @@ impl Default for DecisionTemplateData {
         Self {
             basis: format!("{}_basis", DecisionPolicy::base_template_name()),
             max_healthy_lag: None,
-            min_healthy_lag: 0_f64,
+            min_healthy_lag: None,
             max_healthy_cpu_load: None,
-            max_healthy_network_io: None,
+            max_healthy_heap_memory_load: None,
+            max_healthy_network_io_utilization: None,
             custom: HashMap::default(),
         }
     }
@@ -79,7 +94,7 @@ impl PolicySubscription for DecisionPolicy {
 }
 
 impl QueryPolicy for DecisionPolicy {
-    type Args = (Self::Item, Self::Context, PolarValue);
+    type Args = (Self::Item, Self::Context, PolarValue, PolarValue);
     type Context = DecisionContext;
     type Item = MetricCatalog;
     type TemplateData = DecisionTemplateData;
@@ -106,6 +121,7 @@ impl QueryPolicy for DecisionPolicy {
 
     fn initialize_policy_engine(&mut self, engine: &mut Oso) -> Result<(), PolicyError> {
         Telemetry::initialize_policy_engine(engine)?;
+        MetricCatalog::initialize_policy_engine(engine)?;
 
         engine.register_class(
             DecisionContext::get_polar_class_builder()
@@ -120,7 +136,8 @@ impl QueryPolicy for DecisionPolicy {
         (
             item.clone(),
             context.clone(),
-            PolarValue::Variable(DECISION_BINDING.to_string()),
+            PolarValue::Variable(DECISION_DIRECTION.to_string()),
+            PolarValue::Variable(DECISION_REASON.to_string()),
         )
     }
 
@@ -160,7 +177,7 @@ mod tests {
         let data = DecisionTemplateData {
             basis: "decision_basis".to_string(),
             max_healthy_lag: Some(133_f64),
-            min_healthy_lag: 1_f64,
+            min_healthy_lag: Some(1_f64),
             max_healthy_cpu_load: Some(0.7),
             ..DecisionTemplateData::default()
         };
@@ -175,6 +192,7 @@ mod tests {
                 Token::Some,
                 Token::F64(133_f64),
                 Token::Str("min_healthy_lag"),
+                Token::Some,
                 Token::F64(1_f64),
                 Token::Str("max_healthy_cpu_load"),
                 Token::Some,
@@ -204,7 +222,7 @@ mod tests {
         let data = DecisionTemplateData {
             basis: "decision_basis".to_string(),
             max_healthy_lag: Some(133_f64),
-            min_healthy_lag: 1_f64,
+            min_healthy_lag: Some(1_f64),
             max_healthy_cpu_load: Some(0.7),
             custom: maplit::hashmap! { "foo".to_string() => "zed".to_string(), },
             ..DecisionTemplateData::default()
@@ -214,7 +232,7 @@ mod tests {
         let expected_rep = r##"|{
         |    "basis": "decision_basis",
         |    "max_healthy_lag": Some(133),
-        |    "min_healthy_lag": 1,
+        |    "min_healthy_lag": Some(1),
         |    "max_healthy_cpu_load": Some(0.7),
         |    "foo": "zed",
         |}"##
@@ -257,7 +275,7 @@ mod tests {
         tracing::info!(%json_data, ?data, "json test data");
         assert_eq!(
             json_data.to_string(),
-            r##"{"basis":"decision_basis","max_records_in_per_sec":"3","min_healthy_lag":0.0,"min_records_in_per_sec":"1"}"##.to_string()
+            r##"{"basis":"decision_basis","max_records_in_per_sec":"3","min_records_in_per_sec":"1"}"##.to_string()
         );
 
         let actual = assert_ok!(reg.render_template(&template, &json_data));
@@ -283,8 +301,8 @@ mod tests {
                 format!("{}_basis", DecisionPolicy::base_template_name()),
                 r###"
                 |{{> preamble}}
-                |scale_up(item, _context, _) if {{max_records_in_per_sec}} < item.flow.records_in_per_sec;
-                |scale_down(item, _context, _) if item.flow.records_in_per_sec < {{min_records_in_per_sec}};
+                |scale_up(item, _context, _, reason) if {{max_records_in_per_sec}} < item.flow.records_in_per_sec and reason = "load_up";
+                |scale_down(item, _context, _, reason) if item.flow.records_in_per_sec < {{min_records_in_per_sec}} and reason = "load_down";
                 "###,
             )?,
         ];
@@ -311,12 +329,12 @@ mod tests {
             settings.template_data.as_ref(),
         )?;
         // let actual = policy_filter::render_template_policy(name, settings.template_data.as_ref())?;
-        let expected = r##"
-        |scale(item, context, direction) if scale_up(item, context, direction) and direction = "up";
+        let expected = r##"|
+        |scale(item, context, direction, reason) if scale_up(item, context, direction, reason) and direction = "up";
         |
-        |scale(item, context, direction) if scale_down(item, context, direction) and direction = "down";
-        |scale_up(item, _context, _) if 3 < item.flow.records_in_per_sec;
-        |scale_down(item, _context, _) if item.flow.records_in_per_sec < 1;
+        |scale(item, context, direction, reason) if scale_down(item, context, direction, reason) and direction = "down";
+        |scale_up(item, _context, _, reason) if 3 < item.flow.records_in_per_sec and reason = "load_up";
+        |scale_down(item, _context, _, reason) if item.flow.records_in_per_sec < 1 and reason = "load_down";
         "##
         .trim_margin_with("|")
         .unwrap();

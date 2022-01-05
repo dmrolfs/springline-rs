@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use chrono::{DateTime, Utc};
 use clap::Parser;
 use config::builder::DefaultState;
 use config::ConfigBuilder;
@@ -42,10 +43,19 @@ pub struct Settings {
     #[serde(default)]
     pub governance: GovernanceSettings,
     pub execution: ExecutionSettings,
+    pub context_stub: ContextStubSettings,
 }
 
 impl SettingsLoader for Settings {
     type Options = CliOptions;
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ContextStubSettings {
+    pub all_sinks_healthy: bool,
+    pub cluster_is_deploying: bool,
+    #[serde(with = "proctor::serde")]
+    pub cluster_last_deployment: DateTime<Utc>,
 }
 
 #[derive(Parser, Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -125,9 +135,9 @@ mod tests {
     use std::time::Duration;
     use std::{env, panic};
 
+    use chrono::TimeZone;
     use claim::assert_ok;
     use config::{Config, FileFormat};
-    use lazy_static::lazy_static;
     use once_cell::sync::Lazy;
     use pretty_assertions::assert_eq;
     use proctor::elements::{PolicySource, TelemetryType, ToTelemetry};
@@ -137,9 +147,7 @@ mod tests {
     use crate::phases::collection::flink::{Aggregation, FlinkScope, MetricOrder};
     use crate::phases::plan::{PerformanceRepositorySettings, PerformanceRepositoryType, SpikeSettings};
 
-    lazy_static! {
-        static ref SERIAL_TEST: Mutex<()> = Default::default();
-    }
+    static SERIAL_TEST: Lazy<Mutex<()>> = Lazy::new(|| Default::default());
 
     /// Sets environment variables to the given value for the duration of the closure.
     /// Restores the previous values when the closure completes or panics, before unwinding the
@@ -210,7 +218,7 @@ mod tests {
             engine: Default::default(),
             collection: CollectionSettings {
                 flink: FlinkSettings {
-                    job_manager_uri_scheme: "https".to_string(),
+                    job_manager_uri_scheme: "http".to_string(),
                     job_manager_host: "dr-flink-jm-0".to_string(),
                     job_manager_port: 8081,
                     metrics_initial_delay: Duration::from_secs(300),
@@ -262,7 +270,7 @@ mod tests {
                 template_data: Some(DecisionTemplateData {
                     basis: "decision_basis".to_string(),
                     max_healthy_lag: Some(133.),
-                    min_healthy_lag: 0.,
+                    min_healthy_lag: Some(0.),
                     max_healthy_cpu_load: Some(0.7),
                     ..DecisionTemplateData::default()
                 }),
@@ -300,6 +308,13 @@ mod tests {
                 },
             },
             execution: ExecutionSettings,
+            context_stub: ContextStubSettings {
+                all_sinks_healthy: true,
+                cluster_is_deploying: false,
+                cluster_last_deployment: assert_ok!(
+                    Utc.datetime_from_str("2020-03-01T04:28:07Z", proctor::serde::date::FORMAT)
+                ),
+            },
         };
 
         // let exp_rep = assert_ok!(ron::ser::to_string_pretty(&expected,
@@ -386,9 +401,10 @@ mod tests {
             .with_template_data(DecisionTemplateData {
                 basis: "decision_basis".to_string(),
                 max_healthy_lag: Some(133_f64),
-                min_healthy_lag: 0_f64,
+                min_healthy_lag: Some(0.0),
                 max_healthy_cpu_load: Some(0.7),
-                max_healthy_network_io: None,
+                max_healthy_heap_memory_load: Some(0.5),
+                max_healthy_network_io_utilization: Some(0.6),
                 custom: HashMap::default(),
             }),
         plan: PlanSettings {
@@ -398,7 +414,7 @@ mod tests {
             recovery_valid: Duration::from_secs(5 * 60),
             performance_repository: PerformanceRepositorySettings {
                 storage: PerformanceRepositoryType::File,
-                storage_path: Some("./tests/data/performance.data".to_string()),
+                storage_path: Some("./tmp".to_string()),
             },
             window: 20,
             spike: SpikeSettings {
@@ -420,6 +436,13 @@ mod tests {
             },
         },
         execution: ExecutionSettings,
+        context_stub: ContextStubSettings {
+            all_sinks_healthy: true,
+            cluster_is_deploying: false,
+            cluster_last_deployment: assert_ok!(
+                Utc.datetime_from_str("2020-03-01T04:28:07Z", proctor::serde::date::FORMAT)
+            ),
+        },
     });
 
     #[test]
@@ -451,11 +474,20 @@ mod tests {
                 let expected = Settings {
                     collection: CollectionSettings {
                         flink: FlinkSettings {
-                            metrics_initial_delay: Duration::from_secs(120),
+                            job_manager_uri_scheme: "http".to_string(),
+                            metrics_initial_delay: Duration::from_secs(15),
+                            metric_orders: Vec::default(),
                             headers: Vec::default(),
                             ..SETTINGS.collection.flink.clone()
                         },
+                        sources: HashMap::default(),
                         ..SETTINGS.collection.clone()
+                    },
+                    decision: DecisionSettings {
+                        template_data: Some(DecisionTemplateData {
+                            ..SETTINGS.decision.template_data.clone().unwrap()
+                        }),
+                        ..SETTINGS.decision.clone()
                     },
                     ..SETTINGS.clone()
                 };
@@ -494,12 +526,19 @@ mod tests {
                 engine: EngineSettings { machine_id: 1, node_id: 1 },
                 collection: CollectionSettings {
                     flink: FlinkSettings {
+                        job_manager_uri_scheme: "http".to_string(),
                         metrics_initial_delay: Duration::from_secs(30),
                         headers: Vec::default(),
+                        metric_orders: Vec::default(),
                         max_retries: 0,
                         ..SETTINGS.collection.flink.clone()
                     },
+                    sources: HashMap::default(),
                     ..SETTINGS.collection.clone()
+                },
+                decision: DecisionSettings {
+                    template_data: Some(DecisionTemplateData { ..SETTINGS.decision.template_data.clone().unwrap() }),
+                    ..SETTINGS.decision.clone()
                 },
                 ..SETTINGS.clone()
             };
@@ -535,12 +574,21 @@ mod tests {
                 let expected = Settings {
                     collection: CollectionSettings {
                         flink: FlinkSettings {
+                            job_manager_uri_scheme: "http".to_string(),
                             job_manager_host: "dr-flink-jm-0".to_string(),
-                            metrics_initial_delay: Duration::from_secs(120),
+                            metrics_initial_delay: Duration::from_secs(15),
                             headers: Vec::default(),
+                            metric_orders: Vec::default(),
                             ..SETTINGS.collection.flink.clone()
                         },
+                        sources: HashMap::default(),
                         ..SETTINGS.collection.clone()
+                    },
+                    decision: DecisionSettings {
+                        template_data: Some(DecisionTemplateData {
+                            ..SETTINGS.decision.template_data.clone().unwrap()
+                        }),
+                        ..SETTINGS.decision.clone()
                     },
                     ..SETTINGS.clone()
                 };

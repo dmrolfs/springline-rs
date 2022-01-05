@@ -13,3 +13,4 @@ Cargo.lock
 springline/src/.DS_Store
 springline/src/phases/.DS_Store
 **/.DS_Store
+tmp/

@@ -25,7 +25,7 @@ pub trait UpdateMetrics {
 pub async fn subscribe_policy_phase<In, Out, C, D>(
     subscription: TelemetrySubscription, phase: &PolicyPhase<In, Out, C, D>,
     magnet: ClearinghouseSubscriptionMagnet<'_>,
-) -> Result<()>
+) -> Result<SubscriptionChannel<C>>
 where
     In: AppData + oso::ToPolar,
     Out: AppData,
@@ -34,7 +34,7 @@ where
 {
     let context_channel = SubscriptionChannel::connect_subscription(subscription, magnet).await?;
     (context_channel.outlet(), phase.context_inlet()).connect().await;
-    Ok(())
+    Ok(context_channel)
 }
 
 // pub type PhaseStage<In, Out> = Box<dyn ThroughStage<In, Out>>;

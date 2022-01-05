@@ -1,20 +1,20 @@
 use std::collections::HashSet;
-use std::convert::TryFrom;
-use std::fmt::Debug;
+use std::fmt::{self, Debug};
 use std::ops::Add;
 
-use lazy_static::lazy_static;
-// use ::serde_with::{serde_as, TimestampSeconds};
+use once_cell::sync::Lazy;
 use oso::PolarClass;
 use pretty_snowflake::{Id, Label};
-use proctor::elements::{telemetry, Telemetry, TelemetryValue, Timestamp};
-use proctor::error::{ProctorError, TelemetryError};
+use proctor::elements::telemetry::UpdateMetricsFn;
+use proctor::elements::{telemetry, Telemetry, Timestamp};
+use proctor::error::{PolicyError, ProctorError};
 use proctor::phases::collection::SubscriptionRequirements;
 use proctor::SharedString;
 use prometheus::{Gauge, IntGauge};
 use serde::{Deserialize, Serialize};
 
 use crate::phases::UpdateMetrics;
+
 
 // #[serde_as]
 #[derive(PolarClass, Label, Debug, PartialEq, Clone, Serialize, Deserialize)]
@@ -39,6 +39,30 @@ pub struct MetricCatalog {
     #[polar(attribute)]
     #[serde(flatten)] // flatten to collect extra properties.
     pub custom: telemetry::TableType,
+}
+
+impl MetricCatalog {
+    #[tracing::instrument(level = "info", skip(oso))]
+    pub fn initialize_policy_engine(oso: &mut oso::Oso) -> Result<(), PolicyError> {
+        oso.register_class(MetricCatalog::get_polar_class())?;
+        oso.register_class(JobHealthMetrics::get_polar_class())?;
+        oso.register_class(FlowMetrics::get_polar_class())?;
+        oso.register_class(
+            ClusterMetrics::get_polar_class_builder()
+                .name("ClusterMetrics")
+                .add_method("task_heap_memory_load", ClusterMetrics::task_heap_memory_load)
+                .add_method(
+                    "task_network_input_utilization",
+                    ClusterMetrics::task_network_input_utilization,
+                )
+                .add_method(
+                    "task_network_output_utilization",
+                    ClusterMetrics::task_network_output_utilization,
+                )
+                .build(),
+        )?;
+        Ok(())
+    }
 }
 
 #[derive(PolarClass, Debug, Default, PartialEq, Clone, Serialize, Deserialize)]
@@ -117,7 +141,7 @@ pub struct FlowMetrics {
     pub input_millis_behind_latest: Option<i64>,
 }
 
-#[derive(PolarClass, Debug, Default, PartialEq, Clone, Serialize, Deserialize)]
+#[derive(PolarClass, Default, PartialEq, Clone, Serialize, Deserialize)]
 pub struct ClusterMetrics {
     /// 
     /// - count of entries returned from Flink REST API /taskmanagers
@@ -152,70 +176,108 @@ pub struct ClusterMetrics {
     /// The number of queued input buffers.
     #[polar(attribute)]
     #[serde(rename = "cluster.task_network_input_queue_len")]
-    pub task_network_input_queue_len: i64,
+    pub task_network_input_queue_len: f64,
 
     /// An estimate of the input buffers usage.
     #[polar(attribute)]
     #[serde(rename = "cluster.task_network_input_pool_usage")]
-    pub task_network_input_pool_usage: i64,
+    pub task_network_input_pool_usage: f64,
 
     /// The number of queued input buffers.
     #[polar(attribute)]
     #[serde(rename = "cluster.task_network_output_queue_len")]
-    pub task_network_output_queue_len: i64,
+    pub task_network_output_queue_len: f64,
 
     /// An estimate of the output buffers usage.
     #[polar(attribute)]
     #[serde(rename = "cluster.task_network_output_pool_usage")]
-    pub task_network_output_pool_usage: i64,
+    pub task_network_output_pool_usage: f64,
 }
 
-#[cfg(test)]
-use std::sync::Mutex;
-
-#[cfg(test)]
-use chrono::{DateTime, Utc};
-use proctor::elements::telemetry::UpdateMetricsFn;
-#[cfg(test)]
-use proctor::ProctorIdGenerator;
-
-#[cfg(test)]
-lazy_static! {
-    static ref ID_GENERATOR: Mutex<ProctorIdGenerator<MetricCatalog>> = Mutex::new(ProctorIdGenerator::default());
-}
-
-impl MetricCatalog {
-    #[cfg(test)]
-    pub(crate) fn for_test_with_timestamp(timestamp: Timestamp, custom: telemetry::TableType) -> Self {
-        let generator = &mut ID_GENERATOR.lock().unwrap();
-
-        Self {
-            correlation_id: generator.next_id(),
-            timestamp,
-            health: JobHealthMetrics::default(),
-            flow: FlowMetrics::default(),
-            cluster: ClusterMetrics::default(),
-            custom,
-        }
+impl ClusterMetrics {
+    pub fn task_heap_memory_load(&self) -> f64 {
+        self.task_heap_memory_used / self.task_heap_memory_committed
     }
 
-    #[cfg(test)]
-    pub(crate) fn for_test_with_datetime(timestamp: DateTime<Utc>, custom: telemetry::TableType) -> Self {
-        Self::for_test_with_timestamp(timestamp.into(), custom)
+    pub fn task_network_input_utilization(&self) -> f64 {
+        self.task_network_input_pool_usage / self.task_network_input_queue_len
     }
 
-    // todo limited usefulness by itself; keys? iter support for custom and for entire catalog?
-    pub fn custom<T: TryFrom<TelemetryValue>>(&self, metric: &str) -> Option<Result<T, TelemetryError>>
-    where
-        T: TryFrom<TelemetryValue>,
-        TelemetryError: From<<T as TryFrom<TelemetryValue>>::Error>,
-    {
-        self.custom.get(metric).map(|telemetry| {
-            let value = T::try_from(telemetry.clone())?;
-            Ok(value)
-        })
+    pub fn task_network_output_utilization(&self) -> f64 {
+        self.task_network_output_pool_usage / self.task_network_output_queue_len
     }
 }
+
+impl fmt::Debug for ClusterMetrics {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ClusterMetrics")
+            .field("nr_task_managers", &self.nr_task_managers)
+            .field("task_cpu_load", &self.task_cpu_load)
+            .field("task_heap_memory_used", &self.task_heap_memory_used)
+            .field("task_heap_memory_committed", &self.task_heap_memory_committed)
+            .field("task_heap_memory_load", &self.task_heap_memory_load())
+            .field("task_nr_threads", &self.task_nr_threads)
+            .field("task_network_input_queue_len", &self.task_network_input_queue_len)
+            .field("task_network_input_pool_usage", &self.task_network_input_pool_usage)
+            .field("task_network_input_utilization", &self.task_network_input_utilization())
+            .field("task_network_output_queue_len", &self.task_network_output_queue_len)
+            .field("task_network_output_pool_usage", &self.task_network_output_pool_usage)
+            .field(
+                "task_network_output_utilization",
+                &self.task_network_output_utilization(),
+            )
+            .finish()
+    }
+}
+
+
+// #[cfg(test)]
+// use std::sync::Mutex;
+// #[cfg(test)]
+// use chrono::{DateTime, Utc};
+// #[cfg(test)]
+// use proctor::elements::telemetry::UpdateMetricsFn;
+// #[cfg(test)]
+// use proctor::ProctorIdGenerator;
+//
+// #[cfg(test)]
+// use once_cell::sync::Lazy;
+// #[cfg(test)]
+// static ID_GENERATOR: Lazy<Mutex<ProctorIdGenerator<MetricCatalog>>> = Lazy::new(||
+// Mutex::new(ProctorIdGenerator::default()));
+//
+// impl MetricCatalog {
+//     #[cfg(test)]
+//     pub(crate) fn for_test_with_timestamp(timestamp: Timestamp, custom: telemetry::TableType) ->
+// Self {         let generator = &mut ID_GENERATOR.lock().unwrap();
+//
+//         Self {
+//             correlation_id: generator.next_id(),
+//             timestamp,
+//             health: JobHealthMetrics::default(),
+//             flow: FlowMetrics::default(),
+//             cluster: ClusterMetrics::default(),
+//             custom,
+//         }
+//     }
+//
+//     #[cfg(test)]
+//     pub(crate) fn for_test_with_datetime(timestamp: DateTime<Utc>, custom: telemetry::TableType)
+// -> Self {         Self::for_test_with_timestamp(timestamp.into(), custom)
+//     }
+//
+//     // todo limited usefulness by itself; keys? iter support for custom and for entire catalog?
+//     pub fn custom<T: TryFrom<TelemetryValue>>(&self, metric: &str) -> Option<Result<T,
+// TelemetryError>>     where
+//         T: TryFrom<TelemetryValue>,
+//         TelemetryError: From<<T as TryFrom<TelemetryValue>>::Error>,
+//     {
+//         self.custom.get(metric).map(|telemetry| {
+//             let value = T::try_from(telemetry.clone())?;
+//             Ok(value)
+//         })
+//     }
+// }
 
 impl Add for MetricCatalog {
     type Output = Self;
@@ -322,98 +384,149 @@ impl UpdateMetrics for MetricCatalog {
     }
 }
 
-lazy_static! {
-    pub(crate) static ref METRIC_CATALOG_TIMESTAMP: IntGauge = IntGauge::new(
+pub(crate) static METRIC_CATALOG_TIMESTAMP: Lazy<IntGauge> = Lazy::new(|| {
+    IntGauge::new(
         "metric_catalog_timestamp",
-        "UNIX timestamp in seconds of last operational reading"
+        "UNIX timestamp in seconds of last operational reading",
     )
-    .expect("failed creating metric_catalog_timestamp metric");
-    pub(crate) static ref METRIC_CATALOG_JOB_HEALTH_UPTIME: IntGauge = IntGauge::new(
+    .expect("failed creating metric_catalog_timestamp metric")
+});
+
+pub(crate) static METRIC_CATALOG_JOB_HEALTH_UPTIME: Lazy<IntGauge> = Lazy::new(|| {
+    IntGauge::new(
         "metric_catalog_job_health_uptime",
-        "The time that the job has been running without interruption."
+        "The time that the job has been running without interruption.",
     )
-    .expect("failed creating metric_catalog_job_health_uptime metric");
-    pub(crate) static ref METRIC_CATALOG_JOB_HEALTH_NR_RESTARTS: IntGauge = IntGauge::new(
+    .expect("failed creating metric_catalog_job_health_uptime metric")
+});
+
+pub(crate) static METRIC_CATALOG_JOB_HEALTH_NR_RESTARTS: Lazy<IntGauge> = Lazy::new(|| {
+    IntGauge::new(
         "metric_catalog_job_health_nr_restarts",
-        "The total number of restarts since this job was submitted, including full restarts and fine-grained restarts."
+        "The total number of restarts since this job was submitted, including full restarts and fine-grained restarts.",
     )
-    .expect("failed creating metric_catalog_job_health_nr_restarts metric");
-    pub(crate) static ref METRIC_CATALOG_JOB_HEALTH_NR_COMPLETED_CHECKPOINTS: IntGauge = IntGauge::new(
+    .expect("failed creating metric_catalog_job_health_nr_restarts metric")
+});
+
+pub(crate) static METRIC_CATALOG_JOB_HEALTH_NR_COMPLETED_CHECKPOINTS: Lazy<IntGauge> = Lazy::new(|| {
+    IntGauge::new(
         "metric_catalog_job_health_nr_completed_checkpoints",
-        "The number of successfully completed checkpoints."
+        "The number of successfully completed checkpoints.",
     )
-    .expect("failed creating metric_catalog_job_health_nr_completed_checkpoints metric");
-    pub(crate) static ref METRIC_CATALOG_JOB_HEALTH_NR_FAILED_CHECKPOINTS: IntGauge = IntGauge::new(
+    .expect("failed creating metric_catalog_job_health_nr_completed_checkpoints metric")
+});
+
+pub(crate) static METRIC_CATALOG_JOB_HEALTH_NR_FAILED_CHECKPOINTS: Lazy<IntGauge> = Lazy::new(|| {
+    IntGauge::new(
         "metric_catalog_job_health_nr_failed_checkpoints",
-        "The number of failed checkpoints."
+        "The number of failed checkpoints.",
     )
-    .expect("failed creating metric_catalog_job_health_nr_failed_checkpoints metric");
-    pub(crate) static ref METRIC_CATALOG_FLOW_RECORDS_IN_PER_SEC: Gauge = Gauge::new(
+    .expect("failed creating metric_catalog_job_health_nr_failed_checkpoints metric")
+});
+
+pub(crate) static METRIC_CATALOG_FLOW_RECORDS_IN_PER_SEC: Lazy<Gauge> = Lazy::new(|| {
+    Gauge::new(
         "metric_catalog_flow_records_in_per_sec",
-        "Current records ingress per second"
+        "Current records ingress per second",
     )
-    .expect("failed creating metric_catalog_flow_records_in_per_sec metric");
-    pub(crate) static ref METRIC_CATALOG_FLOW_RECORDS_OUT_PER_SEC: Gauge = Gauge::new(
+    .expect("failed creating metric_catalog_flow_records_in_per_sec metric")
+});
+
+pub(crate) static METRIC_CATALOG_FLOW_RECORDS_OUT_PER_SEC: Lazy<Gauge> = Lazy::new(|| {
+    Gauge::new(
         "metric_catalog_flow_records_out_per_sec",
-        "Current records egress per second"
+        "Current records egress per second",
     )
-    .expect("failed creating metric_catalog_flow_records_out_per_sec metric");
-    pub(crate) static ref METRIC_CATALOG_FLOW_INPUT_RECORDS_LAG_MAX: IntGauge = IntGauge::new(
+    .expect("failed creating metric_catalog_flow_records_out_per_sec metric")
+});
+
+pub(crate) static METRIC_CATALOG_FLOW_INPUT_RECORDS_LAG_MAX: Lazy<IntGauge> = Lazy::new(|| {
+    IntGauge::new(
         "metric_catalog_flow_input_records_lag_max",
-        "Current lag in handling messages from the Kafka ingress topic"
+        "Current lag in handling messages from the Kafka ingress topic",
     )
-    .expect("failed creating metric_catalog_flow_input_records_lag_max metric");
-    pub(crate) static ref METRIC_CATALOG_FLOW_INPUT_MILLIS_BEHIND_LATEST: IntGauge = IntGauge::new(
+    .expect("failed creating metric_catalog_flow_input_records_lag_max metric")
+});
+
+pub(crate) static METRIC_CATALOG_FLOW_INPUT_MILLIS_BEHIND_LATEST: Lazy<IntGauge> = Lazy::new(|| {
+    IntGauge::new(
         "metric_catalog_flow_input_millis_behind_latest",
-        "Current lag in handling messages from the Kinesis ingress topic"
+        "Current lag in handling messages from the Kinesis ingress topic",
     )
-    .expect("failed creating metric_catalog_flow_input_records_lag_max metric");
-    pub(crate) static ref METRIC_CATALOG_CLUSTER_NR_TASK_MANAGERS: IntGauge = IntGauge::new(
+    .expect("failed creating metric_catalog_flow_input_records_lag_max metric")
+});
+
+pub(crate) static METRIC_CATALOG_CLUSTER_NR_TASK_MANAGERS: Lazy<IntGauge> = Lazy::new(|| {
+    IntGauge::new(
         "metric_catalog_cluster_nr_task_managers",
-        "Number of active task managers in the cluster"
+        "Number of active task managers in the cluster",
     )
-    .expect("failed creating metric_catalog_cluster_nr_task_managers metric");
-    pub(crate) static ref METRIC_CATALOG_CLUSTER_TASK_CPU_LOAD: Gauge = Gauge::new(
+    .expect("failed creating metric_catalog_cluster_nr_task_managers metric")
+});
+
+pub(crate) static METRIC_CATALOG_CLUSTER_TASK_CPU_LOAD: Lazy<Gauge> = Lazy::new(|| {
+    Gauge::new(
         "metric_catalog_cluster_task_cpu_load",
-        "The recent CPU usage of the JVM."
+        "The recent CPU usage of the JVM.",
     )
-    .expect("failed creating metric_catalog_cluster_task_cpu_load metric");
-    pub(crate) static ref METRIC_CATALOG_CLUSTER_TASK_HEAP_MEMORY_USED: Gauge = Gauge::new(
+    .expect("failed creating metric_catalog_cluster_task_cpu_load metric")
+});
+
+pub(crate) static METRIC_CATALOG_CLUSTER_TASK_HEAP_MEMORY_USED: Lazy<Gauge> = Lazy::new(|| {
+    Gauge::new(
         "metric_catalog_cluster_task_heap_memory_used",
-        "The amount of heap memory currently used (in bytes)."
+        "The amount of heap memory currently used (in bytes).",
     )
-    .expect("failed creating metric_catalog_cluster_task_heap_memory_used metric");
-    pub(crate) static ref METRIC_CATALOG_CLUSTER_TASK_HEAP_MEMORY_COMMITTED: Gauge = Gauge::new(
+    .expect("failed creating metric_catalog_cluster_task_heap_memory_used metric")
+});
+
+pub(crate) static METRIC_CATALOG_CLUSTER_TASK_HEAP_MEMORY_COMMITTED: Lazy<Gauge> = Lazy::new(|| {
+    Gauge::new(
         "metric_catalog_cluster_task_heap_memory_committed",
-        "The amount of heap memory guaranteed to be available to the JVM (in bytes)."
+        "The amount of heap memory guaranteed to be available to the JVM (in bytes).",
     )
-    .expect("failed creating metric_catalog_cluster_task_heap_memory_committed metric");
-    pub(crate) static ref METRIC_CATALOG_CLUSTER_TASK_NR_THREADS: IntGauge = IntGauge::new(
+    .expect("failed creating metric_catalog_cluster_task_heap_memory_committed metric")
+});
+
+pub(crate) static METRIC_CATALOG_CLUSTER_TASK_NR_THREADS: Lazy<IntGauge> = Lazy::new(|| {
+    IntGauge::new(
         "metric_catalog_cluster_task_nr_threads",
-        "The total number of live threads."
+        "The total number of live threads.",
     )
-    .expect("failed creating metric_catalog_cluster_task_nr_threads metric");
-    pub(crate) static ref METRIC_CATALOG_CLUSTER_TASK_NETWORK_INPUT_QUEUE_LEN: IntGauge = IntGauge::new(
+    .expect("failed creating metric_catalog_cluster_task_nr_threads metric")
+});
+
+pub(crate) static METRIC_CATALOG_CLUSTER_TASK_NETWORK_INPUT_QUEUE_LEN: Lazy<Gauge> = Lazy::new(|| {
+    Gauge::new(
         "metric_catalog_cluster_task_network_input_queue_len",
-        "The number of queued input buffers."
+        "The number of queued input buffers.",
     )
-    .expect("failed creating metric_catalog_cluster_task_network_input_queue_len metric");
-    pub(crate) static ref METRIC_CATALOG_CLUSTER_TASK_NETWORK_INPUT_POOL_USAGE: IntGauge = IntGauge::new(
+    .expect("failed creating metric_catalog_cluster_task_network_input_queue_len metric")
+});
+
+pub(crate) static METRIC_CATALOG_CLUSTER_TASK_NETWORK_INPUT_POOL_USAGE: Lazy<Gauge> = Lazy::new(|| {
+    Gauge::new(
         "metric_catalog_cluster_task_network_input_pool_usage",
-        "An estimate of the input buffers usage. "
+        "An estimate of the input buffers usage. ",
     )
-    .expect("failed creating metric_catalog_cluster_task_network_input_pool_usage metric");
-    pub(crate) static ref METRIC_CATALOG_CLUSTER_TASK_NETWORK_OUTPUT_QUEUE_LEN: IntGauge = IntGauge::new(
+    .expect("failed creating metric_catalog_cluster_task_network_input_pool_usage metric")
+});
+
+pub(crate) static METRIC_CATALOG_CLUSTER_TASK_NETWORK_OUTPUT_QUEUE_LEN: Lazy<Gauge> = Lazy::new(|| {
+    Gauge::new(
         "metric_catalog_cluster_task_network_output_queue_len",
-        "The number of queued output buffers."
+        "The number of queued output buffers.",
     )
-    .expect("failed creating metric_catalog_cluster_task_network_output_queue_len metric");
-    pub(crate) static ref METRIC_CATALOG_CLUSTER_TASK_NETWORK_OUTPUT_POOL_USAGE: IntGauge = IntGauge::new(
+    .expect("failed creating metric_catalog_cluster_task_network_output_queue_len metric")
+});
+
+pub(crate) static METRIC_CATALOG_CLUSTER_TASK_NETWORK_OUTPUT_POOL_USAGE: Lazy<Gauge> = Lazy::new(|| {
+    Gauge::new(
         "metric_catalog_cluster_task_network_output_pool_usage",
-        "An estimate of the output buffers usage. "
+        "An estimate of the output buffers usage. ",
     )
-    .expect("failed creating metric_catalog_cluster_task_network_output_pool_usage metric");
-}
+    .expect("failed creating metric_catalog_cluster_task_network_output_pool_usage metric")
+});
 
 // /////////////////////////////////////////////////////
 // // Unit Tests ///////////////////////////////////////
@@ -421,14 +534,48 @@ lazy_static! {
 #[cfg(test)]
 mod tests {
     use std::convert::TryFrom;
+    use std::sync::Mutex;
 
-    use chrono::TimeZone;
+    use chrono::{DateTime, TimeZone, Utc};
+    use claim::*;
+    use once_cell::sync::Lazy;
     use pretty_assertions::assert_eq;
-    use proctor::elements::{Telemetry, TelemetryType, ToTelemetry};
+    use proctor::elements::{Telemetry, TelemetryType, TelemetryValue, ToTelemetry};
+    use proctor::error::TelemetryError;
     use proctor::phases::collection::{SUBSCRIPTION_CORRELATION, SUBSCRIPTION_TIMESTAMP};
+    use proctor::ProctorIdGenerator;
     use serde_test::{assert_tokens, Token};
 
     use super::*;
+
+    static ID_GENERATOR: Lazy<Mutex<ProctorIdGenerator<MetricCatalog>>> =
+        Lazy::new(|| Mutex::new(ProctorIdGenerator::default()));
+
+    fn metrics_for_test_with_datetime(ts: DateTime<Utc>, custom: telemetry::TableType) -> MetricCatalog {
+        let mut id_gen = assert_ok!(ID_GENERATOR.lock());
+        MetricCatalog {
+            correlation_id: id_gen.next_id(),
+            timestamp: ts.into(),
+            custom,
+            health: JobHealthMetrics::default(),
+            flow: FlowMetrics::default(),
+            cluster: ClusterMetrics::default(),
+        }
+    }
+
+    fn get_custom_metric<T>(mc: &MetricCatalog, key: &str) -> Result<Option<T>, TelemetryError>
+    where
+        T: TryFrom<TelemetryValue>,
+        TelemetryError: From<<T as TryFrom<TelemetryValue>>::Error>,
+    {
+        mc.custom
+            .get(key)
+            .map(|telemetry| {
+                let value = T::try_from(telemetry.clone())?;
+                Ok(value)
+            })
+            .transpose()
+    }
 
     #[derive(PartialEq, Debug)]
     struct Bar(String);
@@ -460,24 +607,36 @@ mod tests {
             "otis".to_string() => "Otis".to_telemetry(),
             "bar".to_string() => "Neo".to_telemetry(),
         };
-        let data = MetricCatalog::for_test_with_datetime(Utc::now(), cdata);
-        assert_eq!(data.custom::<i64>("foo").unwrap().unwrap(), 17_i64);
-        assert_eq!(data.custom::<f64>("foo").unwrap().unwrap(), 17.0_f64);
-        assert_eq!(data.custom::<String>("otis").unwrap().unwrap(), "Otis".to_string());
-        assert_eq!(data.custom::<Bar>("bar").unwrap().unwrap(), Bar("Neo".to_string()));
-        assert_eq!(data.custom::<String>("bar").unwrap().unwrap(), "Neo".to_string());
-        assert!(data.custom::<i64>("zed").is_none());
+        let data = metrics_for_test_with_datetime(Utc::now(), cdata);
+        assert_eq!(assert_some!(assert_ok!(get_custom_metric::<i64>(&data, "foo"))), 17_i64);
+        assert_eq!(
+            assert_some!(assert_ok!(get_custom_metric::<f64>(&data, "foo"))),
+            17.0_f64
+        );
+        assert_eq!(
+            assert_some!(assert_ok!(get_custom_metric::<String>(&data, "otis"))),
+            "Otis".to_string()
+        );
+        assert_eq!(
+            assert_some!(assert_ok!(get_custom_metric::<Bar>(&data, "bar"))),
+            Bar("Neo".to_string())
+        );
+        assert_eq!(
+            assert_some!(assert_ok!(get_custom_metric::<String>(&data, "bar"))),
+            "Neo".to_string()
+        );
+        assert_none!(assert_ok!(get_custom_metric::<i64>(&data, "zed")));
     }
 
     #[test]
     fn test_metric_add() {
         let ts = Utc::now();
-        let data = MetricCatalog::for_test_with_datetime(ts.clone(), std::collections::HashMap::default());
+        let data = metrics_for_test_with_datetime(ts.clone(), std::collections::HashMap::default());
         let am1 = maplit::hashmap! {
             "foo.1".to_string() => "f-1".to_telemetry(),
             "bar.1".to_string() => "b-1".to_telemetry(),
         };
-        let a1 = MetricCatalog::for_test_with_datetime(ts.clone(), am1.clone());
+        let a1 = metrics_for_test_with_datetime(ts.clone(), am1.clone());
         let d1 = data.clone() + a1.clone();
         assert_eq!(d1.custom, am1);
 
@@ -485,17 +644,15 @@ mod tests {
             "foo.2".to_string() => "f-2".to_telemetry(),
             "bar.2".to_string() => "b-2".to_telemetry(),
         };
-        let a2 = MetricCatalog::for_test_with_datetime(ts.clone(), am2.clone());
+        let a2 = metrics_for_test_with_datetime(ts.clone(), am2.clone());
         let d2 = d1.clone() + a2.clone();
         let mut exp2 = am1.clone();
         exp2.extend(am2.clone());
         assert_eq!(d2.custom, exp2);
     }
 
-    lazy_static! {
-        static ref CORR_ID: Id<MetricCatalog> = Id::direct("MetricCatalog", 12, "L");
-        static ref CORR_ID_REP: &'static str = "L";
-    }
+    const CORR_ID_REP: &str = "L";
+    static CORR_ID: Lazy<Id<MetricCatalog>> = Lazy::new(|| Id::direct("MetricCatalog", 12, CORR_ID_REP));
 
     #[test]
     fn test_metric_catalog_serde() {
@@ -522,10 +679,10 @@ mod tests {
                 task_heap_memory_used: 92_987_f64,
                 task_heap_memory_committed: 103_929_920_f64,
                 task_nr_threads: 8,
-                task_network_input_queue_len: 12,
-                task_network_input_pool_usage: 8,
-                task_network_output_queue_len: 13,
-                task_network_output_pool_usage: 5,
+                task_network_input_queue_len: 12.,
+                task_network_input_pool_usage: 8.,
+                task_network_output_queue_len: 13.,
+                task_network_output_pool_usage: 5.,
             },
             custom: maplit::hashmap! {
                 "bar".to_string() => 33.to_telemetry(),
@@ -574,13 +731,13 @@ mod tests {
                 Token::Str("cluster.task_nr_threads"),
                 Token::I64(8),
                 Token::Str("cluster.task_network_input_queue_len"),
-                Token::I64(12),
+                Token::F64(12.0),
                 Token::Str("cluster.task_network_input_pool_usage"),
-                Token::I64(8),
+                Token::F64(8.0),
                 Token::Str("cluster.task_network_output_queue_len"),
-                Token::I64(13),
+                Token::F64(13.0),
                 Token::Str("cluster.task_network_output_pool_usage"),
-                Token::I64(5),
+                Token::F64(5.0),
                 Token::Str("bar"),
                 Token::I64(33),
                 Token::MapEnd,
@@ -617,10 +774,10 @@ mod tests {
                 task_heap_memory_used: 92_987_f64,
                 task_heap_memory_committed: 103_929_920_f64,
                 task_nr_threads: 8,
-                task_network_input_queue_len: 12,
-                task_network_input_pool_usage: 8,
-                task_network_output_queue_len: 13,
-                task_network_output_pool_usage: 5,
+                task_network_input_queue_len: 12.,
+                task_network_input_pool_usage: 8.,
+                task_network_output_queue_len: 13.,
+                task_network_output_pool_usage: 5.,
             },
             custom: maplit::hashmap! {
                 "foo".to_string() => "David".to_telemetry(),
@@ -650,10 +807,10 @@ mod tests {
                 "cluster.task_heap_memory_used".to_string() => (92_987.).to_telemetry(),
                 "cluster.task_heap_memory_committed".to_string() => (103_929_920.).to_telemetry(),
                 "cluster.task_nr_threads".to_string() => (8).to_telemetry(),
-                "cluster.task_network_input_queue_len".to_string() => (12).to_telemetry(),
-                "cluster.task_network_input_pool_usage".to_string() => (8).to_telemetry(),
-                "cluster.task_network_output_queue_len".to_string() => (13).to_telemetry(),
-                "cluster.task_network_output_pool_usage".to_string() => (5).to_telemetry(),
+                "cluster.task_network_input_queue_len".to_string() => (12.0).to_telemetry(),
+                "cluster.task_network_input_pool_usage".to_string() => (8.0).to_telemetry(),
+                "cluster.task_network_output_queue_len".to_string() => (13.0).to_telemetry(),
+                "cluster.task_network_output_pool_usage".to_string() => (5.0).to_telemetry(),
 
                 "foo".to_string() => "David".to_telemetry(),
                 "bar".to_string() => 33.to_telemetry(),

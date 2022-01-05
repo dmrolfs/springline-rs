@@ -1,8 +1,8 @@
 use std::fmt;
-use proctor::graph::stage::tick::TickApi;
 
+use proctor::graph::stage::tick;
 use proctor::phases::collection::{ClearinghouseApi, ClearinghouseCmd, ClearinghouseSnapshot};
-use prometheus::{Registry, TextEncoder};
+use prometheus::{Encoder, Registry, TextEncoder};
 pub use protocol::{EngineApiError, EngineCmd, EngineServiceApi, MetricsReport, MetricsSpan};
 use regex::RegexSet;
 use tokio::sync::mpsc;
@@ -14,9 +14,14 @@ mod protocol {
     use axum::body::{self, BoxBody};
     use axum::http::{Response, StatusCode};
     use axum::response::IntoResponse;
+    use either::Left;
     use enum_display_derive::Display;
-    use lazy_static::lazy_static;
+    use itertools::Either;
+    use once_cell::sync::Lazy;
+    use proctor::error::MetricLabel;
+    use proctor::graph::stage::tick::TickMsg;
     use proctor::phases::collection::{ClearinghouseCmd, ClearinghouseSnapshot};
+    use proctor::SharedString;
     use regex::RegexSet;
     use serde::Deserialize;
     use thiserror::Error;
@@ -24,6 +29,7 @@ mod protocol {
 
     pub type EngineServiceApi = mpsc::UnboundedSender<EngineCmd>;
 
+    #[allow(dead_code)]
     #[derive(Debug)]
     pub enum EngineCmd {
         GatherMetrics {
@@ -34,8 +40,12 @@ mod protocol {
             subscription: Option<String>,
             tx: oneshot::Sender<Result<ClearinghouseSnapshot, EngineApiError>>,
         },
+        StopFlinkCollection {
+            tx: oneshot::Sender<Result<(), EngineApiError>>,
+        },
     }
 
+    #[allow(dead_code)]
     impl EngineCmd {
         #[inline]
         pub fn gather_metrics(domain: MetricsSpan) -> (Self, oneshot::Receiver<Result<MetricsReport, EngineApiError>>) {
@@ -50,6 +60,12 @@ mod protocol {
             let (tx, rx) = oneshot::channel();
             let subscription = subscription.map(|s| s.into());
             (Self::ReportOnClearinghouse { subscription, tx }, rx)
+        }
+
+        #[inline]
+        pub fn stop_flink_collection() -> (Self, oneshot::Receiver<Result<(), EngineApiError>>) {
+            let (tx, rx) = oneshot::channel();
+            (Self::StopFlinkCollection { tx }, rx)
         }
     }
 
@@ -68,14 +84,20 @@ mod protocol {
         #[error("Failure in prometheus: {0}")]
         Prometheus(#[from] prometheus::Error),
 
-        #[error("Could not receive response from telemetry clearinghouse: {0}")]
+        #[error("Could not send command to telemetry clearinghouse: {0}")]
         ClearinghouseSend(#[from] mpsc::error::SendError<ClearinghouseCmd>),
 
-        #[error("Could not send command to telemetry clearinghouse: {0}")]
-        ClearinghouseRecv(#[from] oneshot::error::RecvError),
+        #[error("Could not send command to flink collector: {0}")]
+        FlinkCollectionSend(#[from] mpsc::error::SendError<TickMsg>),
+
+        #[error("Could not receive response from underlying API handler: {0}")]
+        ApiHandlerRecv(#[from] oneshot::error::RecvError),
 
         #[error("Could not open or bind to a TCP address for the autoscale engine's API: {0}")]
         IO(#[from] std::io::Error),
+
+        #[error("{0}")]
+        Handler(#[from] anyhow::Error),
     }
 
     impl IntoResponse for EngineApiError {
@@ -87,6 +109,16 @@ mod protocol {
                 .status(StatusCode::INTERNAL_SERVER_ERROR)
                 .body(body)
                 .expect("Autoscale engine API failed to build error response.")
+        }
+    }
+
+    impl MetricLabel for EngineApiError {
+        fn slug(&self) -> SharedString {
+            "engine_api".into()
+        }
+
+        fn next(&self) -> Either<SharedString, Box<&dyn MetricLabel>> {
+            Left("engine".into())
         }
     }
 
@@ -111,8 +143,8 @@ mod protocol {
         }
     }
 
-    lazy_static! {
-        static ref METRIC_REGEX: HashMap<MetricsSpan, RegexSet> = maplit::hashmap! {
+    static METRIC_REGEX: Lazy<HashMap<MetricsSpan, RegexSet>> = Lazy::new(|| {
+        maplit::hashmap! {
             MetricsSpan::All => RegexSet::new(&[r".*",]).unwrap(),
             MetricsSpan::Collection => RegexSet::new(&[r"(?i)catalog", r"(?i)clearinghouse",]).unwrap(),
             MetricsSpan::Eligibility => RegexSet::new(&[r"(?i)eligibility",]).unwrap(),
@@ -121,8 +153,8 @@ mod protocol {
             MetricsSpan::Governance => RegexSet::new(&[r"(?i)governance",]).unwrap(),
             MetricsSpan::Graph => RegexSet::new(&[r"(?i)governance", r"(?i)stage",]).unwrap(),
             MetricsSpan::Policy => RegexSet::new(&[r"(?i)policy",]).unwrap(),
-        };
-    }
+        }
+    });
 
     impl MetricsSpan {
         pub fn regex(&self) -> &RegexSet {
@@ -134,7 +166,7 @@ mod protocol {
 pub struct Service<'r> {
     tx_api: EngineServiceApi,
     rx_api: mpsc::UnboundedReceiver<EngineCmd>,
-    tx_stop_flink_source: Option<TickApi>,
+    tx_stop_flink_source: Option<tick::TickApi>,
     tx_clearinghouse_api: ClearinghouseApi,
     metrics_registry: Option<&'r Registry>,
 }
@@ -149,9 +181,8 @@ impl<'r> fmt::Debug for Service<'r> {
 
 impl<'r> Service<'r> {
     pub fn new(
-        tx_stop_flink_source: Option<TickApi>,
-        tx_clearinghouse_api: ClearinghouseApi,
-        metrics_registry: Option<&'r Registry>
+        tx_stop_flink_source: Option<tick::TickApi>, tx_clearinghouse_api: ClearinghouseApi,
+        metrics_registry: Option<&'r Registry>,
     ) -> Self {
         let (tx_api, rx_api) = mpsc::unbounded_channel();
         Self {
@@ -163,6 +194,7 @@ impl<'r> Service<'r> {
         }
     }
 
+    #[allow(dead_code)]
     pub fn tx_api(&self) -> EngineServiceApi {
         self.tx_api.clone()
     }
@@ -196,6 +228,18 @@ impl<'r> Service<'r> {
                             }
                             let _ = tx.send(snapshot);
                         },
+
+                        EngineCmd::StopFlinkCollection { tx } => {
+                            let stop_response = self.stop_flink_collection().await;
+
+                            if stop_response.is_ok() {
+                                tracing::info!("Engine stopped Flink telemetry collection by command.");
+                            } else {
+                                tracing::error!(error=?stop_response, "Engine failed to stop Flink telemetry collection.");
+                            }
+
+                            let _ = tx.send(stop_response);
+                        }
                     }
                 },
 
@@ -217,12 +261,26 @@ impl<'r> Service<'r> {
         }
 
         if let Some(registry) = self.metrics_registry {
-            let metrics = registry.gather();
+            let mut buffer = vec![];
             let encoder = TextEncoder::default();
-            let report = encoder.encode_to_string(&metrics)?;
-            let report = filter_report(report, span);
+            let metrics_families = registry.gather();
+
+            tracing::warn!(?metrics_families, "DMR:gathered metrics.");
+            encoder.encode(&metrics_families, &mut buffer)?;
+
+            let report = String::from_utf8(buffer).map_err(|err| EngineApiError::Handler(err.into()))?;
+            tracing::warn!(%report, "DMR:encoded metrics report");
+            let report = if span != &MetricsSpan::All {
+                let r = filter_report(report, span);
+                tracing::warn!(report=%r, "DMR: filtered metrics report");
+                r
+            } else {
+                report
+            };
+
             Ok(MetricsReport(report))
         } else {
+            tracing::error!("DMR: NO METRICS_REGISTRY");
             Ok(MetricsReport::default())
         }
     }
@@ -238,5 +296,15 @@ impl<'r> Service<'r> {
         let _ = self.tx_clearinghouse_api.send(cmd)?;
         let snapshot = rx.await?;
         Ok(snapshot)
+    }
+
+    #[tracing::instrument(level = "info", skip(self))]
+    async fn stop_flink_collection(&self) -> Result<(), EngineApiError> {
+        let (cmd, rx) = tick::TickMsg::stop();
+        if let Some(ref api) = self.tx_stop_flink_source {
+            api.send(cmd)?;
+        }
+
+        rx.await?.map_err(|err| EngineApiError::Handler(err.into()))
     }
 }

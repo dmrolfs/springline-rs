@@ -83,6 +83,7 @@ impl QueryPolicy for EligibilityPolicy {
 
     fn initialize_policy_engine(&mut self, oso: &mut Oso) -> Result<(), PolicyError> {
         Telemetry::initialize_policy_engine(oso)?;
+        MetricCatalog::initialize_policy_engine(oso)?;
 
         oso.register_class(
             EligibilityContext::get_polar_class_builder()

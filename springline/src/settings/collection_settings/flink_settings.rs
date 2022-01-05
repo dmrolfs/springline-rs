@@ -58,7 +58,7 @@ impl Default for FlinkSettings {
 impl FlinkSettings {
     const DEFAULT_JOB_MANAGER_HOST: &'static str = "localhost";
     const DEFAULT_JOB_MANAGER_PORT: u16 = 8081;
-    const DEFAULT_JOB_MANAGER_SCHEME: &'static str = "https";
+    const DEFAULT_JOB_MANAGER_SCHEME: &'static str = "http";
     const DEFAULT_MAX_RETRIES: u32 = 3;
 
     pub fn default_job_manager_scheme() -> String {

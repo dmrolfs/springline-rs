@@ -333,16 +333,16 @@ impl Lens for ClusterLens {
             Self::TaskHeapMemoryCommitted => telemetry.task_heap_memory_committed = f64::from_str(value_rep.as_ref())?,
             Self::TaskNrThreads => telemetry.task_nr_threads = i64::from_str(value_rep.as_ref())?,
             Self::TaskNetworkInputQueueLen => {
-                telemetry.task_network_input_queue_len = i64::from_str(value_rep.as_ref())?
+                telemetry.task_network_input_queue_len = f64::from_str(value_rep.as_ref())?
             },
             Self::TaskNetworkInputPoolUsage => {
-                telemetry.task_network_input_pool_usage = i64::from_str(value_rep.as_ref())?
+                telemetry.task_network_input_pool_usage = f64::from_str(value_rep.as_ref())?
             },
             Self::TaskNetworkOutputQueueLen => {
-                telemetry.task_network_output_queue_len = i64::from_str(value_rep.as_ref())?
+                telemetry.task_network_output_queue_len = f64::from_str(value_rep.as_ref())?
             },
             Self::TaskNetworkOutputPoolUsage => {
-                telemetry.task_network_output_pool_usage = i64::from_str(value_rep.as_ref())?
+                telemetry.task_network_output_pool_usage = f64::from_str(value_rep.as_ref())?
             },
         }
 

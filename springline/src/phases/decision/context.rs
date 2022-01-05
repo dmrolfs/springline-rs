@@ -1,7 +1,6 @@
 use std::collections::HashSet;
 use std::fmt::Debug;
 
-use lazy_static::lazy_static;
 use oso::PolarClass;
 use pretty_snowflake::{Id, Label};
 use proctor::elements::telemetry::UpdateMetricsFn;
@@ -9,7 +8,6 @@ use proctor::elements::{telemetry, Telemetry, Timestamp};
 use proctor::error::DecisionError;
 use proctor::phases::collection::SubscriptionRequirements;
 use proctor::{ProctorContext, SharedString};
-use prometheus::IntGauge;
 use serde::{Deserialize, Serialize};
 
 use crate::phases::UpdateMetrics;
@@ -67,17 +65,6 @@ impl UpdateMetrics for DecisionContext {
 
         Box::new(update_fn)
     }
-}
-
-lazy_static! {
-    pub(crate) static ref DECISION_CTX_ALL_SINKS_HEALTHY: IntGauge = IntGauge::new(
-        "decision_ctx_all_sinks_healthy",
-        "Are all sinks for the FLink jobs healthy"
-    )
-    .expect("failed creating decision_ctx_all_sinks_healthy");
-    pub(crate) static ref DECISION_CTX_NR_TASK_MANAGERS: IntGauge =
-        IntGauge::new("decision_ctx_nr_task_managers", "Number of active Flink Task Managers")
-            .expect("failed creating decision_ctx_nr_task_managers");
 }
 
 // /////////////////////////////////////////////////////

@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::fmt::Debug;
 
 use chrono::{DateTime, Utc};
-use lazy_static::lazy_static;
+use once_cell::sync::Lazy;
 use oso::PolarClass;
 use pretty_snowflake::{Id, Label};
 use proctor::elements::telemetry::UpdateMetricsFn;
@@ -49,10 +49,15 @@ impl SubscriptionRequirements for EligibilityContext {
     fn required_fields() -> HashSet<proctor::SharedString> {
         maplit::hashset! {
             // this works because we rename the property via #serde field attributes
-            "task.last_failure".into(),
             "cluster.is_deploying".into(),
             "cluster.last_deployment".into(),
             "all_sinks_healthy".into(),
+        }
+    }
+
+    fn optional_fields() -> HashSet<SharedString> {
+        maplit::hashset! {
+            "task.last_failure".into(),
         }
     }
 }
@@ -142,28 +147,37 @@ impl ClusterStatus {
     }
 }
 
-lazy_static! {
-    pub(crate) static ref ELIGIBILITY_CTX_ALL_SINKS_HEALTHY: IntGauge = IntGauge::new(
+pub(crate) static ELIGIBILITY_CTX_ALL_SINKS_HEALTHY: Lazy<IntGauge> = Lazy::new(|| {
+    IntGauge::new(
         "eligibility_ctx_all_sinks_healthy",
-        "Are all sinks for the FLink jobs healthy"
+        "Are all sinks for the FLink jobs healthy",
     )
-    .expect("failed creating eligibility_ctx_all_sinks_healthy");
-    pub(crate) static ref ELIGIBILITY_CTX_TASK_LAST_FAILURE: IntGauge = IntGauge::new(
+    .expect("failed creating eligibility_ctx_all_sinks_healthy")
+});
+
+pub(crate) static ELIGIBILITY_CTX_TASK_LAST_FAILURE: Lazy<IntGauge> = Lazy::new(|| {
+    IntGauge::new(
         "eligibility_ctx_task_last_failure",
         "UNIX timestamp in seconds of last Flink Task Manager failure in environment",
     )
-    .expect("failed creating eligibility_ctx_task_last_failure metric");
-    pub(crate) static ref ELIGIBILITY_CTX_CLUSTER_IS_DEPLOYING: IntGauge = IntGauge::new(
+    .expect("failed creating eligibility_ctx_task_last_failure metric")
+});
+
+pub(crate) static ELIGIBILITY_CTX_CLUSTER_IS_DEPLOYING: Lazy<IntGauge> = Lazy::new(|| {
+    IntGauge::new(
         "eligibility_ctx_cluster_is_deploying",
-        "Is the Flink cluster actively deploying: 1=yes, 0=no"
+        "Is the Flink cluster actively deploying: 1=yes, 0=no",
     )
-    .expect("failed creating eligibility_ctx_cluster_is_deploying metric");
-    pub(crate) static ref ELIGIBILITY_CTX_CLUSTER_LAST_DEPLOYMENT: IntGauge = IntGauge::new(
+    .expect("failed creating eligibility_ctx_cluster_is_deploying metric")
+});
+
+pub(crate) static ELIGIBILITY_CTX_CLUSTER_LAST_DEPLOYMENT: Lazy<IntGauge> = Lazy::new(|| {
+    IntGauge::new(
         "eligibility_ctx_cluster_last_deployment",
-        "UNIX timestamp in seconds of last deployment of the Flink cluster"
+        "UNIX timestamp in seconds of last deployment of the Flink cluster",
     )
-    .expect("failed creating eligibility_ctx_cluster_last_deployment metric");
-}
+    .expect("failed creating eligibility_ctx_cluster_last_deployment metric")
+});
 
 // /////////////////////////////////////////////////////
 // // Unit Tests ///////////////////////////////////////

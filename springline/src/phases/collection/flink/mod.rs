@@ -5,12 +5,13 @@ mod api_model;
 mod generators;
 mod metric_order;
 
-pub use metric_order::{Aggregation, FlinkScope, MetricOrder};
 pub use generators::make_flink_metrics_source;
+pub(crate) use generators::{FLINK_COLLECTION_ERRORS, FLINK_COLLECTION_TIME};
+pub use metric_order::{Aggregation, FlinkScope, MetricOrder};
 
-// pub use model::{FlinkMetric, FlinkMetricResponse, build_telemetry};
-// pub use generators::{TaskContext};
-
+// note: `cluster.nr_task_managers` is a standard metric pulled from Flink's admin API. The order
+// mechanism may need to be expanded to consider further meta information outside of Flink Metrics
+// API.
 pub static STD_METRIC_ORDERS: Lazy<Vec<MetricOrder>> = Lazy::new(|| {
     use proctor::elements::TelemetryType::*;
 

@@ -14,7 +14,7 @@ use proctor::phases::collection::{self, Collect, SubscriptionRequirements, Telem
 use proctor::phases::policy_phase::PolicyPhase;
 use proctor::{AppData, ProctorContext};
 use serde::de::DeserializeOwned;
-use springline::phases::decision::result::{make_decision_transform, DecisionResult, DECISION_BINDING};
+use springline::phases::decision::result::{make_decision_transform, DecisionResult, DECISION_DIRECTION};
 use springline::phases::decision::{DecisionContext, DecisionPolicy, DecisionTemplateData};
 use springline::phases::MetricCatalog;
 use springline::settings::DecisionSettings;
@@ -251,8 +251,8 @@ async fn test_decision_carry_policy_result() -> anyhow::Result<()> {
         format!("{}_basis", DecisionPolicy::base_template_name()),
         r###"
             | {{> preamble}}
-            | scale_up(item, _context, _) if {{max_records_in_per_sec}} < item.flow.records_in_per_sec;
-            | scale_down(item, _context, _) if item.flow.records_in_per_sec < {{min_records_in_per_sec}};
+            | scale_up(item, _context, _, reason) if {{max_records_in_per_sec}} < item.flow.records_in_per_sec and reason = "lagging_behind";
+            | scale_down(item, _context, _, reason) if item.flow.records_in_per_sec < {{min_records_in_per_sec}} and reason = "too_comfortable";
             "###,
     )?));
 
@@ -326,7 +326,7 @@ async fn test_decision_carry_policy_result() -> anyhow::Result<()> {
         .into_iter()
         .map(|a| {
             let direction: Option<String> = a
-                .binding(DECISION_BINDING)
+                .binding(DECISION_DIRECTION)
                 .expect("failed to pull string from direction binding.")
                 .first()
                 .cloned();
@@ -363,8 +363,8 @@ async fn test_decision_common() -> anyhow::Result<()> {
         format!("{}_basis", DecisionPolicy::base_template_name()),
         r###"
             | {{> preamble}}
-            | scale_up(item, _context, _) if {{max_records_in_per_sec}} < item.flow.records_in_per_sec;
-            | scale_down(item, _context, _) if item.flow.records_in_per_sec < {{min_records_in_per_sec}};
+            | scale_up(item, _context, _, reason) if {{max_records_in_per_sec}} < item.flow.records_in_per_sec and reason = "lagging_behind";
+            | scale_down(item, _context, _, reason) if item.flow.records_in_per_sec < {{min_records_in_per_sec}} and reason = "too comfortable";
             "###,
     )?));
 

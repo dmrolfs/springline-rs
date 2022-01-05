@@ -1,4 +1,4 @@
-mod http;
+pub mod http;
 pub mod monitor;
 mod service;
 
@@ -6,33 +6,34 @@ use cast_trait_object::DynCastExt;
 use monitor::Monitor;
 use pretty_snowflake::MachineNode;
 use proctor::elements::Telemetry;
+use proctor::graph::stage::tick::TickApi;
 use proctor::graph::stage::{SinkStage, SourceStage, WithApi, WithMonitor};
 use proctor::graph::{Connect, Graph, SinkShape, SourceShape};
 use proctor::phases::collection::ClearinghouseApi;
 use proctor::{ProctorResult, SharedString};
-use proctor::graph::stage::tick::TickApi;
 use prometheus::Registry;
 use tokio::task::JoinHandle;
 
+use crate::engine::service::{EngineServiceApi, Service};
 use crate::phases::governance::{self, GovernanceOutcome};
 use crate::phases::{collection, decision, eligibility, execution, plan};
 use crate::phases::{MetricCatalog, UpdateMetrics};
 use crate::settings::Settings;
-use crate::Result;
+use crate::{metrics, Result};
 
 pub struct Autoscaler;
 impl Autoscaler {
-    pub fn builder<'r>(name: impl Into<SharedString>) -> AutoscaleEngine<Building<'r>> {
+    pub fn builder(name: impl Into<SharedString>) -> AutoscaleEngine<Building> {
         AutoscaleEngine::default().with_name(name)
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct AutoscaleEngine<S: EngineState> {
-    inner: S,
+    pub inner: S,
 }
 
-impl<'r> Default for AutoscaleEngine<Building<'r>> {
+impl Default for AutoscaleEngine<Building> {
     fn default() -> Self {
         Self { inner: Building::default() }
     }
@@ -42,37 +43,38 @@ impl<'r> Default for AutoscaleEngine<Building<'r>> {
 pub trait EngineState {}
 
 #[derive(Debug, Default)]
-pub struct Building<'r> {
+pub struct Building {
     name: SharedString,
     sources: Vec<Box<dyn SourceStage<Telemetry>>>,
     execution: Option<Box<dyn SinkStage<GovernanceOutcome>>>,
-    metrics_registry: Option<&'r Registry>,
+    metrics_registry: Option<&'static Registry>,
 }
-impl<'r> EngineState for Building<'r> {}
+impl EngineState for Building {}
 
 #[derive(Debug)]
-pub struct Ready<'r> {
-    name: SharedString,
+pub struct Ready {
+    // name: SharedString,
     graph: Graph,
     monitor: Monitor,
     tx_stop_flink_source: Option<TickApi>,
     tx_clearinghouse_api: ClearinghouseApi,
-    metrics_registry: Option<&'r Registry>,
+    metrics_registry: Option<&'static Registry>,
 }
-impl<'r> EngineState for Ready<'r> {}
+impl EngineState for Ready {}
 
+#[allow(dead_code)]
 #[derive(Debug)]
-pub struct Running<'r> {
-    name: SharedString,
+pub struct Running {
+    pub tx_service_api: EngineServiceApi,
     graph_handle: JoinHandle<ProctorResult<()>>,
     monitor_handle: JoinHandle<()>,
-    tx_stop_flink_source: Option<TickApi>,
-    tx_clearinghouse_api: ClearinghouseApi,
-    metrics_registry: Option<&'r Registry>,
+    service_handle: JoinHandle<()>,
+    metrics_registry: Option<&'static Registry>,
 }
-impl<'r> EngineState for Running<'r> {}
 
-impl<'r> AutoscaleEngine<Building<'r>> {
+impl EngineState for Running {}
+
+impl AutoscaleEngine<Building> {
     pub fn with_name(self, name: impl Into<SharedString>) -> Self {
         Self {
             inner: Building { name: name.into(), ..self.inner },
@@ -103,7 +105,7 @@ impl<'r> AutoscaleEngine<Building<'r>> {
 
     pub fn with_metrics_registry<'a>(self, registry: &'a Registry) -> Self
     where
-        'a: 'r,
+        'a: 'static,
     {
         tracing::info!(?registry, "added metrics registry to autoscale engine.");
         Self {
@@ -112,28 +114,30 @@ impl<'r> AutoscaleEngine<Building<'r>> {
     }
 
     #[tracing::instrument(level = "info")]
-    pub async fn finish(self, settings: Settings) -> Result<AutoscaleEngine<Ready<'r>>> {
+    pub async fn finish(self, settings: &Settings) -> Result<AutoscaleEngine<Ready>> {
         let machine_node = MachineNode::new(settings.engine.machine_id, settings.engine.node_id)?;
 
         if let Some(registry) = self.inner.metrics_registry {
-            crate::metrics::register_metrics(registry)?;
+            metrics::register_metrics(registry)?;
         }
 
         let (mut collection_builder, tx_stop_flink_source) =
-            collection::make_collection_phase(&settings.collection, self.inner.sources, machine_node).await?;
-        let eligibility =
+            collection::make_collection_phase("data", &settings.collection, self.inner.sources, machine_node).await?;
+        let (eligibility_phase, eligibility_channel) =
             eligibility::make_eligibility_phase(&settings.eligibility, (&mut collection_builder).into()).await?;
-        let rx_eligibility_monitor = eligibility.rx_monitor();
+        let rx_eligibility_monitor = eligibility_phase.rx_monitor();
 
-        let decision = decision::make_decision_phase(&settings.decision, (&mut collection_builder).into()).await?;
-        let rx_decision_monitor = decision.rx_monitor();
+        let (decision_phase, decision_channel) =
+            decision::make_decision_phase(&settings.decision, (&mut collection_builder).into()).await?;
+        let rx_decision_monitor = decision_phase.rx_monitor();
 
-        let plan = plan::make_plan_phase(&settings.plan, (&mut collection_builder).into()).await?;
-        let rx_plan_monitor = plan.rx_monitor();
+        let (planning_phase, planning_channel) =
+            plan::make_plan_phase(&settings.plan, (&mut collection_builder).into()).await?;
+        let rx_plan_monitor = planning_phase.rx_monitor();
 
-        let governance =
+        let (governance_phase, governance_channel) =
             governance::make_governance_phase(&settings.governance, (&mut collection_builder).into()).await?;
-        let rx_governance_monitor = governance.rx_monitor();
+        let rx_governance_monitor = governance_phase.rx_monitor();
 
         let execution = match self.inner.execution {
             Some(e) => e,
@@ -148,23 +152,27 @@ impl<'r> AutoscaleEngine<Building<'r>> {
 
         let tx_clearinghouse_api = collection.tx_api();
 
-        (collection.outlet(), eligibility.inlet()).connect().await;
-        (eligibility.outlet(), decision.inlet()).connect().await;
-        (decision.outlet(), plan.decision_inlet()).connect().await;
-        (plan.outlet(), governance.inlet()).connect().await;
-        (governance.outlet(), execution.inlet()).connect().await;
+        (collection.outlet(), eligibility_phase.inlet()).connect().await;
+        (eligibility_phase.outlet(), decision_phase.inlet()).connect().await;
+        (decision_phase.outlet(), planning_phase.decision_inlet()).connect().await;
+        (planning_phase.outlet(), governance_phase.inlet()).connect().await;
+        (governance_phase.outlet(), execution.inlet()).connect().await;
 
         let mut graph = Graph::default();
         graph.push_back(Box::new(collection)).await;
-        graph.push_back(eligibility).await;
-        graph.push_back(decision).await;
-        graph.push_back(plan).await;
-        graph.push_back(governance).await;
+        graph.push_back(Box::new(eligibility_channel)).await;
+        graph.push_back(Box::new(decision_channel)).await;
+        graph.push_back(Box::new(planning_channel)).await;
+        graph.push_back(Box::new(governance_channel)).await;
+        graph.push_back(eligibility_phase).await;
+        graph.push_back(decision_phase).await;
+        graph.push_back(planning_phase).await;
+        graph.push_back(governance_phase).await;
         graph.push_back(execution.dyn_upcast()).await;
 
         Ok(AutoscaleEngine {
             inner: Ready {
-                name: self.inner.name,
+                // name: self.inner.name,
                 graph,
                 tx_stop_flink_source,
                 tx_clearinghouse_api,
@@ -180,27 +188,34 @@ impl<'r> AutoscaleEngine<Building<'r>> {
     }
 }
 
-impl<'r> AutoscaleEngine<Ready<'r>> {
+impl AutoscaleEngine<Ready> {
     #[tracing::instrument(level = "info")]
-    pub fn run(self) -> AutoscaleEngine<Running<'r>> {
-        let graph = self.inner.graph;
-        let monitor = self.inner.monitor;
-        let graph_handle = tokio::spawn(async { graph.run().await });
-        let monitor_handle = tokio::spawn(async { monitor.run().await });
+    pub fn run(self) -> AutoscaleEngine<Running> {
+        let graph_handle = tokio::spawn(async { self.inner.graph.run().await });
+
+        let monitor_handle = tokio::spawn(async { self.inner.monitor.run().await });
+
+        let service = Service::new(
+            self.inner.tx_stop_flink_source,
+            self.inner.tx_clearinghouse_api,
+            self.inner.metrics_registry,
+        );
+        let tx_service_api = service.tx_api();
+        let service_handle = tokio::spawn(async move { service.run().await });
+
         AutoscaleEngine {
             inner: Running {
-                name: self.inner.name,
+                tx_service_api,
                 graph_handle,
                 monitor_handle,
-                tx_stop_flink_source: self.inner.tx_stop_flink_source,
-                tx_clearinghouse_api: self.inner.tx_clearinghouse_api,
+                service_handle,
                 metrics_registry: self.inner.metrics_registry,
             },
         }
     }
 }
 
-impl<'r> AutoscaleEngine<Running<'r>> {
+impl AutoscaleEngine<Running> {
     #[tracing::instrument(level = "info")]
     pub async fn block_for_completion(self) -> Result<()> {
         self.inner.graph_handle.await??;

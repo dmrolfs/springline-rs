@@ -6,7 +6,6 @@ use fake::locales::EN;
 use fake::Fake;
 use lazy_static::lazy_static;
 use pretty_assertions::assert_eq;
-use pretty_snowflake::Id;
 use proctor::elements::telemetry;
 use proctor::elements::Timestamp;
 use proctor::graph::stage::{self, WithApi, WithMonitor};
@@ -21,6 +20,8 @@ use springline::phases::plan::{
 use springline::phases::{ClusterMetrics, FlowMetrics, JobHealthMetrics, MetricCatalog};
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
+
+use crate::CORRELATION_ID;
 
 type InData = MetricCatalog;
 type InDecision = DecisionResult<MetricCatalog>;
@@ -170,7 +171,7 @@ fn make_test_data(
     start: Timestamp, tick: i64, nr_task_managers: u16, input_records_lag_max: i64, records_per_sec: f64,
 ) -> InData {
     let timestamp = Utc.timestamp(start.as_secs() + tick * STEP, 0).into();
-    let corr_id = Id::direct("MetricCatalog", 9, "CBA");
+    let corr_id = CORRELATION_ID.clone();
     MetricCatalog {
         correlation_id: corr_id,
         timestamp,
@@ -192,10 +193,10 @@ fn make_test_data(
             task_heap_memory_used: 92_987_f64,
             task_heap_memory_committed: 103_929_920_f64,
             task_nr_threads: 8,
-            task_network_input_queue_len: 12,
-            task_network_input_pool_usage: 8,
-            task_network_output_queue_len: 12,
-            task_network_output_pool_usage: 5,
+            task_network_input_queue_len: 12.,
+            task_network_input_pool_usage: 8.,
+            task_network_output_queue_len: 12.,
+            task_network_output_pool_usage: 5.,
         },
         custom: telemetry::TableType::default(),
     }
@@ -309,6 +310,7 @@ async fn test_flink_planning_linear() {
     tracing::info!("pushing decision...");
     let decision = InDecision::ScaleUp(last_data);
     let timestamp = decision.item().timestamp;
+    let correlation_id = decision.item().correlation_id.clone();
     assert_ok!(flow.push_decision(decision).await);
 
     tracing::info!("DMR-waiting for plan to reach sink...");
@@ -323,6 +325,7 @@ async fn test_flink_planning_linear() {
         actual,
         vec![ScalePlan {
             timestamp,
+            correlation_id,
             target_nr_task_managers: 6,
             current_nr_task_managers: 2,
         }]
@@ -368,19 +371,19 @@ async fn test_flink_planning_sine() {
 
     assert_ok!(
         planning
-            .update_performance_history(&make_decision(DecisionType::Up, last_data.timestamp, 0, 2, 0, 25.))
+            .update_performance_history(&make_decision(DecisionType::Up, last_data.timestamp, 1, 2, 0, 25.))
             .await
     );
     tracing::warn!("DMR: planning history = {:?}", planning);
     assert_ok!(
         planning
-            .update_performance_history(&make_decision(DecisionType::Up, last_data.timestamp, 0, 4, 0, 75.))
+            .update_performance_history(&make_decision(DecisionType::Up, last_data.timestamp, 2, 4, 0, 75.))
             .await
     );
     tracing::warn!("DMR: planning history = {:?}", planning);
     assert_ok!(
         planning
-            .update_performance_history(&make_decision(DecisionType::Up, last_data.timestamp, 0, 10, 0, 250.))
+            .update_performance_history(&make_decision(DecisionType::Up, last_data.timestamp, 3, 10, 0, 250.))
             .await
     );
     tracing::warn!("DMR: planning history = {:?}", planning);
@@ -423,6 +426,7 @@ async fn test_flink_planning_sine() {
         actual,
         vec![ScalePlan {
             timestamp,
+            correlation_id: CORRELATION_ID.clone(),
             target_nr_task_managers: 8,
             current_nr_task_managers: 2,
         }]

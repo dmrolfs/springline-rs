@@ -81,4 +81,9 @@
         ),
     ),
     execution: (),
+    context_stub: (
+        all_sinks_healthy: true,
+        cluster_is_deploying: false,
+        cluster_last_deployment: "2020-03-01T04:28:07Z",
+    ),
 )

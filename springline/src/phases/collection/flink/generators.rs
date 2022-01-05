@@ -4,12 +4,14 @@ use std::pin::Pin;
 
 use futures::future::Future;
 use itertools::Itertools;
+use once_cell::sync::Lazy;
 use proctor::elements::{telemetry, Telemetry, TelemetryValue};
-use proctor::error::{CollectionError, TelemetryError};
+use proctor::error::{CollectionError, MetricLabel, TelemetryError};
 use proctor::graph::stage::{self, SourceStage, WithApi};
 use proctor::graph::{Connect, Graph, SinkShape, SourceShape};
 use proctor::phases::collection::TelemetrySource;
 use proctor::SharedString;
+use prometheus::{HistogramOpts, HistogramTimer, HistogramVec, IntCounterVec, Opts};
 use reqwest::Method;
 use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
 use reqwest_retry::policies::ExponentialBackoff;
@@ -22,6 +24,47 @@ use super::api_model::{build_telemetry, FlinkMetricResponse, JobSummary};
 use super::{Aggregation, FlinkScope, MetricOrder, STD_METRIC_ORDERS};
 use crate::phases::collection::flink::api_model::{JobDetail, JobId, VertexId};
 use crate::settings::FlinkSettings;
+
+pub(crate) static FLINK_COLLECTION_TIME: Lazy<HistogramVec> = Lazy::new(|| {
+    HistogramVec::new(
+        HistogramOpts::new(
+            "flink_collection_time",
+            "Time spent collecting telemetry from Flink in seconds",
+        ),
+        &["flink_scope"],
+    )
+    .expect("failed creating flink_collection_time metric")
+});
+
+pub(crate) static FLINK_COLLECTION_ERRORS: Lazy<IntCounterVec> = Lazy::new(|| {
+    IntCounterVec::new(
+        Opts::new("flink_collection_errors", "Number of errors collecting Flink telemetry"),
+        &["flink_scope", "error_type"],
+    )
+    .expect("failed creating flink_collection_errors metric")
+});
+
+#[inline]
+pub(crate) fn start_flink_collection_timer(scope: &FlinkScope) -> HistogramTimer {
+    FLINK_COLLECTION_TIME
+        .with_label_values(&[scope.to_string().as_str()])
+        .start_timer()
+}
+
+#[inline]
+pub(crate) fn track_flink_errors(scope: &FlinkScope, error: &CollectionError) {
+    FLINK_COLLECTION_ERRORS
+        .with_label_values(&[scope.to_string().as_str(), error.label().as_ref()])
+        .inc()
+}
+
+#[inline]
+fn track_generator_errors<T>(scope: FlinkScope, result: &Result<T, CollectionError>) {
+    if let Err(err) = result {
+        tracing::error!(%scope, error=?err, "failed to collect Flink {} telemetry part", scope);
+        track_flink_errors(&scope, err);
+    }
+}
 
 pub type Generator<T> =
     Box<(dyn Fn() -> Pin<Box<(dyn Future<Output = Result<T, CollectionError>> + Send)>> + Send + Sync)>;
@@ -100,54 +143,57 @@ fn make_flink_generator(
     orders.extend(settings.metric_orders.clone());
 
     let gen = move |_: ()| {
-        let jobs_gen = make_root_scope_collection_generator(FlinkScope::Jobs, &orders, &context);
-        let tm_gen = make_root_scope_collection_generator(FlinkScope::TaskManagers, &orders, &context);
-        let tm_admin_gen = make_taskmanagers_admin_generator(&context);
-        let vertex_gen = make_vertex_collection_generator(&orders, &context);
+        let jobs_gen =
+            make_root_scope_collection_generator(FlinkScope::Jobs, &orders, &context).map(|g| (FlinkScope::Jobs, g));
+        let tm_gen = make_root_scope_collection_generator(FlinkScope::TaskManagers, &orders, &context)
+            .map(|g| (FlinkScope::TaskManagers, g));
+        let tm_admin_gen = make_taskmanagers_admin_generator(&orders, &context).map(|g| (FlinkScope::TaskManagers, g));
+        let vertex_gen = make_vertex_collection_generator(&orders, &context).map(|g| (FlinkScope::Task, g));
 
         let task: Pin<Box<dyn Future<Output = Option<Telemetry>> + Send>> = Box::pin(async move {
             let flink_span = tracing::info_span!("collect flink telemetry");
             let _flink_span_guardian = flink_span.enter();
 
             let generators = vec![jobs_gen, tm_gen, tm_admin_gen, vertex_gen];
-            for (idx, gen) in generators.iter().enumerate() {
-                if let Err(err) = gen {
-                    const GEN_LABEL: [&str; 4] = ["Jobs", "TaskManager", "TaskManagerAdmin", "Vertex"];
-                    tracing::error!(error=?err, "failed to create {} generator", GEN_LABEL[idx]);
-                }
-            }
 
-
+            // let tasks = generators
             let tasks: Vec<JoinHandle<Result<Telemetry, CollectionError>>> = generators
                 .into_iter()
                 .flatten()
-                .flatten()
-                // .into_iter()
-                .map(|g| tokio::spawn(async move { g().await }))
+                .map(|(scope, gen)| {
+                    tokio::spawn(async move {
+                        let gen_result = gen().await;
+                        track_generator_errors(scope, &gen_result);
+                        gen_result
+                    })
+                })
                 .collect::<Vec<_>>();
 
-            let results: Vec<Result<Result<Telemetry, CollectionError>, tokio::task::JoinError>> =
-                futures::future::join_all(tasks).await;
-            let results: Result<Vec<Result<Telemetry, CollectionError>>, tokio::task::JoinError> =
-                results.into_iter().collect();
+            // let results : Result<Vec<Result<Telemetry, CollectionError>>, tokio::task::JoinError> =
+            let results = futures::future::join_all(tasks)
+                .await
+                .into_iter()
+                .collect::<Result<Vec<_>, _>>();
 
             let span = tracing::info_span!("consolidate telemetry parts");
             let _ = span.enter();
             match results {
                 Err(err) => {
                     tracing::error!(error=?err, "failed to join Flink telemetry collection tasks");
+                    track_flink_errors(&FlinkScope::Other, &err.into());
                     None
                 },
                 Ok(results) => {
                     let mut telemetry = Telemetry::default();
                     for (idx, result) in results.into_iter().enumerate() {
                         match result {
-                            Err(err) => {
-                                tracing::error!(error=?err, "failed to collect Flink telemetry portion:{}", idx);
-                            },
                             Ok(t) => {
                                 tracing::info!(acc_telemetry=?telemetry, new_part=?t, "adding flink telemetry part");
                                 telemetry.extend(t);
+                            },
+                            Err(err) => {
+                                // error metric (and dup log) recorded in decorating `with_error_tracking()`
+                                tracing::error!(error=?err, "failed to collect Flink telemetry portion:{}", idx);
                             },
                         }
                     }
@@ -178,12 +224,12 @@ fn log_response(label: &str, response: &reqwest::Response) {
 
 pub fn make_root_scope_collection_generator(
     scope: FlinkScope, orders: &[MetricOrder], context: &TaskContext,
-) -> Result<Option<Generator<Telemetry>>, CollectionError> {
+) -> Option<Generator<Telemetry>> {
     let scope_rep = SharedString::Owned(scope.to_string().to_lowercase());
     let scopes = maplit::hashset! { scope };
     let (metric_orders, agg_span) = distill_metric_orders_and_agg(&scopes, orders);
     if metric_orders.is_empty() {
-        return Ok(None);
+        return None;
     }
 
     let mut url = context.base_url.clone();
@@ -192,7 +238,6 @@ pub fn make_root_scope_collection_generator(
         .clear()
         .append_pair("get", metric_orders.keys().join(",").as_str())
         .append_pair("agg", agg_span.iter().join(",").as_str());
-
 
     let client = context.client.clone();
 
@@ -205,23 +250,35 @@ pub fn make_root_scope_collection_generator(
 
         Box::pin(
             async move {
-                let scope_resp = client.request(Method::GET, url).send().await?;
+                let _timer = start_flink_collection_timer(&scope);
+                let scope_resp = client.request(Method::GET, url).send().await.map_err(|err| {
+                    let collection_err: CollectionError = err.into();
+                    track_flink_errors(&scope, &collection_err);
+                    collection_err
+                })?;
+
                 log_response(format!("{} scope response", scope_rep2).as_str(), &scope_resp);
                 let scope_resp: FlinkMetricResponse = scope_resp.json().await?;
-                let telemetry = build_telemetry(scope_resp, &orders)?;
-                std::result::Result::<Telemetry, CollectionError>::Ok(telemetry)
+
+                build_telemetry(scope_resp, &orders).map_err(|err| {
+                    let collection_err: CollectionError = err.into();
+                    track_flink_errors(&scope, &collection_err);
+                    collection_err
+                })
             }
             .instrument(tracing::info_span!("collect Flink scope telemetry", %scope_rep)),
         )
     });
 
-    Ok(Some(gen))
+    Some(gen)
 }
 
-
+// note: `cluster.nr_task_managers` is a standard metric pulled from Flink's admin API. The order
+// mechanism may need to be expanded to consider further meta information outside of Flink Metrics
+// API.
 pub fn make_taskmanagers_admin_generator(
-    context: &TaskContext,
-) -> Result<Option<Generator<Telemetry>>, CollectionError> {
+    _orders: &[MetricOrder], context: &TaskContext,
+) -> Option<Generator<Telemetry>> {
     let client = context.client.clone();
 
     let mut url = context.base_url.clone();
@@ -233,9 +290,23 @@ pub fn make_taskmanagers_admin_generator(
 
         Box::pin(
             async move {
-                let taskmanagers_admin_resp = client.request(Method::GET, url).send().await?;
+                let _timer = start_flink_collection_timer(&FlinkScope::TaskManagers);
+
+                let taskmanagers_admin_resp = client.request(Method::GET, url).send().await.map_err(|err| {
+                    let collection_err: CollectionError = err.into();
+                    track_flink_errors(&FlinkScope::TaskManagers, &collection_err);
+                    collection_err
+                })?;
+
                 log_response("taskmanagers admin", &taskmanagers_admin_resp);
-                let taskmanagers_admin_resp: serde_json::Value = taskmanagers_admin_resp.json().await?;
+
+                let taskmanagers_admin_resp: serde_json::Value =
+                    taskmanagers_admin_resp.json().await.map_err(|err| {
+                        let collection_err: CollectionError = err.into();
+                        track_flink_errors(&FlinkScope::TaskManagers, &collection_err);
+                        collection_err
+                    })?;
+
                 let taskmanagers = taskmanagers_admin_resp["taskmanagers"]
                     .as_array()
                     .map(|tms| tms.len())
@@ -247,12 +318,10 @@ pub fn make_taskmanagers_admin_generator(
             .instrument(tracing::info_span!("collect Flink taskmanagers admin telemetry",)),
         )
     });
-    Ok(Some(gen))
+    Some(gen)
 }
 
-pub fn make_vertex_collection_generator(
-    orders: &[MetricOrder], context: &TaskContext,
-) -> Result<Option<Generator<Telemetry>>, CollectionError> {
+pub fn make_vertex_collection_generator(orders: &[MetricOrder], context: &TaskContext) -> Option<Generator<Telemetry>> {
     let scopes = maplit::hashset! {
         FlinkScope::Task, FlinkScope::Kafka, FlinkScope::Kinesis,
     };
@@ -260,7 +329,7 @@ pub fn make_vertex_collection_generator(
     let orders = orders.to_vec();
     let (metric_orders, _agg_span) = distill_metric_orders_and_agg(&scopes, &orders);
     if metric_orders.is_empty() {
-        return Ok(None);
+        return None;
     }
 
     let context = context.clone();
@@ -272,6 +341,7 @@ pub fn make_vertex_collection_generator(
 
         Box::pin(
             async move {
+                let _timer = start_flink_collection_timer(&FlinkScope::Task);
                 let active_jobs = query_active_jobs(&context).await?;
 
                 let mut job_details = Vec::with_capacity(active_jobs.len());
@@ -296,7 +366,7 @@ pub fn make_vertex_collection_generator(
         )
     });
 
-    Ok(Some(gen))
+    Some(gen)
 }
 
 fn collect_metric_points(metric_points: &mut HashMap<String, Vec<TelemetryValue>>, vertex_telemetry: Telemetry) {
@@ -532,11 +602,11 @@ mod tests {
 
             let context = assert_ok!(context_for(&mock_server));
 
-            let gen = assert_some!(assert_ok!(make_root_scope_collection_generator(
+            let gen = assert_some!(make_root_scope_collection_generator(
                 FlinkScope::Jobs,
                 &STD_METRIC_ORDERS,
                 &context
-            )));
+            ));
 
             assert_err!(gen().await, "Checking for error passed back after retries.");
         });
@@ -581,11 +651,11 @@ mod tests {
 
             let context = assert_ok!(context_for(&mock_server));
 
-            let gen = assert_some!(assert_ok!(make_root_scope_collection_generator(
+            let gen = assert_some!(make_root_scope_collection_generator(
                 FlinkScope::Jobs,
                 &STD_METRIC_ORDERS,
                 &context
-            )));
+            ));
 
             let actual: Telemetry = assert_ok!(gen().await);
             assert_eq!(
@@ -617,8 +687,13 @@ mod tests {
     #[test]
     fn test_flink_retry_jobs_collect() {
         once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
-        let main_span = tracing::info_span!("test_flink_simple_jobs_collect");
+        let main_span = tracing::info_span!("test_flink_retry_jobs_collect");
         let _ = main_span.enter();
+
+        let registry_name = "test_flink";
+        let registry = assert_ok!(prometheus::Registry::new_custom(Some(registry_name.to_string()), None));
+        assert_ok!(registry.register(Box::new(FLINK_COLLECTION_TIME.clone())));
+        assert_ok!(registry.register(Box::new(FLINK_COLLECTION_ERRORS.clone())));
 
         block_on(async {
             let mock_server = MockServer::start().await;
@@ -653,11 +728,11 @@ mod tests {
 
             let context = assert_ok!(context_for(&mock_server));
 
-            let gen = assert_some!(assert_ok!(make_root_scope_collection_generator(
+            let gen = assert_some!(make_root_scope_collection_generator(
                 FlinkScope::Jobs,
                 &STD_METRIC_ORDERS,
                 &context
-            )));
+            ));
 
             let actual: Telemetry = assert_ok!(gen().await);
             assert_eq!(
@@ -684,6 +759,96 @@ mod tests {
             let status = assert_ok!(reqwest::get(format!("{}/missing", &mock_server.uri())).await).status();
             assert_eq!(status, 404);
         });
+
+        let metric_family = registry.gather();
+        assert_eq!(metric_family.len(), 1);
+        assert_eq!(
+            metric_family[0].get_name(),
+            &format!("{}_{}", registry_name, "flink_collection_time")
+        );
+        let metrics = metric_family[0].get_metric();
+        assert_eq!(metrics[0].get_label().len(), 1);
+        assert_eq!(metrics[0].get_label()[0].get_name(), "flink_scope");
+        assert_eq!(metrics[0].get_label()[0].get_value(), "Jobs");
+    }
+
+    #[test]
+    fn test_flink_jobs_error_metrics() {
+        once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
+        let main_span = tracing::info_span!("test_flink_jobs_error_metrics");
+        let _ = main_span.enter();
+
+        let registry_name = "test_flink";
+        let registry = assert_ok!(prometheus::Registry::new_custom(Some(registry_name.to_string()), None));
+        assert_ok!(registry.register(Box::new(FLINK_COLLECTION_TIME.clone())));
+        assert_ok!(registry.register(Box::new(FLINK_COLLECTION_ERRORS.clone())));
+
+        block_on(async {
+            let mock_server = MockServer::start().await;
+
+            let uptime: i64 = Faker.fake::<chrono::Duration>().num_milliseconds();
+            let restarts: i64 = (1..99_999).fake(); // Faker.fake_with_rng::<i64, _>(&mut positive.clone())as f64;
+            let failed_checkpts: i64 = (1..99_999).fake(); // Faker.fake_with_rng::<i64(&mut positive) as f64;
+
+            let b = json!([
+                {
+                    "id": "uptime",
+                    "max": uptime as f64,
+                },
+                {
+                    "id": "numRestarts",
+                    "max": restarts as f64,
+                },
+                {
+                    "id": "numberOfFailedCheckpoints",
+                    "max": failed_checkpts,
+                }
+            ]);
+
+            let metric_response = RetryResponder::new(55, 500, ResponseTemplate::new(200).set_body_json(b));
+
+            Mock::given(method("GET"))
+                .and(path("/jobs/metrics"))
+                .respond_with(metric_response)
+                .expect(3)
+                .mount(&mock_server)
+                .await;
+
+            let context = assert_ok!(context_for(&mock_server));
+
+            let gen = assert_some!(make_root_scope_collection_generator(
+                FlinkScope::Jobs,
+                &STD_METRIC_ORDERS,
+                &context
+            ));
+
+            let result = assert_err!(gen().await);
+            track_flink_errors(&FlinkScope::Jobs, &result);
+        });
+
+        let metric_family = registry.gather();
+        assert_eq!(metric_family.len(), 2);
+        assert_eq!(
+            metric_family[0].get_name(),
+            &format!("{}_{}", registry_name, "flink_collection_errors")
+        );
+        let metrics = metric_family[0].get_metric();
+        assert_eq!(metrics.len(), 1);
+        assert_eq!(metrics[0].get_label().len(), 2);
+        assert_eq!(metrics[0].get_label()[0].get_name(), "error_type");
+        assert_eq!(metrics[0].get_label()[0].get_value(), "collection::http_integration");
+        assert_eq!(metrics[0].get_label()[1].get_name(), "flink_scope");
+        assert_eq!(metrics[0].get_label()[1].get_value(), "Jobs");
+        let error_types: Vec<&str> = metrics
+            .iter()
+            .flat_map(|m| {
+                m.get_label()
+                    .iter()
+                    .filter(|l| l.get_name() == "error_type")
+                    .map(|l| l.get_value())
+            })
+            .collect();
+        assert_eq!(error_types, vec!["collection::http_integration",]);
     }
 
     #[test]
@@ -718,11 +883,11 @@ mod tests {
 
             let context = assert_ok!(context_for(&mock_server));
 
-            let gen = assert_some!(assert_ok!(make_root_scope_collection_generator(
+            let gen = assert_some!(make_root_scope_collection_generator(
                 FlinkScope::TaskManagers,
                 &STD_METRIC_ORDERS,
                 &context
-            )));
+            ));
 
             let actual: Telemetry = assert_ok!(gen().await);
             assert_eq!(
@@ -864,7 +1029,7 @@ mod tests {
 
             let context = assert_ok!(context_for(&mock_server));
 
-            let gen = assert_some!(assert_ok!(make_taskmanagers_admin_generator(&context)));
+            let gen = assert_some!(make_taskmanagers_admin_generator(&STD_METRIC_ORDERS, &context,));
 
             let actual: Telemetry = assert_ok!(gen().await);
             assert_eq!(

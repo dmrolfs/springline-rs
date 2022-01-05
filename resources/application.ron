@@ -3,15 +3,18 @@
     http: ( host: "0.0.0.0", port: 8000, ),
     collection: (
         flink: (
-            metrics_initial_delay_secs: 120,
+            job_manager_uri_scheme: "http", // default value
+            job_manager_host: "localhost",  // default value
+            job_manager_port: 8081,         // default value
+            metrics_initial_delay_secs: 15,
             metrics_interval_secs: 15,
             metric_orders: [
-                ("Kafka", "records-lag-max", "value", "flow.input_records_lag_max", "Integer"),
+//                ("Kafka", "records-lag-max", "value", "flow.input_records_lag_max", "Integer"),
             ],
-            max_retries: 3,
+            max_retries: 3,                 // default value
         ),
         sources: {
-            "foo": ( type: "csv", path: "./resources/bar.toml", ),
+//            "foo": ( type: "csv", path: "./resources/bar.toml", ),
         }
     ),
     eligibility: (
@@ -35,6 +38,8 @@
             max_healthy_lag: 133.0,
             min_healthy_lag: 0.0,
             max_healthy_cpu_load: 0.7,
+            max_healthy_heap_memory_load: 0.5,
+            max_healthy_network_io_utilization: 0.60,
         ),
     ),
     plan: (
@@ -42,7 +47,7 @@
         restart: (secs: 120, nanos: 0),
         max_catch_up: (secs: 600, nanos: 0),
         recovery_valid: (secs: 300, nanos: 0),
-        performance_repository: ( storage: "file", storage_path: "./tests/data/performance.data", ),
+        performance_repository: ( storage: "file", storage_path: "./tmp", ),
         window: 20,
         spike: (
             std_deviation_threshold: 5.0,
@@ -65,4 +70,9 @@
         ),
     ),
     execution: (),
+    context_stub: (
+        all_sinks_healthy: true,
+        cluster_is_deploying: false,
+        cluster_last_deployment: "2020-03-01T04:28:07Z",
+    ),
 )

@@ -22,10 +22,7 @@ pub fn make_performance_repository(
     match settings.storage {
         PerformanceRepositoryType::Memory => Ok(Box::new(PerformanceMemoryRepository::default())),
         PerformanceRepositoryType::File => {
-            let path = settings
-                .storage_path
-                .clone()
-                .unwrap_or_else(|| "performance_history.data".to_string());
+            let path = settings.storage_path.clone().unwrap_or_else(|| "./tmp".to_string());
             Ok(Box::new(PerformanceFileRepository::new(path)))
         },
     }
@@ -162,7 +159,13 @@ impl PerformanceRepository for PerformanceFileRepository {
 
                 Ok(ph?)
             },
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                tracing::info!(
+                    "no performance history record on file at {:?}",
+                    performance_history_path
+                );
+                Ok(None)
+            },
             Err(err) => Err(err.into()),
         }
     }

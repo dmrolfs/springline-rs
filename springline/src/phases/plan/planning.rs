@@ -79,9 +79,13 @@ impl<F: WorkloadForecastBuilder> FlinkPlanning<F> {
         };
 
         if update_repository {
-            self.performance_repository
+            if let Err(err) = self
+                .performance_repository
                 .save(self.name.as_str(), &self.performance_history)
-                .await?;
+                .await
+            {
+                tracing::error!(error=?err, job=%self.name, "failed to save planning history.");
+            }
         }
 
         Ok(())
@@ -592,6 +596,7 @@ mod tests {
                     &mut probe_rx,
                     ScalePlan {
                         timestamp,
+                        correlation_id: CORRELATION.clone(),
                         target_nr_task_managers: min_step + METRICS.cluster.nr_task_managers,
                         current_nr_task_managers: METRICS.cluster.nr_task_managers,
                     },
@@ -607,6 +612,7 @@ mod tests {
                     &mut probe_rx,
                     ScalePlan {
                         timestamp,
+                        correlation_id: CORRELATION.clone(),
                         target_nr_task_managers: METRICS.cluster.nr_task_managers - min_step,
                         current_nr_task_managers: METRICS.cluster.nr_task_managers,
                     },
@@ -624,6 +630,7 @@ mod tests {
                     &mut probe_rx,
                     ScalePlan {
                         timestamp,
+                        correlation_id: CORRELATION.clone(),
                         target_nr_task_managers: MINIMAL_CLUSTER_SIZE,
                         current_nr_task_managers: METRICS.cluster.nr_task_managers,
                     },
@@ -670,6 +677,7 @@ mod tests {
                     &mut probe_rx,
                     ScalePlan {
                         timestamp,
+                        correlation_id: CORRELATION.clone(),
                         target_nr_task_managers: 16,
                         current_nr_task_managers: METRICS.cluster.nr_task_managers,
                     },

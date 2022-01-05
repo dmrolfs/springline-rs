@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use super::context::GovernanceContext;
 use crate::phases::plan::ScalePlan;
-use crate::phases::UpdateMetrics;
+use crate::phases::{MetricCatalog, UpdateMetrics};
 use crate::settings::GovernanceSettings;
 
 pub const ADJUSTED_TARGET: &str = "adjusted_target";
@@ -136,6 +136,7 @@ impl QueryPolicy for GovernancePolicy {
 
     fn initialize_policy_engine(&mut self, engine: &mut Oso) -> Result<(), PolicyError> {
         Telemetry::initialize_policy_engine(engine)?;
+        MetricCatalog::initialize_policy_engine(engine)?;
 
         engine.register_class(
             GovernanceContext::get_polar_class_builder()

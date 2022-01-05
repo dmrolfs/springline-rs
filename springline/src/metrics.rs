@@ -1,7 +1,7 @@
 use prometheus::Registry;
 
 use crate::engine::monitor;
-use crate::phases::{eligibility, governance, metric_catalog};
+use crate::phases::{collection, eligibility, governance, metric_catalog};
 use crate::Result;
 
 #[tracing::instrument(level = "info")]
@@ -52,6 +52,9 @@ pub fn register_metrics(registry: &Registry) -> Result<()> {
     registry.register(Box::new(
         metric_catalog::METRIC_CATALOG_CLUSTER_TASK_NETWORK_OUTPUT_POOL_USAGE.clone(),
     ))?;
+
+    registry.register(Box::new(collection::flink::FLINK_COLLECTION_TIME.clone()))?;
+    registry.register(Box::new(collection::flink::FLINK_COLLECTION_ERRORS.clone()))?;
 
     registry.register(Box::new(
         eligibility::context::ELIGIBILITY_CTX_ALL_SINKS_HEALTHY.clone(),

@@ -154,6 +154,7 @@ pub enum FlinkScope {
     TaskManagers,
     Kafka,
     Kinesis,
+    Other,
 }
 
 #[derive(Debug, Display, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
