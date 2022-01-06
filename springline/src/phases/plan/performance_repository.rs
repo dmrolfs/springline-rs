@@ -82,7 +82,7 @@ impl PerformanceMemoryRepository {}
 
 #[async_trait]
 impl PerformanceRepository for PerformanceMemoryRepository {
-    #[tracing::instrument(level="info", skip(self))]
+    #[tracing::instrument(level = "info", skip(self))]
     async fn check(&self) -> Result<(), PlanError> {
         Ok(())
     }
@@ -144,7 +144,7 @@ impl PerformanceFileRepository {
 
 #[async_trait]
 impl PerformanceRepository for PerformanceFileRepository {
-    #[tracing::instrument(level="info", skip(self))]
+    #[tracing::instrument(level = "info", skip(self))]
     async fn check(&self) -> Result<(), PlanError> {
         let root_meta = match std::fs::metadata(self.root_path.as_path()) {
             Ok(meta) => meta,
@@ -157,11 +157,12 @@ impl PerformanceRepository for PerformanceFileRepository {
             Err(err) => {
                 tracing::error!(error=?err, storage_path=?self.root_path, "failed to load fs metadata for planning performance file repository.");
                 return Err(err.into());
-            }
+            },
         };
 
         if !root_meta.is_dir() {
-            //todo: once stable change to: return Err(PlanError::IOError(std::io::ErrorKind::NotADirectory.into()))
+            // todo: once stable change to: return
+            // Err(PlanError::IOError(std::io::ErrorKind::NotADirectory.into()))
             tracing::error!(storage_path=?self.root_path, "storage path for planning performance history repository is not a directory");
             return Err(PlanError::IOError(std::io::ErrorKind::InvalidInput.into()));
         }

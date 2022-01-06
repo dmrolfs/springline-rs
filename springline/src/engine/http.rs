@@ -71,9 +71,7 @@ async fn get_clearinghouse_snapshot<'r>(
 ) -> Result<Json<ClearinghouseSnapshot>, EngineApiError> {
     let (cmd, rx) = EngineCmd::report_on_clearinghouse(subscription.map(|s| s.0));
     engine.tx_api.send(cmd)?;
-    rx.await?.and_then(|snapshot| Ok(Json(snapshot)))
-    // .and_then(|snapshot| serde_json::to_string(&snapshot).map_err(|err|
-    // EngineApiError::Handler(err.into())))
+    rx.await?.map(Json)
 }
 
 #[tracing::instrument(level = "info", skip())]

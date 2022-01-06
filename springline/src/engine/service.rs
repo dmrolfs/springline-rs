@@ -264,16 +264,11 @@ impl<'r> Service<'r> {
             let mut buffer = vec![];
             let encoder = TextEncoder::default();
             let metrics_families = registry.gather();
-
-            tracing::warn!(?metrics_families, "DMR:gathered metrics.");
             encoder.encode(&metrics_families, &mut buffer)?;
 
             let report = String::from_utf8(buffer).map_err(|err| EngineApiError::Handler(err.into()))?;
-            tracing::warn!(%report, "DMR:encoded metrics report");
             let report = if span != &MetricsSpan::All {
-                let r = filter_report(report, span);
-                tracing::warn!(report=%r, "DMR: filtered metrics report");
-                r
+                filter_report(report, span)
             } else {
                 report
             };
