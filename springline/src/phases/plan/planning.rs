@@ -38,6 +38,8 @@ impl<F: WorkloadForecastBuilder> FlinkPlanning<F> {
         planning_name: impl AsRef<str>, min_scaling_step: u16, restart: Duration, max_catch_up: Duration,
         recovery_valid: Duration, forecast_builder: F, performance_repository: Box<dyn PerformanceRepository>,
     ) -> Result<Self, PlanError> {
+        performance_repository.check().await?;
+
         let forecast_calculator = ForecastCalculator::new(forecast_builder, restart, max_catch_up, recovery_valid)?;
 
         let performance_history = performance_repository

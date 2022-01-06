@@ -69,6 +69,7 @@ impl FromStr for PerformanceRepositoryType {
 #[cfg_attr(test, automock)]
 #[async_trait]
 pub trait PerformanceRepository: Debug + Sync + Send {
+    async fn check(&self) -> Result<(), PlanError>;
     async fn load(&self, job_name: &str) -> Result<Option<PerformanceHistory>, PlanError>;
     async fn save(&mut self, job_name: &str, performance_history: &PerformanceHistory) -> Result<(), PlanError>;
     async fn close(self: Box<Self>) -> Result<(), PlanError>;
@@ -81,6 +82,11 @@ impl PerformanceMemoryRepository {}
 
 #[async_trait]
 impl PerformanceRepository for PerformanceMemoryRepository {
+    #[tracing::instrument(level="info", skip(self))]
+    async fn check(&self) -> Result<(), PlanError> {
+        Ok(())
+    }
+
     #[tracing::instrument(level = "info", skip(self))]
     async fn load(&self, job_name: &str) -> Result<Option<PerformanceHistory>, PlanError> {
         let performance_history = self.0.get(job_name).map(|a| a.clone());
@@ -129,7 +135,7 @@ impl PerformanceFileRepository {
         let mut options = OpenOptions::new();
         options.read(true);
         if read_write {
-            options.write(true).create(true);
+            options.write(true).create(true).truncate(true);
         }
 
         options.open(path)
@@ -138,6 +144,36 @@ impl PerformanceFileRepository {
 
 #[async_trait]
 impl PerformanceRepository for PerformanceFileRepository {
+    #[tracing::instrument(level="info", skip(self))]
+    async fn check(&self) -> Result<(), PlanError> {
+        let root_meta = match std::fs::metadata(self.root_path.as_path()) {
+            Ok(meta) => meta,
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                tracing::info!(storage_path=?self.root_path, "planning performance history storage path not found - creating directory.");
+                std::fs::create_dir(self.root_path.as_path())?;
+                tracing::info!(storage_path=?self.root_path, "planning performance history storage path created - loading metadata");
+                std::fs::metadata(self.root_path.as_path())?
+            },
+            Err(err) => {
+                tracing::error!(error=?err, storage_path=?self.root_path, "failed to load fs metadata for planning performance file repository.");
+                return Err(err.into());
+            }
+        };
+
+        if !root_meta.is_dir() {
+            //todo: once stable change to: return Err(PlanError::IOError(std::io::ErrorKind::NotADirectory.into()))
+            tracing::error!(storage_path=?self.root_path, "storage path for planning performance history repository is not a directory");
+            return Err(PlanError::IOError(std::io::ErrorKind::InvalidInput.into()));
+        }
+
+        if root_meta.permissions().readonly() {
+            tracing::error!(storage_path=?self.root_path, "cannot save planning performance history data files - application cannot write to storage path");
+            return Err(PlanError::IOError(std::io::ErrorKind::PermissionDenied.into()));
+        }
+
+        Ok(())
+    }
+
     #[tracing::instrument(level = "info", skip(self))]
     async fn load(&self, job_name: &str) -> Result<Option<PerformanceHistory>, PlanError> {
         let performance_history_path = self.path_for(self.file_name_for(job_name).as_str());
