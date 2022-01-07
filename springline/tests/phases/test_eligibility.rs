@@ -185,7 +185,7 @@ impl TestFlow {
                     Err(err) => {
                         tracing::info!(error=?err, "check accumulation failed.");
                         false
-                    },
+                    }
                 }
             })
             .await

@@ -22,7 +22,10 @@ mod model;
 mod performance_history;
 mod performance_repository;
 mod planning;
+
 pub use model::ScalePlan;
+use once_cell::sync::Lazy;
+use prometheus::Gauge;
 
 const MINIMAL_CLUSTER_SIZE: u16 = 1;
 
@@ -43,6 +46,30 @@ pub async fn make_plan_phase(
     (data_channel.outlet(), plan.inlet()).connect().await;
     Ok((plan, data_channel))
 }
+
+pub(crate) static PLANNING_FORECASTED_WORKLOAD: Lazy<Gauge> = Lazy::new(|| {
+    Gauge::new(
+        "planning_forecasted_workload",
+        "forecasted workload (records per second), which the maximum of recovery and at valid point",
+    )
+    .expect("failed creating planning_forecasted_workload metric")
+});
+
+pub(crate) static PLANNING_RECOVERY_WORKLOAD_RATE: Lazy<Gauge> = Lazy::new(|| {
+    Gauge::new(
+        "planning_recovery_workload_rate",
+        "workload rate (records per second) required to recover from restart, included processing buffered records",
+    )
+    .expect("failed creating planning_recovery_workload_rate metric")
+});
+
+pub(crate) static PLANNING_VALID_WORKLOAD_RATE: Lazy<Gauge> = Lazy::new(|| {
+    Gauge::new(
+        "planning_valid_workload_rate",
+        "workload rate (records per second) required to reach target valid point after autoscale",
+    )
+    .expect("failed creating planning_valid_workload_rate metric")
+});
 
 #[tracing::instrument(level = "info")]
 async fn do_connect_plan_data(

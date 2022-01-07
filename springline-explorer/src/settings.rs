@@ -50,15 +50,15 @@ impl ReviseSettings {
                         eprintln!("action {} failed: {:?}", style(label).bold().red(), err);
                         return Err(err);
                     }
-                },
+                }
                 Some((_, None)) => {
                     eprintln!("\nreturning...\n");
                     break;
-                },
+                }
                 None => {
                     eprintln!("I don't know how you got here, but your selection is not understood.");
                     break;
-                },
+                }
             }
         }
 
@@ -152,7 +152,7 @@ impl ReviseSettings {
                     style(config_path.as_path()).bold()
                 );
                 builder.add_source(Settings::make_explicit_config_source(config_path))
-            },
+            }
             None => {
                 let resources = state
                     .options
@@ -176,7 +176,7 @@ impl ReviseSettings {
                 };
 
                 builder
-            },
+            }
         };
 
         builder = match &state.options.secrets {
@@ -184,11 +184,11 @@ impl ReviseSettings {
                 eprintln!("\n\tSecrets added from: {:?}", style(secrets.as_path()).bold().red());
                 let s = Settings::make_secrets_source(secrets);
                 builder.add_source(s)
-            },
+            }
             None => {
                 eprintln!("\n\tNo secrets supplied.");
                 builder
-            },
+            }
         };
 
         eprintln!(

@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use crate::phases::plan::{PLANNING_RECOVERY_WORKLOAD_RATE, PLANNING_VALID_WORKLOAD_RATE};
 use proctor::elements::{RecordsPerSecond, Timestamp};
 use proctor::error::PlanError;
 
@@ -72,19 +73,23 @@ impl<F: WorkloadForecastBuilder> ForecastCalculator<F> {
     ) -> Result<RecordsPerSecond, PlanError> {
         let recovery = self.calculate_recovery_timestamp_from(trigger);
         let valid = self.calculate_valid_timestamp_after_recovery(recovery);
-        tracing::debug!( recovery=?recovery.as_utc(), valid=?valid.as_utc(), "cluster scaling timestamp markers estimated." );
+        tracing::info!( recovery=?recovery.as_utc(), valid=?valid.as_utc(), "cluster scaling timestamp markers estimated." );
 
         let forecast = self.forecast_builder.build_forecast()?;
-        tracing::debug!(?forecast, "workload forecast model calculated.");
+        tracing::info!(?forecast, "workload forecast model calculated.");
 
         let total_records = self.total_records_between(&*forecast, trigger, recovery)? + buffered_records;
-        tracing::debug!(total_records_at_valid_time=%total_records, "estimated total records to process before valid time");
+        tracing::info!(total_records_at_valid_time=%total_records, "estimated total records to process before valid time");
 
         let recovery_rate = self.recovery_rate(total_records);
+        PLANNING_RECOVERY_WORKLOAD_RATE.set(*recovery_rate.as_ref());
+
         let valid_workload_rate = forecast.workload_at(valid)?;
+        PLANNING_VALID_WORKLOAD_RATE.set(*valid_workload_rate.as_ref());
+
         let target_rate = RecordsPerSecond::max(recovery_rate, valid_workload_rate);
 
-        tracing::debug!(
+        tracing::info!(
             %recovery_rate,
             %valid_workload_rate,
             %target_rate,
@@ -106,7 +111,7 @@ impl<F: WorkloadForecastBuilder> ForecastCalculator<F> {
         &self, forecast: &dyn WorkloadForecast, start: Timestamp, end: Timestamp,
     ) -> Result<f64, PlanError> {
         let total = forecast.total_records_between(start, end)?;
-        tracing::debug!("total records between [{}, {}] = {}", start, end, total);
+        tracing::info!("total records between [{}, {}] = {}", start, end, total);
         Ok(total)
     }
 

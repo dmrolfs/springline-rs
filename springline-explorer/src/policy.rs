@@ -28,7 +28,6 @@ where
     pub app_state: &'a ExplorerState,
 }
 
-
 #[derive(Debug)]
 pub struct ExplorePolicy<P> {
     phase: String,
@@ -111,15 +110,15 @@ where
                         eprintln!("action {} failed: {:?}", style(label).bold().red(), err);
                         return Err(err);
                     }
-                },
+                }
                 Some((_, None)) => {
                     eprintln!("\nreturning...\n");
                     break;
-                },
+                }
                 None => {
                     eprintln!("I don't know how you got here, but your selection is not understood.");
                     break;
-                },
+                }
             }
         }
 

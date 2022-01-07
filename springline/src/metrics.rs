@@ -1,7 +1,7 @@
 use prometheus::Registry;
 
 use crate::engine::monitor;
-use crate::phases::{collection, eligibility, governance, metric_catalog};
+use crate::phases::{collection, eligibility, execution, governance, metric_catalog, plan};
 use crate::Result;
 
 #[tracing::instrument(level = "info")]
@@ -69,6 +69,10 @@ pub fn register_metrics(registry: &Registry) -> Result<()> {
         eligibility::context::ELIGIBILITY_CTX_CLUSTER_LAST_DEPLOYMENT.clone(),
     ))?;
 
+    registry.register(Box::new(plan::PLANNING_FORECASTED_WORKLOAD.clone()))?;
+    registry.register(Box::new(plan::PLANNING_RECOVERY_WORKLOAD_RATE.clone()))?;
+    registry.register(Box::new(plan::PLANNING_VALID_WORKLOAD_RATE.clone()))?;
+
     registry.register(Box::new(governance::context::GOVERNANCE_CTX_MIN_CLUSTER_SIZE.clone()))?;
     registry.register(Box::new(governance::context::GOVERNANCE_CTX_MAX_CLUSTER_SIZE.clone()))?;
     registry.register(Box::new(governance::context::GOVERNANCE_CTX_MAX_SCALING_STEP.clone()))?;
@@ -81,5 +85,6 @@ pub fn register_metrics(registry: &Registry) -> Result<()> {
     registry.register(Box::new(monitor::PLAN_TARGET_NR_TASK_MANAGERS.clone()))?;
     registry.register(Box::new(monitor::GOVERNANCE_PLAN_ACCEPTED.clone()))?;
 
+    registry.register(Box::new(execution::EXECUTION_SCALE_ACTION_COUNT.clone()))?;
     Ok(())
 }

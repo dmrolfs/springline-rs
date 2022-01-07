@@ -182,7 +182,7 @@ fn make_flink_generator(
                     tracing::error!(error=?err, "failed to join Flink telemetry collection tasks");
                     track_flink_errors(&FlinkScope::Other, &err.into());
                     None
-                },
+                }
                 Ok(results) => {
                     let mut telemetry = Telemetry::default();
                     for (idx, result) in results.into_iter().enumerate() {
@@ -190,16 +190,16 @@ fn make_flink_generator(
                             Ok(t) => {
                                 tracing::info!(acc_telemetry=?telemetry, new_part=?t, "adding flink telemetry part");
                                 telemetry.extend(t);
-                            },
+                            }
                             Err(err) => {
                                 // error metric (and dup log) recorded in decorating `with_error_tracking()`
                                 tracing::error!(error=?err, "failed to collect Flink telemetry portion:{}", idx);
-                            },
+                            }
                         }
                     }
 
                     Some(telemetry)
-                },
+                }
             }
         });
 
@@ -395,7 +395,7 @@ fn merge_telemetry_per_order(
                     let merger = combo.combine(values.clone()).map(|combined| combined.map(|c| (metric, c)));
                     tracing::info!(?merger, ?values, %agg, "merging metric values per order aggregator");
                     merger
-                },
+                }
             },
         )
         .collect::<Result<Vec<_>, TelemetryError>>()?
@@ -483,7 +483,6 @@ async fn query_vertex_telemetry(
         Telemetry::default()
     };
 
-
     Ok(telemetry)
 }
 
@@ -544,7 +543,6 @@ mod tests {
 
     use super::*;
     use crate::phases::collection::flink::api_model::{JobId, JobState, TaskState, VertexDetail};
-
 
     pub struct RetryResponder(Arc<AtomicU32>, u32, ResponseTemplate, u16);
 
@@ -2107,7 +2105,6 @@ mod tests {
                 .mount(&mock_server)
                 .await;
 
-
             let mock_uri = assert_ok!(Url::parse(mock_server.uri().as_str()));
             let job_manager_host = assert_some!(mock_uri.host());
             let job_manager_port = assert_some!(mock_uri.port());
@@ -2179,10 +2176,10 @@ mod tests {
                         if !approx::relative_eq!(*actual, ev) {
                             assert_eq!(*actual, ev, "metric: {}", key);
                         }
-                    },
+                    }
                     actual => {
                         assert_eq!((key, actual), (key, expected_v));
-                    },
+                    }
                 };
                 // assert_eq!((key, actual_v), (key, expected_v));
             }

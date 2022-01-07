@@ -12,6 +12,7 @@ use proctor::graph::{Connect, Graph, SinkShape, SourceShape};
 use proctor::phases::collection::ClearinghouseApi;
 use proctor::{ProctorResult, SharedString};
 use prometheus::Registry;
+use std::fmt;
 use tokio::task::JoinHandle;
 
 use crate::engine::service::{EngineServiceApi, Service};
@@ -42,7 +43,7 @@ impl Default for AutoscaleEngine<Building> {
 /// Represents Autoscaler state.
 pub trait EngineState {}
 
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub struct Building {
     name: SharedString,
     sources: Vec<Box<dyn SourceStage<Telemetry>>>,
@@ -51,19 +52,32 @@ pub struct Building {
 }
 impl EngineState for Building {}
 
-#[derive(Debug)]
+impl fmt::Debug for Building {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Building")
+            .field("name", &self.name)
+            .field("nr_sources", &self.sources.len())
+            .finish()
+    }
+}
+
 pub struct Ready {
-    // name: SharedString,
     graph: Graph,
     monitor: Monitor,
     tx_stop_flink_source: Option<TickApi>,
     tx_clearinghouse_api: ClearinghouseApi,
     metrics_registry: Option<&'static Registry>,
 }
+
 impl EngineState for Ready {}
 
+impl fmt::Debug for Ready {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("Ready")
+    }
+}
+
 #[allow(dead_code)]
-#[derive(Debug)]
 pub struct Running {
     pub tx_service_api: EngineServiceApi,
     graph_handle: JoinHandle<ProctorResult<()>>,
@@ -73,6 +87,12 @@ pub struct Running {
 }
 
 impl EngineState for Running {}
+
+impl fmt::Debug for Running {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("Running")
+    }
+}
 
 impl AutoscaleEngine<Building> {
     pub fn with_name(self, name: impl Into<SharedString>) -> Self {
@@ -98,15 +118,12 @@ impl AutoscaleEngine<Building> {
     }
 
     pub fn add_source(mut self, source: impl SourceStage<Telemetry>) -> Self {
-        tracing::info!(?source, "added source to autoscale engine.");
+        tracing::info!(?source, "adding source to autoscale engine.");
         self.inner.sources.push(Box::new(source));
         self
     }
 
-    pub fn with_metrics_registry<'a>(self, registry: &'a Registry) -> Self
-    where
-        'a: 'static,
-    {
+    pub fn with_metrics_registry(self, registry: &'static Registry) -> Self {
         tracing::info!(?registry, "added metrics registry to autoscale engine.");
         Self {
             inner: Building { metrics_registry: Some(registry), ..self.inner },

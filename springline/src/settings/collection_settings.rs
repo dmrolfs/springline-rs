@@ -15,7 +15,6 @@ pub struct CollectionSettings {
     pub sources: HashMap<String, SourceSetting>,
 }
 
-
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;

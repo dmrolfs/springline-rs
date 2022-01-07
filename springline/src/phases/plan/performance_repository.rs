@@ -24,7 +24,7 @@ pub fn make_performance_repository(
         PerformanceRepositoryType::File => {
             let path = settings.storage_path.clone().unwrap_or_else(|| "./tmp".to_string());
             Ok(Box::new(PerformanceFileRepository::new(path)))
-        },
+        }
     }
 }
 
@@ -153,11 +153,11 @@ impl PerformanceRepository for PerformanceFileRepository {
                 std::fs::create_dir(self.root_path.as_path())?;
                 tracing::info!(storage_path=?self.root_path, "planning performance history storage path created - loading metadata");
                 std::fs::metadata(self.root_path.as_path())?
-            },
+            }
             Err(err) => {
                 tracing::error!(error=?err, storage_path=?self.root_path, "failed to load fs metadata for planning performance file repository.");
                 return Err(err.into());
-            },
+            }
         };
 
         if !root_meta.is_dir() {
@@ -189,20 +189,20 @@ impl PerformanceRepository for PerformanceFileRepository {
                     Err(err) if err.classify() == Category::Eof => {
                         tracing::debug!(?performance_history_path, "performance history empty, creating new.");
                         Ok(None)
-                    },
+                    }
                     Err(err) => Err(err),
                 };
                 tracing::debug!(performance_history=?ph, "file loaded performance history.");
 
                 Ok(ph?)
-            },
+            }
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
                 tracing::info!(
                     "no performance history record on file at {:?}",
                     performance_history_path
                 );
                 Ok(None)
-            },
+            }
             Err(err) => Err(err.into()),
         }
     }

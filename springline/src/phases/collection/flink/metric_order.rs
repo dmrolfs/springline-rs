@@ -103,31 +103,31 @@ impl<'de> Deserialize<'de> for MetricOrder {
                                 return Err(de::Error::duplicate_field("scope"));
                             }
                             scope = Some(map.next_value()?);
-                        },
+                        }
                         Field::Metric => {
                             if metric.is_some() {
                                 return Err(de::Error::duplicate_field("metric"));
                             }
                             metric = Some(map.next_value()?);
-                        },
+                        }
                         Field::Agg => {
                             if agg.is_some() {
                                 return Err(de::Error::duplicate_field("agg"));
                             }
                             agg = Some(map.next_value()?);
-                        },
+                        }
                         Field::TelemetryPath => {
                             if telemetry_path.is_some() {
                                 return Err(de::Error::duplicate_field("telemetry_path"));
                             }
                             telemetry_path = Some(map.next_value()?);
-                        },
+                        }
                         Field::TelemetryType => {
                             if telemetry_type.is_some() {
                                 return Err(de::Error::duplicate_field("telemetry_type"));
                             }
                             telemetry_type = Some(map.next_value()?);
-                        },
+                        }
                     }
                 }
 

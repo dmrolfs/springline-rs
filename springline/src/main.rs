@@ -4,31 +4,26 @@ use clap::Parser;
 use once_cell::sync::Lazy;
 use proctor::elements::Telemetry;
 use proctor::graph::stage::SourceStage;
-use proctor::tracing::{get_subscriber, init_subscriber};
 use prometheus::Registry;
 use settings_loader::SettingsLoader;
 use springline::engine::{http, Autoscaler};
 use springline::settings::{CliOptions, Settings};
 use springline::Result;
+use tracing::Subscriber;
 
 static METRICS_REGISTRY: Lazy<Registry> = Lazy::new(|| {
     Registry::new_custom(Some("springline".to_string()), None).expect("failed to create prometheus registry")
 });
 
 fn main() -> Result<()> {
-    let subscriber = get_subscriber("springline", "info", std::io::stdout);
-    init_subscriber(subscriber);
-
-    // console_subscriber::ConsoleLayer::builder()
-    // .retention(std::time::Duration::from_secs(60))
-    // .init();
+    let subscriber = get_tracing_subscriber("info");
+    proctor::tracing::init_subscriber(subscriber);
 
     let main_span = tracing::info_span!("main");
     let _main_span_guard = main_span.enter();
 
     let options = CliOptions::parse();
     let settings = Settings::load(&options)?;
-
 
     start_pipeline(async move {
         let engine = Autoscaler::builder("springline")
@@ -76,4 +71,20 @@ where
         .enable_all()
         .build()?
         .block_on(future)
+}
+
+fn get_tracing_subscriber(log_directives: impl AsRef<str>) -> impl Subscriber + Send + Send {
+    use tracing_subscriber::layer::SubscriberExt;
+
+    let console = console_subscriber::ConsoleLayer::builder().spawn();
+    let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(log_directives.as_ref()));
+    let formatting = tracing_bunyan_formatter::BunyanFormattingLayer::new("springline".to_string(), std::io::stdout);
+
+    tracing_subscriber::registry::Registry::default()
+        .with(console)
+        .with(tracing_subscriber::fmt::layer())
+        .with(env_filter)
+        .with(tracing_bunyan_formatter::JsonStorageLayer)
+        .with(formatting)
 }

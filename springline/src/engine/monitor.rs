@@ -25,7 +25,6 @@ enum PhaseLoaded {
     Execution = 1 << 5,
 }
 
-
 pub struct Monitor {
     rx_eligibility_monitor: EligibilityMonitor,
     rx_decision_monitor: DecisionMonitor,
@@ -109,18 +108,18 @@ impl Monitor {
             EligibilityEvent::ItemPassed(item) => {
                 tracing::info!(?event, correlation=?item.correlation_id, "data item passed eligibility");
                 ELIGIBILITY_IS_ELIGIBLE_FOR_SCALING.set(true as i64)
-            },
+            }
             EligibilityEvent::ItemBlocked(item) => {
                 tracing::info!(?event, correlation=?item.correlation_id, "data item blocked in eligibility");
                 ELIGIBILITY_IS_ELIGIBLE_FOR_SCALING.set(false as i64)
-            },
+            }
             EligibilityEvent::ContextChanged(Some(ctx)) if !loaded.contains(PhaseLoaded::Eligibility) => {
                 tracing::info!(?event, correlation=?ctx.correlation_id, "Eligibility Phase initial context loaded!");
                 loaded.toggle(PhaseLoaded::Eligibility);
-            },
+            }
             ignored_event => {
                 tracing::warn!(?ignored_event, "ignoring eligibility event");
-            },
+            }
         }
     }
 
@@ -129,18 +128,18 @@ impl Monitor {
             DecisionEvent::ItemPassed(item) => {
                 tracing::info!(?event, correlation=?item.correlation_id, "data item passed scaling decision");
                 DECISION_SHOULD_PLAN_FOR_SCALING.set(true as i64)
-            },
+            }
             DecisionEvent::ItemBlocked(item) => {
                 tracing::info!(?event, correlation=?item.correlation_id, "data item blocked by scaling decision");
                 DECISION_SHOULD_PLAN_FOR_SCALING.set(false as i64)
-            },
+            }
             DecisionEvent::ContextChanged(Some(ctx)) if !loaded.contains(PhaseLoaded::Decision) => {
                 tracing::info!(?event, correlation=?ctx.correlation_id, "Decision Phase initial context loaded!");
                 loaded.toggle(PhaseLoaded::Decision);
-            },
+            }
             ignored_event => {
                 tracing::warn!(?ignored_event, "ignoring decision event");
-            },
+            }
         }
     }
 
@@ -149,7 +148,7 @@ impl Monitor {
             PlanEvent::ObservationAdded(observation) => {
                 tracing::info!(?observation, correlation=?observation.correlation_id, "observation added to planning");
                 PLAN_OBSERVATION_COUNT.inc()
-            },
+            }
             PlanEvent::DecisionPlanned(decision, plan) => {
                 match decision {
                     DecisionResult::ScaleUp(_) => DECISION_SCALING_DECISION_COUNT.up.inc(),
@@ -162,12 +161,12 @@ impl Monitor {
                         tracing::info!(?event, correlation=?decision.item().correlation_id, "planning for scaling decision");
                         DECISION_PLAN_CURRENT_NR_TASK_MANAGERS.set(plan.current_nr_task_managers as i64);
                         PLAN_TARGET_NR_TASK_MANAGERS.set(plan.target_nr_task_managers as i64);
-                    },
+                    }
                     _no_action => {
                         tracing::info!(?event, correlation=?decision.item().correlation_id, "no planning action by decision");
-                    },
+                    }
                 }
-            },
+            }
             PlanEvent::DecisionIgnored(decision) => {
                 tracing::info!(?event, correlation=?decision.item().correlation_id, "planning is ignoring decision result.");
 
@@ -176,7 +175,7 @@ impl Monitor {
                     DecisionResult::ScaleDown(_) => DECISION_SCALING_DECISION_COUNT.down.inc(),
                     DecisionResult::NoAction(_) => DECISION_SCALING_DECISION_COUNT.no_action.inc(),
                 }
-            },
+            }
         }
     }
 
@@ -185,18 +184,18 @@ impl Monitor {
             GovernanceEvent::ItemPassed(item) => {
                 tracing::info!(?event, correlation=?item.correlation_id, "data item passed governance");
                 GOVERNANCE_PLAN_ACCEPTED.set(true as i64)
-            },
+            }
             GovernanceEvent::ItemBlocked(item) => {
                 tracing::info!(?event, correlation=?item.correlation_id, "data item blocked in governance");
                 GOVERNANCE_PLAN_ACCEPTED.set(false as i64)
-            },
+            }
             GovernanceEvent::ContextChanged(Some(ctx)) if !loaded.contains(PhaseLoaded::Governance) => {
                 tracing::info!(?event, correlation=?ctx.correlation_id, "Governance Phase initial context loaded!");
                 loaded.toggle(PhaseLoaded::Governance);
-            },
+            }
             ignored_event => {
                 tracing::warn!(?ignored_event, "ignoring governance event");
-            },
+            }
         }
     }
 }

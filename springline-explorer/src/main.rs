@@ -15,7 +15,6 @@ fn main() {
     let options: CliOptions = CliOptions::parse();
     let mut app = AppMenu::new(options).expect("failed to create application menu");
 
-
     eprintln!(
         "\n{} {}!",
         style("Welcome to the").bold(),

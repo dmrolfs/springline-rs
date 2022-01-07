@@ -54,7 +54,7 @@ impl ScalePlan {
                 );
 
                 scale_plan_for(corrected_nr_task_managers)
-            },
+            }
 
             (DR::ScaleDown(_), Some(calculated)) if calculated < current_nr_task_managers => scale_plan_for(calculated),
 
@@ -74,7 +74,7 @@ impl ScalePlan {
                 );
 
                 scale_plan_for(corrected_nr_task_managers)
-            },
+            }
 
             (DR::NoAction(_), _) => None,
         }

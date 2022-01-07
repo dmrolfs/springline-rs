@@ -14,7 +14,6 @@ mod metric_catalog;
 pub use eligibility::*;
 pub use metric_catalog::*;
 
-
 pub trait PopulateContext {
     type Settings;
     fn make(now: DateTime<Utc>, settings: &Settings) -> Result<Self>
