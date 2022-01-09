@@ -6,6 +6,8 @@ use crate::phases::governance::GovernanceOutcome;
 use crate::settings::ExecutionSettings;
 use crate::Result;
 
+mod patch_replicas;
+
 pub(crate) static EXECUTION_SCALE_ACTION_COUNT: Lazy<IntCounterVec> = Lazy::new(|| {
     IntCounterVec::new(
         Opts::new("execution_scale_action_count", "Count of action taken to target sizes"),

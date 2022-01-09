@@ -18,6 +18,7 @@ use crate::settings::GovernanceSettings;
 use crate::Result;
 
 pub type GovernanceOutcome = PlanningOutcome;
+
 pub type GovernanceApi = proctor::elements::PolicyFilterApi<GovernanceContext, GovernanceTemplateData>;
 pub type GovernanceMonitor = proctor::elements::PolicyFilterMonitor<ScalePlan, GovernanceContext>;
 pub type GovernancePhase = (
