@@ -8,8 +8,9 @@ mod flink_settings;
 
 pub use flink_settings::FlinkSettings;
 
-#[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 #[serde(default)]
+#[cfg_attr(test, derive(PartialEq))]
 pub struct CollectionSettings {
     pub flink: FlinkSettings,
     pub sources: HashMap<String, SourceSetting>,

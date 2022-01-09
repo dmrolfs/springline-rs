@@ -2,12 +2,13 @@ use oso::PolarClass;
 use pretty_snowflake::Id;
 use proctor::elements::Timestamp;
 use serde::{Deserialize, Serialize};
+use std::fmt;
 
 use crate::phases::decision::result::DecisionResult;
 use crate::phases::plan::MINIMAL_CLUSTER_SIZE;
 use crate::phases::MetricCatalog;
 
-#[derive(PolarClass, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(PolarClass, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ScalePlan {
     pub correlation_id: Id<MetricCatalog>,
 
@@ -19,6 +20,17 @@ pub struct ScalePlan {
 
     #[polar(attribute)]
     pub current_nr_task_managers: u16,
+}
+
+impl fmt::Debug for ScalePlan {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ScalePlan")
+            .field("correlation_id", &self.correlation_id)
+            .field("timestamp", &format!("{}", self.timestamp))
+            .field("target_nr_task_managers", &self.target_nr_task_managers)
+            .field("current_nr_task_managers", &self.current_nr_task_managers)
+            .finish()
+    }
 }
 
 impl ScalePlan {

@@ -7,7 +7,8 @@ use crate::phases::governance::GovernanceTemplateData;
 
 pub type GovernancePolicySettings = PolicySettings<GovernanceTemplateData>;
 
-#[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(PartialEq))]
 pub struct GovernanceSettings {
     pub policy: GovernancePolicySettings,
     pub rules: GovernanceRuleSettings,

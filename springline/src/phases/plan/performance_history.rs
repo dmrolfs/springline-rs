@@ -10,6 +10,8 @@ use super::Benchmark;
 use crate::phases::plan::benchmark::BenchmarkRange;
 use crate::phases::plan::MINIMAL_CLUSTER_SIZE;
 
+// expect the spread of cluster size will be small and certainly not unbounded. If history is
+// unbounded, need to consider a bounded data structure (cache).
 #[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PerformanceHistory(BTreeMap<u16, BenchmarkRange>);
 

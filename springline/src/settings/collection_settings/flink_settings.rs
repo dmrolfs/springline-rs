@@ -10,8 +10,9 @@ use super::IncompatibleSourceSettingsError;
 use crate::phases::collection::flink::MetricOrder;
 
 #[serde_as]
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
+#[cfg_attr(test, derive(PartialEq))]
 pub struct FlinkSettings {
     #[serde(default = "FlinkSettings::default_job_manager_scheme")]
     pub job_manager_uri_scheme: String,

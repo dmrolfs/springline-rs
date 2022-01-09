@@ -16,20 +16,25 @@ mod collection_settings;
 mod engine_settings;
 mod execution_settings;
 mod governance_settings;
+mod kubernetes_settings;
 mod plan_settings;
 
-pub use collection_settings::*;
-pub use engine_settings::*;
-pub use execution_settings::*;
-pub use governance_settings::*;
-pub use plan_settings::*;
+pub use collection_settings::{CollectionSettings, FlinkSettings};
+pub use engine_settings::EngineSettings;
+pub use execution_settings::{ExecutionSettings, KubernetesWorkloadResource};
+pub use governance_settings::{GovernancePolicySettings, GovernanceRuleSettings, GovernanceSettings};
+pub use kubernetes_settings::KubernetesSettings;
+pub use plan_settings::PlanSettings;
 
 pub type EligibilitySettings = PolicySettings<EligibilityTemplateData>;
 pub type DecisionSettings = PolicySettings<DecisionTemplateData>;
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(PartialEq))]
 pub struct Settings {
     pub http: HttpServerSettings,
+    #[serde(default)]
+    pub kubernetes: KubernetesSettings,
     #[serde(default)]
     pub engine: EngineSettings,
     #[serde(default)]
@@ -50,7 +55,8 @@ impl SettingsLoader for Settings {
     type Options = CliOptions;
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(PartialEq))]
 pub struct ContextStubSettings {
     pub all_sinks_healthy: bool,
     pub cluster_is_deploying: bool,
@@ -58,9 +64,10 @@ pub struct ContextStubSettings {
     pub cluster_last_deployment: DateTime<Utc>,
 }
 
-#[derive(Parser, Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Parser, Clone, Debug, Default, Serialize, Deserialize)]
 #[clap(author, version, about)]
 // #[clap(version = "0.1.0", author = "Damon Rolfs")]
+#[cfg_attr(test, derive(PartialEq))]
 pub struct CliOptions {
     /// override environment-based configuration file to load.
     /// Default behavior is to load configuration based on `APP_ENVIRONMENT` envvar.
@@ -215,6 +222,7 @@ mod tests {
 
         let expected = Settings {
             http: HttpServerSettings { host: "0.0.0.0".to_string(), port: 8000 },
+            kubernetes: KubernetesSettings::default(),
             engine: Default::default(),
             collection: CollectionSettings {
                 flink: FlinkSettings {
@@ -307,7 +315,9 @@ mod tests {
                     custom: maplit::hashmap! { "foo".to_string() => 17_i64.to_telemetry(), },
                 },
             },
-            execution: ExecutionSettings,
+            execution: ExecutionSettings {
+                k8s_workload_resource: KubernetesWorkloadResource::StatefulSet { name: "dr-springline-tm".to_string() },
+            },
             context_stub: ContextStubSettings {
                 all_sinks_healthy: true,
                 cluster_is_deploying: false,
@@ -356,6 +366,7 @@ mod tests {
 
     static SETTINGS: Lazy<Settings> = Lazy::new(|| Settings {
         http: HttpServerSettings { host: "0.0.0.0".to_string(), port: 8000 },
+        kubernetes: KubernetesSettings::default(),
         engine: EngineSettings { machine_id: 7, node_id: 3 },
         collection: CollectionSettings {
             flink: FlinkSettings {
@@ -435,7 +446,9 @@ mod tests {
                 custom: HashMap::default(),
             },
         },
-        execution: ExecutionSettings,
+        execution: ExecutionSettings {
+            k8s_workload_resource: KubernetesWorkloadResource::StatefulSet { name: "dr-springline-tm".to_string() },
+        },
         context_stub: ContextStubSettings {
             all_sinks_healthy: true,
             cluster_is_deploying: false,

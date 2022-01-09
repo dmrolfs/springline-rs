@@ -49,7 +49,7 @@ dialoguer = { version = "0.9.0", features = ["fuzzy-select"] }
 # num-traits = "0.2.14"
 # num_cpus = "1.13.0"
 once_cell = "1.9.0"
-oso = "0.25.0"
+oso = "0.25.1"
 # polar-core = "0.22.1"
 pretty-snowflake = { git = "https://github.com/dmrolfs/pretty-snowflake-rs" }
 # prometheus = { version = "0.13.0", features = ["process"] }

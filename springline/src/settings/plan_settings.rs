@@ -4,7 +4,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::phases::plan::{PerformanceRepositorySettings, SpikeSettings};
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(PartialEq))]
 pub struct PlanSettings {
     pub min_scaling_step: u16,
     pub restart: Duration,

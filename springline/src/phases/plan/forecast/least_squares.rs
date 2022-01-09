@@ -106,11 +106,10 @@ impl WorkloadForecastBuilder for LeastSquaresWorkloadForecastBuilder {
             );
         }
 
-        while self.window_size <= self.data.len() {
+        self.data.push_back(data);
+        while self.window_size < self.data.len() {
             self.data.pop_front();
         }
-
-        self.data.push_back(data);
     }
 
     fn clear(&mut self) {
@@ -542,5 +541,30 @@ mod tests {
         }
 
         Ok(())
+    }
+
+    #[test]
+    fn test_forecast_window_size_is_capped() {
+        let mut forecast_builder = LeastSquaresWorkloadForecastBuilder::new(
+            13,
+            SpikeSettings {
+                std_deviation_threshold: 5.,
+                influence: 0.5,
+                length_threshold: SPIKE_LENGTH_THRESHOLD,
+            },
+        );
+
+        let now = Utc::now().timestamp();
+        let step = 15;
+        let mut index = 0;
+        while index < 100 {
+            let ts = Utc.timestamp(now + index * step, 0);
+            forecast_builder.add_observation(make_measurement(ts, index as f64));
+            index += 1;
+            let expected_len = index.min(forecast_builder.window_size as i64) as usize;
+            assert_eq!(forecast_builder.data.len(), expected_len);
+        }
+
+        assert_eq!(forecast_builder.data.len(), forecast_builder.window_size);
     }
 }

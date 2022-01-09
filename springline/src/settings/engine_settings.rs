@@ -1,7 +1,8 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
+#[cfg_attr(test, derive(PartialEq))]
 pub struct EngineSettings {
     /// Specify the machine id [0, 31) used in correlation id generation, overriding what may be set
     /// in an environment variable. This id should be unique for the entity type within a cluster

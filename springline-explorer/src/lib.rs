@@ -19,7 +19,7 @@ static THEME: Lazy<ColorfulTheme> = Lazy::new(|| ColorfulTheme {
     ..ColorfulTheme::default()
 });
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct ExplorerState {
     pub options: CliOptions,
     pub settings: Settings,

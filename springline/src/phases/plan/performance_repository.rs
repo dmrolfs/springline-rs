@@ -75,6 +75,8 @@ pub trait PerformanceRepository: Debug + Sync + Send {
     async fn close(self: Box<Self>) -> Result<(), PlanError>;
 }
 
+// expect the spread of jobs will be small and certainly not unbounded. If history is
+// unbounded, need to consider a bounded data structure (cache).
 #[derive(Debug, Default)]
 pub struct PerformanceMemoryRepository(Arc<DashMap<String, PerformanceHistory>>);
 
