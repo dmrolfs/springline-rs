@@ -27,7 +27,7 @@ pub use model::ScalePlan;
 use once_cell::sync::Lazy;
 use prometheus::Gauge;
 
-const MINIMAL_CLUSTER_SIZE: u16 = 1;
+const MINIMAL_CLUSTER_SIZE: usize = 1;
 
 pub type PlanningStrategy = FlinkPlanning<LeastSquaresWorkloadForecastBuilder>;
 pub type PlanningOutcome = <PlanningStrategy as Planning>::Out;
@@ -87,7 +87,7 @@ async fn do_connect_plan_data(
 async fn do_make_planning_strategy(name: &str, plan_settings: &PlanSettings) -> Result<PlanningStrategy> {
     let planning = PlanningStrategy::new(
         name,
-        plan_settings.min_scaling_step,
+        plan_settings.min_scaling_step as usize,
         plan_settings.restart,
         plan_settings.max_catch_up,
         plan_settings.recovery_valid,

@@ -35,12 +35,12 @@ impl MetricLabel for ExecutionPhaseError {
 }
 
 pub trait TargetReplicas {
-    fn target_replicas(&self) -> u16;
+    fn target_replicas(&self) -> usize;
 }
 
 impl TargetReplicas for GovernanceOutcome {
-    fn target_replicas(&self) -> u16 {
-        self.target_nr_task_managers
+    fn target_replicas(&self) -> usize {
+        self.target_nr_task_managers as usize
     }
 }
 

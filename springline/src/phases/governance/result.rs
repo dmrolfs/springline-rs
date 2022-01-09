@@ -17,7 +17,7 @@ pub fn make_governance_transform(
         let adjusted_target = outcome
             .policy_results
             .binding(ADJUSTED_TARGET)
-            .map(|adjusted_targets: Vec<u16>| {
+            .map(|adjusted_targets: Vec<u32>| {
                 if !adjusted_targets.is_empty() {
                     Some(itertools::min(adjusted_targets).unwrap())
                 } else {

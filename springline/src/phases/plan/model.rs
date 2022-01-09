@@ -16,10 +16,10 @@ pub struct ScalePlan {
     pub timestamp: Timestamp,
 
     #[polar(attribute)]
-    pub target_nr_task_managers: u16,
+    pub target_nr_task_managers: u32,
 
     #[polar(attribute)]
-    pub current_nr_task_managers: u16,
+    pub current_nr_task_managers: u32,
 }
 
 impl fmt::Debug for ScalePlan {
@@ -35,19 +35,19 @@ impl fmt::Debug for ScalePlan {
 
 impl ScalePlan {
     pub fn new(
-        decision: DecisionResult<MetricCatalog>, calculated_nr_task_managers: Option<u16>, min_scaling_step: u16,
+        decision: DecisionResult<MetricCatalog>, calculated_nr_task_managers: Option<usize>, min_scaling_step: usize,
     ) -> Option<Self> {
         use DecisionResult as DR;
 
-        let current_nr_task_managers = decision.item().cluster.nr_task_managers;
+        let current_nr_task_managers = decision.item().cluster.nr_task_managers as usize;
         let timestamp = decision.item().timestamp;
         let correlation_id = decision.item().correlation_id.clone();
-        let scale_plan_for = |target_nr_task_managers: u16| {
+        let scale_plan_for = |target_nr_task_managers: usize| {
             Some(ScalePlan {
                 correlation_id,
                 timestamp,
-                target_nr_task_managers,
-                current_nr_task_managers,
+                target_nr_task_managers: target_nr_task_managers as u32,
+                current_nr_task_managers: current_nr_task_managers as u32,
             })
         };
 

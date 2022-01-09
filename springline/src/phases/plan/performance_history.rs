@@ -13,7 +13,7 @@ use crate::phases::plan::MINIMAL_CLUSTER_SIZE;
 // expect the spread of cluster size will be small and certainly not unbounded. If history is
 // unbounded, need to consider a bounded data structure (cache).
 #[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
-pub struct PerformanceHistory(BTreeMap<u16, BenchmarkRange>);
+pub struct PerformanceHistory(BTreeMap<usize, BenchmarkRange>);
 
 impl PerformanceHistory {
     #[tracing::instrument(level = "info")]
@@ -48,7 +48,7 @@ impl PerformanceHistory {
 }
 
 impl PerformanceHistory {
-    pub fn cluster_size_for_workload(&self, workload_rate: RecordsPerSecond) -> Option<u16> {
+    pub fn cluster_size_for_workload(&self, workload_rate: RecordsPerSecond) -> Option<usize> {
         self.evaluate_neighbors(workload_rate)
             .map(|neighbors| neighbors.cluster_size_for(workload_rate))
     }
@@ -91,16 +91,16 @@ impl PerformanceHistory {
 }
 
 impl IntoIterator for PerformanceHistory {
-    type IntoIter = std::collections::btree_map::IntoIter<u16, BenchmarkRange>;
-    type Item = (u16, BenchmarkRange);
+    type IntoIter = std::collections::btree_map::IntoIter<usize, BenchmarkRange>;
+    type Item = (usize, BenchmarkRange);
 
     fn into_iter(self) -> Self::IntoIter {
         self.0.into_iter()
     }
 }
 
-impl From<BTreeMap<u16, BenchmarkRange>> for PerformanceHistory {
-    fn from(that: BTreeMap<u16, BenchmarkRange>) -> Self {
+impl From<BTreeMap<usize, BenchmarkRange>> for PerformanceHistory {
+    fn from(that: BTreeMap<usize, BenchmarkRange>) -> Self {
         Self(that)
     }
 }
@@ -113,7 +113,7 @@ enum BenchNeighbors {
 }
 
 impl BenchNeighbors {
-    fn cluster_size_for(&self, workload_rate: RecordsPerSecond) -> u16 {
+    fn cluster_size_for(&self, workload_rate: RecordsPerSecond) -> usize {
         match self {
             BenchNeighbors::BelowLowest(lo) => Self::extrapolate_lo(workload_rate, lo),
             BenchNeighbors::AboveHighest(hi) => Self::extrapolate_hi(workload_rate, hi),
@@ -122,12 +122,12 @@ impl BenchNeighbors {
     }
 
     #[tracing::instrument(level = "debug")]
-    fn extrapolate_lo(workload_rate: RecordsPerSecond, lo: &Benchmark) -> u16 {
+    fn extrapolate_lo(workload_rate: RecordsPerSecond, lo: &Benchmark) -> usize {
         let workload_rate: f64 = workload_rate.into();
         let lo_rate: f64 = lo.records_out_per_sec.into();
 
         let ratio: f64 = (lo.nr_task_managers as f64) / lo_rate;
-        let calculated = (ratio * workload_rate).ceil() as u16;
+        let calculated = (ratio * workload_rate).ceil() as usize;
         tracing::debug!(%ratio, %calculated, "calculations: {} ceil:{}", ratio * workload_rate, (ratio * workload_rate).ceil());
 
         let size = cmp::min(lo.nr_task_managers, cmp::max(MINIMAL_CLUSTER_SIZE, calculated));
@@ -136,7 +136,7 @@ impl BenchNeighbors {
     }
 
     #[tracing::instrument(level = "debug")]
-    fn extrapolate_hi(workload_rate: RecordsPerSecond, hi: &Benchmark) -> u16 {
+    fn extrapolate_hi(workload_rate: RecordsPerSecond, hi: &Benchmark) -> usize {
         let workload_rate: f64 = workload_rate.into();
         let hi_rate: f64 = hi.records_out_per_sec.into();
 
@@ -145,14 +145,14 @@ impl BenchNeighbors {
 
         let size = cmp::max(
             hi.nr_task_managers,
-            cmp::max(MINIMAL_CLUSTER_SIZE, calculated.ceil() as u16),
+            cmp::max(MINIMAL_CLUSTER_SIZE, calculated.ceil() as usize),
         );
         tracing::debug!(%size, %ratio, extrapolated_size=%calculated, "extrapolated cluster size above highest neighbor.");
         size
     }
 
     #[tracing::instrument(level = "debug")]
-    fn interpolate(workload_rate: RecordsPerSecond, lo: &Benchmark, hi: &Benchmark) -> u16 {
+    fn interpolate(workload_rate: RecordsPerSecond, lo: &Benchmark, hi: &Benchmark) -> usize {
         let start: Key<f64, f64> = Key::new(
             lo.records_out_per_sec.into(),
             lo.nr_task_managers as f64,
@@ -166,7 +166,7 @@ impl BenchNeighbors {
         let spline = Spline::from_vec(vec![start, end]);
         let sampled: f64 = spline.clamped_sample(workload_rate.into()).unwrap();
 
-        let size = sampled.ceil() as u16;
+        let size = sampled.ceil() as usize;
         tracing::debug!(%size, interpolated_size=?sampled, "interpolated cluster size between neighbors.");
         size
     }

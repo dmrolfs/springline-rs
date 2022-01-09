@@ -25,7 +25,7 @@ use crate::phases::MetricCatalog;
 #[derive(Debug)]
 pub struct FlinkPlanning<F: WorkloadForecastBuilder> {
     name: String,
-    min_scaling_step: u16,
+    min_scaling_step: usize,
     forecast_calculator: ForecastCalculator<F>,
     performance_history: PerformanceHistory,
     performance_repository: Box<dyn PerformanceRepository>,
@@ -36,7 +36,7 @@ pub struct FlinkPlanning<F: WorkloadForecastBuilder> {
 
 impl<F: WorkloadForecastBuilder> FlinkPlanning<F> {
     pub async fn new(
-        planning_name: impl AsRef<str>, min_scaling_step: u16, restart: Duration, max_catch_up: Duration,
+        planning_name: impl AsRef<str>, min_scaling_step: usize, restart: Duration, max_catch_up: Duration,
         recovery_valid: Duration, forecast_builder: F, performance_repository: Box<dyn PerformanceRepository>,
     ) -> Result<Self, PlanError> {
         performance_repository.check().await?;
@@ -322,7 +322,7 @@ mod tests {
         // history: PerformanceHistory,
         // outlet: Outlet<FlinkScalePlan>,
         probe_rx: &mut Receiver<ScalePlan>,
-        // min_step: u16,
+        // min_step: usize,
         expected: ScalePlan,
     ) -> anyhow::Result<()> {
         tracing::warn!("DMR - testing {}...", label);
@@ -398,7 +398,7 @@ mod tests {
                 .await
             );
 
-            planning.lock().await.min_scaling_step = METRICS.cluster.nr_task_managers + 1_000;
+            planning.lock().await.min_scaling_step = METRICS.cluster.nr_task_managers as usize + 1_000;
 
             assert_ok!(
                 assert_scale_decision_scenario(

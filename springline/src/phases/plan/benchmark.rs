@@ -12,7 +12,7 @@ use crate::phases::MetricCatalog;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct BenchmarkRange {
-    pub nr_task_managers: u16,
+    pub nr_task_managers: usize,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
@@ -32,7 +32,7 @@ impl BenchmarkRange {
         Self::new(b.nr_task_managers, None, Some(b.records_out_per_sec))
     }
 
-    pub fn new(nr_task_managers: u16, lo_rate: Option<RecordsPerSecond>, hi_rate: Option<RecordsPerSecond>) -> Self {
+    pub fn new(nr_task_managers: usize, lo_rate: Option<RecordsPerSecond>, hi_rate: Option<RecordsPerSecond>) -> Self {
         Self { nr_task_managers, lo_rate, hi_rate }
     }
 }
@@ -164,7 +164,7 @@ impl RelativeEq for BenchmarkRange {
 #[serde_as]
 #[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Benchmark {
-    pub nr_task_managers: u16,
+    pub nr_task_managers: usize,
     pub records_out_per_sec: RecordsPerSecond,
 }
 
@@ -175,7 +175,7 @@ impl fmt::Display for Benchmark {
 }
 
 impl Benchmark {
-    pub fn new(nr_task_managers: u16, records_out_per_sec: RecordsPerSecond) -> Self {
+    pub fn new(nr_task_managers: usize, records_out_per_sec: RecordsPerSecond) -> Self {
         Self { nr_task_managers, records_out_per_sec }
     }
 }
@@ -189,7 +189,7 @@ impl From<MetricCatalog> for Benchmark {
 impl From<&MetricCatalog> for Benchmark {
     fn from(that: &MetricCatalog) -> Self {
         Self {
-            nr_task_managers: that.cluster.nr_task_managers,
+            nr_task_managers: that.cluster.nr_task_managers as usize,
             records_out_per_sec: that.flow.records_out_per_sec.into(),
         }
     }
@@ -252,7 +252,7 @@ impl TryFrom<TelemetryValue> for Benchmark {
         if let TelemetryValue::Table(rep) = telemetry {
             let nr_task_managers = rep
                 .get(T_NR_TASK_MANAGERS)
-                .map(|v| u16::try_from(v.clone()))
+                .map(|v| usize::try_from(v.clone()))
                 .ok_or_else(|| PlanError::DataNotFound(T_NR_TASK_MANAGERS.to_string()))??;
 
             let records_out_per_sec = rep
