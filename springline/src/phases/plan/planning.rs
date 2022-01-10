@@ -375,7 +375,7 @@ mod tests {
                     ScalePlan {
                         timestamp,
                         correlation_id: CORRELATION.clone(),
-                        target_nr_task_managers: min_step + METRICS.cluster.nr_task_managers,
+                        target_nr_task_managers: min_step as u32 + METRICS.cluster.nr_task_managers,
                         current_nr_task_managers: METRICS.cluster.nr_task_managers,
                     },
                 )
@@ -391,7 +391,7 @@ mod tests {
                     ScalePlan {
                         timestamp,
                         correlation_id: CORRELATION.clone(),
-                        target_nr_task_managers: METRICS.cluster.nr_task_managers - min_step,
+                        target_nr_task_managers: METRICS.cluster.nr_task_managers - min_step as u32,
                         current_nr_task_managers: METRICS.cluster.nr_task_managers,
                     },
                 )
@@ -409,7 +409,7 @@ mod tests {
                     ScalePlan {
                         timestamp,
                         correlation_id: CORRELATION.clone(),
-                        target_nr_task_managers: MINIMAL_CLUSTER_SIZE,
+                        target_nr_task_managers: MINIMAL_CLUSTER_SIZE as u32,
                         current_nr_task_managers: METRICS.cluster.nr_task_managers,
                     },
                 )

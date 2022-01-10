@@ -327,7 +327,7 @@ impl Lens for ClusterLens {
 
     fn set(&self, telemetry: &mut Self::T, value_rep: impl AsRef<str>) -> anyhow::Result<()> {
         match self {
-            Self::NrTaskManagers => telemetry.nr_task_managers = u16::from_str(value_rep.as_ref())?,
+            Self::NrTaskManagers => telemetry.nr_task_managers = u32::from_str(value_rep.as_ref())?,
             Self::TaskCpuLoad => telemetry.task_cpu_load = f64::from_str(value_rep.as_ref())?,
             Self::TaskHeapMemoryUsed => telemetry.task_heap_memory_used = f64::from_str(value_rep.as_ref())?,
             Self::TaskHeapMemoryCommitted => telemetry.task_heap_memory_committed = f64::from_str(value_rep.as_ref())?,

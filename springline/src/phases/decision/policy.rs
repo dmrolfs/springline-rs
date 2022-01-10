@@ -263,6 +263,35 @@ mod tests {
             },
             ..DecisionTemplateData::default()
         });
+
+        let data_rep = assert_ok!(serde_json::to_string_pretty(&data));
+        if let Err(err) = std::panic::catch_unwind(|| {
+            assert_eq!(
+                data_rep,
+                r##"|{
+            |  "basis": "decision_basis",
+            |  "max_records_in_per_sec": "3",
+            |  "min_records_in_per_sec": "1"
+            |}"##
+                    .trim_margin_with("|")
+                    .unwrap()
+                    .to_string()
+            )
+        }) {
+            tracing::error!(error=?err, "first option failed - trying element switch...");
+            assert_eq!(
+                data_rep,
+                r##"|{
+            |  "basis": "decision_basis",
+            |  "min_records_in_per_sec": "1",
+            |  "max_records_in_per_sec": "3"
+            |}"##
+                    .trim_margin_with("|")
+                    .unwrap()
+                    .to_string()
+            );
+        }
+
         let template = r##"
             | scale_up(item, _context, _) if {{max_records_in_per_sec}} < item.flow.records_in_per_sec;
             | scale_down(item, _context, _) if item.flow.records_in_per_sec < {{min_records_in_per_sec}};
@@ -273,11 +302,6 @@ mod tests {
         let reg = PolicyRegistry::new();
         let json_data = serde_json::json!(data);
         tracing::info!(%json_data, ?data, "json test data");
-        assert_eq!(
-            json_data.to_string(),
-            r##"{"basis":"decision_basis","max_records_in_per_sec":"3","min_records_in_per_sec":"1"}"##.to_string()
-        );
-
         let actual = assert_ok!(reg.render_template(&template, &json_data));
 
         let expected = r##"

@@ -24,16 +24,16 @@ pub struct GovernanceContext {
     //
     // - source from governance settings
     #[polar(attribute)]
-    pub min_cluster_size: u16,
+    pub min_cluster_size: u32,
 
     #[polar(attribute)]
-    pub max_cluster_size: u16,
+    pub max_cluster_size: u32,
 
     #[polar(attribute)]
-    pub min_scaling_step: u16,
+    pub min_scaling_step: u32,
 
     #[polar(attribute)]
-    pub max_scaling_step: u16,
+    pub max_scaling_step: u32,
 
     #[polar(attribute)]
     #[serde(flatten)]
@@ -164,13 +164,13 @@ mod tests {
             Token::U32(0),
             Token::TupleStructEnd,
             Token::Str("min_cluster_size"),
-            Token::U16(min_cluster_size),
+            Token::U32(min_cluster_size),
             Token::Str("max_cluster_size"),
-            Token::U16(max_cluster_size),
+            Token::U32(max_cluster_size),
             Token::Str("min_scaling_step"),
-            Token::U16(min_scaling_step),
+            Token::U32(min_scaling_step),
             Token::Str("max_scaling_step"),
-            Token::U16(max_scaling_step),
+            Token::U32(max_scaling_step),
             Token::Str("custom_prop_a"),
             Token::F64(custom_prop_a),
             Token::Str("custom_prop_b"),

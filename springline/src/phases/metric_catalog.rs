@@ -146,7 +146,7 @@ pub struct ClusterMetrics {
     /// - count of entries returned from Flink REST API /taskmanagers
     #[polar(attribute)]
     #[serde(rename = "cluster.nr_task_managers")]
-    pub nr_task_managers: u16,
+    pub nr_task_managers: u32,
 
     /// The recent CPU usage of the JVM.
     /// - Flink REST API /taskmanagers/metrics?get=Status.JVM.CPU.LOAD&agg=max
@@ -719,7 +719,7 @@ mod tests {
                 Token::Some,
                 Token::I64(314),
                 Token::Str("cluster.nr_task_managers"),
-                Token::U16(4),
+                Token::U32(4),
                 Token::Str("cluster.task_cpu_load"),
                 Token::F64(0.65),
                 Token::Str("cluster.task_heap_memory_used"),

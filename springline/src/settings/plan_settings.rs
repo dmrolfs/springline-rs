@@ -7,7 +7,7 @@ use crate::phases::plan::{PerformanceRepositorySettings, SpikeSettings};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(test, derive(PartialEq))]
 pub struct PlanSettings {
-    pub min_scaling_step: u16,
+    pub min_scaling_step: u32,
     pub restart: Duration,
     pub max_catch_up: Duration,
     pub recovery_valid: Duration,
@@ -61,7 +61,7 @@ mod tests {
             &vec![
                 Token::Struct { name: "PlanSettings", len: 7 },
                 Token::Str("min_scaling_step"),
-                Token::U16(2),
+                Token::U32(2),
                 Token::Str("restart"),
                 Token::Struct { name: "Duration", len: 2 },
                 Token::Str("secs"),
