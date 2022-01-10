@@ -16,6 +16,14 @@ pub(crate) static EXECUTION_SCALE_ACTION_COUNT: Lazy<IntCounterVec> = Lazy::new(
     .expect("failed creating execution_scale_action_count metric")
 });
 
+pub(crate) static EXECUTION_ERRORS: Lazy<IntCounterVec> = Lazy::new(|| {
+    IntCounterVec::new(
+        Opts::new("execution_errors", "Count of errors executing scale plans"),
+        &["current_nr_task_managers", "target_nr_task_managers", "error_type"],
+    )
+    .expect("failed creating execution_errors metric")
+});
+
 #[tracing::instrument(level = "info", skip(_settings))]
 pub async fn make_execution_phase(_settings: &ExecutionSettings) -> Result<Box<dyn SinkStage<GovernanceOutcome>>> {
     let execution: Box<dyn SinkStage<GovernanceOutcome>> =

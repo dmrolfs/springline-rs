@@ -5,17 +5,36 @@ use url::Url;
 #[serde(default)]
 #[cfg_attr(test, derive(PartialEq))]
 pub struct KubernetesSettings {
-    client_config: LoadKubeConfig,
+    pub client_config: LoadKubeConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 #[cfg_attr(test, derive(PartialEq))]
 pub enum LoadKubeConfig {
+    /// Infer the configuration from the environment
+    ///
+    /// Done by attempting to load in-cluster environment variables first, and
+    /// then if that fails, trying the local kubeconfig.
+    ///
+    /// Fails if inference from both sources fails
     Infer,
+    /// Construct a new config where only the cluster_url is set by the user. and everything else
+    /// receives a default value.
+    /// Most likely you want to use Infer to infer the config from the environment.
     LocalUrl(Url),
+    /// Create configuration from the cluster's environment variables.
+    /// This follows the standard API Access from a Pod  and relies on you having the service
+    /// account's token mounted, as well as having given the service account rbac access to do what
+    /// you need.
     ClusterEnv,
+    /// Create configuration from the default local config file
+    /// This will respect the $KUBECONFIG evar, but otherwise default to ~/.kube/config. You can
+    /// also customize what context/cluster/user you want to use here, but it will default to the
+    /// current-context.
     KubeConfig(KubeConfigOptions),
+    /// Create configuration from a Kubeconfig struct
+    /// This bypasses kube's normal config parsing to obtain custom functionality.
     CustomKubeConfig {
         kubeconfig: Kubeconfig,
         options: KubeConfigOptions,
@@ -119,5 +138,44 @@ mod tests {
         );
         let actual: LoadKubeConfig = assert_ok!(ron::from_str(&ron));
         assert_eq!(actual, load);
+    }
+
+    #[test]
+    fn test_load_kube_config_serde_tokens() {
+        let s1 = KubernetesSettings { client_config: LoadKubeConfig::Infer };
+        assert_tokens(
+            &s1,
+            &vec![
+                Token::Struct { name: "KubernetesSettings", len: 1 },
+                Token::Str("client_config"),
+                Token::UnitVariant { name: "LoadKubeConfig", variant: "infer" },
+                Token::StructEnd,
+            ],
+        );
+
+        let s2 = KubernetesSettings {
+            client_config: LoadKubeConfig::KubeConfig(KubeConfigOptions {
+                context: Some("foo-context".to_string()),
+                cluster: Some("cluster-1".to_string()),
+                user: None,
+            }),
+        };
+        assert_tokens(
+            &s2,
+            &vec![
+                Token::Struct { name: "KubernetesSettings", len: 1 },
+                Token::Str("client_config"),
+                Token::NewtypeVariant { name: "LoadKubeConfig", variant: "kube_config" },
+                Token::Struct { name: "KubeConfigOptions", len: 2 },
+                Token::Str("context"),
+                Token::Some,
+                Token::Str("foo-context"),
+                Token::Str("cluster"),
+                Token::Some,
+                Token::Str("cluster-1"),
+                Token::StructEnd,
+                Token::StructEnd,
+            ],
+        );
     }
 }

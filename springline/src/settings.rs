@@ -23,7 +23,7 @@ pub use collection_settings::{CollectionSettings, FlinkSettings};
 pub use engine_settings::EngineSettings;
 pub use execution_settings::{ExecutionSettings, KubernetesWorkloadResource};
 pub use governance_settings::{GovernancePolicySettings, GovernanceRuleSettings, GovernanceSettings};
-pub use kubernetes_settings::KubernetesSettings;
+pub use kubernetes_settings::{KubernetesSettings, LoadKubeConfig};
 pub use plan_settings::PlanSettings;
 
 pub type EligibilitySettings = PolicySettings<EligibilityTemplateData>;

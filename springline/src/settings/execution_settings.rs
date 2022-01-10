@@ -13,6 +13,14 @@ pub enum KubernetesWorkloadResource {
     StatefulSet { name: String },
 }
 
+impl KubernetesWorkloadResource {
+    pub fn get_name(&self) -> &str {
+        match self {
+            Self::StatefulSet { name } => name.as_str(),
+        }
+    }
+}
+
 const SEPARATOR: char = '/';
 const STATEFUL_SET: &str = "statefulset";
 
