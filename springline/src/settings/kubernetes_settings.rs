@@ -76,6 +76,12 @@ impl std::ops::Deref for Kubeconfig {
     }
 }
 
+impl From<Kubeconfig> for kube::config::Kubeconfig {
+    fn from(config: Kubeconfig) -> Self {
+        config.0
+    }
+}
+
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 #[cfg_attr(test, derive(PartialEq))]
 pub struct KubeConfigOptions {

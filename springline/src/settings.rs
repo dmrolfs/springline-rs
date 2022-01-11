@@ -550,7 +550,10 @@ mod tests {
                     ..SETTINGS.collection.clone()
                 },
                 decision: DecisionSettings {
-                    template_data: Some(DecisionTemplateData { ..SETTINGS.decision.template_data.clone().unwrap() }),
+                    template_data: Some(DecisionTemplateData {
+                        max_healthy_heap_memory_load: Some(0.25),
+                        ..SETTINGS.decision.template_data.clone().unwrap()
+                    }),
                     ..SETTINGS.decision.clone()
                 },
                 ..SETTINGS.clone()

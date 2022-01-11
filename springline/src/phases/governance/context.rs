@@ -18,7 +18,7 @@ use crate::phases::UpdateMetrics;
 pub struct GovernanceContext {
     // auto-filled
     pub correlation_id: Id<Self>,
-    pub timestamp: Timestamp,
+    pub recv_timestamp: Timestamp,
 
     /// Minimal cluster size autoscaling will allow to scale down to.
     //
@@ -123,7 +123,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_serde_flink_governance_context(// min_cluster_size in prop::num::u16::ANY,
+    fn test_serde_flink_governance_context_token(// min_cluster_size in prop::num::u16::ANY,
             // max_cluster_size in prop::num::u16::ANY,
             // max_scaling_step in prop::num::u16::ANY,
             // custom_prop_a in prop::num::f64::ANY,
@@ -138,7 +138,7 @@ mod tests {
 
         let context = GovernanceContext {
             correlation_id: Id::direct("GovernanceContext", 0, "A"),
-            timestamp: Timestamp::new(0, 0),
+            recv_timestamp: Timestamp::new(0, 0),
             min_cluster_size,
             max_cluster_size,
             min_scaling_step,
@@ -158,7 +158,7 @@ mod tests {
             Token::Str("pretty"),
             Token::Str("A"),
             Token::StructEnd,
-            Token::Str("timestamp"),
+            Token::Str("recv_timestamp"),
             Token::TupleStruct { name: "Timestamp", len: 2 },
             Token::I64(0),
             Token::U32(0),
@@ -207,7 +207,7 @@ mod tests {
 
         let data: Telemetry = maplit::hashmap! {
             "correlation_id" => Id::<GovernanceContext>::direct("GovernanceContext", 0, "A").to_telemetry(),
-            "timestamp" => Timestamp::new(0, 0).to_telemetry(),
+            "recv_timestamp" => Timestamp::new(0, 0).to_telemetry(),
             "min_cluster_size" => min_cluster_size.to_telemetry(),
             "max_cluster_size" => max_cluster_size.to_telemetry(),
             "min_scaling_step" => min_scaling_step.to_telemetry(),
@@ -224,7 +224,7 @@ mod tests {
         tracing::info!(?actual, "converted into FlinkGovernanceContext");
         let expected = GovernanceContext {
             correlation_id: Id::direct("GovernanceContext", 0, "A"),
-            timestamp: Timestamp::new(0, 0),
+            recv_timestamp: Timestamp::new(0, 0),
             min_cluster_size,
             max_cluster_size,
             min_scaling_step,

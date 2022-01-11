@@ -34,6 +34,9 @@ pub async fn make_governance_phase(
     let name: SharedString = "governance".into();
     let policy = GovernancePolicy::new(settings);
     let subscription = policy.subscription(name.as_ref(), &settings.policy);
+    //todo: inject a "monitor relay" that captures gov's policy_filter events and passes along blocked,
+    // BUT holds Passed until data passes transform, when it sends the Passed event.
+    // May need to intro "builder" to policy phase to access pfilter's monitor to decorate.
     let governance = Box::new(
         PolicyPhase::with_transform(name.clone(), policy, make_governance_transform(name.into_owned())).await?,
     );

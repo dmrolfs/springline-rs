@@ -115,7 +115,7 @@ impl<F: WorkloadForecastBuilder> FlinkPlanning<F> {
 
             let forecasted_workload = self
                 .forecast_calculator
-                .calculate_target_rate(decision.item().timestamp, buffered_records)?;
+                .calculate_target_rate(decision.item().recv_timestamp, buffered_records)?;
             PLANNING_FORECASTED_WORKLOAD.set(*forecasted_workload.as_ref());
 
             let required_nr_task_managers = history.cluster_size_for_workload(forecasted_workload);
@@ -233,7 +233,7 @@ mod tests {
         static ref CORRELATION: Id<MetricCatalog> = Id::direct("MetricCatalog", 13, "ABC");
         static ref METRICS: MetricCatalog = MetricCatalog {
             correlation_id: CORRELATION.clone(),
-            timestamp: Utc.timestamp(NOW, 0).into(),
+            recv_timestamp: Utc.timestamp(NOW, 0).into(),
             health: JobHealthMetrics::default(),
             flow: FlowMetrics {
                 // input_records_lag_max: 314.15926535897932384264,
@@ -361,7 +361,7 @@ mod tests {
         let mut outlet_2 = outlet.clone();
         block_on(async move { outlet_2.attach("plan_outlet", probe_tx).await });
 
-        let timestamp = METRICS.timestamp;
+        let recv_timestamp = METRICS.recv_timestamp;
         let block: anyhow::Result<()> = block_on(async move {
             let planning = setup_planning("planning_1", outlet, SignalType::Linear).await?;
             let min_step = planning.lock().await.min_scaling_step;
@@ -373,7 +373,7 @@ mod tests {
                     Arc::clone(&planning),
                     &mut probe_rx,
                     ScalePlan {
-                        timestamp,
+                        recv_timestamp,
                         correlation_id: CORRELATION.clone(),
                         target_nr_task_managers: min_step as u32 + METRICS.cluster.nr_task_managers,
                         current_nr_task_managers: METRICS.cluster.nr_task_managers,
@@ -389,7 +389,7 @@ mod tests {
                     Arc::clone(&planning),
                     &mut probe_rx,
                     ScalePlan {
-                        timestamp,
+                        recv_timestamp,
                         correlation_id: CORRELATION.clone(),
                         target_nr_task_managers: METRICS.cluster.nr_task_managers - min_step as u32,
                         current_nr_task_managers: METRICS.cluster.nr_task_managers,
@@ -407,7 +407,7 @@ mod tests {
                     Arc::clone(&planning),
                     &mut probe_rx,
                     ScalePlan {
-                        timestamp,
+                        recv_timestamp,
                         correlation_id: CORRELATION.clone(),
                         target_nr_task_managers: MINIMAL_CLUSTER_SIZE as u32,
                         current_nr_task_managers: METRICS.cluster.nr_task_managers,
@@ -435,7 +435,7 @@ mod tests {
         let mut outlet_2 = outlet.clone();
         block_on(async move { outlet_2.attach("plan_outlet", probe_tx).await });
 
-        let timestamp = METRICS.timestamp;
+        let recv_timestamp = METRICS.recv_timestamp;
 
         let block: anyhow::Result<()> = block_on(async move {
             let planning = setup_planning("planning_2", outlet, SignalType::Sine).await?;
@@ -454,7 +454,7 @@ mod tests {
                     Arc::clone(&planning),
                     &mut probe_rx,
                     ScalePlan {
-                        timestamp,
+                        recv_timestamp,
                         correlation_id: CORRELATION.clone(),
                         target_nr_task_managers: 16,
                         current_nr_task_managers: METRICS.cluster.nr_task_managers,

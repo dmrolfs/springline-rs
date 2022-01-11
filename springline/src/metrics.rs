@@ -86,6 +86,7 @@ pub fn register_metrics(registry: &Registry) -> Result<()> {
     registry.register(Box::new(monitor::GOVERNANCE_PLAN_ACCEPTED.clone()))?;
 
     registry.register(Box::new(execution::EXECUTION_SCALE_ACTION_COUNT.clone()))?;
+    registry.register(Box::new(execution::PIPELINE_CYCLE_TIME.clone()))?;
     registry.register(Box::new(execution::EXECUTION_ERRORS.clone()))?;
 
     Ok(())

@@ -1,12 +1,27 @@
 use once_cell::sync::Lazy;
 use proctor::graph::stage::{self, SinkStage};
-use prometheus::{IntCounterVec, Opts};
+use prometheus::{Histogram, HistogramOpts, IntCounterVec, Opts};
 
 use crate::phases::governance::GovernanceOutcome;
-use crate::settings::ExecutionSettings;
-use crate::Result;
 
 mod patch_replicas;
+
+pub use patch_replicas::{ExecutionPhaseError, PatchReplicas};
+
+mod protocol {
+    use std::sync::Arc;
+    use tokio::sync::broadcast;
+
+    pub type ExecutionMonitor<T> = broadcast::Receiver<Arc<ExecutionEvent<T>>>;
+
+    #[derive(Debug, Clone, PartialEq)]
+    pub enum ExecutionEvent<T> {
+        PlanExecuted(T),
+        PlanFailed { plan: T, error_metric_label: String },
+    }
+}
+
+pub use protocol::{ExecutionEvent, ExecutionMonitor};
 
 pub(crate) static EXECUTION_SCALE_ACTION_COUNT: Lazy<IntCounterVec> = Lazy::new(|| {
     IntCounterVec::new(
@@ -14,6 +29,14 @@ pub(crate) static EXECUTION_SCALE_ACTION_COUNT: Lazy<IntCounterVec> = Lazy::new(
         &["current_nr_task_managers", "target_nr_task_managers"],
     )
     .expect("failed creating execution_scale_action_count metric")
+});
+
+pub(crate) static PIPELINE_CYCLE_TIME: Lazy<Histogram> = Lazy::new(|| {
+    Histogram::with_opts(HistogramOpts::new(
+        "pipeline_cycle_time",
+        "cycle time processing for execution actions taken on telemetry from receipt in seconds",
+    ))
+    .expect("failed creating pipeline_cycle_time metric")
 });
 
 pub(crate) static EXECUTION_ERRORS: Lazy<IntCounterVec> = Lazy::new(|| {
@@ -24,17 +47,18 @@ pub(crate) static EXECUTION_ERRORS: Lazy<IntCounterVec> = Lazy::new(|| {
     .expect("failed creating execution_errors metric")
 });
 
-#[tracing::instrument(level = "info", skip(_settings))]
-pub async fn make_execution_phase(_settings: &ExecutionSettings) -> Result<Box<dyn SinkStage<GovernanceOutcome>>> {
-    let execution: Box<dyn SinkStage<GovernanceOutcome>> =
-        Box::new(stage::Foreach::new("execution", |plan: GovernanceOutcome| {
-            EXECUTION_SCALE_ACTION_COUNT
-                .with_label_values(&[
-                    plan.current_nr_task_managers.to_string().as_str(),
-                    plan.target_nr_task_managers.to_string().as_str(),
-                ])
-                .inc();
-            tracing::warn!(scale_plan=?plan, "EXECUTE SCALE PLAN!");
-        }));
-    Ok(execution)
+#[tracing::instrument(level = "info")]
+pub fn make_logger_execution_phase() -> Box<dyn SinkStage<GovernanceOutcome>> {
+    // let execution: Box<dyn SinkStage<GovernanceOutcome>> =
+    Box::new(stage::Foreach::new("execution", |plan: GovernanceOutcome| {
+        EXECUTION_SCALE_ACTION_COUNT
+            .with_label_values(&[
+                plan.current_nr_task_managers.to_string().as_str(),
+                plan.target_nr_task_managers.to_string().as_str(),
+            ])
+            .inc();
+        tracing::warn!(scale_plan=?plan, "EXECUTE SCALE PLAN!");
+    }))
+
+    // execution
 }

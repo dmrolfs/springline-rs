@@ -298,7 +298,7 @@ async fn test_flink_governance_flow_simple_and_happy() -> anyhow::Result<()> {
     let max_scaling_step = 5;
     let context = GovernanceContext {
         correlation_id: Id::direct("GovernanceContext", 0, "A"),
-        timestamp: Timestamp::new(0, 0),
+        recv_timestamp: Timestamp::new(0, 0),
         min_cluster_size,
         max_cluster_size,
         min_scaling_step,
@@ -317,13 +317,13 @@ async fn test_flink_governance_flow_simple_and_happy() -> anyhow::Result<()> {
         flow.check_scenario(
             "happy_1",
             ScalePlan {
-                timestamp,
+                recv_timestamp: timestamp,
                 correlation_id: CORRELATION_ID.clone(),
                 target_nr_task_managers: 8,
                 current_nr_task_managers: 4
             },
             vec![ScalePlan {
-                timestamp,
+                recv_timestamp: timestamp,
                 correlation_id: CORRELATION_ID.clone(),
                 target_nr_task_managers: 8,
                 current_nr_task_managers: 4
@@ -358,7 +358,7 @@ async fn test_flink_governance_flow_simple_below_min_cluster_size() -> anyhow::R
     let max_scaling_step = 5;
     let context = GovernanceContext {
         correlation_id: Id::direct("GovernanceContext", 0, "A"),
-        timestamp: Timestamp::new(0, 0),
+        recv_timestamp: Timestamp::new(0, 0),
         min_cluster_size,
         max_cluster_size,
         min_scaling_step,
@@ -377,13 +377,13 @@ async fn test_flink_governance_flow_simple_below_min_cluster_size() -> anyhow::R
         flow.check_scenario(
             "below min cluster size",
             ScalePlan {
-                timestamp,
+                recv_timestamp: timestamp,
                 correlation_id: CORRELATION_ID.clone(),
                 target_nr_task_managers: 0,
                 current_nr_task_managers: 4
             },
             vec![ScalePlan {
-                timestamp,
+                recv_timestamp: timestamp,
                 correlation_id: CORRELATION_ID.clone(),
                 target_nr_task_managers: min_cluster_size,
                 current_nr_task_managers: 4
@@ -418,7 +418,7 @@ async fn test_flink_governance_flow_simple_above_max_cluster_size() -> anyhow::R
     let max_scaling_step = 5;
     let context = GovernanceContext {
         correlation_id: Id::direct("GovernanceContext", 0, "A"),
-        timestamp: Timestamp::new(0, 0),
+        recv_timestamp: Timestamp::new(0, 0),
         min_cluster_size,
         max_cluster_size,
         min_scaling_step,
@@ -437,13 +437,13 @@ async fn test_flink_governance_flow_simple_above_max_cluster_size() -> anyhow::R
         flow.check_scenario(
             "above max cluster size",
             ScalePlan {
-                timestamp,
+                recv_timestamp: timestamp,
                 correlation_id: CORRELATION_ID.clone(),
                 target_nr_task_managers: 999,
                 current_nr_task_managers: 6
             },
             vec![ScalePlan {
-                timestamp,
+                recv_timestamp: timestamp,
                 correlation_id: CORRELATION_ID.clone(),
                 target_nr_task_managers: max_cluster_size,
                 current_nr_task_managers: 6
@@ -478,7 +478,7 @@ async fn test_flink_governance_flow_simple_step_up_too_big() -> anyhow::Result<(
     let max_scaling_step = 5;
     let context = GovernanceContext {
         correlation_id: Id::direct("GovernanceContext", 0, "A"),
-        timestamp: Timestamp::new(0, 0),
+        recv_timestamp: Timestamp::new(0, 0),
         min_cluster_size,
         max_cluster_size,
         min_scaling_step,
@@ -497,13 +497,13 @@ async fn test_flink_governance_flow_simple_step_up_too_big() -> anyhow::Result<(
         flow.check_scenario(
             "too big a scale up step",
             ScalePlan {
-                timestamp,
+                recv_timestamp: timestamp,
                 correlation_id: CORRELATION_ID.clone(),
                 target_nr_task_managers: 9,
                 current_nr_task_managers: 0
             },
             vec![ScalePlan {
-                timestamp,
+                recv_timestamp: timestamp,
                 correlation_id: CORRELATION_ID.clone(),
                 target_nr_task_managers: max_scaling_step,
                 current_nr_task_managers: 0
@@ -538,7 +538,7 @@ async fn test_flink_governance_flow_simple_step_down_too_big() -> anyhow::Result
     let max_scaling_step = 5;
     let context = GovernanceContext {
         correlation_id: Id::direct("GovernanceContext", 0, "A"),
-        timestamp: Timestamp::new(0, 0),
+        recv_timestamp: Timestamp::new(0, 0),
         min_cluster_size,
         max_cluster_size,
         min_scaling_step,
@@ -557,13 +557,13 @@ async fn test_flink_governance_flow_simple_step_down_too_big() -> anyhow::Result
         flow.check_scenario(
             "too big a scale down step",
             ScalePlan {
-                timestamp,
+                recv_timestamp: timestamp,
                 correlation_id: CORRELATION_ID.clone(),
                 target_nr_task_managers: min_cluster_size,
                 current_nr_task_managers: max_cluster_size
             },
             vec![ScalePlan {
-                timestamp,
+                recv_timestamp: timestamp,
                 correlation_id: CORRELATION_ID.clone(),
                 target_nr_task_managers: max_cluster_size - max_scaling_step,
                 current_nr_task_managers: max_cluster_size
@@ -601,7 +601,7 @@ async fn test_flink_governance_flow_simple_step_up_before_max() -> anyhow::Resul
     let max_scaling_step = 5;
     let context = GovernanceContext {
         correlation_id: Id::direct("GovernanceContext", 0, "A"),
-        timestamp: Timestamp::new(0, 0),
+        recv_timestamp: Timestamp::new(0, 0),
         min_cluster_size,
         max_cluster_size,
         min_scaling_step,
@@ -620,13 +620,13 @@ async fn test_flink_governance_flow_simple_step_up_before_max() -> anyhow::Resul
         flow.check_scenario(
             "too big a scale up step before max",
             ScalePlan {
-                timestamp,
+                recv_timestamp: timestamp,
                 correlation_id: CORRELATION_ID.clone(),
                 target_nr_task_managers: 999,
                 current_nr_task_managers: 0
             },
             vec![ScalePlan {
-                timestamp,
+                recv_timestamp: timestamp,
                 correlation_id: CORRELATION_ID.clone(),
                 target_nr_task_managers: max_scaling_step,
                 current_nr_task_managers: 0
@@ -661,7 +661,7 @@ async fn test_flink_governance_flow_simple_step_down_before_min() -> anyhow::Res
     let max_scaling_step = 5;
     let context = GovernanceContext {
         correlation_id: Id::direct("GovernanceContext", 0, "A"),
-        timestamp: Timestamp::new(0, 0),
+        recv_timestamp: Timestamp::new(0, 0),
         min_cluster_size,
         max_cluster_size,
         min_scaling_step,
@@ -680,13 +680,13 @@ async fn test_flink_governance_flow_simple_step_down_before_min() -> anyhow::Res
         flow.check_scenario(
             "too big a scale down step before min",
             ScalePlan {
-                timestamp,
+                recv_timestamp: timestamp,
                 correlation_id: CORRELATION_ID.clone(),
                 target_nr_task_managers: 0,
                 current_nr_task_managers: max_cluster_size
             },
             vec![ScalePlan {
-                timestamp,
+                recv_timestamp: timestamp,
                 correlation_id: CORRELATION_ID.clone(),
                 target_nr_task_managers: max_cluster_size - max_scaling_step,
                 current_nr_task_managers: max_cluster_size

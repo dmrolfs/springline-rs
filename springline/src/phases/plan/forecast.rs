@@ -48,7 +48,7 @@ impl PartialOrd for WorkloadMeasurement {
 impl From<MetricCatalog> for WorkloadMeasurement {
     fn from(metrics: MetricCatalog) -> Self {
         Self {
-            timestamp_secs: metrics.timestamp.into(),
+            timestamp_secs: metrics.recv_timestamp.into(),
             workload: metrics.flow.records_in_per_sec.into(),
         }
     }

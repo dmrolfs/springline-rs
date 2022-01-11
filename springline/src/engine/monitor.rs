@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use enumflags2::{bitflags, BitFlags};
 use once_cell::sync::Lazy;
+use proctor::elements::Timestamp;
 use proctor::phases::plan::PlanMonitor;
 use prometheus::{IntCounter, IntCounterVec, IntGauge, Opts};
 use prometheus_static_metric::make_static_metric;
@@ -10,7 +11,10 @@ use prometheus_static_metric::make_static_metric;
 use crate::phases::decision::result::DecisionResult;
 use crate::phases::decision::{DecisionContext, DecisionEvent, DecisionMonitor};
 use crate::phases::eligibility::{EligibilityContext, EligibilityEvent, EligibilityMonitor};
-use crate::phases::governance::{GovernanceContext, GovernanceEvent, GovernanceMonitor};
+use crate::phases::execution::{
+    ExecutionEvent, ExecutionMonitor, EXECUTION_ERRORS, EXECUTION_SCALE_ACTION_COUNT, PIPELINE_CYCLE_TIME,
+};
+use crate::phases::governance::{GovernanceContext, GovernanceEvent, GovernanceMonitor, GovernanceOutcome};
 use crate::phases::plan::{PlanEvent, PlanningStrategy};
 
 #[bitflags(default = Collection | Plan | Execution)]
@@ -30,6 +34,7 @@ pub struct Monitor {
     rx_decision_monitor: DecisionMonitor,
     rx_plan_monitor: PlanMonitor<PlanningStrategy>,
     rx_governance_monitor: GovernanceMonitor,
+    rx_execution_monitor: Option<ExecutionMonitor<GovernanceOutcome>>,
 }
 
 impl std::fmt::Debug for Monitor {
@@ -39,6 +44,7 @@ impl std::fmt::Debug for Monitor {
             .field("rx_decision", &self.rx_decision_monitor)
             .field("rx_plan", &self.rx_plan_monitor)
             .field("rx_governance", &self.rx_governance_monitor)
+            .field("rx_execution", &self.rx_execution_monitor)
             .finish()
     }
 }
@@ -47,12 +53,14 @@ impl Monitor {
     pub fn new(
         rx_eligibility_monitor: EligibilityMonitor, rx_decision_monitor: DecisionMonitor,
         rx_plan_monitor: PlanMonitor<PlanningStrategy>, rx_governance_monitor: GovernanceMonitor,
+        rx_execution_monitor: Option<ExecutionMonitor<GovernanceOutcome>>,
     ) -> Self {
         Self {
             rx_eligibility_monitor,
             rx_decision_monitor,
             rx_plan_monitor,
             rx_governance_monitor,
+            rx_execution_monitor,
         }
     }
 
@@ -60,6 +68,11 @@ impl Monitor {
     pub async fn run(mut self) {
         let mut loaded = BitFlags::<PhaseLoaded>::default();
         Self::mark_ready_phases(&mut loaded);
+
+        let mut rx_execution = self.rx_execution_monitor.unwrap_or_else(|| {
+            let (_, rx_dummy) = tokio::sync::broadcast::channel(0);
+            rx_dummy
+        });
 
         loop {
             let span = tracing::info_span!("monitor event cycle");
@@ -70,6 +83,7 @@ impl Monitor {
                 Ok(e) = self.rx_decision_monitor.recv() => Self::handle_decision_event(e, &mut loaded),
                 Ok(e) = self.rx_plan_monitor.recv() => Self::handle_plan_event(e),
                 Ok(e) = self.rx_governance_monitor.recv() => Self::handle_governance_event(e, &mut loaded),
+                Ok(e) = rx_execution.recv() => Self::handle_execution_event(e, &mut loaded),
                 else => {
                     tracing::info!("springline monitor stopping...");
                     break;
@@ -195,6 +209,35 @@ impl Monitor {
             }
             ignored_event => {
                 tracing::warn!(?ignored_event, "ignoring governance event");
+            }
+        }
+    }
+
+    fn handle_execution_event(event: Arc<ExecutionEvent<GovernanceOutcome>>, _loaded: &mut BitFlags<PhaseLoaded>) {
+        match &*event {
+            ExecutionEvent::PlanExecuted(plan) => {
+                tracing::info!(?plan, correlation=?plan.correlation_id, "plan executed");
+                EXECUTION_SCALE_ACTION_COUNT
+                    .with_label_values(&[
+                        plan.current_nr_task_managers.to_string().as_str(),
+                        plan.target_nr_task_managers.to_string().as_str(),
+                    ])
+                    .inc();
+
+                let now = Timestamp::now();
+                let start = plan.recv_timestamp;
+                let seconds = now.as_f64() - start.as_f64();
+                PIPELINE_CYCLE_TIME.observe(seconds);
+            }
+            ExecutionEvent::PlanFailed { plan, error_metric_label } => {
+                tracing::error!(%error_metric_label, ?plan, "plan execution failed.");
+                EXECUTION_ERRORS
+                    .with_label_values(&[
+                        plan.current_nr_task_managers.to_string().as_str(),
+                        plan.target_nr_task_managers.to_string().as_str(),
+                        error_metric_label,
+                    ])
+                    .inc()
             }
         }
     }

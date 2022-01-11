@@ -174,7 +174,7 @@ fn make_test_data(
     let corr_id = CORRELATION_ID.clone();
     MetricCatalog {
         correlation_id: corr_id,
-        timestamp,
+        recv_timestamp: timestamp,
         health: JobHealthMetrics {
             job_uptime_millis: 1_234_567,
             job_nr_restarts: 3,
@@ -269,19 +269,26 @@ async fn test_flink_planning_linear() {
 
     assert_ok!(
         planning
-            .update_performance_history(&make_decision(DecisionType::Up, last_data.timestamp, 0, 2, 0, 25.))
+            .update_performance_history(&make_decision(DecisionType::Up, last_data.recv_timestamp, 0, 2, 0, 25.))
             .await
     );
     tracing::warn!("DMR: planning history = {:?}", planning);
     assert_ok!(
         planning
-            .update_performance_history(&make_decision(DecisionType::Up, last_data.timestamp, 0, 4, 0, 75.))
+            .update_performance_history(&make_decision(DecisionType::Up, last_data.recv_timestamp, 0, 4, 0, 75.))
             .await
     );
     tracing::warn!("DMR: planning history = {:?}", planning);
     assert_ok!(
         planning
-            .update_performance_history(&make_decision(DecisionType::Up, last_data.timestamp, 0, 10, 0, 250.))
+            .update_performance_history(&make_decision(
+                DecisionType::Up,
+                last_data.recv_timestamp,
+                0,
+                10,
+                0,
+                250.
+            ))
             .await
     );
     tracing::warn!("DMR: planning history = {:?}", planning);
@@ -309,7 +316,7 @@ async fn test_flink_planning_linear() {
 
     tracing::info!("pushing decision...");
     let decision = InDecision::ScaleUp(last_data);
-    let timestamp = decision.item().timestamp;
+    let timestamp = decision.item().recv_timestamp;
     let correlation_id = decision.item().correlation_id.clone();
     assert_ok!(flow.push_decision(decision).await);
 
@@ -324,7 +331,7 @@ async fn test_flink_planning_linear() {
     assert_eq!(
         actual,
         vec![ScalePlan {
-            timestamp,
+            recv_timestamp: timestamp,
             correlation_id,
             target_nr_task_managers: 6,
             current_nr_task_managers: 2,
@@ -371,19 +378,26 @@ async fn test_flink_planning_sine() {
 
     assert_ok!(
         planning
-            .update_performance_history(&make_decision(DecisionType::Up, last_data.timestamp, 1, 2, 0, 25.))
+            .update_performance_history(&make_decision(DecisionType::Up, last_data.recv_timestamp, 1, 2, 0, 25.))
             .await
     );
     tracing::warn!("DMR: planning history = {:?}", planning);
     assert_ok!(
         planning
-            .update_performance_history(&make_decision(DecisionType::Up, last_data.timestamp, 2, 4, 0, 75.))
+            .update_performance_history(&make_decision(DecisionType::Up, last_data.recv_timestamp, 2, 4, 0, 75.))
             .await
     );
     tracing::warn!("DMR: planning history = {:?}", planning);
     assert_ok!(
         planning
-            .update_performance_history(&make_decision(DecisionType::Up, last_data.timestamp, 3, 10, 0, 250.))
+            .update_performance_history(&make_decision(
+                DecisionType::Up,
+                last_data.recv_timestamp,
+                3,
+                10,
+                0,
+                250.
+            ))
             .await
     );
     tracing::warn!("DMR: planning history = {:?}", planning);
@@ -411,7 +425,7 @@ async fn test_flink_planning_sine() {
 
     tracing::info!("pushing decision...");
     let decision = InDecision::ScaleUp(last_data);
-    let timestamp = decision.item().timestamp;
+    let timestamp = decision.item().recv_timestamp;
     assert_ok!(flow.push_decision(decision).await);
 
     tracing::info!("DMR-waiting for plan to reach sink...");
@@ -427,7 +441,7 @@ async fn test_flink_planning_sine() {
         assert_eq!(
             actual,
             vec![ScalePlan {
-                timestamp,
+                recv_timestamp: timestamp,
                 correlation_id: CORRELATION_ID.clone(),
                 target_nr_task_managers: 8,
                 current_nr_task_managers: 2,
@@ -438,7 +452,7 @@ async fn test_flink_planning_sine() {
         assert_eq!(
             actual,
             vec![ScalePlan {
-                timestamp,
+                recv_timestamp: timestamp,
                 correlation_id: CORRELATION_ID.clone(),
                 target_nr_task_managers: 9,
                 current_nr_task_managers: 2,

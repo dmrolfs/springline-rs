@@ -1,6 +1,7 @@
 use std::fmt;
+use std::sync::Arc;
 
-use crate::phases::execution::{EXECUTION_ERRORS, EXECUTION_SCALE_ACTION_COUNT};
+use super::{protocol, EXECUTION_ERRORS, EXECUTION_SCALE_ACTION_COUNT};
 use crate::phases::governance::GovernanceOutcome;
 use crate::phases::MetricCatalog;
 use crate::settings::{ExecutionSettings, KubernetesWorkloadResource};
@@ -15,6 +16,7 @@ use proctor::graph::{Inlet, Port, SinkShape, PORT_DATA};
 use proctor::{AppData, ProctorResult, SharedString};
 use serde_json::json;
 use thiserror::Error;
+use tokio::sync::broadcast;
 
 const STAGE_NAME: &str = "execute_scaling";
 
@@ -69,40 +71,20 @@ pub struct PatchReplicas<In> {
     kube: kube::Client,
     workload_resource: KubernetesWorkloadResource,
     inlet: Inlet<In>,
+    pub tx_execution_monitor: broadcast::Sender<Arc<protocol::ExecutionEvent<In>>>,
 }
-
-// let kube = match k8s_settings.client_config {
-// LoadKubeConfig::Infer =>  {
-// tracing::info!("inferring kubernetes configuration from in-cluster environment or fallback to local kubeconfig.");
-// kube::Client::try_default().await
-// },
-// LoadKubeConfig::LocalUrl(url) => {
-// tracing::info!(?url, "Config kube with only cluster_url, everything thing else is default.")
-// kube::Client::try_from(kube::Config::new(url.into()))
-// },
-// LoadKubeConfig::ClusterEnv => {
-// tracing::info!("configuring kubernetes client from cluster's environment variables, following the standard API Access from a Pod.")
-// kube::Config::from_cluster_env().and_then(kube::Client::try_from)
-// },
-// LoadKubeConfig::KubeConfig(options) => {
-// tracing::info!("create kuberenetes client config from the default local kubeconfig file.")
-// kube::Config::from_kubeconfig(&options.into()).and_then(kube::Client::try_from)
-// },
-// LoadKubeConfig::CustomKubeConfig { kubeconfig, options } => {
-// tracing::info!("Configure the kubernetes client with custom kubeconfig, bypassing the normal config parsing.");
-// kube::Config::from_custom_kubeconfig(kubeconfig.into(), &options.into())
-// .and_then(|config| kube::Client::try_from)
-// }
-// }
 
 impl<In> PatchReplicas<In> {
     #[tracing::instrument(level = "info", skip(kube))]
     pub fn new(kube: kube::Client, exec_settings: &ExecutionSettings) -> Self {
         let workload_resource = exec_settings.k8s_workload_resource.clone();
+        let (tx_execution_monitor, _) = broadcast::channel(num_cpus::get() * 2);
+
         Self {
             kube,
             workload_resource,
             inlet: Inlet::new(STAGE_NAME, PORT_DATA),
+            tx_execution_monitor,
         }
     }
 }
@@ -116,11 +98,13 @@ impl<In> fmt::Debug for PatchReplicas<In> {
     }
 }
 
-// impl<In> Default for PatchReplicas<In> {
-//     fn default() -> Self {
-//         Self { inlet: Inlet::new(STAGE_NAME, PORT_DATA), }
-//     }
-// }
+impl<In> proctor::graph::stage::WithMonitor for PatchReplicas<In> {
+    type Receiver = protocol::ExecutionMonitor<In>;
+
+    fn rx_monitor(&self) -> Self::Receiver {
+        self.tx_execution_monitor.subscribe()
+    }
+}
 
 impl<In> SinkShape for PatchReplicas<In> {
     type In = In;

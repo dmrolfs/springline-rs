@@ -57,7 +57,7 @@ impl PopulateContext for EligibilityContext {
         let mut id_gen = ProctorIdGenerator::default();
         Ok(EligibilityContext {
             correlation_id: id_gen.next_id(),
-            timestamp: now.into(),
+            recv_timestamp: now.into(),
             all_sinks_healthy,
             task_status: TaskStatus { last_failure },
             cluster_status: ClusterStatus { is_deploying, last_deployment },

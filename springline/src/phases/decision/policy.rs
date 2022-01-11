@@ -154,7 +154,7 @@ impl QueryPolicy for DecisionPolicy {
             let mut gen: ProctorIdGenerator<DecisionContext> = ProctorIdGenerator::default();
 
             Some(Self::Context {
-                timestamp: Timestamp::now(),
+                recv_timestamp: Timestamp::now(),
                 correlation_id: gen.next_id(),
                 custom: HashMap::default(),
             })

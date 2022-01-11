@@ -487,7 +487,7 @@ pub fn make_context(
     let mut gen = ID_GENERATOR.lock().unwrap();
 
     EligibilityContext {
-        timestamp: Timestamp::now(),
+        recv_timestamp: Timestamp::now(),
         correlation_id: gen.next_id().relabel(),
         all_sinks_healthy: true,
         task_status: TaskStatus { last_failure },
@@ -500,7 +500,7 @@ pub fn make_test_item(custom: telemetry::TableType) -> Data {
     let mut gen = ID_GENERATOR.lock().unwrap();
 
     MetricCatalog {
-        timestamp: Timestamp::now(),
+        recv_timestamp: Timestamp::now(),
         correlation_id: gen.next_id().relabel(),
         health: JobHealthMetrics::default(),
         flow: FlowMetrics::default(),

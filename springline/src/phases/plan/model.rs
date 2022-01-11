@@ -13,7 +13,7 @@ pub struct ScalePlan {
     pub correlation_id: Id<MetricCatalog>,
 
     #[polar(attribute)]
-    pub timestamp: Timestamp,
+    pub recv_timestamp: Timestamp,
 
     #[polar(attribute)]
     pub target_nr_task_managers: u32,
@@ -26,7 +26,7 @@ impl fmt::Debug for ScalePlan {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ScalePlan")
             .field("correlation_id", &self.correlation_id)
-            .field("timestamp", &format!("{}", self.timestamp))
+            .field("recv_timestamp", &format!("{}", self.recv_timestamp))
             .field("target_nr_task_managers", &self.target_nr_task_managers)
             .field("current_nr_task_managers", &self.current_nr_task_managers)
             .finish()
@@ -40,12 +40,12 @@ impl ScalePlan {
         use DecisionResult as DR;
 
         let current_nr_task_managers = decision.item().cluster.nr_task_managers as usize;
-        let timestamp = decision.item().timestamp;
+        let timestamp = decision.item().recv_timestamp;
         let correlation_id = decision.item().correlation_id.clone();
         let scale_plan_for = |target_nr_task_managers: usize| {
             Some(ScalePlan {
                 correlation_id,
-                timestamp,
+                recv_timestamp: timestamp,
                 target_nr_task_managers: target_nr_task_managers as u32,
                 current_nr_task_managers: current_nr_task_managers as u32,
             })

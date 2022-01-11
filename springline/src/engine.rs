@@ -16,6 +16,7 @@ use std::fmt;
 use tokio::task::JoinHandle;
 
 use crate::engine::service::{EngineServiceApi, Service};
+use crate::phases::execution::ExecutionMonitor;
 use crate::phases::governance::{self, GovernanceOutcome};
 use crate::phases::{collection, decision, eligibility, execution, plan};
 use crate::phases::{MetricCatalog, UpdateMetrics};
@@ -48,6 +49,7 @@ pub struct Building {
     name: SharedString,
     sources: Vec<Box<dyn SourceStage<Telemetry>>>,
     execution: Option<Box<dyn SinkStage<GovernanceOutcome>>>,
+    rx_execution_monitor: Option<execution::ExecutionMonitor<GovernanceOutcome>>,
     metrics_registry: Option<&'static Registry>,
 }
 impl EngineState for Building {}
@@ -57,40 +59,9 @@ impl fmt::Debug for Building {
         f.debug_struct("Building")
             .field("name", &self.name)
             .field("nr_sources", &self.sources.len())
+            .field("metrics_registry", &self.metrics_registry)
+            .field("rx_execution_monitor", &self.rx_execution_monitor)
             .finish()
-    }
-}
-
-pub struct Ready {
-    graph: Graph,
-    monitor: Monitor,
-    tx_stop_flink_source: Option<TickApi>,
-    tx_clearinghouse_api: ClearinghouseApi,
-    metrics_registry: Option<&'static Registry>,
-}
-
-impl EngineState for Ready {}
-
-impl fmt::Debug for Ready {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("Ready")
-    }
-}
-
-#[allow(dead_code)]
-pub struct Running {
-    pub tx_service_api: EngineServiceApi,
-    graph_handle: JoinHandle<ProctorResult<()>>,
-    monitor_handle: JoinHandle<()>,
-    service_handle: JoinHandle<()>,
-    metrics_registry: Option<&'static Registry>,
-}
-
-impl EngineState for Running {}
-
-impl fmt::Debug for Running {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("Running")
     }
 }
 
@@ -105,6 +76,15 @@ impl AutoscaleEngine<Building> {
         tracing::info!(?execution_phase, "setting execution phase on autoscale engine builder.");
         Self {
             inner: Building { execution: Some(execution_phase), ..self.inner },
+        }
+    }
+
+    pub fn with_execution_monitor(self, rx_execution_monitor: ExecutionMonitor<GovernanceOutcome>) -> Self {
+        Self {
+            inner: Building {
+                rx_execution_monitor: Some(rx_execution_monitor),
+                ..self.inner
+            },
         }
     }
 
@@ -130,7 +110,7 @@ impl AutoscaleEngine<Building> {
         }
     }
 
-    #[tracing::instrument(level = "info")]
+    #[tracing::instrument(level = "info", skip(self, settings))]
     pub async fn finish(self, settings: &Settings) -> Result<AutoscaleEngine<Ready>> {
         let machine_node = MachineNode::new(settings.engine.machine_id, settings.engine.node_id)?;
 
@@ -156,10 +136,7 @@ impl AutoscaleEngine<Building> {
             governance::make_governance_phase(&settings.governance, (&mut collection_builder).into()).await?;
         let rx_governance_monitor = governance_phase.rx_monitor();
 
-        let execution = match self.inner.execution {
-            Some(e) => e,
-            None => execution::make_execution_phase(&settings.execution).await?,
-        };
+        let execution = self.inner.execution.unwrap_or_else(execution::make_logger_execution_phase);
 
         let collection = collection_builder
             .build_for_out_w_metrics(MetricCatalog::update_metrics_for(
@@ -198,6 +175,7 @@ impl AutoscaleEngine<Building> {
                     rx_decision_monitor,
                     rx_plan_monitor,
                     rx_governance_monitor,
+                    self.inner.rx_execution_monitor,
                 ),
                 metrics_registry: self.inner.metrics_registry,
             },
@@ -205,8 +183,24 @@ impl AutoscaleEngine<Building> {
     }
 }
 
+pub struct Ready {
+    graph: Graph,
+    monitor: Monitor,
+    tx_stop_flink_source: Option<TickApi>,
+    tx_clearinghouse_api: ClearinghouseApi,
+    metrics_registry: Option<&'static Registry>,
+}
+
+impl EngineState for Ready {}
+
+impl fmt::Debug for Ready {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("Ready")
+    }
+}
+
 impl AutoscaleEngine<Ready> {
-    #[tracing::instrument(level = "info")]
+    #[tracing::instrument(level = "info", skip(self))]
     pub fn run(self) -> AutoscaleEngine<Running> {
         let graph_handle = tokio::spawn(async { self.inner.graph.run().await });
 
@@ -229,6 +223,23 @@ impl AutoscaleEngine<Ready> {
                 metrics_registry: self.inner.metrics_registry,
             },
         }
+    }
+}
+
+#[allow(dead_code)]
+pub struct Running {
+    pub tx_service_api: EngineServiceApi,
+    graph_handle: JoinHandle<ProctorResult<()>>,
+    monitor_handle: JoinHandle<()>,
+    service_handle: JoinHandle<()>,
+    metrics_registry: Option<&'static Registry>,
+}
+
+impl EngineState for Running {}
+
+impl fmt::Debug for Running {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("Running")
     }
 }
 

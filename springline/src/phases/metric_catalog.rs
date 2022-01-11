@@ -16,12 +16,12 @@ use serde::{Deserialize, Serialize};
 use crate::phases::UpdateMetrics;
 
 // #[serde_as]
-#[derive(PolarClass, Label, Debug, PartialEq, Clone, Serialize, Deserialize)]
+#[derive(PolarClass, Label, PartialEq, Clone, Serialize, Deserialize)]
 pub struct MetricCatalog {
     pub correlation_id: Id<Self>,
 
     #[polar(attribute)]
-    pub timestamp: Timestamp,
+    pub recv_timestamp: Timestamp,
 
     #[polar(attribute)]
     #[serde(flatten)] // current subscription mechanism only supports flatten keys
@@ -38,6 +38,19 @@ pub struct MetricCatalog {
     #[polar(attribute)]
     #[serde(flatten)] // flatten to collect extra properties.
     pub custom: telemetry::TableType,
+}
+
+impl fmt::Debug for MetricCatalog {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("MetricCatalog")
+            .field("correlation", &self.correlation_id)
+            .field("recv_timestamp", &format!("{}", self.recv_timestamp))
+            .field("health", &self.health)
+            .field("flow", &self.flow)
+            .field("cluster", &self.cluster)
+            .field("custom", &self.custom)
+            .finish()
+    }
 }
 
 impl MetricCatalog {
@@ -339,7 +352,7 @@ impl UpdateMetrics for MetricCatalog {
             .try_into::<MetricCatalog>()
         {
             Ok(catalog) => {
-                METRIC_CATALOG_TIMESTAMP.set(catalog.timestamp.as_secs());
+                METRIC_CATALOG_TIMESTAMP.set(catalog.recv_timestamp.as_secs());
 
                 METRIC_CATALOG_JOB_HEALTH_UPTIME.set(catalog.health.job_uptime_millis);
                 METRIC_CATALOG_JOB_HEALTH_NR_RESTARTS.set(catalog.health.job_nr_restarts);
@@ -553,7 +566,7 @@ mod tests {
         let mut id_gen = assert_ok!(ID_GENERATOR.lock());
         MetricCatalog {
             correlation_id: id_gen.next_id(),
-            timestamp: ts.into(),
+            recv_timestamp: ts.into(),
             custom,
             health: JobHealthMetrics::default(),
             flow: FlowMetrics::default(),
@@ -658,7 +671,7 @@ mod tests {
         let (ts_secs, ts_nsecs) = ts.as_pair();
         let metrics = MetricCatalog {
             correlation_id: CORR_ID.clone(),
-            timestamp: ts,
+            recv_timestamp: ts,
             health: JobHealthMetrics {
                 job_uptime_millis: 1_234_567,
                 job_nr_restarts: 3,
@@ -753,7 +766,7 @@ mod tests {
         let corr_id = Id::direct("MetricCatalog", 17, "AB");
         let metrics = MetricCatalog {
             correlation_id: corr_id.clone(),
-            timestamp: ts,
+            recv_timestamp: ts,
             health: JobHealthMetrics {
                 job_uptime_millis: 1_234_567,
                 job_nr_restarts: 3,

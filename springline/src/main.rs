@@ -3,10 +3,11 @@ use std::future::Future;
 use clap::Parser;
 use once_cell::sync::Lazy;
 use proctor::elements::Telemetry;
-use proctor::graph::stage::SourceStage;
+use proctor::graph::stage::{SourceStage, WithMonitor};
 use prometheus::Registry;
 use settings_loader::SettingsLoader;
 use springline::engine::{http, Autoscaler};
+use springline::phases::execution::PatchReplicas;
 use springline::settings::{CliOptions, Settings};
 use springline::Result;
 use tracing::Subscriber;
@@ -26,9 +27,15 @@ fn main() -> Result<()> {
     let settings = Settings::load(&options)?;
 
     start_pipeline(async move {
+        let kube = springline::kubernetes::make_client(&settings.kubernetes).await?;
+        let patch_replicas = PatchReplicas::new(kube, &settings.execution);
+        let rx_execution_monitor = patch_replicas.rx_monitor();
+
         let engine = Autoscaler::builder("springline")
             .add_source(make_settings_source(&settings))
             .with_metrics_registry(&METRICS_REGISTRY)
+            .with_execution(Box::new(patch_replicas))
+            .with_execution_monitor(rx_execution_monitor)
             .finish(&settings)
             .await?
             .run();

@@ -19,7 +19,7 @@ impl PopulateData for MetricCatalog {
     {
         let mut id_gen = ProctorIdGenerator::default();
         let baseline = MetricCatalog {
-            timestamp: now.into(),
+            recv_timestamp: now.into(),
             correlation_id: id_gen.next_id(),
             health: JobHealthMetrics::default(),
             flow: FlowMetrics::default(),
@@ -193,7 +193,7 @@ impl Lens for MetricCatalogRootLens {
     fn get(&self, telemetry: &Self::T) -> String {
         match self {
             Self::CorrelationId => format!("{:#}", telemetry.correlation_id),
-            Self::Timestamp => format!("{:#}", telemetry.timestamp),
+            Self::Timestamp => format!("{:#}", telemetry.recv_timestamp),
         }
     }
 
@@ -208,7 +208,7 @@ impl Lens for MetricCatalogRootLens {
                 );
             }
             Self::Timestamp => {
-                telemetry.timestamp = Timestamp::from_str(value_rep.as_ref())?;
+                telemetry.recv_timestamp = Timestamp::from_str(value_rep.as_ref())?;
             }
         }
 

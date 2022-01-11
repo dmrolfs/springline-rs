@@ -19,7 +19,7 @@ use crate::phases::UpdateMetrics;
 pub struct EligibilityContext {
     // auto-filled
     pub correlation_id: Id<Self>,
-    pub timestamp: Timestamp,
+    pub recv_timestamp: Timestamp,
 
     #[polar(attribute)]
     #[serde(flatten)] // current subscription mechanism only supports flatten keys
@@ -205,7 +205,7 @@ mod tests {
     fn test_serde_flink_eligibility_context() {
         let context = EligibilityContext {
             correlation_id: Id::direct("EligibilityContext", 0, "A"),
-            timestamp: Timestamp::new(0, 0),
+            recv_timestamp: Timestamp::new(0, 0),
             all_sinks_healthy: true,
             task_status: TaskStatus { last_failure: Some(DT_1.clone()) },
             cluster_status: ClusterStatus { is_deploying: false, last_deployment: DT_2.clone() },
@@ -224,7 +224,7 @@ mod tests {
             Token::Str("pretty"),
             Token::Str("A"),
             Token::StructEnd,
-            Token::Str("timestamp"),
+            Token::Str("recv_timestamp"),
             Token::TupleStruct { name: "Timestamp", len: 2 },
             Token::I64(0),
             Token::U32(0),
@@ -294,7 +294,7 @@ mod tests {
 
         let data: Telemetry = maplit::hashmap! {
             "correlation_id" => Id::<EligibilityContext>::direct("EligibilityContext", 0, "A").to_telemetry(),
-            "timestamp" => Timestamp::new(0, 0).to_telemetry(),
+            "recv_timestamp" => Timestamp::new(0, 0).to_telemetry(),
             "all_sinks_healthy" => false.to_telemetry(),
             "task.last_failure" => DT_1_STR.as_str().to_telemetry(),
             "cluster.is_deploying" => false.to_telemetry(),
@@ -310,7 +310,7 @@ mod tests {
         tracing::info!(?actual, "converted into FlinkEligibilityContext");
         let expected = EligibilityContext {
             correlation_id: Id::direct("EligibilityContext", 0, "A"),
-            timestamp: Timestamp::new(0, 0),
+            recv_timestamp: Timestamp::new(0, 0),
             all_sinks_healthy: false,
             task_status: TaskStatus { last_failure: Some(DT_1.clone()) },
             cluster_status: ClusterStatus { is_deploying: false, last_deployment: DT_2.clone() },
