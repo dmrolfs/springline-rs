@@ -1,15 +1,17 @@
+use chrono::Utc;
 use std::fmt::{self, Display};
 use std::sync::Arc;
 
 use enumflags2::{bitflags, BitFlags};
 use once_cell::sync::Lazy;
-use proctor::elements::Timestamp;
+use proctor::elements::{Telemetry, Timestamp};
+use proctor::graph::stage::{ActorSourceApi, ActorSourceCmd};
 use proctor::phases::plan::PlanMonitor;
+use proctor::serde::FORMAT;
 use prometheus::{IntCounter, IntCounterVec, IntGauge, Opts};
 use prometheus_static_metric::make_static_metric;
 
-use crate::phases::decision::result::DecisionResult;
-use crate::phases::decision::{DecisionContext, DecisionEvent, DecisionMonitor};
+use crate::phases::decision::{DecisionContext, DecisionEvent, DecisionMonitor, DecisionResult};
 use crate::phases::eligibility::{EligibilityContext, EligibilityEvent, EligibilityMonitor};
 use crate::phases::execution::{
     ExecutionEvent, ExecutionMonitor, EXECUTION_ERRORS, EXECUTION_SCALE_ACTION_COUNT, PIPELINE_CYCLE_TIME,
@@ -35,6 +37,7 @@ pub struct Monitor {
     rx_plan_monitor: PlanMonitor<PlanningStrategy>,
     rx_governance_monitor: GovernanceMonitor,
     rx_execution_monitor: Option<ExecutionMonitor<GovernanceOutcome>>,
+    tx_feedback: Option<ActorSourceApi<Telemetry>>,
 }
 
 impl std::fmt::Debug for Monitor {
@@ -45,6 +48,7 @@ impl std::fmt::Debug for Monitor {
             .field("rx_plan", &self.rx_plan_monitor)
             .field("rx_governance", &self.rx_governance_monitor)
             .field("rx_execution", &self.rx_execution_monitor)
+            .field("tx_feedback", &self.tx_feedback)
             .finish()
     }
 }
@@ -54,6 +58,7 @@ impl Monitor {
         rx_eligibility_monitor: EligibilityMonitor, rx_decision_monitor: DecisionMonitor,
         rx_plan_monitor: PlanMonitor<PlanningStrategy>, rx_governance_monitor: GovernanceMonitor,
         rx_execution_monitor: Option<ExecutionMonitor<GovernanceOutcome>>,
+        tx_feedback: Option<ActorSourceApi<Telemetry>>,
     ) -> Self {
         Self {
             rx_eligibility_monitor,
@@ -61,6 +66,7 @@ impl Monitor {
             rx_plan_monitor,
             rx_governance_monitor,
             rx_execution_monitor,
+            tx_feedback,
         }
     }
 
@@ -74,6 +80,8 @@ impl Monitor {
             rx_dummy
         });
 
+        let tx_feedback = self.tx_feedback.as_ref();
+
         loop {
             let span = tracing::info_span!("monitor event cycle");
             let _span_guard = span.enter();
@@ -83,7 +91,7 @@ impl Monitor {
                 Ok(e) = self.rx_decision_monitor.recv() => Self::handle_decision_event(e, &mut loaded),
                 Ok(e) = self.rx_plan_monitor.recv() => Self::handle_plan_event(e),
                 Ok(e) = self.rx_governance_monitor.recv() => Self::handle_governance_event(e, &mut loaded),
-                Ok(e) = rx_execution.recv() => Self::handle_execution_event(e, &mut loaded),
+                Ok(e) = rx_execution.recv() => Self::handle_execution_event(e, tx_feedback, &mut loaded).await,
                 else => {
                     tracing::info!("springline monitor stopping...");
                     break;
@@ -213,7 +221,10 @@ impl Monitor {
         }
     }
 
-    fn handle_execution_event(event: Arc<ExecutionEvent<GovernanceOutcome>>, _loaded: &mut BitFlags<PhaseLoaded>) {
+    async fn handle_execution_event(
+        event: Arc<ExecutionEvent<GovernanceOutcome>>, tx_feedback: Option<&ActorSourceApi<Telemetry>>,
+        _loaded: &mut BitFlags<PhaseLoaded>,
+    ) {
         match &*event {
             ExecutionEvent::PlanExecuted(plan) => {
                 tracing::info!(?plan, correlation=?plan.correlation_id, "plan executed");
@@ -228,6 +239,26 @@ impl Monitor {
                 let start = plan.recv_timestamp;
                 let seconds = now.as_f64() - start.as_f64();
                 PIPELINE_CYCLE_TIME.observe(seconds);
+
+                if let Some(tx) = tx_feedback {
+                    let now: chrono::DateTime<Utc> = now.into();
+                    let now_rep = format!("{}", now.format(FORMAT));
+                    let telemetry = maplit::hashmap! { crate::phases::eligibility::CLUSTER__LAST_DEPLOYMENT.to_string() => now_rep.into(), };
+                    let (cmd, rx) = ActorSourceCmd::push(telemetry.into());
+
+                    match tx.send(cmd) {
+                        Ok(_) => {
+                            tracing::info!(scale_deployment_timestamp=?now, "notify springline of scale deployment");
+                        }
+                        Err(err) => {
+                            tracing::error!(error=?err, "failed to send scale deployment notification from monitor.");
+                        }
+                    }
+
+                    if let Err(error) = rx.await {
+                        tracing::error!(?error, "scale deployment notification failed at clearinghouse")
+                    }
+                }
             }
             ExecutionEvent::PlanFailed { plan, error_metric_label } => {
                 tracing::error!(%error_metric_label, ?plan, "plan execution failed.");

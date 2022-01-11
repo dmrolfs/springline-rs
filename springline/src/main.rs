@@ -3,7 +3,7 @@ use std::future::Future;
 use clap::Parser;
 use once_cell::sync::Lazy;
 use proctor::elements::Telemetry;
-use proctor::graph::stage::{SourceStage, WithMonitor};
+use proctor::graph::stage::{ActorSourceApi, SourceStage, WithApi, WithMonitor};
 use prometheus::Registry;
 use settings_loader::SettingsLoader;
 use springline::engine::{http, Autoscaler};
@@ -31,8 +31,12 @@ fn main() -> Result<()> {
         let patch_replicas = PatchReplicas::new(kube, &settings.execution);
         let rx_execution_monitor = patch_replicas.rx_monitor();
 
+        let (monitor_feedback_source, tx_monitor_feedback) = make_monitor_source_and_api();
+
         let engine = Autoscaler::builder("springline")
             .add_source(make_settings_source(&settings))
+            .add_source(monitor_feedback_source)
+            .add_monitor_feedback(tx_monitor_feedback)
             .with_metrics_registry(&METRICS_REGISTRY)
             .with_execution(Box::new(patch_replicas))
             .with_execution_monitor(rx_execution_monitor)
@@ -65,6 +69,12 @@ fn make_settings_source(settings: &Settings) -> impl SourceStage<Telemetry> {
     });
 
     proctor::graph::stage::Sequence::new("settings_source", vec![settings_telemetry.into()])
+}
+
+fn make_monitor_source_and_api() -> (impl SourceStage<Telemetry>, ActorSourceApi<Telemetry>) {
+    let src = proctor::graph::stage::ActorSource::new("monitor_source");
+    let tx_api = src.tx_api();
+    (src, tx_api)
 }
 
 #[tracing::instrument(level="info", skip(future), fields(worker_threads=num_cpus::get()))]

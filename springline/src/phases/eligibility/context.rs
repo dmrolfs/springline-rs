@@ -122,6 +122,8 @@ impl TaskStatus {
     }
 }
 
+pub const CLUSTER__LAST_DEPLOYMENT: &str = "cluster.last_deployment";
+
 #[derive(PolarClass, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ClusterStatus {
     // todo: options to source property:

@@ -7,7 +7,7 @@ use monitor::Monitor;
 use pretty_snowflake::MachineNode;
 use proctor::elements::Telemetry;
 use proctor::graph::stage::tick::TickApi;
-use proctor::graph::stage::{SinkStage, SourceStage, WithApi, WithMonitor};
+use proctor::graph::stage::{ActorSourceApi, SinkStage, SourceStage, WithApi, WithMonitor};
 use proctor::graph::{Connect, Graph, SinkShape, SourceShape};
 use proctor::phases::collection::ClearinghouseApi;
 use proctor::{ProctorResult, SharedString};
@@ -51,6 +51,7 @@ pub struct Building {
     execution: Option<Box<dyn SinkStage<GovernanceOutcome>>>,
     rx_execution_monitor: Option<execution::ExecutionMonitor<GovernanceOutcome>>,
     metrics_registry: Option<&'static Registry>,
+    tx_monitor_feedback: Option<ActorSourceApi<Telemetry>>,
 }
 impl EngineState for Building {}
 
@@ -61,6 +62,7 @@ impl fmt::Debug for Building {
             .field("nr_sources", &self.sources.len())
             .field("metrics_registry", &self.metrics_registry)
             .field("rx_execution_monitor", &self.rx_execution_monitor)
+            .field("tx_monitor_feedback", &self.tx_monitor_feedback)
             .finish()
     }
 }
@@ -100,6 +102,12 @@ impl AutoscaleEngine<Building> {
     pub fn add_source(mut self, source: impl SourceStage<Telemetry>) -> Self {
         tracing::info!(?source, "adding source to autoscale engine.");
         self.inner.sources.push(Box::new(source));
+        self
+    }
+
+    pub fn add_monitor_feedback(mut self, tx_monitor_feedback: ActorSourceApi<Telemetry>) -> Self {
+        tracing::info!("adding feedback api for monitor");
+        self.inner.tx_monitor_feedback = Some(tx_monitor_feedback);
         self
     }
 
@@ -176,6 +184,7 @@ impl AutoscaleEngine<Building> {
                     rx_plan_monitor,
                     rx_governance_monitor,
                     self.inner.rx_execution_monitor,
+                    self.inner.tx_monitor_feedback,
                 ),
                 metrics_registry: self.inner.metrics_registry,
             },
