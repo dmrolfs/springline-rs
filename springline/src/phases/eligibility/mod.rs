@@ -1,5 +1,3 @@
-pub use context::{ClusterStatus, EligibilityContext, TaskStatus};
-pub use policy::{EligibilityPolicy, EligibilityTemplateData};
 use proctor::elements::{PolicyFilterEvent, PolicySubscription};
 use proctor::phases::collection::{ClearinghouseSubscriptionMagnet, SubscriptionChannel};
 use proctor::phases::policy_phase::PolicyPhase;
@@ -9,8 +7,16 @@ use crate::phases::{self, MetricCatalog};
 use crate::settings::EligibilitySettings;
 use crate::Result;
 
-pub mod context;
-pub mod policy;
+mod context;
+mod policy;
+
+pub use context::CLUSTER__LAST_DEPLOYMENT;
+pub use context::{ClusterStatus, EligibilityContext, TaskStatus};
+pub(crate) use context::{
+    ELIGIBILITY_CTX_ALL_SINKS_HEALTHY, ELIGIBILITY_CTX_CLUSTER_IS_DEPLOYING, ELIGIBILITY_CTX_CLUSTER_LAST_DEPLOYMENT,
+    ELIGIBILITY_CTX_TASK_LAST_FAILURE,
+};
+pub use policy::{EligibilityPolicy, EligibilityTemplateData};
 
 pub type EligibilityOutcome = MetricCatalog;
 pub type EligibilityApi = proctor::elements::PolicyFilterApi<EligibilityContext, EligibilityTemplateData>;

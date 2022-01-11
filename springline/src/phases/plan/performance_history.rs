@@ -6,8 +6,7 @@ use proctor::elements::RecordsPerSecond;
 use serde::{Deserialize, Serialize};
 use splines::{Interpolation, Key, Spline};
 
-use super::Benchmark;
-use crate::phases::plan::benchmark::BenchmarkRange;
+use crate::phases::plan::benchmark::{Benchmark, BenchmarkRange};
 use crate::phases::plan::MINIMAL_CLUSTER_SIZE;
 
 // expect the spread of cluster size will be small and certainly not unbounded. If history is

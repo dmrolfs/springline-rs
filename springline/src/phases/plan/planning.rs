@@ -6,11 +6,12 @@ use proctor::error::PlanError;
 use proctor::graph::Outlet;
 use proctor::phases::plan::Planning;
 
-use crate::phases::decision::result::DecisionResult;
-use crate::phases::plan::{
-    ForecastCalculator, PerformanceHistory, PerformanceRepository, ScalePlan, WorkloadForecastBuilder,
-    PLANNING_FORECASTED_WORKLOAD,
-};
+use crate::phases::decision::DecisionResult;
+use crate::phases::plan::forecast::{ForecastCalculator, WorkloadForecastBuilder};
+use crate::phases::plan::model::ScalePlan;
+use crate::phases::plan::performance_history::PerformanceHistory;
+use crate::phases::plan::performance_repository::PerformanceRepository;
+use crate::phases::plan::PLANNING_FORECASTED_WORKLOAD;
 use crate::phases::MetricCatalog;
 
 // todo: this needs to be worked into Plan stage...  Need to determine best design
@@ -67,7 +68,7 @@ impl<F: WorkloadForecastBuilder> FlinkPlanning<F> {
     pub async fn update_performance_history(
         &mut self, decision: &DecisionResult<MetricCatalog>,
     ) -> Result<(), PlanError> {
-        use crate::phases::decision::result::DecisionResult as DR;
+        use crate::phases::decision::DecisionResult as DR;
 
         let update_repository = match decision {
             DR::NoAction(_) => false,
@@ -216,10 +217,9 @@ mod tests {
 
     use super::*;
     use crate::phases::plan::forecast::*;
-    use crate::phases::plan::{
-        make_performance_repository, Benchmark, PerformanceRepositorySettings, PerformanceRepositoryType,
-        MINIMAL_CLUSTER_SIZE,
-    };
+    use crate::phases::plan::performance_repository::*;
+    use crate::phases::plan::benchmark::*;
+    use crate::phases::plan::{ PerformanceRepositorySettings, MINIMAL_CLUSTER_SIZE, };
     use crate::phases::{ClusterMetrics, FlowMetrics, JobHealthMetrics};
 
     type TestPlanning = FlinkPlanning<LeastSquaresWorkloadForecastBuilder>;

@@ -3,7 +3,7 @@ use proctor::error::PlanError;
 use crate::phases::MetricCatalog;
 
 mod calculator;
-pub mod least_squares;
+mod least_squares;
 mod regression;
 mod ridge_regression;
 
@@ -11,7 +11,8 @@ use std::cmp::Ordering;
 use std::fmt::Debug;
 
 pub use calculator::ForecastCalculator;
-pub use least_squares::{LeastSquaresWorkloadForecastBuilder, SpikeSettings};
+pub use least_squares::{SpikeSettings, LeastSquaresWorkloadForecastBuilder};
+
 #[cfg(test)]
 use mockall::{automock, predicate::*};
 use proctor::elements::{Point, RecordsPerSecond, Timestamp};

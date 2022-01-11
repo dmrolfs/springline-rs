@@ -5,7 +5,7 @@ use num_traits::pow;
 use proctor::elements::{Point, RecordsPerSecond, Timestamp};
 use proctor::error::PlanError;
 
-use crate::phases::plan::WorkloadForecast;
+use crate::phases::plan::forecast::WorkloadForecast;
 
 #[derive(Debug)]
 pub struct LinearRegression {

@@ -13,7 +13,7 @@ use proctor::error::PlanError;
 use serde::{Deserialize, Serialize};
 use serde_json::error::Category;
 
-use crate::phases::plan::PerformanceHistory;
+use crate::phases::plan::performance_history::PerformanceHistory;
 
 #[tracing::instrument(level = "info")]
 pub fn make_performance_repository(
@@ -232,7 +232,7 @@ mod tests {
     use tokio_test::block_on;
 
     use super::*;
-    use crate::phases::plan::Benchmark;
+    use crate::phases::plan::benchmark::Benchmark;
 
     async fn do_test_repository<'a>(
         repo: &mut impl PerformanceRepository, jobs_a_b: (&'a str, &'a str),

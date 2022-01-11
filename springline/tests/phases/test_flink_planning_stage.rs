@@ -12,11 +12,9 @@ use proctor::graph::stage::{self, WithApi, WithMonitor};
 use proctor::graph::{Connect, Graph, SinkShape, SourceShape};
 use proctor::phases::plan::Plan;
 use proctor::ProctorResult;
-use springline::phases::decision::result::DecisionResult;
-use springline::phases::plan::{
-    make_performance_repository, FlinkPlanning, LeastSquaresWorkloadForecastBuilder, PerformanceRepositorySettings,
-    PerformanceRepositoryType, ScalePlan, SpikeSettings,
-};
+use springline::phases::decision::DecisionResult;
+use springline::phases::plan::{ PerformanceRepositorySettings, PerformanceRepositoryType, ScalePlan, SpikeSettings, FlinkPlanning, LeastSquaresWorkloadForecastBuilder};
+use springline::phases::plan::make_performance_repository;
 use springline::phases::{ClusterMetrics, FlowMetrics, JobHealthMetrics, MetricCatalog};
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;

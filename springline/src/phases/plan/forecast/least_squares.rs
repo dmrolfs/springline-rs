@@ -7,8 +7,8 @@ use serde::{Deserialize, Serialize};
 
 use super::WorkloadForecast;
 use crate::phases::plan::forecast::regression::{LinearRegression, QuadraticRegression};
+use crate::phases::plan::forecast::WorkloadForecastBuilder;
 use crate::phases::plan::forecast::WorkloadMeasurement;
-use crate::phases::plan::WorkloadForecastBuilder;
 
 #[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SpikeSettings {

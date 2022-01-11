@@ -3,7 +3,7 @@ use chrono::{DateTime, TimeZone, Utc};
 use claim::{assert_err, assert_ok};
 use proctor::elements::RecordsPerSecond;
 use proctor::error::PlanError;
-use springline::phases::plan::forecast::{least_squares, LeastSquaresWorkloadForecastBuilder, WorkloadForecastBuilder};
+use springline::phases::plan::{LeastSquaresWorkloadForecastBuilder, WorkloadForecastBuilder};
 use springline::phases::plan::{SpikeSettings, WorkloadMeasurement};
 
 fn make_measurement(timestamp: DateTime<Utc>, workload: RecordsPerSecond) -> WorkloadMeasurement {
@@ -57,7 +57,7 @@ fn test_flink_plan_calculator() -> anyhow::Result<()> {
         SpikeSettings {
             std_deviation_threshold: 5.,
             influence: 0.5,
-            length_threshold: least_squares::SPIKE_LENGTH_THRESHOLD,
+            length_threshold: 3,
         },
     );
 

@@ -55,6 +55,7 @@ impl<F: WorkloadForecastBuilder> ForecastCalculator<F> {
         self.forecast_builder.add_observation(measurement)
     }
 
+    #[allow(dead_code)]
     pub fn clear(&mut self) {
         self.forecast_builder.clear()
     }

@@ -56,26 +56,18 @@ pub fn register_metrics(registry: &Registry) -> Result<()> {
     registry.register(Box::new(collection::flink::FLINK_COLLECTION_TIME.clone()))?;
     registry.register(Box::new(collection::flink::FLINK_COLLECTION_ERRORS.clone()))?;
 
-    registry.register(Box::new(
-        eligibility::context::ELIGIBILITY_CTX_ALL_SINKS_HEALTHY.clone(),
-    ))?;
-    registry.register(Box::new(
-        eligibility::context::ELIGIBILITY_CTX_TASK_LAST_FAILURE.clone(),
-    ))?;
-    registry.register(Box::new(
-        eligibility::context::ELIGIBILITY_CTX_CLUSTER_IS_DEPLOYING.clone(),
-    ))?;
-    registry.register(Box::new(
-        eligibility::context::ELIGIBILITY_CTX_CLUSTER_LAST_DEPLOYMENT.clone(),
-    ))?;
+    registry.register(Box::new(eligibility::ELIGIBILITY_CTX_ALL_SINKS_HEALTHY.clone()))?;
+    registry.register(Box::new(eligibility::ELIGIBILITY_CTX_TASK_LAST_FAILURE.clone()))?;
+    registry.register(Box::new(eligibility::ELIGIBILITY_CTX_CLUSTER_IS_DEPLOYING.clone()))?;
+    registry.register(Box::new(eligibility::ELIGIBILITY_CTX_CLUSTER_LAST_DEPLOYMENT.clone()))?;
 
     registry.register(Box::new(plan::PLANNING_FORECASTED_WORKLOAD.clone()))?;
     registry.register(Box::new(plan::PLANNING_RECOVERY_WORKLOAD_RATE.clone()))?;
     registry.register(Box::new(plan::PLANNING_VALID_WORKLOAD_RATE.clone()))?;
 
-    registry.register(Box::new(governance::context::GOVERNANCE_CTX_MIN_CLUSTER_SIZE.clone()))?;
-    registry.register(Box::new(governance::context::GOVERNANCE_CTX_MAX_CLUSTER_SIZE.clone()))?;
-    registry.register(Box::new(governance::context::GOVERNANCE_CTX_MAX_SCALING_STEP.clone()))?;
+    registry.register(Box::new(governance::GOVERNANCE_CTX_MIN_CLUSTER_SIZE.clone()))?;
+    registry.register(Box::new(governance::GOVERNANCE_CTX_MAX_CLUSTER_SIZE.clone()))?;
+    registry.register(Box::new(governance::GOVERNANCE_CTX_MAX_SCALING_STEP.clone()))?;
 
     registry.register(Box::new(monitor::ELIGIBILITY_IS_ELIGIBLE_FOR_SCALING.clone()))?;
     registry.register(Box::new(monitor::DECISION_SHOULD_PLAN_FOR_SCALING.clone()))?;

@@ -14,7 +14,7 @@ use proctor::phases::collection::{self, Collect, SubscriptionRequirements, Telem
 use proctor::phases::policy_phase::PolicyPhase;
 use proctor::{AppData, ProctorContext};
 use serde::de::DeserializeOwned;
-use springline::phases::decision::result::{make_decision_transform, DecisionResult, DECISION_DIRECTION};
+use springline::phases::decision::{DecisionResult, DECISION_DIRECTION, make_decision_transform};
 use springline::phases::decision::{DecisionContext, DecisionPolicy, DecisionTemplateData};
 use springline::phases::MetricCatalog;
 use springline::settings::DecisionSettings;

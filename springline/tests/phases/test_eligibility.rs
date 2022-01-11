@@ -11,7 +11,7 @@ use proctor::graph::stage::{self, WithApi, WithMonitor};
 use proctor::graph::{Connect, Graph, SinkShape, SourceShape};
 use proctor::phases::policy_phase::PolicyPhase;
 use proctor::ProctorIdGenerator;
-use springline::phases::eligibility::context::{ClusterStatus, TaskStatus};
+use springline::phases::eligibility::{ClusterStatus, TaskStatus};
 use springline::phases::eligibility::{EligibilityContext, EligibilityPolicy, EligibilityTemplateData};
 use springline::phases::{ClusterMetrics, FlowMetrics, JobHealthMetrics, MetricCatalog};
 use springline::settings::EligibilitySettings;

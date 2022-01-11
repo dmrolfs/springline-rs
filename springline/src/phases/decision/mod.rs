@@ -1,14 +1,17 @@
-pub mod context;
-pub mod policy;
-pub mod result;
+mod context;
+mod policy;
+mod result;
 
-pub use context::*;
-pub use policy::*;
+pub use context::DecisionContext;
+pub use policy::{DecisionPolicy, DecisionTemplateData};
+pub use result::DecisionResult;
+pub use result::{DECISION_DIRECTION, DECISION_REASON};
+pub use result::make_decision_transform;
+
 use proctor::elements::PolicySubscription;
 use proctor::phases::collection::{ClearinghouseSubscriptionMagnet, SubscriptionChannel};
 use proctor::phases::policy_phase::PolicyPhase;
 use proctor::SharedString;
-use result::{make_decision_transform, DecisionResult};
 
 use crate::phases::eligibility::EligibilityOutcome;
 use crate::phases::{self, MetricCatalog};
@@ -32,8 +35,9 @@ pub async fn make_decision_phase(
     let name: SharedString = "decision".into();
     let policy = DecisionPolicy::new(settings);
     let subscription = policy.subscription(name.as_ref(), settings);
-    let decision =
-        Box::new(PolicyPhase::with_transform(name.clone(), policy, make_decision_transform(name.into_owned())).await?);
+    let decision = Box::new(
+        PolicyPhase::with_transform(name.clone(), policy, make_decision_transform(name.into_owned())).await?,
+    );
 
     let channel = phases::subscribe_policy_phase(subscription, &decision, magnet).await?;
     Ok((decision, channel))

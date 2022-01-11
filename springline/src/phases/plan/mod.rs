@@ -1,35 +1,31 @@
-pub use benchmark::Benchmark;
-pub use forecast::*;
-pub use performance_history::PerformanceHistory;
-pub use performance_repository::{
-    make_performance_repository, PerformanceFileRepository, PerformanceMemoryRepository, PerformanceRepository,
-    PerformanceRepositorySettings, PerformanceRepositoryType,
-};
-pub use planning::FlinkPlanning;
+use crate::phases::decision::DecisionResult;
+use crate::phases::MetricCatalog;
+use crate::settings::PlanSettings;
+use crate::Result;
+use once_cell::sync::Lazy;
 use proctor::graph::{Connect, SinkShape, SourceShape};
 use proctor::phases::collection::{ClearinghouseSubscriptionMagnet, SubscriptionChannel, TelemetrySubscription};
 use proctor::phases::plan::{Plan, Planning};
 use proctor::SharedString;
-
-use crate::phases::decision::result::DecisionResult;
-use crate::phases::MetricCatalog;
-use crate::settings::PlanSettings;
-use crate::Result;
+use prometheus::Gauge;
 
 mod benchmark;
-pub mod forecast;
+mod forecast;
 mod model;
 mod performance_history;
 mod performance_repository;
 mod planning;
 
+pub use forecast::{WorkloadMeasurement, SpikeSettings, WorkloadForecastBuilder, LeastSquaresWorkloadForecastBuilder};
 pub use model::ScalePlan;
-use once_cell::sync::Lazy;
-use prometheus::Gauge;
+pub use performance_repository::{PerformanceRepositorySettings, PerformanceRepositoryType};
+pub use planning::FlinkPlanning;
+
+pub use performance_repository::make_performance_repository;
 
 const MINIMAL_CLUSTER_SIZE: usize = 1;
 
-pub type PlanningStrategy = FlinkPlanning<LeastSquaresWorkloadForecastBuilder>;
+pub type PlanningStrategy = planning::FlinkPlanning<forecast::LeastSquaresWorkloadForecastBuilder>;
 pub type PlanningOutcome = <PlanningStrategy as Planning>::Out;
 pub type PlanningPhase = (Box<Plan<PlanningStrategy>>, SubscriptionChannel<MetricCatalog>);
 pub type PlanEvent = proctor::phases::plan::PlanEvent<MetricCatalog, DecisionResult<MetricCatalog>, ScalePlan>;
@@ -91,8 +87,8 @@ async fn do_make_planning_strategy(name: &str, plan_settings: &PlanSettings) -> 
         plan_settings.restart,
         plan_settings.max_catch_up,
         plan_settings.recovery_valid,
-        LeastSquaresWorkloadForecastBuilder::new(plan_settings.window, plan_settings.spike),
-        make_performance_repository(&plan_settings.performance_repository)?,
+        forecast::LeastSquaresWorkloadForecastBuilder::new(plan_settings.window, plan_settings.spike),
+        performance_repository::make_performance_repository(&plan_settings.performance_repository)?,
     )
     .await?;
     Ok(planning)

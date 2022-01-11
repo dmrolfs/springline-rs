@@ -10,7 +10,7 @@ use settings_loader::common::http::HttpServerSettings;
 use settings_loader::{Environment, LoadingOptions, SettingsError, SettingsLoader};
 
 use crate::phases::decision::DecisionTemplateData;
-use crate::phases::eligibility::policy::EligibilityTemplateData;
+use crate::phases::eligibility::EligibilityTemplateData;
 
 mod collection_settings;
 mod engine_settings;
