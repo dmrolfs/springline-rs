@@ -161,7 +161,7 @@ pub struct ClusterMetrics {
     #[serde(rename = "cluster.nr_task_managers")]
     pub nr_task_managers: u32,
 
-    /// The recent CPU usage of the JVM.
+    /// The recent CPU usage of the JVM for all taskmanagers.
     /// - Flink REST API /taskmanagers/metrics?get=Status.JVM.CPU.LOAD&agg=max
     #[polar(attribute)]
     #[serde(rename = "cluster.task_cpu_load")]
