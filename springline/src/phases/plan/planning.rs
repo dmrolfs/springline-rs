@@ -216,10 +216,10 @@ mod tests {
     use tokio_test::block_on;
 
     use super::*;
+    use crate::phases::plan::benchmark::*;
     use crate::phases::plan::forecast::*;
     use crate::phases::plan::performance_repository::*;
-    use crate::phases::plan::benchmark::*;
-    use crate::phases::plan::{ PerformanceRepositorySettings, MINIMAL_CLUSTER_SIZE, };
+    use crate::phases::plan::{PerformanceRepositorySettings, MINIMAL_CLUSTER_SIZE};
     use crate::phases::{ClusterMetrics, FlowMetrics, JobHealthMetrics};
 
     type TestPlanning = FlinkPlanning<LeastSquaresWorkloadForecastBuilder>;

@@ -11,7 +11,7 @@ use std::cmp::Ordering;
 use std::fmt::Debug;
 
 pub use calculator::ForecastCalculator;
-pub use least_squares::{SpikeSettings, LeastSquaresWorkloadForecastBuilder};
+pub use least_squares::{LeastSquaresWorkloadForecastBuilder, SpikeSettings};
 
 #[cfg(test)]
 use mockall::{automock, predicate::*};

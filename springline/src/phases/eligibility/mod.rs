@@ -35,6 +35,10 @@ pub async fn make_eligibility_phase(
     let policy = EligibilityPolicy::new(settings);
     let subscription = policy.subscription(name.as_ref(), settings);
     let eligibility = Box::new(PolicyPhase::strip_policy_outcome(name.as_ref(), policy).await?);
+    //todo: with governance policy work, add transform step to notify of eligibility decline reason
+    // let eligibility = Box::new(
+    //     PolicyPhase::with_transform(name.clone(), policy, make_eligibility_transform(name.into_owned())).await?
+    // );
     let channel = phases::subscribe_policy_phase(subscription, &eligibility, magnet).await?;
     Ok((eligibility, channel))
 }

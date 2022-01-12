@@ -164,7 +164,7 @@ impl TestFlow {
         assert_ok!(self.push_data(data).await);
         claim::assert_matches!(
             &*assert_ok!(self.rx_governance_monitor.recv().await),
-            &PolicyFilterEvent::ItemPassed(_)
+            &PolicyFilterEvent::ItemPassed(_, _)
         );
 
         let result = assert_ok!(

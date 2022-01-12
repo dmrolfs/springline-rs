@@ -14,7 +14,7 @@ use proctor::phases::collection::{self, Collect, SubscriptionRequirements, Telem
 use proctor::phases::policy_phase::PolicyPhase;
 use proctor::{AppData, ProctorContext};
 use serde::de::DeserializeOwned;
-use springline::phases::decision::{DecisionResult, DECISION_DIRECTION, make_decision_transform};
+use springline::phases::decision::{make_decision_transform, DecisionResult, DECISION_DIRECTION};
 use springline::phases::decision::{DecisionContext, DecisionPolicy, DecisionTemplateData};
 use springline::phases::MetricCatalog;
 use springline::settings::DecisionSettings;
@@ -297,7 +297,7 @@ async fn test_decision_carry_policy_result() -> anyhow::Result<()> {
     tracing::warn!(?item, "DMR-A.1: created item to push.");
     flow.push_telemetry(item).await?;
     let event = &*flow.recv_policy_event().await?;
-    claim::assert_matches!(event, &elements::PolicyFilterEvent::ItemPassed(_));
+    claim::assert_matches!(event, &elements::PolicyFilterEvent::ItemPassed(_, _));
     tracing::info!("DMR-waiting for item to reach sink...");
     assert!(
         flow.check_sink_accumulation("first", Duration::from_millis(250), |acc| acc.len() == 1)
@@ -308,7 +308,7 @@ async fn test_decision_carry_policy_result() -> anyhow::Result<()> {
     // let telemetry = Telemetry::try_from(&item);
     flow.push_telemetry(item).await?;
     let event = &*flow.recv_policy_event().await?;
-    claim::assert_matches!(event, &elements::PolicyFilterEvent::ItemBlocked(_));
+    claim::assert_matches!(event, &elements::PolicyFilterEvent::ItemBlocked(_, _));
     tracing::warn!(?event, "DMR-C: item dropped confirmed");
 
     let item = make_test_item(&ts, std::f64::consts::LN_2, 1.0);
@@ -413,7 +413,7 @@ async fn test_decision_common() -> anyhow::Result<()> {
 
     flow.push_telemetry(item).await?;
     let event = &*flow.recv_policy_event().await?;
-    claim::assert_matches!(event, &elements::PolicyFilterEvent::ItemPassed(_));
+    claim::assert_matches!(event, &elements::PolicyFilterEvent::ItemPassed(_, _));
     tracing::info!("DMR-waiting for *first* item to reach sink...");
     assert!(
         flow.check_sink_accumulation("first", Duration::from_millis(500), |acc| acc.len() == 1)
@@ -424,7 +424,7 @@ async fn test_decision_common() -> anyhow::Result<()> {
     flow.push_telemetry(item).await?;
     let event = &*flow.recv_policy_event().await?;
     tracing::info!(?event, "DMR-2: TESTING policy event for blockage");
-    claim::assert_matches!(event, &elements::PolicyFilterEvent::ItemBlocked(_));
+    claim::assert_matches!(event, &elements::PolicyFilterEvent::ItemBlocked(_, _));
     tracing::warn!(?event, "DMR-C: item dropped confirmed");
 
     let item = make_test_item(&ts, std::f64::consts::LN_2, 1.0);

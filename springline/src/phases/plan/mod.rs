@@ -16,7 +16,7 @@ mod performance_history;
 mod performance_repository;
 mod planning;
 
-pub use forecast::{WorkloadMeasurement, SpikeSettings, WorkloadForecastBuilder, LeastSquaresWorkloadForecastBuilder};
+pub use forecast::{LeastSquaresWorkloadForecastBuilder, SpikeSettings, WorkloadForecastBuilder, WorkloadMeasurement};
 pub use model::ScalePlan;
 pub use performance_repository::{PerformanceRepositorySettings, PerformanceRepositoryType};
 pub use planning::FlinkPlanning;

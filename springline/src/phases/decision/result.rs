@@ -9,7 +9,6 @@ use proctor::graph::stage::{self, ThroughStage};
 use proctor::{AppData, ProctorContext, SharedString};
 
 pub const DECISION_DIRECTION: &str = "direction";
-pub const DECISION_REASON: &str = "reason";
 pub const SCALE_UP: &str = "up";
 pub const SCALE_DOWN: &str = "down";
 pub const NO_ACTION: &str = "no action";

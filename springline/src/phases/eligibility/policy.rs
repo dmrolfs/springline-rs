@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use oso::{Oso, PolarClass};
+use oso::{Oso, PolarClass, PolarValue};
 use proctor::elements::{PolicySource, PolicySubscription, QueryPolicy, QueryResult, Telemetry};
 use proctor::error::PolicyError;
 use proctor::phases::collection::TelemetrySubscription;
@@ -8,7 +8,7 @@ use proctor::{ProctorContext, SharedString};
 use serde::{Deserialize, Serialize};
 
 use super::context::{ClusterStatus, EligibilityContext, TaskStatus};
-use crate::phases::{MetricCatalog, UpdateMetrics};
+use crate::phases::{MetricCatalog, UpdateMetrics, REASON};
 use crate::settings::EligibilitySettings;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -76,7 +76,7 @@ impl PolicySubscription for EligibilityPolicy {
 }
 
 impl QueryPolicy for EligibilityPolicy {
-    type Args = (Self::Item, Self::Context);
+    type Args = (Self::Item, Self::Context, PolarValue);
     type Context = EligibilityContext;
     type Item = MetricCatalog;
     type TemplateData = EligibilityTemplateData;
@@ -110,7 +110,7 @@ impl QueryPolicy for EligibilityPolicy {
     }
 
     fn make_query_args(&self, item: &Self::Item, context: &Self::Context) -> Self::Args {
-        (item.clone(), context.clone())
+        (item.clone(), context.clone(), PolarValue::Variable(REASON.to_string()))
     }
 
     fn query_policy(&self, engine: &Oso, args: Self::Args) -> Result<QueryResult, PolicyError> {

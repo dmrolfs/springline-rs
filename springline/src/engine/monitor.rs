@@ -127,41 +127,37 @@ impl Monitor {
 
     fn handle_eligibility_event(event: Arc<EligibilityEvent>, loaded: &mut BitFlags<PhaseLoaded>) {
         match &*event {
-            EligibilityEvent::ItemPassed(item) => {
-                tracing::info!(?event, correlation=?item.correlation_id, "data item passed eligibility");
+            EligibilityEvent::ItemPassed(_item, query_result) => {
+                tracing::info!(?event, ?query_result, "data item passed eligibility");
                 ELIGIBILITY_IS_ELIGIBLE_FOR_SCALING.set(true as i64)
             }
-            EligibilityEvent::ItemBlocked(item) => {
-                tracing::info!(?event, correlation=?item.correlation_id, "data item blocked in eligibility");
+            EligibilityEvent::ItemBlocked(_item, query_result) => {
+                tracing::info!(?event, ?query_result, "data item blocked in eligibility");
                 ELIGIBILITY_IS_ELIGIBLE_FOR_SCALING.set(false as i64)
             }
-            EligibilityEvent::ContextChanged(Some(ctx)) if !loaded.contains(PhaseLoaded::Eligibility) => {
-                tracing::info!(?event, correlation=?ctx.correlation_id, "Eligibility Phase initial context loaded!");
+            EligibilityEvent::ContextChanged(Some(_ctx)) if !loaded.contains(PhaseLoaded::Eligibility) => {
+                tracing::info!(?event, "Eligibility Phase initial context loaded!");
                 loaded.toggle(PhaseLoaded::Eligibility);
             }
-            ignored_event => {
-                tracing::warn!(?ignored_event, "ignoring eligibility event");
-            }
+            ignored_event => tracing::warn!(?ignored_event, "ignoring eligibility event"),
         }
     }
 
     fn handle_decision_event(event: Arc<DecisionEvent>, loaded: &mut BitFlags<PhaseLoaded>) {
         match &*event {
-            DecisionEvent::ItemPassed(item) => {
-                tracing::info!(?event, correlation=?item.correlation_id, "data item passed scaling decision");
+            DecisionEvent::ItemPassed(_item, query_result) => {
+                tracing::info!(?event, ?query_result, "data item passed scaling decision");
                 DECISION_SHOULD_PLAN_FOR_SCALING.set(true as i64)
             }
-            DecisionEvent::ItemBlocked(item) => {
-                tracing::info!(?event, correlation=?item.correlation_id, "data item blocked by scaling decision");
+            DecisionEvent::ItemBlocked(_item, query_result) => {
+                tracing::info!(?event, ?query_result, "data item blocked by scaling decision");
                 DECISION_SHOULD_PLAN_FOR_SCALING.set(false as i64)
             }
-            DecisionEvent::ContextChanged(Some(ctx)) if !loaded.contains(PhaseLoaded::Decision) => {
-                tracing::info!(?event, correlation=?ctx.correlation_id, "Decision Phase initial context loaded!");
+            DecisionEvent::ContextChanged(Some(_ctx)) if !loaded.contains(PhaseLoaded::Decision) => {
+                tracing::info!(?event, "Decision Phase initial context loaded!");
                 loaded.toggle(PhaseLoaded::Decision);
             }
-            ignored_event => {
-                tracing::warn!(?ignored_event, "ignoring decision event");
-            }
+            ignored_event => tracing::warn!(?ignored_event, "ignoring decision event"),
         }
     }
 
@@ -203,21 +199,19 @@ impl Monitor {
 
     fn handle_governance_event(event: Arc<GovernanceEvent>, loaded: &mut BitFlags<PhaseLoaded>) {
         match &*event {
-            GovernanceEvent::ItemPassed(item) => {
-                tracing::info!(?event, correlation=?item.correlation_id, "data item passed governance");
+            GovernanceEvent::ItemPassed(_item, query_result) => {
+                tracing::info!(?event, ?query_result, "data item passed governance");
                 GOVERNANCE_PLAN_ACCEPTED.set(true as i64)
             }
-            GovernanceEvent::ItemBlocked(item) => {
-                tracing::info!(?event, correlation=?item.correlation_id, "data item blocked in governance");
+            GovernanceEvent::ItemBlocked(_item, query_result) => {
+                tracing::info!(?event, ?query_result, "data item blocked in governance");
                 GOVERNANCE_PLAN_ACCEPTED.set(false as i64)
             }
-            GovernanceEvent::ContextChanged(Some(ctx)) if !loaded.contains(PhaseLoaded::Governance) => {
-                tracing::info!(?event, correlation=?ctx.correlation_id, "Governance Phase initial context loaded!");
+            GovernanceEvent::ContextChanged(Some(_ctx)) if !loaded.contains(PhaseLoaded::Governance) => {
+                tracing::info!(?event, "Governance Phase initial context loaded!");
                 loaded.toggle(PhaseLoaded::Governance);
             }
-            ignored_event => {
-                tracing::warn!(?ignored_event, "ignoring governance event");
-            }
+            ignored_event => tracing::warn!(?ignored_event, "ignoring governance event"),
         }
     }
 

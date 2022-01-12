@@ -414,6 +414,7 @@ mod tests {
                 max_healthy_lag: Some(133_f64),
                 min_healthy_lag: Some(0.0),
                 max_healthy_cpu_load: Some(0.7),
+                min_healthy_cpu_load: None,
                 max_healthy_heap_memory_load: Some(0.5),
                 max_healthy_network_io_utilization: Some(0.6),
                 custom: HashMap::default(),
@@ -496,8 +497,16 @@ mod tests {
                         sources: HashMap::default(),
                         ..SETTINGS.collection.clone()
                     },
+                    eligibility: EligibilitySettings {
+                        template_data: Some(EligibilityTemplateData {
+                            cooling_secs: Some(900),
+                            ..SETTINGS.eligibility.template_data.clone().unwrap()
+                        }),
+                        ..SETTINGS.eligibility.clone()
+                    },
                     decision: DecisionSettings {
                         template_data: Some(DecisionTemplateData {
+                            max_healthy_heap_memory_load: Some(0.5),
                             ..SETTINGS.decision.template_data.clone().unwrap()
                         }),
                         ..SETTINGS.decision.clone()
@@ -549,9 +558,18 @@ mod tests {
                     sources: HashMap::default(),
                     ..SETTINGS.collection.clone()
                 },
+                eligibility: EligibilitySettings {
+                    template_data: Some(EligibilityTemplateData {
+                        cooling_secs: Some(60),
+                        ..SETTINGS.eligibility.template_data.clone().unwrap()
+                    }),
+                    ..SETTINGS.eligibility.clone()
+                },
                 decision: DecisionSettings {
                     template_data: Some(DecisionTemplateData {
-                        max_healthy_heap_memory_load: Some(0.25),
+                        max_healthy_cpu_load: Some(0.001),
+                        min_healthy_cpu_load: Some(0.0002),
+                        max_healthy_heap_memory_load: Some(0.5),
                         ..SETTINGS.decision.template_data.clone().unwrap()
                     }),
                     ..SETTINGS.decision.clone()

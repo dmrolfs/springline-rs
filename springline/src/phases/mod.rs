@@ -17,6 +17,8 @@ pub mod governance;
 pub mod metric_catalog;
 pub mod plan;
 
+pub const REASON: &str = "reason";
+
 pub trait UpdateMetrics {
     fn update_metrics_for(name: SharedString) -> UpdateMetricsFn;
 }

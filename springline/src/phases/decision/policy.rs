@@ -8,8 +8,8 @@ use proctor::{ProctorContext, ProctorIdGenerator, SharedString};
 use serde::{Deserialize, Serialize};
 
 use super::context::DecisionContext;
-use crate::phases::decision::result::{DECISION_DIRECTION, DECISION_REASON};
-use crate::phases::{MetricCatalog, UpdateMetrics};
+use crate::phases::decision::result::DECISION_DIRECTION;
+use crate::phases::{MetricCatalog, UpdateMetrics, REASON};
 use crate::settings::DecisionSettings;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -32,6 +32,9 @@ pub struct DecisionTemplateData {
     pub max_healthy_cpu_load: Option<f64>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub min_healthy_cpu_load: Option<f64>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub max_healthy_heap_memory_load: Option<f64>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -48,6 +51,7 @@ impl Default for DecisionTemplateData {
             max_healthy_lag: None,
             min_healthy_lag: None,
             max_healthy_cpu_load: None,
+            min_healthy_cpu_load: None,
             max_healthy_heap_memory_load: None,
             max_healthy_network_io_utilization: None,
             custom: HashMap::default(),
@@ -137,7 +141,7 @@ impl QueryPolicy for DecisionPolicy {
             item.clone(),
             context.clone(),
             PolarValue::Variable(DECISION_DIRECTION.to_string()),
-            PolarValue::Variable(DECISION_REASON.to_string()),
+            PolarValue::Variable(REASON.to_string()),
         )
     }
 

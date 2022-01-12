@@ -157,7 +157,7 @@ impl TestFlow {
         assert_ok!(self.push_data(data).await);
         claim::assert_matches!(
             &*assert_ok!(self.rx_stage_monitor.recv().await),
-            &PolicyFilterEvent::ItemPassed(_)
+            &PolicyFilterEvent::ItemPassed(_, _)
         );
 
         let result = assert_ok!(
@@ -317,7 +317,7 @@ async fn test_flink_eligibility_happy_flow() -> anyhow::Result<()> {
 
     let event = &*assert_ok!(flow.recv_policy_event().await);
     tracing::info!(?event, "received policy event.");
-    claim::assert_matches!(event, &elements::PolicyFilterEvent::ItemPassed(_));
+    claim::assert_matches!(event, &elements::PolicyFilterEvent::ItemPassed(_, _));
     Ok(())
 }
 
@@ -366,7 +366,7 @@ async fn test_flink_eligibility_block_on_active_deployment() -> anyhow::Result<(
 
     let event = &*assert_ok!(flow.recv_policy_event().await);
     tracing::info!(?event, "received policy event.");
-    claim::assert_matches!(event, &elements::PolicyFilterEvent::ItemBlocked(_));
+    claim::assert_matches!(event, &elements::PolicyFilterEvent::ItemBlocked(_, _));
     Ok(())
 }
 
@@ -419,7 +419,7 @@ async fn test_flink_eligibility_block_on_recent_deployment() -> anyhow::Result<(
 
     let event = &*assert_ok!(flow.recv_policy_event().await);
     tracing::info!(?event, "received policy event.");
-    claim::assert_matches!(event, &elements::PolicyFilterEvent::ItemBlocked(_));
+    claim::assert_matches!(event, &elements::PolicyFilterEvent::ItemBlocked(_, _));
 
     Ok(())
 }
@@ -473,7 +473,7 @@ async fn test_flink_eligibility_block_on_recent_failure() -> anyhow::Result<()> 
 
     let event = &*assert_ok!(flow.recv_policy_event().await);
     tracing::info!(?event, "received policy event.");
-    claim::assert_matches!(event, &elements::PolicyFilterEvent::ItemBlocked(_));
+    claim::assert_matches!(event, &elements::PolicyFilterEvent::ItemBlocked(_, _));
 
     Ok(())
 }

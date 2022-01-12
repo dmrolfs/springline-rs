@@ -1,7 +1,9 @@
+use std::error::Error;
 use std::fmt;
 use std::sync::Arc;
 
-use super::{protocol, EXECUTION_ERRORS, EXECUTION_SCALE_ACTION_COUNT};
+use super::protocol;
+use crate::phases::execution::ExecutionEvent;
 use crate::phases::governance::GovernanceOutcome;
 use crate::phases::MetricCatalog;
 use crate::settings::{ExecutionSettings, KubernetesWorkloadResource};
@@ -10,6 +12,7 @@ use cast_trait_object::dyn_upcast;
 use either::{Either, Left, Right};
 use k8s_openapi::api::apps::v1::StatefulSet;
 use pretty_snowflake::Id;
+use proctor::elements::Timestamp;
 use proctor::error::{MetricLabel, ProctorError};
 use proctor::graph::stage::Stage;
 use proctor::graph::{Inlet, Port, SinkShape, PORT_DATA};
@@ -48,6 +51,7 @@ impl MetricLabel for ExecutionPhaseError {
 
 pub trait ExecutionScalePlan {
     fn correlation(&self) -> Id<MetricCatalog>;
+    fn recv_timestamp(&self) -> Timestamp;
     fn current_replicas(&self) -> usize;
     fn target_replicas(&self) -> usize;
 }
@@ -55,6 +59,10 @@ pub trait ExecutionScalePlan {
 impl ExecutionScalePlan for GovernanceOutcome {
     fn correlation(&self) -> Id<MetricCatalog> {
         self.correlation_id.clone()
+    }
+
+    fn recv_timestamp(&self) -> Timestamp {
+        self.recv_timestamp
     }
 
     fn current_replicas(&self) -> usize {
@@ -164,39 +172,57 @@ where
         while let Some(plan) = inlet.recv().await {
             let _timer = proctor::graph::stage::start_stage_eval_time(STAGE_NAME);
 
-            tracing::warn!(scale_plan=?plan, "EXECUTE SCALE PLAN!");
-            Self::track_execution(&plan);
-            if let Err(err) = Self::patch_replicas_for(&plan, &stateful_set, workload_resource).await {
-                tracing::error!(error=?err, ?plan, "failed to patch replicas for plan");
-                Self::track_execution_errors(&plan, err);
+            match Self::patch_replicas_for(&plan, &stateful_set, workload_resource).await {
+                Ok(_) => {
+                    tracing::warn!(scale_plan=?plan, "EXECUTE SCALE PLAN: task manager replicas patched!");
+                    self.notify_execution_succeeded(plan)
+                }
+                Err(err) => {
+                    tracing::error!(error=?err, ?plan, "failed to patch replicas for plan");
+                    self.notify_execution_failed(plan, err);
+                }
             }
         }
 
         Ok(())
     }
 
-    #[inline]
-    fn track_execution(plan: &In) {
-        EXECUTION_SCALE_ACTION_COUNT
-            .with_label_values(&[
-                plan.current_replicas().to_string().as_str(),
-                plan.target_replicas().to_string().as_str(),
-            ])
-            .inc();
+    #[tracing::instrument(level = "info", skip(self))]
+    fn notify_execution_succeeded(&self, plan: In) {
+        let correlation = plan.correlation();
+        let recv_timestamp = plan.recv_timestamp();
+        match self
+            .tx_execution_monitor
+            .send(Arc::new(ExecutionEvent::PlanExecuted(plan)))
+        {
+            Ok(recipients) => {
+                tracing::info!(?correlation, %recv_timestamp, "published PlanExecuted to {} recipients", recipients);
+            }
+            Err(err) => {
+                tracing::error!(error=?err, ?correlation, %recv_timestamp, "failed to publish PlanExecuted event.");
+            }
+        }
     }
 
-    #[inline]
-    fn track_execution_errors<E>(plan: &In, error: E)
+    #[tracing::instrument(level = "info", skip(self, error))]
+    fn notify_execution_failed<E>(&self, plan: In, error: E)
     where
-        E: MetricLabel,
+        E: Error + MetricLabel,
     {
-        EXECUTION_ERRORS
-            .with_label_values(&[
-                plan.current_replicas().to_string().as_str(),
-                plan.target_replicas().to_string().as_str(),
-                error.label().as_ref(),
-            ])
-            .inc()
+        let correlation = plan.correlation();
+        let recv_timestamp = plan.recv_timestamp();
+        let label = error.label();
+        match self.tx_execution_monitor.send(Arc::new(ExecutionEvent::PlanFailed {
+            plan,
+            error_metric_label: label.into(),
+        })) {
+            Ok(recipients) => {
+                tracing::info!(?correlation, %recv_timestamp, execution_error=?error, "published PlanFailed to {} recipients", recipients);
+            }
+            Err(err) => {
+                tracing::error!(?correlation, %recv_timestamp, execution_error=?error, publish_error=?err, "failed to publish PlanFailed event.");
+            }
+        }
     }
 
     #[tracing::instrument(level = "info", skip(stateful_set))]
