@@ -415,7 +415,7 @@ mod tests {
                 min_healthy_lag: Some(0.0),
                 max_healthy_cpu_load: Some(0.7),
                 min_healthy_cpu_load: None,
-                max_healthy_heap_memory_load: Some(0.5),
+                max_healthy_heap_memory_load: None,
                 max_healthy_network_io_utilization: Some(0.6),
                 custom: HashMap::default(),
             }),
@@ -506,7 +506,7 @@ mod tests {
                     },
                     decision: DecisionSettings {
                         template_data: Some(DecisionTemplateData {
-                            max_healthy_heap_memory_load: Some(0.5),
+                            // max_healthy_heap_memory_load: Some(0.5),
                             ..SETTINGS.decision.template_data.clone().unwrap()
                         }),
                         ..SETTINGS.decision.clone()
@@ -567,9 +567,9 @@ mod tests {
                 },
                 decision: DecisionSettings {
                     template_data: Some(DecisionTemplateData {
-                        max_healthy_cpu_load: Some(0.001),
-                        min_healthy_cpu_load: Some(0.0002),
-                        max_healthy_heap_memory_load: Some(0.5),
+                        max_healthy_cpu_load: Some(0.0008),
+                        min_healthy_cpu_load: Some(0.0003),
+                        // max_healthy_heap_memory_load: Some(0.5),
                         ..SETTINGS.decision.template_data.clone().unwrap()
                     }),
                     ..SETTINGS.decision.clone()

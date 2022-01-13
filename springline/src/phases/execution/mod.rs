@@ -32,10 +32,13 @@ pub(crate) static EXECUTION_SCALE_ACTION_COUNT: Lazy<IntCounterVec> = Lazy::new(
 });
 
 pub(crate) static PIPELINE_CYCLE_TIME: Lazy<Histogram> = Lazy::new(|| {
-    Histogram::with_opts(HistogramOpts::new(
+    Histogram::with_opts(
+        HistogramOpts::new(
         "pipeline_cycle_time",
         "cycle time processing for execution actions taken on telemetry from receipt in seconds",
-    ))
+        )
+            .buckets(vec![1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 7.5, 10.0])
+    )
     .expect("failed creating pipeline_cycle_time metric")
 });
 

@@ -39,7 +39,6 @@
             max_healthy_lag: 133.0,
             min_healthy_lag: 0.0,
             max_healthy_cpu_load: 0.7,
-            max_healthy_heap_memory_load: 0.5,
             max_healthy_network_io_utilization: 0.60,
         ),
     ),

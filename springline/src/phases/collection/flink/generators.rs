@@ -30,7 +30,8 @@ pub(crate) static FLINK_COLLECTION_TIME: Lazy<HistogramVec> = Lazy::new(|| {
         HistogramOpts::new(
             "flink_collection_time",
             "Time spent collecting telemetry from Flink in seconds",
-        ),
+        )
+            .buckets(vec![0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0, 5.0]),
         &["flink_scope"],
     )
     .expect("failed creating flink_collection_time metric")
