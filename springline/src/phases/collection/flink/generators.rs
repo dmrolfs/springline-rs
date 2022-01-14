@@ -1,86 +1,29 @@
 use std::collections::{HashMap, HashSet};
-use std::fmt;
 use std::pin::Pin;
 
 use futures::future::Future;
 use itertools::Itertools;
-use once_cell::sync::Lazy;
 use proctor::elements::{telemetry, Telemetry, TelemetryValue};
-use proctor::error::{CollectionError, MetricLabel, TelemetryError};
+use proctor::error::{CollectionError, TelemetryError};
 use proctor::graph::stage::{self, SourceStage, WithApi};
 use proctor::graph::{Connect, Graph, SinkShape, SourceShape};
 use proctor::phases::collection::TelemetrySource;
 use proctor::SharedString;
-use prometheus::{HistogramOpts, HistogramTimer, HistogramVec, IntCounterVec, Opts};
 use reqwest::Method;
-use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
+use reqwest_middleware::ClientBuilder;
 use reqwest_retry::policies::ExponentialBackoff;
 use reqwest_retry::RetryTransientMiddleware;
 use tokio::task::JoinHandle;
 use tracing_futures::Instrument;
-use url::Url;
 
 use super::api_model::{build_telemetry, FlinkMetricResponse, JobSummary};
 use super::{Aggregation, FlinkScope, MetricOrder, STD_METRIC_ORDERS};
 use crate::phases::collection::flink::api_model::{JobDetail, JobId, VertexId};
+use crate::phases::collection::flink::TaskContext;
 use crate::settings::FlinkSettings;
-
-pub(crate) static FLINK_COLLECTION_TIME: Lazy<HistogramVec> = Lazy::new(|| {
-    HistogramVec::new(
-        HistogramOpts::new(
-            "flink_collection_time",
-            "Time spent collecting telemetry from Flink in seconds",
-        )
-            .buckets(vec![0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0, 5.0]),
-        &["flink_scope"],
-    )
-    .expect("failed creating flink_collection_time metric")
-});
-
-pub(crate) static FLINK_COLLECTION_ERRORS: Lazy<IntCounterVec> = Lazy::new(|| {
-    IntCounterVec::new(
-        Opts::new("flink_collection_errors", "Number of errors collecting Flink telemetry"),
-        &["flink_scope", "error_type"],
-    )
-    .expect("failed creating flink_collection_errors metric")
-});
-
-#[inline]
-pub(crate) fn start_flink_collection_timer(scope: &FlinkScope) -> HistogramTimer {
-    FLINK_COLLECTION_TIME
-        .with_label_values(&[scope.to_string().as_str()])
-        .start_timer()
-}
-
-#[inline]
-pub(crate) fn track_flink_errors(scope: &FlinkScope, error: &CollectionError) {
-    FLINK_COLLECTION_ERRORS
-        .with_label_values(&[scope.to_string().as_str(), error.label().as_ref()])
-        .inc()
-}
-
-#[inline]
-fn track_generator_errors<T>(scope: FlinkScope, result: &Result<T, CollectionError>) {
-    if let Err(err) = result {
-        tracing::error!(%scope, error=?err, "failed to collect Flink {} telemetry part", scope);
-        track_flink_errors(&scope, err);
-    }
-}
 
 pub type Generator<T> =
     Box<(dyn Fn() -> Pin<Box<(dyn Future<Output = Result<T, CollectionError>> + Send)>> + Send + Sync)>;
-
-#[derive(Clone)]
-pub struct TaskContext {
-    pub client: ClientWithMiddleware,
-    pub base_url: Url,
-}
-
-impl fmt::Debug for TaskContext {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("TaskContext").field("base_url", &self.base_url).finish()
-    }
-}
 
 #[tracing::instrument(level = "info", skip(name, settings), fields(source_name=%name.as_ref()))]
 pub async fn make_flink_metrics_source(
@@ -161,13 +104,7 @@ fn make_flink_generator(
             let tasks: Vec<JoinHandle<Result<Telemetry, CollectionError>>> = generators
                 .into_iter()
                 .flatten()
-                .map(|(scope, gen)| {
-                    tokio::spawn(async move {
-                        let gen_result = gen().await;
-                        track_generator_errors(scope, &gen_result);
-                        gen_result
-                    })
-                })
+                .map(|(scope, gen)| tokio::spawn(async move { super::identity_and_track_errors(scope, gen().await) }))
                 .collect::<Vec<_>>();
 
             // let results : Result<Vec<Result<Telemetry, CollectionError>>, tokio::task::JoinError> =
@@ -181,9 +118,9 @@ fn make_flink_generator(
             match results {
                 Err(err) => {
                     tracing::error!(error=?err, "failed to join Flink telemetry collection tasks");
-                    track_flink_errors(&FlinkScope::Other, &err.into());
+                    super::track_flink_errors(&FlinkScope::Other, &err.into());
                     None
-                }
+                },
                 Ok(results) => {
                     let mut telemetry = Telemetry::default();
                     for (idx, result) in results.into_iter().enumerate() {
@@ -191,16 +128,16 @@ fn make_flink_generator(
                             Ok(t) => {
                                 tracing::info!(acc_telemetry=?telemetry, new_part=?t, "adding flink telemetry part");
                                 telemetry.extend(t);
-                            }
+                            },
                             Err(err) => {
                                 // error metric (and dup log) recorded in decorating `with_error_tracking()`
                                 tracing::error!(error=?err, "failed to collect Flink telemetry portion:{}", idx);
-                            }
+                            },
                         }
                     }
 
                     Some(telemetry)
-                }
+                },
             }
         });
 
@@ -210,25 +147,12 @@ fn make_flink_generator(
     Ok(gen)
 }
 
-#[inline]
-fn log_response(label: &str, response: &reqwest::Response) {
-    const PREAMBLE: &str = "flink telemetry response received";
-    let status = response.status();
-    if status.is_success() || status.is_informational() {
-        tracing::info!(?response, "{}:{}", PREAMBLE, label);
-    } else if status.is_client_error() {
-        tracing::error!(?response, "{}:{}", PREAMBLE, label);
-    } else {
-        tracing::warn!(?response, "{}:{}", PREAMBLE, label);
-    }
-}
-
 pub fn make_root_scope_collection_generator(
     scope: FlinkScope, orders: &[MetricOrder], context: &TaskContext,
 ) -> Option<Generator<Telemetry>> {
     let scope_rep = SharedString::Owned(scope.to_string().to_lowercase());
     let scopes = maplit::hashset! { scope };
-    let (metric_orders, agg_span) = distill_metric_orders_and_agg(&scopes, orders);
+    let (metric_orders, agg_span) = super::distill_metric_orders_and_agg(&scopes, orders);
     if metric_orders.is_empty() {
         return None;
     }
@@ -251,19 +175,19 @@ pub fn make_root_scope_collection_generator(
 
         Box::pin(
             async move {
-                let _timer = start_flink_collection_timer(&scope);
+                let _timer = super::start_flink_collection_timer(&scope);
                 let scope_resp = client.request(Method::GET, url).send().await.map_err(|err| {
                     let collection_err: CollectionError = err.into();
-                    track_flink_errors(&scope, &collection_err);
+                    super::track_flink_errors(&scope, &collection_err);
                     collection_err
                 })?;
 
-                log_response(format!("{} scope response", scope_rep2).as_str(), &scope_resp);
+                super::log_response(format!("{} scope response", scope_rep2).as_str(), &scope_resp);
                 let scope_resp: FlinkMetricResponse = scope_resp.json().await?;
 
                 build_telemetry(scope_resp, &orders).map_err(|err| {
                     let collection_err: CollectionError = err.into();
-                    track_flink_errors(&scope, &collection_err);
+                    super::track_flink_errors(&scope, &collection_err);
                     collection_err
                 })
             }
@@ -291,20 +215,20 @@ pub fn make_taskmanagers_admin_generator(
 
         Box::pin(
             async move {
-                let _timer = start_flink_collection_timer(&FlinkScope::TaskManagers);
+                let _timer = super::start_flink_collection_timer(&FlinkScope::TaskManagers);
 
                 let taskmanagers_admin_resp = client.request(Method::GET, url).send().await.map_err(|err| {
                     let collection_err: CollectionError = err.into();
-                    track_flink_errors(&FlinkScope::TaskManagers, &collection_err);
+                    super::track_flink_errors(&FlinkScope::TaskManagers, &collection_err);
                     collection_err
                 })?;
 
-                log_response("taskmanagers admin", &taskmanagers_admin_resp);
+                super::log_response("taskmanagers admin", &taskmanagers_admin_resp);
 
                 let taskmanagers_admin_resp: serde_json::Value =
                     taskmanagers_admin_resp.json().await.map_err(|err| {
                         let collection_err: CollectionError = err.into();
-                        track_flink_errors(&FlinkScope::TaskManagers, &collection_err);
+                        super::track_flink_errors(&FlinkScope::TaskManagers, &collection_err);
                         collection_err
                     })?;
 
@@ -328,7 +252,7 @@ pub fn make_vertex_collection_generator(orders: &[MetricOrder], context: &TaskCo
     };
 
     let orders = orders.to_vec();
-    let (metric_orders, _agg_span) = distill_metric_orders_and_agg(&scopes, &orders);
+    let (metric_orders, _agg_span) = super::distill_metric_orders_and_agg(&scopes, &orders);
     if metric_orders.is_empty() {
         return None;
     }
@@ -342,7 +266,7 @@ pub fn make_vertex_collection_generator(orders: &[MetricOrder], context: &TaskCo
 
         Box::pin(
             async move {
-                let _timer = start_flink_collection_timer(&FlinkScope::Task);
+                let _timer = super::start_flink_collection_timer(&FlinkScope::Task);
                 let active_jobs = query_active_jobs(&context).await?;
 
                 let mut job_details = Vec::with_capacity(active_jobs.len());
@@ -396,7 +320,7 @@ fn merge_telemetry_per_order(
                     let merger = combo.combine(values.clone()).map(|combined| combined.map(|c| (metric, c)));
                     tracing::info!(?merger, ?values, %agg, "merging metric values per order aggregator");
                     merger
-                }
+                },
             },
         )
         .collect::<Result<Vec<_>, TelemetryError>>()?
@@ -414,7 +338,7 @@ async fn query_active_jobs(context: &TaskContext) -> Result<Vec<JobSummary>, Col
     url.path_segments_mut().unwrap().push("jobs");
 
     let active_jobs_resp = context.client.request(Method::GET, url).send().await?;
-    log_response("active jobs", &active_jobs_resp);
+    super::log_response("active jobs", &active_jobs_resp);
     let active_jobs_resp: serde_json::Value = active_jobs_resp.json().await?;
 
     let jobs: Vec<JobSummary> = match active_jobs_resp.get("jobs") {
@@ -430,7 +354,7 @@ async fn query_job_details(job_id: &str, context: &TaskContext) -> Result<JobDet
     let mut url = context.base_url.clone();
     url.path_segments_mut().unwrap().push("jobs").push(job_id);
     let job_details_resp = context.client.request(Method::GET, url).send().await?;
-    log_response("job details", &job_details_resp);
+    super::log_response("job details", &job_details_resp);
     let job_details_resp = job_details_resp.json().await?;
     Ok(job_details_resp)
 }
@@ -452,7 +376,7 @@ async fn query_vertex_telemetry(
     let mut url2 = url.clone();
 
     let available_metrics_resp = context.client.request(Method::GET, url).send().await?;
-    log_response("available metrics", &available_metrics_resp);
+    super::log_response("available metrics", &available_metrics_resp);
     let available_metrics_resp: FlinkMetricResponse = available_metrics_resp.json().await?;
 
     let available_vertex_metrics: HashSet<String> = available_metrics_resp
@@ -477,7 +401,7 @@ async fn query_vertex_telemetry(
         }
 
         let vertex_telemetry_resp = context.client.request(Method::GET, url2).send().await?;
-        log_response("job vertex telemetry", &vertex_telemetry_resp);
+        super::log_response("job vertex telemetry", &vertex_telemetry_resp);
         let vertex_telemetry_resp: FlinkMetricResponse = vertex_telemetry_resp.json().await?;
         build_telemetry(vertex_telemetry_resp, metric_orders)?
     } else {
@@ -505,23 +429,6 @@ fn agg_span_for(target: &HashSet<String>, metric_orders: &HashMap<String, Vec<Me
     result
 }
 
-/// Distills orders to requested scope and reorganizes them (order has metric+agg) to metric and
-/// consolidates aggregation span.
-fn distill_metric_orders_and_agg(
-    scopes: &HashSet<FlinkScope>, orders: &[MetricOrder],
-) -> (HashMap<String, Vec<MetricOrder>>, HashSet<Aggregation>) {
-    let mut order_domain = HashMap::default();
-    let mut agg_span = HashSet::default();
-
-    for o in orders.iter().filter(|o| scopes.contains(&o.scope)) {
-        agg_span.insert(o.agg);
-        let entry = order_domain.entry(o.metric.clone()).or_insert_with(Vec::new);
-        entry.push(o.clone());
-    }
-
-    (order_domain, agg_span)
-}
-
 #[cfg(test)]
 mod tests {
     use std::borrow::Cow;
@@ -539,11 +446,13 @@ mod tests {
     use reqwest::header::HeaderMap;
     use serde_json::json;
     use tokio_test::block_on;
+    use url::Url;
     use wiremock::matchers::{method, path};
     use wiremock::{Match, Mock, MockServer, Request, Respond, ResponseTemplate};
 
     use super::*;
     use crate::phases::collection::flink::api_model::{JobId, JobState, TaskState, VertexDetail};
+    use crate::phases::collection::flink::{distill_metric_orders_and_agg, FLINK_COLLECTION_ERRORS, FLINK_COLLECTION_TIME, track_flink_errors};
 
     pub struct RetryResponder(Arc<AtomicU32>, u32, ResponseTemplate, u16);
 
@@ -2177,10 +2086,10 @@ mod tests {
                         if !approx::relative_eq!(*actual, ev) {
                             assert_eq!(*actual, ev, "metric: {}", key);
                         }
-                    }
+                    },
                     actual => {
                         assert_eq!((key, actual), (key, expected_v));
-                    }
+                    },
                 };
                 // assert_eq!((key, actual_v), (key, expected_v));
             }
