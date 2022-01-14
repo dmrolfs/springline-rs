@@ -48,7 +48,7 @@ impl FlinkMetric {
                     ),
                     Ok(value) => {
                         let _ = telemetry.insert(o.telemetry_path.clone(), value);
-                    }
+                    },
                 },
             }
         }
@@ -69,14 +69,14 @@ where
             Some(os) => {
                 satisfied.insert(m.id.clone());
                 m.populate_telemetry(&mut telemetry, os);
-            }
+            },
             None => {
                 tracing::warn!(unexpected_metric=?m, "unexpected metric in response not ordered - adding with minimal translation");
                 m.values.into_iter().for_each(|(agg, val)| {
                     let key = format!("{}{}", m.id, suffix_for(m.id.as_str(), agg));
                     let _ = telemetry.insert(key, val);
                 });
-            }
+            },
         }
     }
 
@@ -111,7 +111,7 @@ fn suffix_for(id: &str, agg: Aggregation) -> String {
         _ => {
             tracing::warn!(%id, %agg, "failed to correlate metric form to known Flink scopes - defaulting to camelCase");
             format!("{}", agg)
-        }
+        },
     }
 }
 

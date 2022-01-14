@@ -25,28 +25,28 @@ pub async fn make_client(settings: &KubernetesSettings) -> Result<Client, Kubern
                 "inferring kubernetes configuration from in-cluster environment or fallback to local kubeconfig."
             );
             Config::infer().await?
-        }
+        },
         LoadKubeConfig::LocalUrl(url) => {
             tracing::info!(
                 ?url,
                 "Config kube with only cluster_url, everything thing else is default."
             );
             Config::new(KubeUrl(url.clone()).into())
-        }
+        },
         LoadKubeConfig::ClusterEnv => {
             tracing::info!("configuring kubernetes client from cluster's environment variables, following the standard API Access from a Pod.");
             Config::from_cluster_env()?
-        }
+        },
         LoadKubeConfig::KubeConfig(options) => {
             tracing::info!("create kuberenetes client config from the default local kubeconfig file.");
             Config::from_kubeconfig(&options.clone().into()).await?
-        }
+        },
         LoadKubeConfig::CustomKubeConfig { kubeconfig, options } => {
             tracing::info!(
                 "Configure the kubernetes client with custom kubeconfig, bypassing the normal config parsing."
             );
             Config::from_custom_kubeconfig(kubeconfig.clone().into(), &options.clone().into()).await?
-        }
+        },
     };
 
     let client = Client::try_from(config)?;

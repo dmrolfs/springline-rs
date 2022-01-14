@@ -79,7 +79,7 @@ impl UpdateMetrics for GovernanceContext {
                 GOVERNANCE_CTX_MIN_CLUSTER_SIZE.set(ctx.min_cluster_size as i64);
                 GOVERNANCE_CTX_MAX_CLUSTER_SIZE.set(ctx.max_cluster_size as i64);
                 GOVERNANCE_CTX_MAX_SCALING_STEP.set(ctx.max_scaling_step as i64);
-            }
+            },
 
             Err(err) => {
                 tracing::warn!(error=?err, %phase_name, "failed to update governance context metrics on subscription: {}", subscription_name);
@@ -87,7 +87,7 @@ impl UpdateMetrics for GovernanceContext {
                     phase_name.as_ref(),
                     &proctor::error::ProctorError::GovernanceError(err.into()),
                 );
-            }
+            },
         };
 
         Box::new(update_fn)

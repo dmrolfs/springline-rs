@@ -380,7 +380,7 @@ impl UpdateMetrics for MetricCatalog {
                 METRIC_CATALOG_CLUSTER_TASK_NETWORK_OUTPUT_QUEUE_LEN.set(catalog.cluster.task_network_output_queue_len);
                 METRIC_CATALOG_CLUSTER_TASK_NETWORK_OUTPUT_POOL_USAGE
                     .set(catalog.cluster.task_network_output_pool_usage);
-            }
+            },
 
             Err(err) => {
                 tracing::warn!(
@@ -388,7 +388,7 @@ impl UpdateMetrics for MetricCatalog {
                     "failed to update data collection metrics on subscription: {}", subscription_name
                 );
                 proctor::track_errors(name.as_ref(), &ProctorError::CollectionError(err.into()));
-            }
+            },
         };
 
         Box::new(update_fn)

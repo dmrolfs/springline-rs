@@ -31,7 +31,7 @@ anyhow = "1.0.52"
 # axum-debug = "0.1.0"
 # cast_trait_object = "0.1.3"
 chrono = "0.4.19"
-clap = { version = "3.0.6", features = ["derive"] }
+clap = { version = "3.0.7", features = ["derive"] }
 # until ron feature and builder fns in *published* config-rs
 config = { git = "https://github.com/dmrolfs/config-rs" } # until ron feature and builder fns in *published* config-rs
 #config = { version = "^0.11", default_features = true, features = ["ron"] }

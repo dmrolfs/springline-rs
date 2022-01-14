@@ -65,22 +65,22 @@ fn transcode(doc: String, from: ConfigFormat, to: ConfigFormat) -> anyhow::Resul
             let mut deser = ron::Deserializer::from_str(&doc)?;
             let mut ser = serde_json::Serializer::new(io::stdout());
             serde_transcode::transcode(&mut deser, &mut ser)?;
-        }
+        },
         (Ron, Yaml) => {
             let mut deser = ron::Deserializer::from_str(&doc)?;
             let mut ser = serde_yaml::Serializer::new(io::stdout());
             serde_transcode::transcode(&mut deser, &mut ser)?;
-        }
+        },
         (Json, Yaml) => {
             let mut deser = serde_json::Deserializer::from_str(&doc);
             let mut ser = serde_yaml::Serializer::new(io::stdout());
             serde_transcode::transcode(&mut deser, &mut ser)?;
-        }
+        },
         (Json, Ron) => {
             let mut deser = serde_json::Deserializer::from_str(&doc);
             let mut ser = ron::Serializer::new(io::stdout(), None, false)?;
             serde_transcode::transcode(&mut deser, &mut ser)?;
-        }
+        },
         (from, to) => unimplemented!("combination not support: {:?} => {:?}", from, to),
     }
 

@@ -52,7 +52,7 @@ impl UpdateMetrics for DecisionContext {
             Ok(_ctx) => {
                 // DECISION_CTX_ALL_SINKS_HEALTHY.set(ctx.all_sinks_healthy as i64);
                 // DECISION_CTX_NR_TASK_MANAGERS.set(ctx.nr_task_managers as i64);
-            }
+            },
 
             Err(err) => {
                 tracing::warn!(error=?err, %phase_name, "failed to update decision context metrics on subscription: {}", subscription_name);
@@ -60,7 +60,7 @@ impl UpdateMetrics for DecisionContext {
                     phase_name.as_ref(),
                     &proctor::error::ProctorError::DecisionError(err.into()),
                 );
-            }
+            },
         };
 
         Box::new(update_fn)

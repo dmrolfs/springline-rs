@@ -41,10 +41,10 @@ impl AppMenu {
                         eprintln!("action {} failed: {:?}", label, err);
                         break Ok(());
                     }
-                }
+                },
                 None => {
                     eprintln!("I don't know how you got here, but your selection is not understood.");
-                }
+                },
             }
         }
     }

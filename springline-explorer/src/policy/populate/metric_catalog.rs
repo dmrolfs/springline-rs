@@ -135,7 +135,7 @@ impl PopulateData for MetricCatalog {
                         .interact()?;
 
                     lens.set(&mut telemetry, value)?;
-                }
+                },
             };
 
             do_loop(telemetry, facets)
@@ -206,10 +206,10 @@ impl Lens for MetricCatalogRootLens {
                     snowflake,
                     &IdPrettifier::<AlphabetCodec>::default(),
                 );
-            }
+            },
             Self::Timestamp => {
                 telemetry.recv_timestamp = Timestamp::from_str(value_rep.as_ref())?;
-            }
+            },
         }
 
         Ok(())
@@ -282,14 +282,14 @@ impl Lens for FlowLens {
                 } else {
                     Some(i64::from_str(value_rep.as_ref())?)
                 };
-            }
+            },
             Self::InputMillisBehindLatest => {
                 telemetry.input_millis_behind_latest = if value_rep.as_ref().is_empty() {
                     None
                 } else {
                     Some(i64::from_str(value_rep.as_ref())?)
                 };
-            }
+            },
         }
 
         Ok(())
@@ -334,16 +334,16 @@ impl Lens for ClusterLens {
             Self::TaskNrThreads => telemetry.task_nr_threads = i64::from_str(value_rep.as_ref())?,
             Self::TaskNetworkInputQueueLen => {
                 telemetry.task_network_input_queue_len = f64::from_str(value_rep.as_ref())?
-            }
+            },
             Self::TaskNetworkInputPoolUsage => {
                 telemetry.task_network_input_pool_usage = f64::from_str(value_rep.as_ref())?
-            }
+            },
             Self::TaskNetworkOutputQueueLen => {
                 telemetry.task_network_output_queue_len = f64::from_str(value_rep.as_ref())?
-            }
+            },
             Self::TaskNetworkOutputPoolUsage => {
                 telemetry.task_network_output_pool_usage = f64::from_str(value_rep.as_ref())?
-            }
+            },
         }
 
         Ok(())

@@ -184,7 +184,7 @@ mod tests {
                 for (k, v) in old_kvs {
                     reset_env(k, v);
                 }
-            }
+            },
             Err(err) => {
                 eprintln!("W_END[{}]: Err - resetting env to: {:?}", label, old_kvs);
                 for (k, v) in old_kvs {
@@ -192,7 +192,7 @@ mod tests {
                 }
                 drop(guard);
                 panic::resume_unwind(err);
-            }
+            },
         };
         for (k, v) in old_kvs_2 {
             eprintln!(

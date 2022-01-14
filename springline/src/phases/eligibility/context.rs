@@ -84,7 +84,7 @@ impl UpdateMetrics for EligibilityContext {
                 ELIGIBILITY_CTX_ALL_SINKS_HEALTHY.set(ctx.all_sinks_healthy as i64);
                 ELIGIBILITY_CTX_CLUSTER_IS_DEPLOYING.set(ctx.cluster_status.is_deploying as i64);
                 ELIGIBILITY_CTX_CLUSTER_LAST_DEPLOYMENT.set(ctx.cluster_status.last_deployment.timestamp());
-            }
+            },
 
             Err(err) => {
                 tracing::warn!(
@@ -92,7 +92,7 @@ impl UpdateMetrics for EligibilityContext {
                     "failed to update eligibility context metrics on subscription: {}", subscription_name
                 );
                 proctor::track_errors(phase_name.as_ref(), &ProctorError::EligibilityError(err.into()));
-            }
+            },
         };
 
         Box::new(update_fn)

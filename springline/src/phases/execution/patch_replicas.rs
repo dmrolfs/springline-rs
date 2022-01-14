@@ -176,11 +176,11 @@ where
                 Ok(_) => {
                     tracing::warn!(scale_plan=?plan, "EXECUTE SCALE PLAN: task manager replicas patched!");
                     self.notify_execution_succeeded(plan)
-                }
+                },
                 Err(err) => {
                     tracing::error!(error=?err, ?plan, "failed to patch replicas for plan");
                     self.notify_execution_failed(plan, err);
-                }
+                },
             }
         }
 
@@ -197,10 +197,10 @@ where
         {
             Ok(recipients) => {
                 tracing::info!(?correlation, %recv_timestamp, "published PlanExecuted to {} recipients", recipients);
-            }
+            },
             Err(err) => {
                 tracing::error!(error=?err, ?correlation, %recv_timestamp, "failed to publish PlanExecuted event.");
-            }
+            },
         }
     }
 
@@ -218,10 +218,10 @@ where
         })) {
             Ok(recipients) => {
                 tracing::info!(?correlation, %recv_timestamp, execution_error=?error, "published PlanFailed to {} recipients", recipients);
-            }
+            },
             Err(err) => {
                 tracing::error!(?correlation, %recv_timestamp, execution_error=?error, publish_error=?err, "failed to publish PlanFailed event.");
-            }
+            },
         }
     }
 

@@ -110,15 +110,15 @@ where
                         eprintln!("action {} failed: {:?}", style(label).bold().red(), err);
                         return Err(err);
                     }
-                }
+                },
                 Some((_, None)) => {
                     eprintln!("\nreturning...\n");
                     break;
-                }
+                },
                 None => {
                     eprintln!("I don't know how you got here, but your selection is not understood.");
                     break;
-                }
+                },
             }
         }
 

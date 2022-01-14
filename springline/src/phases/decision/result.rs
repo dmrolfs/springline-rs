@@ -54,7 +54,7 @@ where
                             direction => {
                                 tracing::warn!(%direction, "unknown direction determined by policy - NoAction");
                                 DecisionResult::NoAction(outcome.item.clone())
-                            }
+                            },
                         })
                         .unwrap_or_else(|| {
                             tracing::warn!("no direction determined by policy - NoAction");

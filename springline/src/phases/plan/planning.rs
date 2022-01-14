@@ -75,11 +75,11 @@ impl<F: WorkloadForecastBuilder> FlinkPlanning<F> {
             DR::ScaleUp(metrics) => {
                 self.performance_history.add_upper_benchmark(metrics.into());
                 true
-            }
+            },
             DR::ScaleDown(metrics) => {
                 self.performance_history.add_lower_benchmark(metrics.into());
                 true
-            }
+            },
         };
 
         if update_repository {
@@ -275,7 +275,7 @@ mod tests {
                         (x, y)
                     })
                     .collect()
-            }
+            },
 
             SignalType::Sine => {
                 let total = 30;
@@ -287,7 +287,7 @@ mod tests {
                         (x, y)
                     })
                     .collect()
-            }
+            },
         };
 
         points.into_iter().for_each(|(ts, value)| {
