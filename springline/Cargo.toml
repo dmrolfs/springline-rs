@@ -99,3 +99,4 @@ serde_test = "1.0.133"
 serde-transcode = "1.1.1"
 fake = { version = "2.4.3", features = ["chrono"] }
 wiremock = "0.5.10"
+inspect_prometheus = { git = "https://github.com/dmrolfs/inspect_prometheus" }

@@ -452,7 +452,9 @@ mod tests {
 
     use super::*;
     use crate::phases::collection::flink::api_model::{JobId, JobState, TaskState, VertexDetail};
-    use crate::phases::collection::flink::{distill_metric_orders_and_agg, FLINK_COLLECTION_ERRORS, FLINK_COLLECTION_TIME, track_flink_errors};
+    use crate::phases::collection::flink::{
+        distill_metric_orders_and_agg, track_flink_errors, FLINK_COLLECTION_ERRORS, FLINK_COLLECTION_TIME,
+    };
 
     pub struct RetryResponder(Arc<AtomicU32>, u32, ResponseTemplate, u16);
 

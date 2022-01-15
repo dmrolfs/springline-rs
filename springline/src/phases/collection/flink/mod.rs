@@ -1,5 +1,6 @@
 use once_cell::sync::Lazy;
-use proctor::error::{CollectionError, MetricLabel};
+use proctor::elements::Telemetry;
+use proctor::error::{CollectionError, MetricLabel, TelemetryError};
 use prometheus::{HistogramOpts, HistogramTimer, HistogramVec, IntCounterVec, Opts};
 use reqwest_middleware::ClientWithMiddleware;
 use std::collections::{HashMap, HashSet};
@@ -8,9 +9,11 @@ use url::Url;
 
 mod api_model;
 mod collect_scope;
+mod collect_taskmanager_admin;
+mod metric_order;
+
 #[allow(dead_code)]
 mod generators;
-mod metric_order;
 
 pub use generators::make_flink_metrics_source;
 pub use metric_order::{Aggregation, FlinkScope, MetricOrder};
@@ -113,6 +116,18 @@ pub struct TaskContext {
 impl fmt::Debug for TaskContext {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("TaskContext").field("base_url", &self.base_url).finish()
+    }
+}
+
+// This type is also only needed to circumvent the issue cast_trait_object places on forcing the generic Out type.
+// Since Telemetry is only used for this stage, The generic variation is dead.
+pub trait Unpack: Sized {
+    fn unpack(telemetry: Telemetry) -> Result<Self, TelemetryError>;
+}
+
+impl Unpack for Telemetry {
+    fn unpack(telemetry: Telemetry) -> Result<Self, TelemetryError> {
+        Ok(telemetry)
     }
 }
 
