@@ -153,6 +153,8 @@ pub struct FlowMetrics {
     pub input_millis_behind_latest: Option<i64>,
 }
 
+pub const MC_CLUSTER__NR_TASK_MANAGERS: &str = "cluster.nr_task_managers";
+
 #[derive(PolarClass, Default, PartialEq, Clone, Serialize, Deserialize)]
 pub struct ClusterMetrics {
     ///
@@ -324,7 +326,7 @@ impl SubscriptionRequirements for MetricCatalog {
             "flow.records_out_per_sec".into(),
 
             // ClusterMetrics
-            "cluster.nr_task_managers".into(),
+            MC_CLUSTER__NR_TASK_MANAGERS.into(),
             "cluster.task_cpu_load".into(),
             "cluster.task_heap_memory_used".into(),
             "cluster.task_heap_memory_committed".into(),
@@ -731,7 +733,7 @@ mod tests {
                 Token::Str("flow.input_records_lag_max"),
                 Token::Some,
                 Token::I64(314),
-                Token::Str("cluster.nr_task_managers"),
+                Token::Str(MC_CLUSTER__NR_TASK_MANAGERS),
                 Token::U32(4),
                 Token::Str("cluster.task_cpu_load"),
                 Token::F64(0.65),
@@ -813,7 +815,7 @@ mod tests {
                 "flow.records_out_per_sec".to_string() => (0.).to_telemetry(),
                 "flow.input_records_lag_max".to_string() => 314.to_telemetry(),
 
-                "cluster.nr_task_managers".to_string() => 4.to_telemetry(),
+                MC_CLUSTER__NR_TASK_MANAGERS.to_string() => 4.to_telemetry(),
                 "cluster.task_cpu_load".to_string() => (0.65).to_telemetry(),
                 "cluster.task_heap_memory_used".to_string() => (92_987.).to_telemetry(),
                 "cluster.task_heap_memory_committed".to_string() => (103_929_920.).to_telemetry(),

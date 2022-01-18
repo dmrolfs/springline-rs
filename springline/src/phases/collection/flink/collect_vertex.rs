@@ -143,7 +143,7 @@ where
             let collection_and_send: Result<(), CollectionError> = self
                 .outlet
                 .reserve_send(async {
-                    let flink_span = tracing::info_span!("query Flink");
+                    let flink_span = tracing::info_span!("query Flink REST APIs");
 
                     self.query_active_jobs()
                         .and_then(|active_jobs| async {

@@ -20,6 +20,7 @@ use super::api_model::{build_telemetry, FlinkMetricResponse, JobSummary};
 use super::{Aggregation, FlinkScope, MetricOrder, STD_METRIC_ORDERS};
 use crate::phases::collection::flink::api_model::{JobDetail, JobId, VertexId};
 use crate::phases::collection::flink::TaskContext;
+use crate::phases::MC_CLUSTER__NR_TASK_MANAGERS;
 use crate::settings::FlinkSettings;
 
 pub type Generator<T> =
@@ -237,7 +238,7 @@ pub fn make_taskmanagers_admin_generator(
                     .map(|tms| tms.len())
                     .unwrap_or(0);
                 let mut telemetry: telemetry::TableType = HashMap::default();
-                telemetry.insert("cluster.nr_task_managers".to_string(), taskmanagers.into());
+                telemetry.insert(MC_CLUSTER__NR_TASK_MANAGERS.to_string(), taskmanagers.into());
                 Ok(telemetry.into())
             }
             .instrument(tracing::info_span!("collect Flink taskmanagers admin telemetry",)),
@@ -907,7 +908,7 @@ mod tests {
             assert_eq!(
                 actual,
                 maplit::hashmap! {
-                    "cluster.nr_task_managers".to_string() => 2.into(),
+                    MC_CLUSTER__NR_TASK_MANAGERS.to_string() => 2.into(),
                 }
                 .into()
             );
@@ -916,7 +917,7 @@ mod tests {
             assert_eq!(
                 actual,
                 maplit::hashmap! {
-                    "cluster.nr_task_managers".to_string() => 2.into(),
+                    MC_CLUSTER__NR_TASK_MANAGERS.to_string() => 2.into(),
                 }
                 .into()
             );
@@ -2034,7 +2035,7 @@ mod tests {
                 "cluster.task_heap_memory_used".to_string() => heap_used.into(),
                 "cluster.task_heap_memory_committed".to_string() => heap_committed.into(),
                 "cluster.task_nr_threads".to_string() => nr_threads.into(),
-                "cluster.nr_task_managers".to_string() => 2.into(),
+                MC_CLUSTER__NR_TASK_MANAGERS.to_string() => 2.into(),
                 "flow.records_in_per_sec".to_string() => max_num_records_in_per_second.into(),
                 "flow.records_out_per_sec".to_string() => max_num_records_out_per_second.into(),
                 "cluster.task_network_input_queue_len".to_string() => max_buf_input_queue_len.into(),

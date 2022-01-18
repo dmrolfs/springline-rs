@@ -16,7 +16,7 @@ use proctor::{AppData, ProctorContext};
 use serde::de::DeserializeOwned;
 use springline::phases::decision::{make_decision_transform, DecisionResult, DECISION_DIRECTION};
 use springline::phases::decision::{DecisionContext, DecisionPolicy, DecisionTemplateData};
-use springline::phases::MetricCatalog;
+use springline::phases::{MetricCatalog, MC_CLUSTER__NR_TASK_MANAGERS};
 use springline::settings::DecisionSettings;
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
@@ -244,7 +244,7 @@ async fn test_decision_carry_policy_result() -> anyhow::Result<()> {
         .with_required_fields(<MetricCatalog as SubscriptionRequirements>::required_fields())
         .with_optional_fields(maplit::hashset! {
             "all_sinks_healthy",
-            "cluster.nr_task_managers",
+            MC_CLUSTER__NR_TASK_MANAGERS,
         });
 
     let policy = DecisionPolicy::new(&POLICY_SETTINGS.clone().with_source(PolicySource::from_template_string(
@@ -281,7 +281,7 @@ async fn test_decision_carry_policy_result() -> anyhow::Result<()> {
 
     flow.push_context(maplit::hashmap! {
         "all_sinks_healthy" => true.to_telemetry(),
-        "cluster.nr_task_managers" => 4.to_telemetry(),
+        MC_CLUSTER__NR_TASK_MANAGERS => 4.to_telemetry(),
     })
     .await?;
 
@@ -395,7 +395,7 @@ async fn test_decision_common() -> anyhow::Result<()> {
 
     flow.push_context(maplit::hashmap! {
         "all_sinks_healthy" => true.to_telemetry(),
-        "cluster.nr_task_managers" => 4.to_telemetry(),
+        MC_CLUSTER__NR_TASK_MANAGERS => 4.to_telemetry(),
     })
     .await?;
 

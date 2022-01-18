@@ -1,5 +1,6 @@
 use super::{FlinkScope, Unpack};
 use crate::phases::collection::flink::TaskContext;
+use crate::phases::MC_CLUSTER__NR_TASK_MANAGERS;
 use async_trait::async_trait;
 use cast_trait_object::dyn_upcast;
 use futures_util::TryFutureExt;
@@ -106,39 +107,41 @@ where
         url.path_segments_mut().unwrap().push("taskmanagers");
         tracing::info!("url = {:?}", url);
 
-        let outlet = self.outlet.clone();
-        let client = &self.context.client.clone();
+        let url = url.clone();
+        let name = self.name();
+        // let outlet = self.outlet.clone();
+        // let client = &self.context.client.clone();
 
         while self.trigger.recv().await.is_some() {
-            let _stage_timer = stage::start_stage_eval_time(self.name().as_ref());
-
-            let url = url.clone();
+            let _stage_timer = stage::start_stage_eval_time(name.as_ref());
 
             let span = tracing::info_span!("collect Flink taskmanager admin telemetry");
-            let collection_and_send = outlet
-                .reserve_send::<_, CollectionError>(async move {
+            let collection_and_send = self
+                .outlet
+                .reserve_send::<_, CollectionError>(async {
                     // timer spans all retries
                     let _flink_timer = super::start_flink_collection_timer(&SCOPE);
 
-                    let response: Result<usize, CollectionError> = client
-                        .request(Method::GET, url)
+                    let result: Result<Out, CollectionError> = self
+                        .context
+                        .client
+                        .request(Method::GET, url.clone())
                         .send()
-                        .and_then(|resp| {
-                            super::log_response("taskmanager admin response", &resp);
-                            resp.json::<serde_json::Value>().map_err(|err| err.into())
+                        .and_then(|response| {
+                            super::log_response("taskmanager admin response", &response);
+                            response.json::<serde_json::Value>().map_err(|err| err.into())
                         })
-                        .map_err(|err| err.into())
-                        .instrument(tracing::info_span!("Flink REST API", scope=%SCOPE))
+                        .instrument(tracing::info_span!("Flink taskmanager REST API", scope=%SCOPE))
                         .await
+                        .map_err(|err| err.into())
                         .map(|resp: serde_json::Value| {
                             resp["taskmanagers"].as_array().map(|tms| tms.len()).unwrap_or(0)
+                        })
+                        .and_then(|taskmanagers| {
+                            let mut telemetry: telemetry::TableType = HashMap::default();
+                            telemetry.insert(MC_CLUSTER__NR_TASK_MANAGERS.to_string(), taskmanagers.into());
+                            Out::unpack(telemetry.into()).map_err(|err| err.into())
                         });
-
-                    let result = response.and_then(|taskmanagers| {
-                        let mut telemetry: telemetry::TableType = HashMap::default();
-                        telemetry.insert("cluster.nr_task_managers".to_string(), taskmanagers.into());
-                        Out::unpack(telemetry.into()).map_err(|err| err.into())
-                    });
 
                     super::identity_and_track_errors(SCOPE, result)
                 })
@@ -337,7 +340,7 @@ mod tests {
                 let actual: Telemetry = assert_some!(rx_out.recv().await);
                 assert_eq!(
                     actual,
-                    maplit::hashmap! { "cluster.nr_task_managers".to_string() => 2.into(), }.into()
+                    maplit::hashmap! { MC_CLUSTER__NR_TASK_MANAGERS.to_string() => 2.into(), }.into()
                 );
             }
 
