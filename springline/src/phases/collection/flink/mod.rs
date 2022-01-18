@@ -1,5 +1,5 @@
 use once_cell::sync::Lazy;
-use proctor::elements::Telemetry;
+use proctor::elements::telemetry::{self, Telemetry, TelemetryValue};
 use proctor::error::{CollectionError, MetricLabel, TelemetryError};
 use prometheus::{HistogramOpts, HistogramTimer, HistogramVec, IntCounterVec, Opts};
 use reqwest_middleware::ClientWithMiddleware;
@@ -10,11 +10,16 @@ use url::Url;
 mod api_model;
 mod collect_scope;
 mod collect_taskmanager_admin;
+mod collect_vertex;
 mod metric_order;
 
 #[allow(dead_code)]
 mod generators;
 
+pub use collect_vertex::{
+    FLINK_QUERY_ACTIVE_JOBS_TIME, FLINK_QUERY_JOB_DETAIL_TIME, FLINK_QUERY_VERTEX_AVAIL_TELEMETRY_TIME,
+    FLINK_QUERY_VERTEX_METRIC_PICKLIST_TIME, FLINK_QUERY_VERTEX_TELEMETRY_TIME,
+};
 pub use generators::make_flink_metrics_source;
 pub use metric_order::{Aggregation, FlinkScope, MetricOrder};
 
@@ -165,6 +170,9 @@ pub(crate) fn track_flink_errors(scope: &FlinkScope, error: &CollectionError) {
         .inc()
 }
 
+const JOB_SCOPE: &str = "Jobs";
+const TASK_SCOPE: &str = "Tasks";
+
 #[inline]
 fn identity_and_track_errors<T, E>(scope: FlinkScope, data: Result<T, E>) -> Result<T, CollectionError>
 where
@@ -181,11 +189,12 @@ where
     }
 }
 
+type OrdersByMetric = HashMap<String, Vec<MetricOrder>>;
 /// Distills orders to requested scope and reorganizes them (order has metric+agg) to metric and
 /// consolidates aggregation span.
 fn distill_metric_orders_and_agg(
     scopes: &HashSet<FlinkScope>, orders: &[MetricOrder],
-) -> (HashMap<String, Vec<MetricOrder>>, HashSet<Aggregation>) {
+) -> (OrdersByMetric, HashSet<Aggregation>) {
     let mut order_domain = HashMap::default();
     let mut agg_span = HashSet::default();
 
@@ -196,6 +205,44 @@ fn distill_metric_orders_and_agg(
     }
 
     (order_domain, agg_span)
+}
+
+fn collect_metric_points(metric_points: &mut HashMap<String, Vec<TelemetryValue>>, vertex_telemetry: Telemetry) {
+    for (metric, vertex_val) in vertex_telemetry.into_iter() {
+        metric_points.entry(metric).or_insert_with(Vec::default).push(vertex_val);
+    }
+}
+
+#[tracing::instrument(level = "info", skip(orders))]
+fn merge_telemetry_per_order(
+    metric_points: HashMap<String, Vec<TelemetryValue>>, orders: &[MetricOrder],
+) -> Result<Telemetry, TelemetryError> {
+    // to avoid repeated linear searches, reorg strategy data based on metrics
+    let mut telemetry_agg = HashMap::with_capacity(orders.len());
+    for o in orders {
+        telemetry_agg.insert(o.telemetry_path.as_str(), o.agg);
+    }
+
+    // merge via order aggregation
+    let telemetry: Telemetry = metric_points
+        .into_iter()
+        .map(
+            |(metric, values)| match telemetry_agg.get(metric.as_str()).map(|agg| (agg, agg.combinator())) {
+                None => Ok(Some((metric, TelemetryValue::Seq(values)))),
+                Some((agg, combo)) => {
+                    let merger = combo.combine(values.clone()).map(|combined| combined.map(|c| (metric, c)));
+                    tracing::info!(?merger, ?values, %agg, "merging metric values per order aggregator");
+                    merger
+                },
+            },
+        )
+        .collect::<Result<Vec<_>, TelemetryError>>()?
+        .into_iter()
+        .flatten()
+        .collect::<telemetry::TableType>()
+        .into();
+
+    Ok(telemetry)
 }
 
 fn log_response(label: &str, response: &reqwest::Response) {

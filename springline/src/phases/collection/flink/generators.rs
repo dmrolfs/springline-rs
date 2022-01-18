@@ -4,7 +4,7 @@ use std::pin::Pin;
 use futures::future::Future;
 use itertools::Itertools;
 use proctor::elements::{telemetry, Telemetry, TelemetryValue};
-use proctor::error::{CollectionError, TelemetryError};
+use proctor::error::CollectionError;
 use proctor::graph::stage::{self, SourceStage, WithApi};
 use proctor::graph::{Connect, Graph, SinkShape, SourceShape};
 use proctor::phases::collection::TelemetrySource;
@@ -281,55 +281,17 @@ pub fn make_vertex_collection_generator(orders: &[MetricOrder], context: &TaskCo
                         let vertex_telemetry =
                             query_vertex_telemetry(&job.jid, &vertex.id, &metric_orders, &context).await?;
 
-                        collect_metric_points(&mut metric_points, vertex_telemetry);
+                        super::collect_metric_points(&mut metric_points, vertex_telemetry);
                     }
                 }
 
-                merge_telemetry_per_order(metric_points, &orders).map_err(|err| err.into())
+                super::merge_telemetry_per_order(metric_points, &orders).map_err(|err| err.into())
             }
             .instrument(tracing::info_span!("collect Flink vertices telemetry")),
         )
     });
 
     Some(gen)
-}
-
-fn collect_metric_points(metric_points: &mut HashMap<String, Vec<TelemetryValue>>, vertex_telemetry: Telemetry) {
-    for (metric, vertex_val) in vertex_telemetry.into_iter() {
-        metric_points.entry(metric).or_insert_with(Vec::default).push(vertex_val);
-    }
-}
-
-#[tracing::instrument(level = "info", skip(orders))]
-fn merge_telemetry_per_order(
-    metric_points: HashMap<String, Vec<TelemetryValue>>, orders: &[MetricOrder],
-) -> Result<Telemetry, TelemetryError> {
-    // to avoid repeated linear searches, reorg strategy data based on metrics
-    let mut telemetry_agg = HashMap::with_capacity(orders.len());
-    for o in orders {
-        telemetry_agg.insert(o.telemetry_path.as_str(), o.agg);
-    }
-
-    // merge via order aggregation
-    let telemetry: Telemetry = metric_points
-        .into_iter()
-        .map(
-            |(metric, values)| match telemetry_agg.get(metric.as_str()).map(|agg| (agg, agg.combinator())) {
-                None => Ok(Some((metric, TelemetryValue::Seq(values)))),
-                Some((agg, combo)) => {
-                    let merger = combo.combine(values.clone()).map(|combined| combined.map(|c| (metric, c)));
-                    tracing::info!(?merger, ?values, %agg, "merging metric values per order aggregator");
-                    merger
-                },
-            },
-        )
-        .collect::<Result<Vec<_>, TelemetryError>>()?
-        .into_iter()
-        .flatten()
-        .collect::<telemetry::TableType>()
-        .into();
-
-    Ok(telemetry)
 }
 
 #[tracing::instrument(level = "info", skip(context))]

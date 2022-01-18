@@ -133,48 +133,43 @@ where
         let metrics = metric_orders.keys();
         let url = self.extend_url_for(metrics, agg_span.iter());
         tracing::info!("url = {:?}", url);
-
-        let outlet = self.outlet.clone();
-        let client = &self.context.client.clone();
+        let name = self.name();
 
         while self.trigger.recv().await.is_some() {
-            let _stage_timer = stage::start_stage_eval_time(self.name().as_ref());
+            let _stage_timer = stage::start_stage_eval_time(name.as_ref());
 
-            let url = url.clone();
-            let metric_orders = &metric_orders;
-            let scope_rep = scope_rep.clone();
-            let scope = self.scope;
-
-            let span = tracing::info_span!("collect Flink scope telemetry", scope=%scope);
-            let collection_and_send = outlet
-                .reserve_send::<_, CollectionError>(async move {
+            let span = tracing::info_span!("collect Flink scope telemetry", scope=%self.scope);
+            let collection_and_send: Result<(), CollectionError> = self
+                .outlet
+                .reserve_send::<_, CollectionError>(async {
                     // timer spans all retries
-                    let _flink_timer = super::start_flink_collection_timer(&scope);
+                    let _flink_timer = super::start_flink_collection_timer(&self.scope);
 
-                    let response: Result<api_model::FlinkMetricResponse, CollectionError> = client
-                        .request(Method::GET, url)
+                    let response: Result<Out, CollectionError> = self
+                        .context
+                        .client
+                        .request(Method::GET, url.clone())
                         .send()
-                        .and_then(|resp| {
-                            super::log_response(format!("{} scope response", scope_rep.clone()).as_str(), &resp);
-                            resp.json::<api_model::FlinkMetricResponse>().map_err(|err| err.into())
+                        .and_then(|response| {
+                            super::log_response(format!("{} scope response", scope_rep.clone()).as_str(), &response);
+                            response.json::<api_model::FlinkMetricResponse>().map_err(|err| err.into())
                         })
+                        .instrument(tracing::info_span!("Flink scope metrics REST API", scope=%self.scope))
+                        .await
                         .map_err(|err| err.into())
-                        .instrument(tracing::info_span!("Flink REST API", scope=%scope))
-                        .await;
+                        .and_then(|metric_response: api_model::FlinkMetricResponse| {
+                            api_model::build_telemetry(metric_response, &metric_orders)
+                                // this is only needed because async_trait forcing me to parameterize this stage
+                                .and_then(|telemetry| Out::unpack(telemetry))
+                                .map_err(|err| err.into())
+                        });
 
-                    let response: Result<Out, CollectionError> = response.and_then(|resp| {
-                        api_model::build_telemetry(resp, metric_orders)
-                            // this is only needed because async_trait forcing me to parameterize this stage
-                            .and_then(|telemetry| Out::unpack(telemetry))
-                            .map_err(|err| err.into())
-                    });
-
-                    super::identity_and_track_errors(scope, response)
+                    super::identity_and_track_errors(self.scope, response)
                 })
                 .instrument(span)
                 .await;
 
-            let _ = super::identity_and_track_errors(scope, collection_and_send);
+            let _ = super::identity_and_track_errors(self.scope, collection_and_send);
         }
 
         Ok(())
