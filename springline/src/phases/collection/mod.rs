@@ -6,7 +6,6 @@ use proctor::graph::stage::tick::TickApi;
 use proctor::graph::stage::SourceStage;
 use proctor::phases::collection::builder::CollectBuilder;
 use proctor::phases::collection::{Collect, SourceSetting, TelemetrySource};
-use proctor::SharedString;
 
 use crate::phases::MetricCatalog;
 use crate::settings::CollectionSettings;
@@ -16,8 +15,8 @@ pub mod flink;
 
 #[tracing::instrument(level = "info", skip(name, settings, auxiliary_sources))]
 pub async fn make_collection_phase(
-    name: impl Into<SharedString>, settings: &CollectionSettings,
-    auxiliary_sources: Vec<Box<dyn SourceStage<Telemetry>>>, machine_node: MachineNode,
+    name: &str, settings: &CollectionSettings, auxiliary_sources: Vec<Box<dyn SourceStage<Telemetry>>>,
+    machine_node: MachineNode,
 ) -> Result<(CollectBuilder<MetricCatalog>, Option<TickApi>)> {
     let mut sources = do_make_telemetry_sources(&settings.sources, auxiliary_sources).await?;
 
@@ -27,7 +26,10 @@ pub async fn make_collection_phase(
         sources.push(source);
     }
 
-    Ok((Collect::builder(name, sources, machine_node), tx_stop_flink_source))
+    Ok((
+        Collect::builder(name.to_string(), sources, machine_node),
+        tx_stop_flink_source,
+    ))
 }
 
 #[tracing::instrument(level = "info", skip())]

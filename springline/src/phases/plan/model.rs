@@ -43,7 +43,7 @@ impl ScalePlan {
         let timestamp = decision.item().recv_timestamp;
         let correlation_id = decision.item().correlation_id.clone();
         let scale_plan_for = |target_nr_task_managers: usize| {
-            Some(ScalePlan {
+            Some(Self {
                 correlation_id,
                 recv_timestamp: timestamp,
                 target_nr_task_managers: target_nr_task_managers as u32,

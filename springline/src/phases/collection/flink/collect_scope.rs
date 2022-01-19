@@ -249,8 +249,8 @@ mod tests {
         let mut stage = CollectScope::new(scope, Arc::new(orders.clone()), context);
         let (tx_trigger, rx_trigger) = mpsc::channel(1);
         let (tx_out, rx_out) = mpsc::channel(8);
-        stage.trigger.attach("trigger", rx_trigger).await;
-        stage.outlet.attach("out", tx_out).await;
+        stage.trigger.attach("trigger".into(), rx_trigger).await;
+        stage.outlet.attach("out".into(), tx_out).await;
         let handle = tokio::spawn(async move {
             assert_ok!(stage.run().await);
         });

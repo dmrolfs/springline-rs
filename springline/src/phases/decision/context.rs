@@ -45,9 +45,7 @@ impl ProctorContext for DecisionContext {
 
 impl UpdateMetrics for DecisionContext {
     fn update_metrics_for(phase_name: SharedString) -> UpdateMetricsFn {
-        let update_fn = move |subscription_name: &str, telemetry: &Telemetry| match telemetry
-            .clone()
-            .try_into::<DecisionContext>()
+        let update_fn = move |subscription_name: &str, telemetry: &Telemetry| match telemetry.clone().try_into::<Self>()
         {
             Ok(_ctx) => {
                 // DECISION_CTX_ALL_SINKS_HEALTHY.set(ctx.all_sinks_healthy as i64);

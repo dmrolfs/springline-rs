@@ -24,15 +24,17 @@ pub struct BenchmarkRange {
 }
 
 impl BenchmarkRange {
-    pub fn lo_from(b: &Benchmark) -> Self {
+    pub const fn lo_from(b: &Benchmark) -> Self {
         Self::new(b.nr_task_managers, Some(b.records_out_per_sec), None)
     }
 
-    pub fn hi_from(b: &Benchmark) -> Self {
+    pub const fn hi_from(b: &Benchmark) -> Self {
         Self::new(b.nr_task_managers, None, Some(b.records_out_per_sec))
     }
 
-    pub fn new(nr_task_managers: usize, lo_rate: Option<RecordsPerSecond>, hi_rate: Option<RecordsPerSecond>) -> Self {
+    pub const fn new(
+        nr_task_managers: usize, lo_rate: Option<RecordsPerSecond>, hi_rate: Option<RecordsPerSecond>,
+    ) -> Self {
         Self { nr_task_managers, lo_rate, hi_rate }
     }
 }
@@ -175,7 +177,7 @@ impl fmt::Display for Benchmark {
 }
 
 impl Benchmark {
-    pub fn new(nr_task_managers: usize, records_out_per_sec: RecordsPerSecond) -> Self {
+    pub const fn new(nr_task_managers: usize, records_out_per_sec: RecordsPerSecond) -> Self {
         Self { nr_task_managers, records_out_per_sec }
     }
 }
@@ -235,7 +237,7 @@ const T_RECORDS_OUT_PER_SEC: &str = "records_out_per_sec";
 
 impl From<Benchmark> for TelemetryValue {
     fn from(that: Benchmark) -> Self {
-        TelemetryValue::Table(
+        Self::Table(
             maplit::hashmap! {
                 T_NR_TASK_MANAGERS.to_string() => that.nr_task_managers.to_telemetry(),
                 T_RECORDS_OUT_PER_SEC.to_string() => that.records_out_per_sec.to_telemetry(),
@@ -260,7 +262,7 @@ impl TryFrom<TelemetryValue> for Benchmark {
                 .map(|v| f64::try_from(v.clone()))
                 .ok_or_else(|| PlanError::DataNotFound(T_RECORDS_OUT_PER_SEC.to_string()))??;
 
-            Ok(Benchmark {
+            Ok(Self {
                 nr_task_managers,
                 records_out_per_sec: records_out_per_sec.into(),
             })

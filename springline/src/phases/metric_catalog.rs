@@ -56,7 +56,7 @@ impl fmt::Debug for MetricCatalog {
 impl MetricCatalog {
     #[tracing::instrument(level = "info", skip(oso))]
     pub fn initialize_policy_engine(oso: &mut oso::Oso) -> Result<(), PolicyError> {
-        oso.register_class(MetricCatalog::get_polar_class())?;
+        oso.register_class(Self::get_polar_class())?;
         oso.register_class(JobHealthMetrics::get_polar_class())?;
         oso.register_class(FlowMetrics::get_polar_class())?;
         oso.register_class(
@@ -352,9 +352,7 @@ impl SubscriptionRequirements for MetricCatalog {
 
 impl UpdateMetrics for MetricCatalog {
     fn update_metrics_for(name: SharedString) -> UpdateMetricsFn {
-        let update_fn = move |subscription_name: &str, telemetry: &Telemetry| match telemetry
-            .clone()
-            .try_into::<MetricCatalog>()
+        let update_fn = move |subscription_name: &str, telemetry: &Telemetry| match telemetry.clone().try_into::<Self>()
         {
             Ok(catalog) => {
                 METRIC_CATALOG_TIMESTAMP.set(catalog.recv_timestamp.as_secs());

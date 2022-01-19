@@ -57,7 +57,7 @@ impl From<MetricCatalog> for PlanningMeasurement {
 impl SubscriptionRequirements for PlanningMeasurement {
     fn required_fields() -> HashSet<SharedString> {
         maplit::hashset! {
-            MC_FLOW__RECORDS_IN_PER_SEC.clone().into(),
+            MC_FLOW__RECORDS_IN_PER_SEC.to_string().into(),
         }
     }
 }

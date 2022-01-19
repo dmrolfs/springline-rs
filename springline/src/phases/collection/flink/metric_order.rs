@@ -18,12 +18,12 @@ pub struct MetricOrder {
 }
 
 impl MetricOrder {
-    pub fn organize_by_scope(orders: &[MetricOrder]) -> HashMap<FlinkScope, Vec<MetricOrder>> {
-        let mut result: HashMap<FlinkScope, Vec<MetricOrder>> = HashMap::default();
+    pub fn organize_by_scope(orders: &[Self]) -> HashMap<FlinkScope, Vec<Self>> {
+        let mut result: HashMap<FlinkScope, Vec<Self>> = HashMap::default();
 
         for (scope, group) in &orders.iter().group_by(|o| o.scope) {
             let orders = result.entry(scope).or_insert_with(Vec::new);
-            let group: Vec<MetricOrder> = group.cloned().collect();
+            let group: Vec<Self> = group.cloned().collect();
             orders.extend(group);
         }
 

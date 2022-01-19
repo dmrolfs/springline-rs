@@ -44,7 +44,7 @@ const OBSERVATION_WINDOW_SIZE: usize = 20;
 
 impl Default for LeastSquaresWorkloadForecastBuilder {
     fn default() -> Self {
-        LeastSquaresWorkloadForecastBuilder::new(OBSERVATION_WINDOW_SIZE, SpikeSettings::default())
+        Self::new(OBSERVATION_WINDOW_SIZE, SpikeSettings::default())
     }
 }
 
@@ -78,7 +78,7 @@ impl LeastSquaresWorkloadForecastBuilder {
         self.spike_length
     }
 
-    fn exceeded_spike_threshold(&self) -> bool {
+    const fn exceeded_spike_threshold(&self) -> bool {
         self.spike_length_threshold <= self.spike_length
     }
 
@@ -161,7 +161,7 @@ impl LeastSquaresWorkloadForecastBuilder {
 }
 
 impl std::ops::Add<WorkloadMeasurement> for LeastSquaresWorkloadForecastBuilder {
-    type Output = LeastSquaresWorkloadForecastBuilder;
+    type Output = Self;
 
     fn add(mut self, rhs: WorkloadMeasurement) -> Self::Output {
         self.add_observation(rhs);

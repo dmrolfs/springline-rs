@@ -37,23 +37,21 @@ pub struct FlinkPlanning<F: WorkloadForecastBuilder> {
 
 impl<F: WorkloadForecastBuilder> FlinkPlanning<F> {
     pub async fn new(
-        planning_name: impl AsRef<str>, min_scaling_step: usize, restart: Duration, max_catch_up: Duration,
+        planning_name: &str, min_scaling_step: usize, restart: Duration, max_catch_up: Duration,
         recovery_valid: Duration, forecast_builder: F, performance_repository: Box<dyn PerformanceRepository>,
     ) -> Result<Self, PlanError> {
         performance_repository.check().await?;
 
         let forecast_calculator = ForecastCalculator::new(forecast_builder, restart, max_catch_up, recovery_valid)?;
 
-        let performance_history = performance_repository
-            .load(planning_name.as_ref())
-            .await?
-            .unwrap_or_default();
+        let name = planning_name.to_string();
+        let performance_history = performance_repository.load(name.as_str()).await?.unwrap_or_default();
 
         // todo: this needs to be worked into Plan stage...  Need to determine best design
         // todo: let (tx_api, rx_api) = mpsc::unbounded_channel();
 
         Ok(Self {
-            name: planning_name.as_ref().to_string(),
+            name,
             min_scaling_step,
             forecast_calculator,
             performance_history,
@@ -359,7 +357,7 @@ mod tests {
         let (probe_tx, mut probe_rx) = mpsc::channel(8);
         let outlet = Outlet::new("plan outlet", graph::PORT_DATA);
         let mut outlet_2 = outlet.clone();
-        block_on(async move { outlet_2.attach("plan_outlet", probe_tx).await });
+        block_on(async move { outlet_2.attach("plan_outlet".into(), probe_tx).await });
 
         let recv_timestamp = METRICS.recv_timestamp;
         let block: anyhow::Result<()> = block_on(async move {
@@ -433,7 +431,7 @@ mod tests {
         let (probe_tx, mut probe_rx) = mpsc::channel(8);
         let outlet = Outlet::new("plan outlet", graph::PORT_DATA);
         let mut outlet_2 = outlet.clone();
-        block_on(async move { outlet_2.attach("plan_outlet", probe_tx).await });
+        block_on(async move { outlet_2.attach("plan_outlet".into(), probe_tx).await });
 
         let recv_timestamp = METRICS.recv_timestamp;
 

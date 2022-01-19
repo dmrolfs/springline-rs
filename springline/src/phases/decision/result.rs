@@ -91,18 +91,18 @@ where
 {
     pub fn new(item: T, decision_rep: &str) -> Self {
         match decision_rep {
-            SCALE_UP => DecisionResult::ScaleUp(item),
-            SCALE_DOWN => DecisionResult::ScaleDown(item),
-            _ => DecisionResult::NoAction(item),
+            SCALE_UP => Self::ScaleUp(item),
+            SCALE_DOWN => Self::ScaleDown(item),
+            _ => Self::NoAction(item),
         }
     }
 
     #[inline]
     pub fn item(&self) -> &T {
         match self {
-            DecisionResult::ScaleUp(item) => item,
-            DecisionResult::ScaleDown(item) => item,
-            DecisionResult::NoAction(item) => item,
+            Self::ScaleUp(item) => item,
+            Self::ScaleDown(item) => item,
+            Self::NoAction(item) => item,
         }
     }
 }
@@ -113,9 +113,9 @@ where
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let label = match self {
-            DecisionResult::ScaleUp(_) => "scale_up",
-            DecisionResult::ScaleDown(_) => "scale_down",
-            DecisionResult::NoAction(_) => "no_action",
+            Self::ScaleUp(_) => "scale_up",
+            Self::ScaleDown(_) => "scale_down",
+            Self::NoAction(_) => "no_action",
         };
 
         write!(f, "{}", label)
@@ -124,25 +124,25 @@ where
 
 impl<T> From<DecisionResult<T>> for TelemetryValue
 where
-    T: Into<TelemetryValue> + Debug + Clone + PartialEq,
+    T: Into<Self> + Debug + Clone + PartialEq,
 {
     fn from(result: DecisionResult<T>) -> Self {
         match result {
-            DecisionResult::ScaleUp(item) => TelemetryValue::Table(
+            DecisionResult::ScaleUp(item) => Self::Table(
                 maplit::hashmap! {
                     T_ITEM.to_string() => item.to_telemetry(),
                     T_SCALE_DECISION.to_string() => SCALE_UP.to_telemetry(),
                 }
                 .into(),
             ),
-            DecisionResult::ScaleDown(item) => TelemetryValue::Table(
+            DecisionResult::ScaleDown(item) => Self::Table(
                 maplit::hashmap! {
                     T_ITEM.to_string() => item.to_telemetry(),
                     T_SCALE_DECISION.to_string() => SCALE_DOWN.to_telemetry(),
                 }
                 .into(),
             ),
-            DecisionResult::NoAction(item) => TelemetryValue::Table(
+            DecisionResult::NoAction(item) => Self::Table(
                 maplit::hashmap! {
                     T_ITEM.to_string() => item.to_telemetry(),
                     T_SCALE_DECISION.to_string() => NO_ACTION.to_telemetry(),
@@ -162,24 +162,24 @@ where
 
     fn try_from(value: TelemetryValue) -> Result<Self, Self::Error> {
         if let TelemetryValue::Table(ref table) = value {
-            let item = if let Some(i) = table.get(T_ITEM) {
-                T::try_from(i.clone()).map_err(|err| {
-                    let t_err: TelemetryError = err.into();
-                    t_err.into()
-                })
-            } else {
-                Err(DecisionError::DataNotFound(T_ITEM.to_string()))
-            }?;
+            let item = table.get(T_ITEM).map_or_else(
+                || Err(DecisionError::DataNotFound(T_ITEM.to_string())),
+                |i| {
+                    T::try_from(i.clone()).map_err(|err| {
+                        let t_err: TelemetryError = err.into();
+                        t_err.into()
+                    })
+                },
+            )?;
 
-            let decision = if let Some(d) = table.get(T_SCALE_DECISION) {
-                String::try_from(d.clone()).map_err(|err| err.into())
-            } else {
-                Err(DecisionError::DataNotFound(T_SCALE_DECISION.to_string()))
-            }?;
+            let decision = table.get(T_SCALE_DECISION).map_or_else(
+                || Err(DecisionError::DataNotFound(T_SCALE_DECISION.to_string())),
+                |d| String::try_from(d.clone()).map_err(|err| err.into()),
+            )?;
 
             match decision.as_str() {
-                SCALE_UP => Ok(DecisionResult::ScaleUp(item)),
-                SCALE_DOWN => Ok(DecisionResult::ScaleDown(item)),
+                SCALE_UP => Ok(Self::ScaleUp(item)),
+                SCALE_DOWN => Ok(Self::ScaleDown(item)),
                 rep => Err(DecisionError::ParseError(rep.to_string())),
             }
         } else {

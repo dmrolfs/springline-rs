@@ -139,7 +139,7 @@ pub enum JobState {
 
 impl JobState {
     #[allow(dead_code)]
-    pub fn is_active(&self) -> bool {
+    pub const fn is_active(&self) -> bool {
         !matches!(self, Self::Finished | Self::Failed | Self::Canceled | Self::Suspended)
     }
 }
@@ -161,7 +161,7 @@ pub enum TaskState {
 
 impl TaskState {
     #[allow(dead_code)]
-    pub fn is_active(&self) -> bool {
+    pub const fn is_active(&self) -> bool {
         !matches!(self, Self::Finished | Self::Failed | Self::Canceled)
     }
 }

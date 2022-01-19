@@ -284,7 +284,7 @@ async fn test_flink_governance_flow_simple_and_happy() -> anyhow::Result<()> {
     let policy = GovernancePolicy::new(&POLICY_SETTINGS);
 
     let governance_stage = PolicyPhase::with_transform(
-        "test_governance",
+        "test_governance".into(),
         policy,
         make_governance_transform("common_governance_transform"),
     )
@@ -344,7 +344,7 @@ async fn test_flink_governance_flow_simple_below_min_cluster_size() -> anyhow::R
     let policy = GovernancePolicy::new(&POLICY_SETTINGS);
 
     let governance_stage = PolicyPhase::with_transform(
-        "test_governance",
+        "test_governance".into(),
         policy,
         make_governance_transform("common_governance_transform"),
     )
@@ -404,7 +404,7 @@ async fn test_flink_governance_flow_simple_above_max_cluster_size() -> anyhow::R
     let policy = GovernancePolicy::new(&POLICY_SETTINGS);
 
     let governance_stage = PolicyPhase::with_transform(
-        "test_governance",
+        "test_governance".into(),
         policy,
         make_governance_transform("common_governance_transform"),
     )
@@ -464,7 +464,7 @@ async fn test_flink_governance_flow_simple_step_up_too_big() -> anyhow::Result<(
     let policy = GovernancePolicy::new(&POLICY_SETTINGS);
 
     let governance_stage = PolicyPhase::with_transform(
-        "test_governance",
+        "test_governance".into(),
         policy,
         make_governance_transform("common_governance_transform"),
     )
@@ -524,7 +524,7 @@ async fn test_flink_governance_flow_simple_step_down_too_big() -> anyhow::Result
     let policy = GovernancePolicy::new(&POLICY_SETTINGS);
 
     let governance_stage = PolicyPhase::with_transform(
-        "test_governance",
+        "test_governance".into(),
         policy,
         make_governance_transform("common_governance_transform"),
     )
@@ -587,7 +587,7 @@ async fn test_flink_governance_flow_simple_step_up_before_max() -> anyhow::Resul
     let policy = GovernancePolicy::new(&POLICY_SETTINGS);
 
     let governance_stage = PolicyPhase::with_transform(
-        "test_governance",
+        "test_governance".into(),
         policy,
         make_governance_transform("common_governance_transform"),
     )
@@ -647,7 +647,7 @@ async fn test_flink_governance_flow_simple_step_down_before_min() -> anyhow::Res
     let policy = GovernancePolicy::new(&POLICY_SETTINGS);
 
     let governance_stage = PolicyPhase::with_transform(
-        "test_governance",
+        "test_governance".into(),
         policy,
         make_governance_transform("common_governance_transform"),
     )

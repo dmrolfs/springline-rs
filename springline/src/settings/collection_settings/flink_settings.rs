@@ -70,11 +70,11 @@ impl FlinkSettings {
         Self::DEFAULT_JOB_MANAGER_HOST.to_string()
     }
 
-    pub fn default_job_manager_port() -> u16 {
+    pub const fn default_job_manager_port() -> u16 {
         Self::DEFAULT_JOB_MANAGER_PORT
     }
 
-    pub fn default_max_retries() -> u32 {
+    pub const fn default_max_retries() -> u32 {
         Self::DEFAULT_MAX_RETRIES
     }
 

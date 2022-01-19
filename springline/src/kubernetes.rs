@@ -15,6 +15,9 @@ pub enum KubernetesError {
 
     #[error("failed in kube client request:{0}")]
     Kube(#[from] kube::Error),
+
+    #[error("could not make HTTP URI from kubernetes url: {0}")]
+    Http(#[from] http::Error),
 }
 
 #[tracing::instrument(level = "info", name = "make kubernetes client")]
@@ -31,7 +34,7 @@ pub async fn make_client(settings: &KubernetesSettings) -> Result<Client, Kubern
                 ?url,
                 "Config kube with only cluster_url, everything thing else is default."
             );
-            Config::new(KubeUrl(url.clone()).into())
+            KubeUrl(url.clone()).try_into().map(Config::new)?
         },
         LoadKubeConfig::ClusterEnv => {
             tracing::info!("configuring kubernetes client from cluster's environment variables, following the standard API Access from a Pod.");
@@ -55,8 +58,10 @@ pub async fn make_client(settings: &KubernetesSettings) -> Result<Client, Kubern
 
 struct KubeUrl(url::Url);
 
-impl From<KubeUrl> for http::Uri {
-    fn from(url: KubeUrl) -> Self {
+impl TryFrom<KubeUrl> for http::Uri {
+    type Error = KubernetesError;
+
+    fn try_from(url: KubeUrl) -> Result<Self, Self::Error> {
         let scheme = url.0.scheme();
 
         let mut authority = url.0.username().to_string();
@@ -86,9 +91,44 @@ impl From<KubeUrl> for http::Uri {
             .authority(authority)
             .path_and_query(path_and_query)
             .build()
-            .unwrap()
+            .map_err(|err| err.into())
     }
 }
+
+// impl From<KubeUrl> for http::Uri {
+//     fn from(url: KubeUrl) -> Self {
+//         let scheme = url.0.scheme();
+//
+//         let mut authority = url.0.username().to_string();
+//         if let Some(password) = url.0.password() {
+//             authority.push(':');
+//             authority.push_str(password);
+//         }
+//         if !authority.is_empty() {
+//             authority.push('@')
+//         }
+//         if let Some(host) = url.0.host_str() {
+//             authority.push_str(host);
+//         }
+//         if let Some(port) = url.0.port() {
+//             authority.push(':');
+//             authority.push_str(port.to_string().as_str());
+//         }
+//
+//         let mut path_and_query = url.0.path().to_string();
+//         if let Some(query) = url.0.query() {
+//             path_and_query.push('?');
+//             path_and_query.push_str(query);
+//         }
+//
+//         Self::builder()
+//             .scheme(scheme)
+//             .authority(authority)
+//             .path_and_query(path_and_query)
+//             .build()
+//             .unwrap()
+//     }
+// }
 
 // let kube = match k8s_settings.client_config {
 // LoadKubeConfig::Infer =>  {

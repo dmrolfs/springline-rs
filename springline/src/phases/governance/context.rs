@@ -71,9 +71,7 @@ impl ProctorContext for GovernanceContext {
 
 impl UpdateMetrics for GovernanceContext {
     fn update_metrics_for(phase_name: SharedString) -> UpdateMetricsFn {
-        let update_fn = move |subscription_name: &str, telemetry: &Telemetry| match telemetry
-            .clone()
-            .try_into::<GovernanceContext>()
+        let update_fn = move |subscription_name: &str, telemetry: &Telemetry| match telemetry.clone().try_into::<Self>()
         {
             Ok(ctx) => {
                 GOVERNANCE_CTX_MIN_CLUSTER_SIZE.set(ctx.min_cluster_size as i64);
@@ -94,17 +92,17 @@ impl UpdateMetrics for GovernanceContext {
     }
 }
 
-pub(crate) static GOVERNANCE_CTX_MIN_CLUSTER_SIZE: Lazy<IntGauge> = Lazy::new(|| {
+pub static GOVERNANCE_CTX_MIN_CLUSTER_SIZE: Lazy<IntGauge> = Lazy::new(|| {
     IntGauge::new("governance_ctx_min_cluster_size", "Minimum cluster size allowed")
         .expect("failed creating governance_ctx_min_cluster_size metric")
 });
 
-pub(crate) static GOVERNANCE_CTX_MAX_CLUSTER_SIZE: Lazy<IntGauge> = Lazy::new(|| {
+pub static GOVERNANCE_CTX_MAX_CLUSTER_SIZE: Lazy<IntGauge> = Lazy::new(|| {
     IntGauge::new("governance_ctx_max_cluster_size", "Maximum cluster size allowed")
         .expect("failed creating governance_ctx_max_cluster_size metric")
 });
 
-pub(crate) static GOVERNANCE_CTX_MAX_SCALING_STEP: Lazy<IntGauge> = Lazy::new(|| {
+pub static GOVERNANCE_CTX_MAX_SCALING_STEP: Lazy<IntGauge> = Lazy::new(|| {
     IntGauge::new(
         "governance_ctx_max_scaling_step",
         "Maximum change in cluster size allowed.",

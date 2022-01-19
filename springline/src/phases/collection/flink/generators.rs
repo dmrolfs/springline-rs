@@ -1257,7 +1257,7 @@ mod tests {
 
     impl Match for QueryParamKeyMatcher {
         fn matches(&self, request: &Request) -> bool {
-            let query_keys: HashSet<Cow<str>> = request.url.query_pairs().map(|(k, _)| k).collect();
+            let query_keys: HashSet<Cow<'_, str>> = request.url.query_pairs().map(|(k, _)| k).collect();
             query_keys.contains(self.0.as_str())
         }
     }

@@ -373,7 +373,7 @@ async fn test_decision_common() -> anyhow::Result<()> {
     let context_subscription = policy.subscription("decision_context", &settings);
 
     let decision_stage = PolicyPhase::with_transform(
-        "common_decision",
+        "common_decision".into(),
         policy,
         make_decision_transform("common_decision_transform"),
     )

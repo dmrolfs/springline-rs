@@ -51,11 +51,13 @@ impl WorkloadForecast for LinearRegression {
 
     fn workload_at(&self, timestamp: Timestamp) -> Result<RecordsPerSecond, PlanError> {
         let x: f64 = timestamp.into();
-        Ok(RecordsPerSecond::new(self.slope * x + self.y_intercept))
+        // Ok(RecordsPerSecond::new(self.slope * x + self.y_intercept))
+        Ok(RecordsPerSecond::new(self.slope.mul_add(x, self.y_intercept)))
     }
 
     fn total_records_between(&self, start: Timestamp, end: Timestamp) -> Result<f64, PlanError> {
-        let integral = |x: f64| (self.slope / 2.) * pow(x, 2) + self.y_intercept * x;
+        // let integral = |x: f64| (self.slope / 2.) * pow(x, 2) + self.y_intercept * x;
+        let integral = |x: f64| (self.slope / 2.).mul_add(pow(x, 2), self.y_intercept * x);
         Ok(integral(end.into()) - integral(start.into()))
     }
 
@@ -112,9 +114,10 @@ impl QuadraticRegression {
             let c = coefficients[(2, 0)];
 
             let y_mean = sum_y / n;
-            let sse = data
-                .iter()
-                .fold(0., |acc, (x, y)| acc + pow(y - (a * pow(*x, 2) + b * x + c), 2));
+            let sse = data.iter().fold(0., |acc, (x, y)| {
+                acc + pow(y - (a.mul_add(pow(*x, 2), b.mul_add(*x, c))), 2)
+            });
+            // .fold(0., |acc, (x, y)| acc + pow(y - (a * pow(*x, 2) + b * x + c), 2));
 
             let sst = data.iter().fold(0., |acc, (_, y)| acc + pow(y - y_mean, 2));
 
@@ -132,11 +135,13 @@ impl WorkloadForecast for QuadraticRegression {
 
     fn workload_at(&self, timestamp: Timestamp) -> Result<RecordsPerSecond, PlanError> {
         let x: f64 = timestamp.into();
-        Ok(RecordsPerSecond::new(self.a * pow(x, 2) + self.b * x + self.c))
+        // Ok(RecordsPerSecond::new(self.a * pow(x, 2) + self.b * x + self.c))
+        Ok(RecordsPerSecond::new(self.a.mul_add(pow(x, 2), self.b * x) + self.c))
     }
 
     fn total_records_between(&self, start: Timestamp, end: Timestamp) -> Result<f64, PlanError> {
-        let integral = |x: f64| self.a / 3. * pow(x, 3) + self.b / 2. * pow(x, 2) + self.c * x;
+        // let integral = |x: f64| self.a / 3. * pow(x, 3) + self.b / 2. * pow(x, 2) + self.c * x;
+        let integral = |x: f64| (self.a / 3.).mul_add(pow(x, 3), (self.b / 2.).mul_add(pow(x, 2), self.c * x));
         Ok(integral(end.into()) - integral(start.into()))
     }
 

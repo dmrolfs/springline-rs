@@ -72,9 +72,7 @@ impl ProctorContext for EligibilityContext {
 
 impl UpdateMetrics for EligibilityContext {
     fn update_metrics_for(phase_name: SharedString) -> UpdateMetricsFn {
-        let update_fn = move |subscription_name: &str, telemetry: &Telemetry| match telemetry
-            .clone()
-            .try_into::<EligibilityContext>()
+        let update_fn = move |subscription_name: &str, telemetry: &Telemetry| match telemetry.clone().try_into::<Self>()
         {
             Ok(ctx) => {
                 if let Some(last_failure_ts) = ctx.task_status.last_failure.map(|ts| ts.timestamp()) {
@@ -149,7 +147,7 @@ impl ClusterStatus {
     }
 }
 
-pub(crate) static ELIGIBILITY_CTX_ALL_SINKS_HEALTHY: Lazy<IntGauge> = Lazy::new(|| {
+pub static ELIGIBILITY_CTX_ALL_SINKS_HEALTHY: Lazy<IntGauge> = Lazy::new(|| {
     IntGauge::new(
         "eligibility_ctx_all_sinks_healthy",
         "Are all sinks for the FLink jobs healthy",
@@ -157,7 +155,7 @@ pub(crate) static ELIGIBILITY_CTX_ALL_SINKS_HEALTHY: Lazy<IntGauge> = Lazy::new(
     .expect("failed creating eligibility_ctx_all_sinks_healthy")
 });
 
-pub(crate) static ELIGIBILITY_CTX_TASK_LAST_FAILURE: Lazy<IntGauge> = Lazy::new(|| {
+pub static ELIGIBILITY_CTX_TASK_LAST_FAILURE: Lazy<IntGauge> = Lazy::new(|| {
     IntGauge::new(
         "eligibility_ctx_task_last_failure",
         "UNIX timestamp in seconds of last Flink Task Manager failure in environment",
@@ -165,7 +163,7 @@ pub(crate) static ELIGIBILITY_CTX_TASK_LAST_FAILURE: Lazy<IntGauge> = Lazy::new(
     .expect("failed creating eligibility_ctx_task_last_failure metric")
 });
 
-pub(crate) static ELIGIBILITY_CTX_CLUSTER_IS_DEPLOYING: Lazy<IntGauge> = Lazy::new(|| {
+pub static ELIGIBILITY_CTX_CLUSTER_IS_DEPLOYING: Lazy<IntGauge> = Lazy::new(|| {
     IntGauge::new(
         "eligibility_ctx_cluster_is_deploying",
         "Is the Flink cluster actively deploying: 1=yes, 0=no",
@@ -173,7 +171,7 @@ pub(crate) static ELIGIBILITY_CTX_CLUSTER_IS_DEPLOYING: Lazy<IntGauge> = Lazy::n
     .expect("failed creating eligibility_ctx_cluster_is_deploying metric")
 });
 
-pub(crate) static ELIGIBILITY_CTX_CLUSTER_LAST_DEPLOYMENT: Lazy<IntGauge> = Lazy::new(|| {
+pub static ELIGIBILITY_CTX_CLUSTER_LAST_DEPLOYMENT: Lazy<IntGauge> = Lazy::new(|| {
     IntGauge::new(
         "eligibility_ctx_cluster_last_deployment",
         "UNIX timestamp in seconds of last deployment of the Flink cluster",

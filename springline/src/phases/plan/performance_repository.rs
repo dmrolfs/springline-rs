@@ -56,8 +56,8 @@ impl FromStr for PerformanceRepositoryType {
 
     fn from_str(rep: &str) -> Result<Self, Self::Err> {
         match rep.to_lowercase().as_str() {
-            "memory" => Ok(PerformanceRepositoryType::Memory),
-            "file" => Ok(PerformanceRepositoryType::File),
+            "memory" => Ok(Self::Memory),
+            "file" => Ok(Self::File),
             s => Err(PlanError::ParseError(format!(
                 "unknown performance repository type, {}",
                 s
