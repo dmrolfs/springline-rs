@@ -312,7 +312,7 @@ where
     {
         type Value = HashMap<S0, Timestamp>;
 
-        fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             write!(f, "map of key timestamps")
         }
 

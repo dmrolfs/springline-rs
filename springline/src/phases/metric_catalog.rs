@@ -110,6 +110,8 @@ pub struct JobHealthMetrics {
     pub job_nr_failed_checkpoints: i64,
 }
 
+pub const MC_FLOW__RECORDS_IN_PER_SEC: &str = "flow.records_in_per_sec";
+
 #[derive(PolarClass, Debug, Default, PartialEq, Clone, Serialize, Deserialize)]
 pub struct FlowMetrics {
     /// max rate of records flow into kafka/kinesis related subtask
@@ -208,6 +210,7 @@ pub struct ClusterMetrics {
     pub task_network_output_pool_usage: f64,
 }
 
+#[allow(unused_must_use)]
 impl ClusterMetrics {
     pub fn task_heap_memory_load(&self) -> f64 {
         self.task_heap_memory_used / self.task_heap_memory_committed
@@ -298,7 +301,7 @@ impl Add for MetricCatalog {
     fn add(self, rhs: Self) -> Self::Output {
         let mut lhs = self.custom;
         lhs.extend(rhs.custom);
-        MetricCatalog { custom: lhs, ..self }
+        Self { custom: lhs, ..self }
     }
 }
 
@@ -322,11 +325,11 @@ impl SubscriptionRequirements for MetricCatalog {
             "health.job_nr_failed_checkpoints".into(),
 
             // FlowMetrics
-            "flow.records_in_per_sec".into(),
+            MC_FLOW__RECORDS_IN_PER_SEC.to_string().into(),
             "flow.records_out_per_sec".into(),
 
             // ClusterMetrics
-            MC_CLUSTER__NR_TASK_MANAGERS.into(),
+            MC_CLUSTER__NR_TASK_MANAGERS.to_string().into(),
             "cluster.task_cpu_load".into(),
             "cluster.task_heap_memory_used".into(),
             "cluster.task_heap_memory_committed".into(),
@@ -726,7 +729,7 @@ mod tests {
                 Token::I64(12_345),
                 Token::Str("health.job_nr_failed_checkpoints"),
                 Token::I64(7),
-                Token::Str("flow.records_in_per_sec"),
+                Token::Str(MC_FLOW__RECORDS_IN_PER_SEC),
                 Token::F64(17.),
                 Token::Str("flow.records_out_per_sec"),
                 Token::F64(0.),
@@ -811,7 +814,7 @@ mod tests {
                 "health.job_nr_completed_checkpoints".to_string() => (12_345).to_telemetry(),
                 "health.job_nr_failed_checkpoints".to_string() => (7).to_telemetry(),
 
-                "flow.records_in_per_sec".to_string() => (17.).to_telemetry(),
+                MC_FLOW__RECORDS_IN_PER_SEC.to_string() => (17.).to_telemetry(),
                 "flow.records_out_per_sec".to_string() => (0.).to_telemetry(),
                 "flow.input_records_lag_max".to_string() => 314.to_telemetry(),
 

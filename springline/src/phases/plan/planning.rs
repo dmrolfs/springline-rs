@@ -168,7 +168,7 @@ impl<F: WorkloadForecastBuilder> FlinkPlanning<F> {
 #[async_trait]
 impl<F: WorkloadForecastBuilder> Planning for FlinkPlanning<F> {
     type Decision = DecisionResult<MetricCatalog>;
-    type Observation = MetricCatalog;
+    type Observation = super::PlanningMeasurement;
     type Out = ScalePlan;
 
     fn set_outlet(&mut self, outlet: Outlet<Self::Out>) {
@@ -176,7 +176,7 @@ impl<F: WorkloadForecastBuilder> Planning for FlinkPlanning<F> {
     }
 
     fn add_observation(&mut self, observation: Self::Observation) {
-        self.forecast_calculator.add_observation(observation.into());
+        self.forecast_calculator.add_observation(observation);
     }
 
     #[tracing::instrument(level = "info", skip(self))]

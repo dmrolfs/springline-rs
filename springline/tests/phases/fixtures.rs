@@ -1,6 +1,7 @@
 use chrono::{DateTime, Utc};
 use lazy_static::lazy_static;
 use proctor::elements::Telemetry;
+use springline::phases::MC_FLOW__RECORDS_IN_PER_SEC;
 
 lazy_static! {
     pub static ref DT_1: DateTime<Utc> = DateTime::parse_from_str("2021-05-05T17:11:07.246310806Z", "%+")
@@ -13,7 +14,7 @@ lazy_static! {
 pub fn make_test_item(_timestamp: &DateTime<Utc>, records_in_per_sec: f64, inbox_lag: f64) -> Telemetry {
     let item = maplit::hashmap! {
         // "timestamp".to_string() => Timestamp::from_datetime(&timestamp).into(),
-        "flow.records_in_per_sec".to_string() => records_in_per_sec.into(),
+        MC_FLOW__RECORDS_IN_PER_SEC.to_string() => records_in_per_sec.into(),
         "flow.input_records_lag_max".to_string() => inbox_lag.into(),
     }
     .into_iter()

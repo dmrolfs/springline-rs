@@ -1,7 +1,5 @@
 use proctor::error::PlanError;
 
-use crate::phases::MetricCatalog;
-
 mod calculator;
 mod least_squares;
 mod regression;
@@ -13,6 +11,7 @@ use std::fmt::Debug;
 pub use calculator::ForecastCalculator;
 pub use least_squares::{LeastSquaresWorkloadForecastBuilder, SpikeSettings};
 
+use crate::phases::plan::PlanningMeasurement;
 #[cfg(test)]
 use mockall::{automock, predicate::*};
 use proctor::elements::{Point, RecordsPerSecond, Timestamp};
@@ -46,11 +45,11 @@ impl PartialOrd for WorkloadMeasurement {
     }
 }
 
-impl From<MetricCatalog> for WorkloadMeasurement {
-    fn from(metrics: MetricCatalog) -> Self {
+impl From<super::PlanningMeasurement> for WorkloadMeasurement {
+    fn from(measurement: PlanningMeasurement) -> Self {
         Self {
-            timestamp_secs: metrics.recv_timestamp.into(),
-            workload: metrics.flow.records_in_per_sec.into(),
+            timestamp_secs: measurement.recv_timestamp.into(),
+            workload: measurement.records_in_per_sec,
         }
     }
 }

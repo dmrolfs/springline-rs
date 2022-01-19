@@ -47,7 +47,7 @@ impl<'de> Deserialize<'de> for KubernetesWorkloadResource {
         impl<'v> de::Visitor<'v> for Visitor {
             type Value = KubernetesWorkloadResource;
 
-            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 write!(f, "a string for the k8s workload resource type/target")
             }
 

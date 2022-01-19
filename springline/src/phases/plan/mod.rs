@@ -1,13 +1,19 @@
 use crate::phases::decision::DecisionResult;
-use crate::phases::MetricCatalog;
+use crate::phases::{MetricCatalog, MC_FLOW__RECORDS_IN_PER_SEC};
 use crate::settings::PlanSettings;
 use crate::Result;
 use once_cell::sync::Lazy;
+use pretty_snowflake::{Id, Label};
+use proctor::elements::{RecordsPerSecond, Timestamp};
 use proctor::graph::{Connect, SinkShape, SourceShape};
-use proctor::phases::collection::{ClearinghouseSubscriptionMagnet, SubscriptionChannel, TelemetrySubscription};
+use proctor::phases::collection::{
+    ClearinghouseSubscriptionMagnet, SubscriptionChannel, SubscriptionRequirements, TelemetrySubscription,
+};
 use proctor::phases::plan::{Plan, Planning};
 use proctor::SharedString;
 use prometheus::Gauge;
+use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 
 mod benchmark;
 mod forecast;
@@ -27,8 +33,34 @@ const MINIMAL_CLUSTER_SIZE: usize = 1;
 
 pub type PlanningStrategy = planning::FlinkPlanning<forecast::LeastSquaresWorkloadForecastBuilder>;
 pub type PlanningOutcome = <PlanningStrategy as Planning>::Out;
-pub type PlanningPhase = (Box<Plan<PlanningStrategy>>, SubscriptionChannel<MetricCatalog>);
-pub type PlanEvent = proctor::phases::plan::PlanEvent<MetricCatalog, DecisionResult<MetricCatalog>, ScalePlan>;
+pub type PlanningPhase = (Box<Plan<PlanningStrategy>>, SubscriptionChannel<PlanningMeasurement>);
+pub type PlanEvent = proctor::phases::plan::PlanEvent<PlanningMeasurement, DecisionResult<MetricCatalog>, ScalePlan>;
+
+#[derive(Debug, Label, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PlanningMeasurement {
+    pub correlation_id: Id<Self>,
+    pub recv_timestamp: Timestamp,
+    #[serde(rename = "flow.records_in_per_sec")]
+    pub records_in_per_sec: RecordsPerSecond,
+}
+
+impl From<MetricCatalog> for PlanningMeasurement {
+    fn from(metrics: MetricCatalog) -> Self {
+        Self {
+            correlation_id: metrics.correlation_id.relabel(),
+            recv_timestamp: metrics.recv_timestamp,
+            records_in_per_sec: metrics.flow.records_in_per_sec.into(),
+        }
+    }
+}
+
+impl SubscriptionRequirements for PlanningMeasurement {
+    fn required_fields() -> HashSet<SharedString> {
+        maplit::hashset! {
+            MC_FLOW__RECORDS_IN_PER_SEC.clone().into(),
+        }
+    }
+}
 
 #[tracing::instrument(level = "info", skip(settings, clearinghouse_magnet))]
 pub async fn make_plan_phase(
@@ -70,8 +102,8 @@ pub(crate) static PLANNING_VALID_WORKLOAD_RATE: Lazy<Gauge> = Lazy::new(|| {
 #[tracing::instrument(level = "info")]
 async fn do_connect_plan_data(
     name: SharedString, mut magnet: ClearinghouseSubscriptionMagnet<'_>,
-) -> Result<SubscriptionChannel<MetricCatalog>> {
-    let subscription = TelemetrySubscription::new(name.as_ref()).for_requirements::<MetricCatalog>();
+) -> Result<SubscriptionChannel<PlanningMeasurement>> {
+    let subscription = TelemetrySubscription::new(name.as_ref()).for_requirements::<PlanningMeasurement>();
     let channel = SubscriptionChannel::new(name).await?;
     magnet
         .subscribe(subscription, channel.subscription_receiver.clone())

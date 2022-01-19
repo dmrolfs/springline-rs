@@ -13,7 +13,7 @@ use proctor::graph::{Connect, Graph, SinkShape, SourceShape};
 use proctor::phases::plan::Plan;
 use proctor::ProctorResult;
 use springline::phases::decision::DecisionResult;
-use springline::phases::plan::make_performance_repository;
+use springline::phases::plan::{make_performance_repository, PlanningMeasurement};
 use springline::phases::plan::{
     FlinkPlanning, LeastSquaresWorkloadForecastBuilder, PerformanceRepositorySettings, PerformanceRepositoryType,
     ScalePlan, SpikeSettings,
@@ -24,7 +24,7 @@ use tokio::task::JoinHandle;
 
 use crate::CORRELATION_ID;
 
-type InData = MetricCatalog;
+type InData = PlanningMeasurement;
 type InDecision = DecisionResult<MetricCatalog>;
 type Out = ScalePlan;
 #[allow(dead_code)]
@@ -86,7 +86,8 @@ impl TestFlow {
     }
 
     pub async fn push_data(&self, metrics: MetricCatalog) -> anyhow::Result<()> {
-        let (cmd, ack) = stage::ActorSourceCmd::push(metrics);
+        let measurement: PlanningMeasurement = metrics.into();
+        let (cmd, ack) = stage::ActorSourceCmd::push(measurement);
         self.tx_data_source_api.send(cmd)?;
         let _ack = ack.await?;
         Ok(())
@@ -170,9 +171,14 @@ const STEP: i64 = 15;
 #[tracing::instrument(level = "info")]
 fn make_test_data(
     start: Timestamp, tick: i64, nr_task_managers: u32, input_records_lag_max: i64, records_per_sec: f64,
-) -> InData {
+) -> MetricCatalog {
     let timestamp = Utc.timestamp(start.as_secs() + tick * STEP, 0).into();
     let corr_id = CORRELATION_ID.clone();
+    // PlanningMeasurement {
+    //     correlation_id: corr_id.relabel(),
+    //     recv_timestamp: timestamp,
+    //     records_in_per_sec: records_per_sec.into(),
+    // }
     MetricCatalog {
         correlation_id: corr_id,
         recv_timestamp: timestamp,
@@ -205,7 +211,7 @@ fn make_test_data(
 
 fn make_test_data_series(
     start: Timestamp, nr_task_managers: u32, input_records_lag_max: i64, mut gen: impl FnMut(i64) -> f64,
-) -> Vec<InData> {
+) -> Vec<MetricCatalog> {
     let total = 30;
     (0..total)
         .into_iter()

@@ -50,7 +50,8 @@ impl<F: WorkloadForecastBuilder> ForecastCalculator<F> {
         self.forecast_builder.observations_needed()
     }
 
-    pub fn add_observation(&mut self, measurement: WorkloadMeasurement) {
+    pub fn add_observation(&mut self, measurement: impl Into<WorkloadMeasurement>) {
+        let measurement = measurement.into();
         tracing::debug!(?measurement, "adding workload measurement to forecast calculator.");
         self.forecast_builder.add_observation(measurement)
     }

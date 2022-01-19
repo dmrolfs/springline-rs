@@ -16,6 +16,7 @@ mod metric_order;
 #[allow(dead_code)]
 mod generators;
 
+use crate::phases::MC_FLOW__RECORDS_IN_PER_SEC;
 pub use collect_vertex::{
     FLINK_QUERY_ACTIVE_JOBS_TIME, FLINK_QUERY_JOB_DETAIL_TIME, FLINK_QUERY_VERTEX_AVAIL_TELEMETRY_TIME,
     FLINK_QUERY_VERTEX_METRIC_PICKLIST_TIME, FLINK_QUERY_VERTEX_TELEMETRY_TIME,
@@ -48,7 +49,7 @@ pub static STD_METRIC_ORDERS: Lazy<Vec<MetricOrder>> = Lazy::new(|| {
             "health.job_nr_failed_checkpoints",
             Integer,
         ), // does not work w reactive mode
-        (Task, "numRecordsInPerSecond", Max, "flow.records_in_per_sec", Float),
+        (Task, "numRecordsInPerSecond", Max, MC_FLOW__RECORDS_IN_PER_SEC, Float),
         (Task, "numRecordsOutPerSecond", Max, "flow.records_out_per_sec", Float),
         (TaskManagers, "Status.JVM.CPU.Load", Max, "cluster.task_cpu_load", Float),
         (
