@@ -195,6 +195,7 @@ fn make_test_data(
             input_millis_behind_latest: None,
         },
         cluster: ClusterMetrics {
+            nr_active_jobs: 1,
             nr_task_managers,
             task_cpu_load: 0.65,
             task_heap_memory_used: 92_987_f64,

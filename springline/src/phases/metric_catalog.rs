@@ -155,12 +155,17 @@ pub struct FlowMetrics {
     pub input_millis_behind_latest: Option<i64>,
 }
 
+pub const MC_CLUSTER__NR_ACTIVE_JOBS: &str = "cluster.nr_active_jobs";
 pub const MC_CLUSTER__NR_TASK_MANAGERS: &str = "cluster.nr_task_managers";
 
 #[derive(PolarClass, Default, PartialEq, Clone, Serialize, Deserialize)]
 pub struct ClusterMetrics {
-    ///
-    /// - count of entries returned from Flink REST API /taskmanagers
+    /// Count of active jobs returned from Flink REST /jobs endpoint
+    #[polar(attribute)]
+    #[serde(rename = "cluster.nr_active_jobs")]
+    pub nr_active_jobs: u32,
+
+    /// Count of entries returned from Flink REST API /taskmanagers
     #[polar(attribute)]
     #[serde(rename = "cluster.nr_task_managers")]
     pub nr_task_managers: u32,
@@ -228,6 +233,7 @@ impl ClusterMetrics {
 impl fmt::Debug for ClusterMetrics {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ClusterMetrics")
+            .field("nr_active_jobs", &self.nr_active_jobs)
             .field("nr_task_managers", &self.nr_task_managers)
             .field("task_cpu_load", &self.task_cpu_load)
             .field("task_heap_memory_used", &self.task_heap_memory_used)
@@ -329,6 +335,7 @@ impl SubscriptionRequirements for MetricCatalog {
             "flow.records_out_per_sec".into(),
 
             // ClusterMetrics
+            MC_CLUSTER__NR_ACTIVE_JOBS.to_string().into(),
             MC_CLUSTER__NR_TASK_MANAGERS.to_string().into(),
             "cluster.task_cpu_load".into(),
             "cluster.task_heap_memory_used".into(),
@@ -373,6 +380,7 @@ impl UpdateMetrics for MetricCatalog {
                     METRIC_CATALOG_FLOW_INPUT_MILLIS_BEHIND_LATEST.set(lag);
                 }
 
+                METRIC_CATALOG_CLUSTER_NR_ACTIVE_JOBS.set(catalog.cluster.nr_active_jobs as i64);
                 METRIC_CATALOG_CLUSTER_NR_TASK_MANAGERS.set(catalog.cluster.nr_task_managers as i64);
                 METRIC_CATALOG_CLUSTER_TASK_CPU_LOAD.set(catalog.cluster.task_cpu_load);
                 METRIC_CATALOG_CLUSTER_TASK_HEAP_MEMORY_USED.set(catalog.cluster.task_heap_memory_used);
@@ -468,6 +476,14 @@ pub(crate) static METRIC_CATALOG_FLOW_INPUT_MILLIS_BEHIND_LATEST: Lazy<IntGauge>
         "Current lag in handling messages from the Kinesis ingress topic",
     )
     .expect("failed creating metric_catalog_flow_input_records_lag_max metric")
+});
+
+pub(crate) static METRIC_CATALOG_CLUSTER_NR_ACTIVE_JOBS: Lazy<IntGauge> = Lazy::new(|| {
+    IntGauge::new(
+        "metric_catalog_cluster_nr_active_jobs",
+        "Number of active jobs in the cluster",
+    )
+        .expect("failed creating metric_catalog_cluster_nr_active_jobs metric")
 });
 
 pub(crate) static METRIC_CATALOG_CLUSTER_NR_TASK_MANAGERS: Lazy<IntGauge> = Lazy::new(|| {
@@ -688,6 +704,7 @@ mod tests {
                 records_out_per_sec: 0.0,
             },
             cluster: ClusterMetrics {
+                nr_active_jobs: 1,
                 nr_task_managers: 4,
                 task_cpu_load: 0.65,
                 task_heap_memory_used: 92_987_f64,
@@ -734,6 +751,8 @@ mod tests {
                 Token::Str("flow.input_records_lag_max"),
                 Token::Some,
                 Token::I64(314),
+                Token::Str(MC_CLUSTER__NR_ACTIVE_JOBS),
+                Token::U32(1),
                 Token::Str(MC_CLUSTER__NR_TASK_MANAGERS),
                 Token::U32(4),
                 Token::Str("cluster.task_cpu_load"),
@@ -783,6 +802,7 @@ mod tests {
                 records_out_per_sec: 0.0,
             },
             cluster: ClusterMetrics {
+                nr_active_jobs: 1,
                 nr_task_managers: 4,
                 task_cpu_load: 0.65,
                 task_heap_memory_used: 92_987_f64,
@@ -816,6 +836,7 @@ mod tests {
                 "flow.records_out_per_sec".to_string() => (0.).to_telemetry(),
                 "flow.input_records_lag_max".to_string() => 314.to_telemetry(),
 
+                MC_CLUSTER__NR_ACTIVE_JOBS.to_string() => 1.to_telemetry(),
                 MC_CLUSTER__NR_TASK_MANAGERS.to_string() => 4.to_telemetry(),
                 "cluster.task_cpu_load".to_string() => (0.65).to_telemetry(),
                 "cluster.task_heap_memory_used".to_string() => (92_987.).to_telemetry(),

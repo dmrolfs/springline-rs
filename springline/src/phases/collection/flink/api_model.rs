@@ -193,6 +193,12 @@ impl From<JobId> for String {
     }
 }
 
+impl From<&str> for JobId {
+    fn from(rep: &str) -> Self {
+        Self(rep.to_string())
+    }
+}
+
 #[serde_as]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct JobDetail {
@@ -243,6 +249,12 @@ impl AsRef<str> for VertexId {
 impl From<VertexId> for String {
     fn from(vid: VertexId) -> Self {
         vid.0
+    }
+}
+
+impl From<&str> for VertexId {
+    fn from(rep: &str) -> Self {
+        Self(rep.to_string())
     }
 }
 

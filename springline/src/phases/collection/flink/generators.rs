@@ -20,7 +20,7 @@ use super::api_model::{build_telemetry, FlinkMetricResponse, JobSummary};
 use super::{Aggregation, FlinkScope, MetricOrder, STD_METRIC_ORDERS};
 use crate::phases::collection::flink::api_model::{JobDetail, JobId, VertexId};
 use crate::phases::collection::flink::TaskContext;
-use crate::phases::MC_CLUSTER__NR_TASK_MANAGERS;
+use crate::phases::{MC_CLUSTER__NR_ACTIVE_JOBS, MC_CLUSTER__NR_TASK_MANAGERS};
 use crate::settings::FlinkSettings;
 
 pub type Generator<T> =
@@ -277,16 +277,23 @@ pub fn make_vertex_collection_generator(orders: &[MetricOrder], context: &TaskCo
                 }
 
                 let mut metric_points: HashMap<String, Vec<TelemetryValue>> = HashMap::new();
+                let nr_active_jobs = job_details.len() as i64;
+
                 for job in job_details {
                     for vertex in job.vertices.into_iter().filter(|v| v.status.is_active()) {
                         let vertex_telemetry =
                             query_vertex_telemetry(&job.jid, &vertex.id, &metric_orders, &context).await?;
 
-                        super::collect_metric_points(&mut metric_points, vertex_telemetry);
+                        super::merge_into_metric_groups(&mut metric_points, vertex_telemetry);
                     }
                 }
 
-                super::merge_telemetry_per_order(metric_points, &orders).map_err(|err| err.into())
+                super::consolidate_active_job_telemetry_for_order(metric_points, &orders)
+                    .map(|mut telemetry| {
+                        telemetry.insert(MC_CLUSTER__NR_ACTIVE_JOBS.to_string(), nr_active_jobs.into());
+                        telemetry
+                    })
+                    .map_err(|err| err.into())
             }
             .instrument(tracing::info_span!("collect Flink vertices telemetry")),
         )

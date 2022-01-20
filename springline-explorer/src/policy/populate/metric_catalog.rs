@@ -27,7 +27,7 @@ impl PopulateData for MetricCatalog {
             custom: HashMap::default(),
         };
 
-        let facets: [(&str, Option<MetricCatalogLens>); 20] = [
+        let facets: [(&str, Option<MetricCatalogLens>); 21] = [
             (
                 "correlation_id",
                 Some(MetricCatalogLens::Root(MetricCatalogRootLens::CorrelationId)),
@@ -67,6 +67,10 @@ impl PopulateData for MetricCatalog {
             (
                 "flow.input_millis_behind_latest",
                 Some(MetricCatalogLens::Flow(FlowLens::InputMillisBehindLatest)),
+            ),
+            (
+                "cluster.nr_active_jobs",
+                Some(MetricCatalogLens::Cluster(ClusterLens::NrActiveJobs)),
             ),
             (
                 "cluster.nr_task_managers",
@@ -297,6 +301,7 @@ impl Lens for FlowLens {
 }
 
 enum ClusterLens {
+    NrActiveJobs,
     NrTaskManagers,
     TaskCpuLoad,
     TaskHeapMemoryUsed,
@@ -313,6 +318,7 @@ impl Lens for ClusterLens {
 
     fn get(&self, telemetry: &Self::T) -> String {
         match self {
+            Self::NrActiveJobs => format!("{}", telemetry.nr_active_jobs),
             Self::NrTaskManagers => format!("{}", telemetry.nr_task_managers),
             Self::TaskCpuLoad => format!("{}", telemetry.task_cpu_load),
             Self::TaskHeapMemoryUsed => format!("{}", telemetry.task_heap_memory_used),
@@ -327,6 +333,7 @@ impl Lens for ClusterLens {
 
     fn set(&self, telemetry: &mut Self::T, value_rep: impl AsRef<str>) -> anyhow::Result<()> {
         match self {
+            Self::NrActiveJobs => telemetry.nr_active_jobs = u32::from_str(value_rep.as_ref())?,
             Self::NrTaskManagers => telemetry.nr_task_managers = u32::from_str(value_rep.as_ref())?,
             Self::TaskCpuLoad => telemetry.task_cpu_load = f64::from_str(value_rep.as_ref())?,
             Self::TaskHeapMemoryUsed => telemetry.task_heap_memory_used = f64::from_str(value_rep.as_ref())?,

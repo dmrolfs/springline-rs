@@ -238,7 +238,7 @@ mod tests {
                 input_records_lag_max: Some(314),
                 ..FlowMetrics::default()
             },
-            cluster: ClusterMetrics { nr_task_managers: 4, ..ClusterMetrics::default() },
+            cluster: ClusterMetrics { nr_active_jobs: 1, nr_task_managers: 4, ..ClusterMetrics::default() },
             custom: telemetry::TableType::default(),
         };
         static ref SCALE_UP: DecisionResult<MetricCatalog> = DecisionResult::ScaleUp(METRICS.clone());

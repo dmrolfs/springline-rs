@@ -70,7 +70,7 @@ impl Monitor {
         }
     }
 
-    #[tracing::instrument(level = "info", name = "monitor phase events")]
+    #[tracing::instrument(level = "info", skip(self), name = "monitor phase events")]
     pub async fn run(mut self) {
         let mut loaded = BitFlags::<PhaseLoaded>::default();
         Self::mark_ready_phases(&mut loaded);

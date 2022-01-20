@@ -208,15 +208,15 @@ fn distill_metric_orders_and_agg(
     (order_domain, agg_span)
 }
 
-fn collect_metric_points(metric_points: &mut HashMap<String, Vec<TelemetryValue>>, vertex_telemetry: Telemetry) {
+fn merge_into_metric_groups(metric_telemetry: &mut HashMap<String, Vec<TelemetryValue>>, vertex_telemetry: Telemetry) {
     for (metric, vertex_val) in vertex_telemetry.into_iter() {
-        metric_points.entry(metric).or_insert_with(Vec::default).push(vertex_val);
+        metric_telemetry.entry(metric).or_insert_with(Vec::default).push(vertex_val);
     }
 }
 
 #[tracing::instrument(level = "info", skip(orders))]
-fn merge_telemetry_per_order(
-    metric_points: HashMap<String, Vec<TelemetryValue>>, orders: &[MetricOrder],
+fn consolidate_active_job_telemetry_for_order(
+    job_telemetry: HashMap<String, Vec<TelemetryValue>>, orders: &[MetricOrder],
 ) -> Result<Telemetry, TelemetryError> {
     // to avoid repeated linear searches, reorg strategy data based on metrics
     let mut telemetry_agg = HashMap::with_capacity(orders.len());
@@ -225,7 +225,7 @@ fn merge_telemetry_per_order(
     }
 
     // merge via order aggregation
-    let telemetry: Telemetry = metric_points
+    let telemetry: Telemetry = job_telemetry
         .into_iter()
         .map(
             |(metric, values)| match telemetry_agg.get(metric.as_str()).map(|agg| (agg, agg.combinator())) {

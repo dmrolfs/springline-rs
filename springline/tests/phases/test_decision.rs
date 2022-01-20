@@ -16,7 +16,7 @@ use proctor::{AppData, ProctorContext};
 use serde::de::DeserializeOwned;
 use springline::phases::decision::{make_decision_transform, DecisionResult, DECISION_DIRECTION};
 use springline::phases::decision::{DecisionContext, DecisionPolicy, DecisionTemplateData};
-use springline::phases::{MetricCatalog, MC_CLUSTER__NR_TASK_MANAGERS};
+use springline::phases::{MetricCatalog, MC_CLUSTER__NR_TASK_MANAGERS, MC_CLUSTER__NR_ACTIVE_JOBS};
 use springline::settings::DecisionSettings;
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
@@ -281,6 +281,7 @@ async fn test_decision_carry_policy_result() -> anyhow::Result<()> {
 
     flow.push_context(maplit::hashmap! {
         "all_sinks_healthy" => true.to_telemetry(),
+        MC_CLUSTER__NR_ACTIVE_JOBS => 1.to_telemetry(),
         MC_CLUSTER__NR_TASK_MANAGERS => 4.to_telemetry(),
     })
     .await?;
@@ -395,6 +396,7 @@ async fn test_decision_common() -> anyhow::Result<()> {
 
     flow.push_context(maplit::hashmap! {
         "all_sinks_healthy" => true.to_telemetry(),
+        MC_CLUSTER__NR_ACTIVE_JOBS => 1.to_telemetry(),
         MC_CLUSTER__NR_TASK_MANAGERS => 4.to_telemetry(),
     })
     .await?;

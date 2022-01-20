@@ -443,7 +443,7 @@ mod tests {
                 min_cluster_size: 0,
                 max_cluster_size: 20,
                 min_scaling_step: 2,
-                max_scaling_step: 10,
+                max_scaling_step: 4,
                 custom: HashMap::default(),
             },
         },

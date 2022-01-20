@@ -19,6 +19,7 @@ use std::fmt::Debug;
 use std::sync::Arc;
 use tracing::Instrument;
 use url::Url;
+use crate::phases::MC_CLUSTER__NR_ACTIVE_JOBS;
 
 /// Load telemetry for a specify scope from the Flink Job Manager REST API; e.g., Job or Taskmanager.
 /// Note: cast_trait_object issues a conflicting impl error if no generic is specified (at least for
@@ -147,7 +148,8 @@ where
 
                     self.query_active_jobs()
                         .and_then(|active_jobs| async {
-                            let mut metric_points = HashMap::with_capacity(active_jobs.len());
+                            let nr_active_jobs = active_jobs.len();
+                            let mut metric_telemetry = HashMap::with_capacity(nr_active_jobs + 1);
 
                             for job in active_jobs {
                                 let detail = match self.query_job_details(&job.id).await {
@@ -163,11 +165,15 @@ where
                                         Err(_) => continue,
                                     };
 
-                                    super::collect_metric_points(&mut metric_points, vertex_telemetry);
+                                    super::merge_into_metric_groups(&mut metric_telemetry, vertex_telemetry);
                                 }
                             }
 
-                            super::merge_telemetry_per_order(metric_points, &self.orders)
+                            super::consolidate_active_job_telemetry_for_order(metric_telemetry, &self.orders)
+                                .map(|mut telemetry| {
+                                    telemetry.insert(MC_CLUSTER__NR_ACTIVE_JOBS.to_string(), nr_active_jobs.into());
+                                    telemetry
+                                })
                                 .and_then(Out::unpack)
                                 .map_err(|err| err.into())
                         })
@@ -456,6 +462,8 @@ fn start_flink_query_vertex_avail_telemetry_timer() -> HistogramTimer {
 
 #[cfg(test)]
 mod tests {
+    use std::borrow::Cow;
+    use std::collections::HashSet;
     use super::*;
     use crate::phases::collection::flink::STD_METRIC_ORDERS;
     // use crate::phases::collection::flink::{FLINK_COLLECTION_ERRORS, FLINK_COLLECTION_TIME};
@@ -465,18 +473,22 @@ mod tests {
     use claim::*;
     use fake::{Fake, Faker};
     use pretty_assertions::assert_eq;
-    use proctor::elements::Telemetry;
+    use proctor::elements::{Telemetry, TelemetryType, Timestamp};
     use reqwest::header::HeaderMap;
     use reqwest_middleware::ClientBuilder;
     use reqwest_retry::policies::ExponentialBackoff;
     use reqwest_retry::RetryTransientMiddleware;
     use serde_json::json;
     use std::sync::atomic::{AtomicU32, Ordering};
+    use std::time::Duration;
     use tokio::sync::mpsc;
     use tokio_test::block_on;
     use url::Url;
     use wiremock::matchers::{method, path};
-    use wiremock::{Mock, MockServer, Respond, ResponseTemplate};
+    use wiremock::{Match, Mock, MockServer, Request, Respond, ResponseTemplate};
+    use crate::phases::collection::flink::api_model::{JobState, TaskState, VertexDetail};
+    use crate::phases::collection::flink;
+    use crate::phases::MetricCatalog;
 
     pub struct RetryResponder(Arc<AtomicU32>, u32, ResponseTemplate, u16);
 
@@ -515,19 +527,500 @@ mod tests {
         Ok(TaskContext { client, base_url: Url::parse(url.as_str())? })
     }
 
-    async fn test_stage_for(
-        scope: FlinkScope, orders: &Vec<MetricOrder>, context: TaskContext,
-    ) -> (tokio::task::JoinHandle<()>, mpsc::Sender<()>, mpsc::Receiver<Telemetry>) {
+    async fn test_stage_for(orders: &Vec<MetricOrder>, context: TaskContext,) -> (CollectVertex<Telemetry>, mpsc::Sender<()>, mpsc::Receiver<Telemetry>) {
         let mut stage = assert_ok!(CollectVertex::new(Arc::new(orders.clone()), context));
         let (tx_trigger, rx_trigger) = mpsc::channel(1);
         let (tx_out, rx_out) = mpsc::channel(8);
         stage.trigger.attach("trigger".into(), rx_trigger).await;
         stage.outlet.attach("out".into(), tx_out).await;
-        let handle = tokio::spawn(async move {
-            assert_ok!(stage.run().await);
-        });
-        (handle, tx_trigger, rx_out)
+        (stage, tx_trigger, rx_out)
     }
+
+    #[test]
+    fn test_query_active_jobs() {
+        once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
+        let main_span = tracing::info_span!("test_query_active_jobs");
+        let _ = main_span.enter();
+
+        block_on(async {
+            let mock_server = MockServer::start().await;
+
+            let b = json!({
+                "jobs": [
+                    {
+                        "id": "0771e8332dc401d254a140a707169a48",
+                        "status": "RUNNING"
+                    },
+                    {
+                        "id": "5226h8332dc401d254a140a707114f93",
+                        "status": "CREATED"
+                    }
+                ]
+            });
+
+            let response = ResponseTemplate::new(200).set_body_json(b);
+
+            Mock::given(method("GET"))
+                .and(path("/jobs"))
+                .respond_with(response)
+                .expect(1)
+                .mount(&mock_server)
+                .await;
+
+            let context = assert_ok!(context_for(&mock_server));
+            let (stage, _, _) = test_stage_for(&STD_METRIC_ORDERS, context).await;
+
+            let actual = assert_ok!(stage.query_active_jobs().await);
+            assert_eq!(
+                actual,
+                vec![
+                    JobSummary {
+                        id: JobId::new("0771e8332dc401d254a140a707169a48"),
+                        status: JobState::Running,
+                    },
+                    JobSummary {
+                        id: JobId::new("5226h8332dc401d254a140a707114f93"),
+                        status: JobState::Created,
+                    },
+                ]
+            )
+        })
+    }
+
+    fn make_job_detail_body_and_expectation() -> (serde_json::Value, JobDetail) {
+        let body = json!({
+                "jid": "a97b6344d775aafe03e55a8e812d2713",
+                "name": "CarTopSpeedWindowingExample",
+                "isStoppable": false,
+                "state": "RUNNING",
+                "start-time": 1639156793312_i64,
+                "end-time": -1,
+                "duration": 23079,
+                "maxParallelism": -1,
+                "now": 1639156816391_i64,
+                "timestamps": {
+                    "CREATED": 1639156793320_i64,
+                    "FAILED": 0,
+                    "RUNNING": 1639156794159_i64,
+                    "CANCELED": 0,
+                    "CANCELLING": 0,
+                    "SUSPENDED": 0,
+                    "FAILING": 0,
+                    "RESTARTING": 0,
+                    "FINISHED": 0,
+                    "INITIALIZING": 1639156793312_i64,
+                    "RECONCILING": 0
+                },
+                "vertices": [
+                    {
+                        "id": "cbc357ccb763df2852fee8c4fc7d55f2",
+                        "name": "Source: Custom Source -> Timestamps/Watermarks",
+                        "maxParallelism": 128,
+                        "parallelism": 1,
+                        "status": "RUNNING",
+                        "start-time": 1639156794188_i64,
+                        "end-time": -1,
+                        "duration": 22203,
+                        "tasks": {
+                            "SCHEDULED": 0,
+                            "FINISHED": 0,
+                            "FAILED": 0,
+                            "CANCELING": 0,
+                            "CANCELED": 0,
+                            "DEPLOYING": 0,
+                            "RECONCILING": 0,
+                            "CREATED": 0,
+                            "RUNNING": 1,
+                            "INITIALIZING": 0
+                        },
+                        "metrics": {
+                            "read-bytes": 0,
+                            "read-bytes-complete": false,
+                            "write-bytes": 0,
+                            "write-bytes-complete": false,
+                            "read-records": 0,
+                            "read-records-complete": false,
+                            "write-records": 0,
+                            "write-records-complete": false
+                        }
+                    },
+                    {
+                        "id": "90bea66de1c231edf33913ecd54406c1",
+                        "name": "Window(GlobalWindows(), DeltaTrigger, TimeEvictor, ComparableAggregator, PassThroughWindowFunction) -> Sink: Print to Std. Out",
+                        "maxParallelism": 128,
+                        "parallelism": 1,
+                        "status": "RUNNING",
+                        "start-time": 1639156794193_i64,
+                        "end-time": -1,
+                        "duration": 22198,
+                        "tasks": {
+                            "SCHEDULED": 0,
+                            "FINISHED": 0,
+                            "FAILED": 0,
+                            "CANCELING": 0,
+                            "CANCELED": 0,
+                            "DEPLOYING": 0,
+                            "RECONCILING": 0,
+                            "CREATED": 0,
+                            "RUNNING": 1,
+                            "INITIALIZING": 0
+                        },
+                        "metrics": {
+                            "read-bytes": 0,
+                            "read-bytes-complete": false,
+                            "write-bytes": 0,
+                            "write-bytes-complete": false,
+                            "read-records": 0,
+                            "read-records-complete": false,
+                            "write-records": 0,
+                            "write-records-complete": false
+                        }
+                    }
+                ],
+                "status-counts": {
+                    "SCHEDULED": 0,
+                    "FINISHED": 0,
+                    "FAILED": 0,
+                    "CANCELING": 0,
+                    "CANCELED": 0,
+                    "DEPLOYING": 0,
+                    "RECONCILING": 0,
+                    "CREATED": 0,
+                    "RUNNING": 2,
+                    "INITIALIZING": 0
+                },
+                "plan": {
+                    "jid": "a97b6344d775aafe03e55a8e812d2713",
+                    "name": "CarTopSpeedWindowingExample",
+                    "nodes": [
+                        {
+                            "id": "90bea66de1c231edf33913ecd54406c1",
+                            "parallelism": 1,
+                            "operator": "",
+                            "operator_strategy": "",
+                            "description": "Window(GlobalWindows(), DeltaTrigger, TimeEvictor, ComparableAggregator, PassThroughWindowFunction) -&gt; Sink: Print to Std. Out",
+                            "inputs": [
+                                {
+                                    "num": 0,
+                                    "id": "cbc357ccb763df2852fee8c4fc7d55f2",
+                                    "ship_strategy": "HASH",
+                                    "exchange": "pipelined_bounded"
+                                }
+                            ],
+                            "optimizer_properties": {}
+                        },
+                        {
+                            "id": "cbc357ccb763df2852fee8c4fc7d55f2",
+                            "parallelism": 1,
+                            "operator": "",
+                            "operator_strategy": "",
+                            "description": "Source: Custom Source -&gt; Timestamps/Watermarks",
+                            "optimizer_properties": {}
+                        }
+                    ]
+                }
+            });
+
+        let expected = JobDetail {
+            jid: JobId::new("a97b6344d775aafe03e55a8e812d2713"),
+            name: "CarTopSpeedWindowingExample".to_string(),
+            is_stoppable: false,
+            state: JobState::Running,
+            start_time: Timestamp::new(1639156793, 312_000_000),
+            end_time: None,
+            duration: Duration::from_millis(23079),
+            max_parallelism: None,
+            now: Timestamp::new(1639156816, 391_000_000),
+            timestamps: maplit::hashmap! {
+                        JobState::Created => Timestamp::new(1639156793, 320_000_000),
+                        JobState::Failed => Timestamp::ZERO,
+                        JobState::Running => Timestamp::new(1639156794, 159_000_000),
+                        JobState::Canceled => Timestamp::ZERO,
+                        JobState::Cancelling => Timestamp::ZERO,
+                        JobState::Suspended => Timestamp::ZERO,
+                        JobState::Failing => Timestamp::ZERO,
+                        JobState::Restarting => Timestamp::ZERO,
+                        JobState::Finished => Timestamp::ZERO,
+                        JobState::Initializing => Timestamp::new(1639156793, 312_000_000),
+                        JobState::Reconciling => Timestamp::ZERO,
+                    },
+            vertices: vec![
+                VertexDetail {
+                    id: VertexId::new("cbc357ccb763df2852fee8c4fc7d55f2"),
+                    name: "Source: Custom Source -> Timestamps/Watermarks".to_string(),
+                    max_parallelism: Some(128),
+                    parallelism: 1,
+                    status: TaskState::Running,
+                    start_time: Timestamp::new(1639156794, 188_000_000),
+                    end_time: None,
+                    duration: Duration::from_millis(22203),
+                    tasks: maplit::hashmap! {
+                                TaskState::Scheduled => 0,
+                                TaskState::Finished => 0,
+                                TaskState::Failed => 0,
+                                TaskState::Canceling => 0,
+                                TaskState::Canceled => 0,
+                                TaskState::Deploying => 0,
+                                TaskState::Reconciling => 0,
+                                TaskState::Created => 0,
+                                TaskState::Running => 1,
+                                TaskState::Initializing => 0,
+                            },
+                    metrics: maplit::hashmap! {
+                                "read-bytes".to_string() => 0_i64.into(),
+                                "read-bytes-complete".to_string() => false.into(),
+                                "write-bytes".to_string() => 0_i64.into(),
+                                "write-bytes-complete".to_string() => false.into(),
+                                "read-records".to_string() => 0_i64.into(),
+                                "read-records-complete".to_string() => false.into(),
+                                "write-records".to_string() => 0_i64.into(),
+                                "write-records-complete".to_string() => false.into(),
+                            }
+                },
+                VertexDetail {
+                    id: VertexId::new("90bea66de1c231edf33913ecd54406c1"),
+                    name: "Window(GlobalWindows(), DeltaTrigger, TimeEvictor, ComparableAggregator, \
+                                   PassThroughWindowFunction) -> Sink: Print to Std. Out"
+                        .to_string(),
+                    max_parallelism: Some(128),
+                    parallelism: 1,
+                    status: TaskState::Running,
+                    start_time: Timestamp::new(1639156794, 193_000_000),
+                    end_time: None,
+                    duration: Duration::from_millis(22198),
+                    tasks: maplit::hashmap! {
+                                TaskState::Scheduled => 0,
+                                TaskState::Finished => 0,
+                                TaskState::Failed => 0,
+                                TaskState::Canceling => 0,
+                                TaskState::Canceled => 0,
+                                TaskState::Deploying => 0,
+                                TaskState::Reconciling => 0,
+                                TaskState::Created => 0,
+                                TaskState::Running => 1,
+                                TaskState::Initializing => 0,
+                            },
+                    metrics: maplit::hashmap! {
+                                "read-bytes".to_string() => 0_i64.into(),
+                                "read-bytes-complete".to_string() => false.into(),
+                                "write-bytes".to_string() => 0_i64.into(),
+                                "write-bytes-complete".to_string() => false.into(),
+                                "read-records".to_string() => 0_i64.into(),
+                                "read-records-complete".to_string() => false.into(),
+                                "write-records".to_string() => 0_i64.into(),
+                                "write-records-complete".to_string() => false.into(),
+                            }
+                },
+            ],
+            status_counts: maplit::hashmap! {
+                        TaskState::Scheduled => 0,
+                        TaskState::Finished => 0,
+                        TaskState::Failed => 0,
+                        TaskState::Canceling => 0,
+                        TaskState::Canceled => 0,
+                        TaskState::Deploying => 0,
+                        TaskState::Reconciling => 0,
+                        TaskState::Created => 0,
+                        TaskState::Running => 2,
+                        TaskState::Initializing => 0,
+                    }
+        };
+
+        (body, expected)
+    }
+
+    #[test]
+    fn test_query_job_details() {
+        once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
+        let main_span = tracing::info_span!("test_query_job_details");
+        let _ = main_span.enter();
+
+        block_on(async {
+            let mock_server = MockServer::start().await;
+
+            let (b, expected) = make_job_detail_body_and_expectation();
+
+            let response = ResponseTemplate::new(200).set_body_json(b);
+
+            let job_id = "a97b6344d775aafe03e55a8e812d2713".into();
+
+            Mock::given(method("GET"))
+                .and(path(format!("/jobs/{job_id}")))
+                .respond_with(response)
+                .expect(1)
+                .mount(&mock_server)
+                .await;
+
+            let context = assert_ok!(context_for(&mock_server));
+            let (stage, _, _) = test_stage_for(&STD_METRIC_ORDERS, context).await;
+
+            let actual = assert_ok!(stage.query_job_details(&job_id).await);
+            assert_eq!(actual, expected);
+        })
+    }
+
+    struct EmptyQueryParamMatcher;
+    impl Match for EmptyQueryParamMatcher {
+        fn matches(&self, request: &Request) -> bool {
+            request.url.query().is_none()
+        }
+    }
+
+    struct QueryParamKeyMatcher(String);
+
+    impl QueryParamKeyMatcher {
+        pub fn new(key: impl Into<String>) -> Self {
+            Self(key.into())
+        }
+    }
+
+    impl Match for QueryParamKeyMatcher {
+        fn matches(&self, request: &Request) -> bool {
+            let query_keys: HashSet<Cow<'_, str>> = request.url.query_pairs().map(|(k, _)| k).collect();
+            query_keys.contains(self.0.as_str())
+        }
+    }
+
+
+    const METRIC_SUMMARY: Lazy<serde_json::Value> = Lazy::new(|| json!([
+                { "id": "Shuffle.Netty.Output.Buffers.outPoolUsage" },
+                { "id": "checkpointStartDelayNanos" },
+                { "id": "numBytesInLocal" },
+                { "id": "numBytesInRemotePerSecond" },
+                { "id": "Shuffle.Netty.Input.numBytesInRemotePerSecond" },
+                { "id": "Source__Custom_Source.numRecordsInPerSecond" },
+                { "id": "numBytesOut" },
+                { "id": "Timestamps/Watermarks.currentInputWatermark" },
+                { "id": "numBytesIn" },
+                { "id": "Timestamps/Watermarks.numRecordsOutPerSecond" },
+                { "id": "numBuffersOut" },
+                { "id": "Shuffle.Netty.Input.numBuffersInLocal" },
+                { "id": "numBuffersInRemotePerSecond" },
+                { "id": "numBytesOutPerSecond" },
+                { "id": "Timestamps/Watermarks.numRecordsOut" },
+                { "id": "buffers.outputQueueLength" },
+                { "id": "Timestamps/Watermarks.numRecordsIn" },
+                { "id": "numBuffersOutPerSecond" },
+                { "id": "Shuffle.Netty.Input.Buffers.inputExclusiveBuffersUsage" },
+                { "id": "isBackPressured" },
+                { "id": "numBytesInLocalPerSecond" },
+                { "id": "buffers.inPoolUsage" },
+                { "id": "idleTimeMsPerSecond" },
+                { "id": "Shuffle.Netty.Input.numBytesInLocalPerSecond" },
+                { "id": "numBytesInRemote" },
+                { "id": "Source__Custom_Source.numRecordsOut" },
+                { "id": "Shuffle.Netty.Input.numBytesInLocal" },
+                { "id": "Shuffle.Netty.Input.numBytesInRemote" },
+                { "id": "busyTimeMsPerSecond" },
+                { "id": "Shuffle.Netty.Output.Buffers.outputQueueLength" },
+                { "id": "buffers.inputFloatingBuffersUsage" },
+                { "id": "Shuffle.Netty.Input.Buffers.inPoolUsage" },
+                { "id": "numBuffersInLocalPerSecond" },
+                { "id": "numRecordsOut" },
+                { "id": "numBuffersInLocal" },
+                { "id": "Timestamps/Watermarks.currentOutputWatermark" },
+                { "id": "Source__Custom_Source.currentOutputWatermark" },
+                { "id": "numBuffersInRemote" },
+                { "id": "buffers.inputQueueLength" },
+                { "id": "Source__Custom_Source.numRecordsOutPerSecond" },
+                { "id": "Timestamps/Watermarks.numRecordsInPerSecond" },
+                { "id": "numRecordsIn" },
+                { "id": "Shuffle.Netty.Input.numBuffersInRemote" },
+                { "id": "numBytesInPerSecond" },
+                { "id": "backPressuredTimeMsPerSecond" },
+                { "id": "Shuffle.Netty.Input.Buffers.inputQueueLength" },
+                { "id": "Source__Custom_Source.numRecordsIn" },
+                { "id": "buffers.inputExclusiveBuffersUsage" },
+                { "id": "Shuffle.Netty.Input.numBuffersInRemotePerSecond" },
+                { "id": "numRecordsOutPerSecond" },
+                { "id": "buffers.outPoolUsage" },
+                { "id": "Shuffle.Netty.Input.numBuffersInLocalPerSecond" },
+                { "id": "numRecordsInPerSecond" },
+                { "id": "Shuffle.Netty.Input.Buffers.inputFloatingBuffersUsage" },
+            ] ));
+
+    #[test]
+    fn test_query_vertex_telemetry() {
+        once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
+        let main_span = tracing::info_span!("test_query_vertex_telemetry");
+        let _ = main_span.enter();
+
+        block_on(async {
+            let mock_server = MockServer::start().await;
+
+            let summary_response = ResponseTemplate::new(200).set_body_json(METRIC_SUMMARY.clone());
+
+            let metrics = json!([
+                { "id": "numRecordsInPerSecond", "max": 0.0 },
+                { "id": "numRecordsOutPerSecond", "max": 20.0 },
+                { "id": "buffers.inputQueueLength", "max": 0.0 },
+                { "id": "buffers.inPoolUsage", "max": 0.0 },
+                { "id": "buffers.outputQueueLength", "max": 1.0 },
+                { "id": "buffers.outPoolUsage", "max": 0.1 },
+            ] );
+
+            let metrics_response = ResponseTemplate::new(200).set_body_json(metrics);
+
+            let job_id = "f3f10c679805d35fbed73a08c37d03cc".into();
+            let vertex_id = "cbc357ccb763df2852fee8c4fc7d55f2".into();
+
+            let query_path = format!("/jobs/{job_id}/vertices/{vertex_id}/subtasks/metrics");
+
+            Mock::given(method("GET"))
+                .and(path(query_path.clone()))
+                .and(EmptyQueryParamMatcher)
+                .respond_with(summary_response)
+                .expect(1)
+                .mount(&mock_server)
+                .await;
+
+            Mock::given(method("GET"))
+                .and(path(query_path))
+                .and(QueryParamKeyMatcher::new("get"))
+                .respond_with(metrics_response)
+                .expect(1)
+                .mount(&mock_server)
+                .await;
+
+            let context = assert_ok!(context_for(&mock_server));
+            let (stage, _, _) = test_stage_for(&STD_METRIC_ORDERS, context).await;
+
+            let scopes = maplit::hashset! {
+                FlinkScope::Task, FlinkScope::Kafka, FlinkScope::Kinesis,
+            };
+
+            let mut orders = STD_METRIC_ORDERS.clone();
+            let kafka_order = MetricOrder {
+                scope: FlinkScope::Kafka,
+                metric: "records-lag-max".to_string(),
+                agg: Aggregation::Value,
+                telemetry_path: "flow.input_records_lag_max".to_string(),
+                telemetry_type: TelemetryType::Integer,
+            };
+            orders.extend(vec![kafka_order.clone()]);
+
+            let (metric_orders, agg_span) = flink::distill_metric_orders_and_agg(&scopes, &orders);
+            tracing::info!(?metric_orders, ?agg_span, "orders distilled");
+
+            let actual = assert_ok!(stage.query_vertex_telemetry(&job_id, &vertex_id, &metric_orders).await);
+
+            assert_eq!(
+                actual,
+                maplit::hashmap! {
+                    crate::phases::metric_catalog::MC_FLOW__RECORDS_IN_PER_SEC.to_string() => 0_f64.into(),
+                    "flow.records_out_per_sec".to_string() => 20_f64.into(),
+                    "cluster.task_network_input_queue_len".to_string() => 0_f64.into(),
+                    "cluster.task_network_input_pool_usage".to_string() => 0_f64.into(),
+                    "cluster.task_network_output_queue_len".to_string() => 1_f64.into(),
+                    "cluster.task_network_output_pool_usage".to_string() => 0.1_f64.into(),
+                }
+                    .into()
+            )
+        })
+    }
+
+
+
 
     // #[test]
     // fn test_flink_collect_scope_failure() {
