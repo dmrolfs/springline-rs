@@ -145,7 +145,7 @@ where
                     // timer spans all retries
                     let _flink_timer = super::start_flink_collection_timer(&self.scope);
 
-                    let response: Result<Out, CollectionError> = self
+                    let out: Result<Out, CollectionError> = self
                         .context
                         .client
                         .request(Method::GET, url.clone())
@@ -164,12 +164,12 @@ where
                                 .map_err(|err| err.into())
                         });
 
-                    super::identity_and_track_errors(self.scope, response)
+                    super::identity_or_track_error(self.scope, out).or_else(|_err| Ok(Out::default()))
                 })
                 .instrument(span)
                 .await;
 
-            let _ = super::identity_and_track_errors(self.scope, collection_and_send);
+            let _ = super::identity_or_track_error(self.scope, collection_and_send);
         }
 
         Ok(())
@@ -290,7 +290,9 @@ mod tests {
 
             assert_ok!(source_handle.await);
             assert_ok!(handle.await);
-            assert_none!(rx_out.recv().await);
+            // assert_none!(rx_out.recv().await);
+            let empty = assert_some!(rx_out.recv().await);
+            assert_eq!(empty, Telemetry::default());
         });
 
         // MetricFamily::distill_from(registry.gather())

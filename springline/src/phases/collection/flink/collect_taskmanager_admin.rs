@@ -109,8 +109,6 @@ where
 
         let url = url.clone();
         let name = self.name();
-        // let outlet = self.outlet.clone();
-        // let client = &self.context.client.clone();
 
         while self.trigger.recv().await.is_some() {
             let _stage_timer = stage::start_stage_eval_time(name.as_ref());
@@ -143,12 +141,13 @@ where
                             Out::unpack(telemetry.into()).map_err(|err| err.into())
                         });
 
-                    super::identity_and_track_errors(SCOPE, result)
+
+                    super::identity_or_track_error(SCOPE, result).or_else(|_err| Ok(Out::default()))
                 })
                 .instrument(span)
                 .await;
 
-            let _ = super::identity_and_track_errors(SCOPE, collection_and_send);
+            let _ = super::identity_or_track_error(SCOPE, collection_and_send);
         }
 
         Ok(())

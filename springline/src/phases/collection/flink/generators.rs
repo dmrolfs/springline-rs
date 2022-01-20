@@ -105,7 +105,7 @@ fn make_flink_generator(
             let tasks: Vec<JoinHandle<Result<Telemetry, CollectionError>>> = generators
                 .into_iter()
                 .flatten()
-                .map(|(scope, gen)| tokio::spawn(async move { super::identity_and_track_errors(scope, gen().await) }))
+                .map(|(scope, gen)| tokio::spawn(async move { super::identity_or_track_error(scope, gen().await) }))
                 .collect::<Vec<_>>();
 
             // let results : Result<Vec<Result<Telemetry, CollectionError>>, tokio::task::JoinError> =

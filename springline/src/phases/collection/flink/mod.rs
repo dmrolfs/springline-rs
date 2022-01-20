@@ -127,7 +127,7 @@ impl fmt::Debug for TaskContext {
 
 // This type is also only needed to circumvent the issue cast_trait_object places on forcing the generic Out type.
 // Since Telemetry is only used for this stage, The generic variation is dead.
-pub trait Unpack: Sized {
+pub trait Unpack: Default + Sized {
     fn unpack(telemetry: Telemetry) -> Result<Self, TelemetryError>;
 }
 
@@ -175,7 +175,7 @@ const JOB_SCOPE: &str = "Jobs";
 const TASK_SCOPE: &str = "Tasks";
 
 #[inline]
-fn identity_and_track_errors<T, E>(scope: FlinkScope, data: Result<T, E>) -> Result<T, CollectionError>
+fn identity_or_track_error<T, E>(scope: FlinkScope, data: Result<T, E>) -> Result<T, CollectionError>
 where
     E: Into<CollectionError>,
 {

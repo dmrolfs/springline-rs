@@ -147,15 +147,14 @@ where
                 .reserve_send(async {
                     let flink_span = tracing::info_span!("query Flink REST APIs");
 
-                    self.query_active_jobs()
+                    let out: Result<Out, CollectionError> = self.query_active_jobs()
                         .and_then(|active_jobs| async {
                             let nr_active_jobs = active_jobs.len();
                             let metric_telemetry = Arc::new(Mutex::new(HashMap::with_capacity(nr_active_jobs + 1)));
 
-                            let _vertex_gather_tasks =
+                            let _vertex_gather_tasks: Vec<()> =
                                 futures::future::join_all(active_jobs.into_iter().map(|job| async {
-                                    self.merge_job_telemetry(job, metric_telemetry.clone(), &metric_orders)
-                                        .await
+                                    self.merge_job_telemetry(job, metric_telemetry.clone(), &metric_orders).await
                                 }))
                                 .await;
                             //todo: clean up once vertex_gather_tasks proves ok in real env
@@ -187,12 +186,14 @@ where
                                 .map_err(|err| err.into())
                         })
                         .instrument(flink_span)
-                        .await
+                        .await;
+
+                    super::identity_or_track_error(FlinkScope::Task, out).or_else(|_err| Ok(Out::default()))
                 })
                 .instrument(span)
                 .await;
 
-            let _ = super::identity_and_track_errors(FlinkScope::Task, collection_and_send);
+            let _ = super::identity_or_track_error(FlinkScope::Task, collection_and_send);
         }
 
         Ok(())
@@ -239,7 +240,7 @@ where
             })
             .map(|jobs: Vec<JobSummary>| jobs.into_iter().filter(|j| j.status.is_active()).collect());
 
-        super::identity_and_track_errors(FlinkScope::Jobs, result)
+        super::identity_or_track_error(FlinkScope::Jobs, result)
     }
 
     #[tracing::instrument(level = "info", skip(self))]
@@ -265,7 +266,7 @@ where
             .await
             .map_err(|err: reqwest_middleware::Error| err.into());
 
-        super::identity_and_track_errors(FlinkScope::Jobs, result)
+        super::identity_or_track_error(FlinkScope::Jobs, result)
     }
 
     #[tracing::instrument(level = "info", skip(self, metric_orders))]
@@ -320,7 +321,7 @@ where
                     .collect()
             });
 
-        super::identity_and_track_errors(FlinkScope::Task, picklist)
+        super::identity_or_track_error(FlinkScope::Task, picklist)
     }
 
     #[tracing::instrument(level = "info", skip(self, picklist, metric_orders, vertex_metrics_url))]
@@ -367,7 +368,7 @@ where
             Ok(Telemetry::default())
         };
 
-        super::identity_and_track_errors(FlinkScope::Task, telemetry)
+        super::identity_or_track_error(FlinkScope::Task, telemetry)
     }
 
     #[tracing::instrument(level = "info", skip(picklist, metric_orders))]
