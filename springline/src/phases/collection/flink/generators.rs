@@ -2044,6 +2044,7 @@ mod tests {
                 "cluster.task_heap_memory_used".to_string() => heap_used.into(),
                 "cluster.task_heap_memory_committed".to_string() => heap_committed.into(),
                 "cluster.task_nr_threads".to_string() => nr_threads.into(),
+                MC_CLUSTER__NR_ACTIVE_JOBS.to_string() => 2.into(),
                 MC_CLUSTER__NR_TASK_MANAGERS.to_string() => 2.into(),
                 MC_FLOW__RECORDS_IN_PER_SEC.to_string() => max_num_records_in_per_second.into(),
                 "flow.records_out_per_sec".to_string() => max_num_records_out_per_second.into(),

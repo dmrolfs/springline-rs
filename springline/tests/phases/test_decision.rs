@@ -16,7 +16,7 @@ use proctor::{AppData, ProctorContext};
 use serde::de::DeserializeOwned;
 use springline::phases::decision::{make_decision_transform, DecisionResult, DECISION_DIRECTION};
 use springline::phases::decision::{DecisionContext, DecisionPolicy, DecisionTemplateData};
-use springline::phases::{MetricCatalog, MC_CLUSTER__NR_TASK_MANAGERS, MC_CLUSTER__NR_ACTIVE_JOBS};
+use springline::phases::{MetricCatalog, MC_CLUSTER__NR_ACTIVE_JOBS, MC_CLUSTER__NR_TASK_MANAGERS};
 use springline::settings::DecisionSettings;
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;

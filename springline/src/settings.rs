@@ -567,7 +567,7 @@ mod tests {
                 },
                 decision: DecisionSettings {
                     template_data: Some(DecisionTemplateData {
-                        max_healthy_cpu_load: Some(0.0008),
+                        max_healthy_cpu_load: Some(0.0006),
                         min_healthy_cpu_load: Some(0.0003),
                         // max_healthy_heap_memory_load: Some(0.5),
                         ..SETTINGS.decision.template_data.clone().unwrap()

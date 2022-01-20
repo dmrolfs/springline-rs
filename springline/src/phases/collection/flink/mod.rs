@@ -210,7 +210,10 @@ fn distill_metric_orders_and_agg(
 
 fn merge_into_metric_groups(metric_telemetry: &mut HashMap<String, Vec<TelemetryValue>>, vertex_telemetry: Telemetry) {
     for (metric, vertex_val) in vertex_telemetry.into_iter() {
-        metric_telemetry.entry(metric).or_insert_with(Vec::default).push(vertex_val);
+        metric_telemetry
+            .entry(metric)
+            .or_insert_with(Vec::default)
+            .push(vertex_val);
     }
 }
 
@@ -246,6 +249,7 @@ fn consolidate_active_job_telemetry_for_order(
     Ok(telemetry)
 }
 
+#[allow(clippy::cognitive_complexity)]
 fn log_response(label: &str, response: &reqwest::Response) {
     const PREAMBLE: &str = "flink telemetry response received";
     let status = response.status();

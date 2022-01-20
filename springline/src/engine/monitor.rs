@@ -125,6 +125,7 @@ impl Monitor {
         })
     }
 
+    #[allow(clippy::cognitive_complexity)]
     fn handle_eligibility_event(event: Arc<EligibilityEvent>, loaded: &mut BitFlags<PhaseLoaded>) {
         match &*event {
             EligibilityEvent::ItemPassed(_item, query_result) => {
@@ -143,6 +144,7 @@ impl Monitor {
         }
     }
 
+    #[allow(clippy::cognitive_complexity)]
     fn handle_decision_event(event: Arc<DecisionEvent>, loaded: &mut BitFlags<PhaseLoaded>) {
         match &*event {
             DecisionEvent::ItemPassed(_item, query_result) => {
@@ -161,6 +163,7 @@ impl Monitor {
         }
     }
 
+    #[allow(clippy::cognitive_complexity)]
     fn handle_plan_event(event: Arc<PlanEvent>) {
         match &*event {
             PlanEvent::ObservationAdded(observation) => {
@@ -197,6 +200,7 @@ impl Monitor {
         }
     }
 
+    #[allow(clippy::cognitive_complexity)]
     fn handle_governance_event(event: Arc<GovernanceEvent>, loaded: &mut BitFlags<PhaseLoaded>) {
         match &*event {
             GovernanceEvent::ItemPassed(_item, query_result) => {

@@ -483,7 +483,7 @@ pub(crate) static METRIC_CATALOG_CLUSTER_NR_ACTIVE_JOBS: Lazy<IntGauge> = Lazy::
         "metric_catalog_cluster_nr_active_jobs",
         "Number of active jobs in the cluster",
     )
-        .expect("failed creating metric_catalog_cluster_nr_active_jobs metric")
+    .expect("failed creating metric_catalog_cluster_nr_active_jobs metric")
 });
 
 pub(crate) static METRIC_CATALOG_CLUSTER_NR_TASK_MANAGERS: Lazy<IntGauge> = Lazy::new(|| {
