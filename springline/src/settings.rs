@@ -249,6 +249,8 @@ mod tests {
                     ],
                     headers: vec![(reqwest::header::ACCEPT.to_string(), "*.json".to_string())],
                     max_retries: 3,
+                    pool_idle_timeout: None,
+                    pool_max_idle_per_host: None,
                 },
                 sources: maplit::hashmap! {
                     "foo".to_string() => SourceSetting::Csv { path: PathBuf::from("../resources/bar.toml"), },
@@ -384,6 +386,8 @@ mod tests {
                 }],
                 headers: vec![(reqwest::header::ACCEPT.to_string(), "*.json".to_string())],
                 max_retries: 3,
+                pool_idle_timeout: None,
+                pool_max_idle_per_host: None,
             },
             sources: maplit::hashmap! {
                 "foo".to_string() => SourceSetting::Csv { path: PathBuf::from("./resources/bar.toml"),},
@@ -553,6 +557,8 @@ mod tests {
                         headers: Vec::default(),
                         metric_orders: Vec::default(),
                         max_retries: 0,
+                        pool_idle_timeout: Some(Duration::from_secs(60)),
+                        pool_max_idle_per_host: Some(5),
                         ..SETTINGS.collection.flink.clone()
                     },
                     sources: HashMap::default(),

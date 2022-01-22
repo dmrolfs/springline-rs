@@ -21,10 +21,7 @@ use url::Url;
 /// my use cases), so a simple Telemetry doesn't work and I need to parameterize even though
 /// I'll only use wrt Telemetry.
 #[derive(Debug)]
-pub struct CollectScope<Out>
-where
-    Out: Unpack,
-{
+pub struct CollectScope<Out> {
     scope: FlinkScope,
     context: TaskContext,
     orders: Arc<Vec<MetricOrder>>,
@@ -32,10 +29,7 @@ where
     outlet: Outlet<Out>,
 }
 
-impl<Out> CollectScope<Out>
-where
-    Out: Unpack,
-{
+impl<Out> CollectScope<Out> {
     pub fn new(scope: FlinkScope, orders: Arc<Vec<MetricOrder>>, context: TaskContext) -> Self {
         let name: SharedString = format!("Collect{}", scope).to_snake_case().into();
         let trigger = Inlet::new(name.clone(), "trigger");
@@ -44,20 +38,14 @@ where
     }
 }
 
-impl<Out> SourceShape for CollectScope<Out>
-where
-    Out: Unpack,
-{
+impl<Out> SourceShape for CollectScope<Out> {
     type Out = Out;
     fn outlet(&self) -> Outlet<Self::Out> {
         self.outlet.clone()
     }
 }
 
-impl<Out> SinkShape for CollectScope<Out>
-where
-    Out: Unpack,
-{
+impl<Out> SinkShape for CollectScope<Out> {
     type In = ();
     fn inlet(&self) -> Inlet<Self::In> {
         self.trigger.clone()

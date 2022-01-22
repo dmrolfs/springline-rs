@@ -230,15 +230,25 @@ where
         plan: &In, stateful_set: &kube::Api<StatefulSet>, workload_resource: &KubernetesWorkloadResource,
     ) -> Result<(), ExecutionPhaseError> {
         let name = workload_resource.get_name();
+        let target_nr_task_managers = plan.target_replicas();
+
         let scale = stateful_set.get_scale(name).await?;
         tracing::info!("scale recv for {}: {:?}", name, scale.spec);
 
         let patch_params = kube::api::PatchParams::default();
-        let fs = json!({ "spec": { "replicas": plan.target_replicas() }});
+        let fs = json!({ "spec": { "replicas": target_nr_task_managers }});
         let patched_scale = stateful_set
             .patch_scale(name, &patch_params, &kube::api::Patch::Merge(&fs))
             .await?;
         tracing::info!("Patched scale for {}: {:?}", name, patched_scale.spec);
+        if let Some(current_nr_task_managers) = scale.spec.clone().and_then(|s| s.replicas) {
+            if target_nr_task_managers == current_nr_task_managers as usize {
+                tracing::warn!(
+                    %target_nr_task_managers,
+                    "patched scale when current cluster size equals scale plan to be executed."
+                );
+            }
+        }
         Ok(())
     }
 

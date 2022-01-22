@@ -39,6 +39,13 @@ pub struct FlinkSettings {
 
     #[serde(default = "FlinkSettings::default_max_retries")]
     pub max_retries: u32,
+
+    #[serde(default, rename = "pool_idle_timeout_secs", skip_serializing_if = "Option::is_none")]
+    #[serde_as(as = "Option<DurationSeconds>")]
+    pub pool_idle_timeout: Option<Duration>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pool_max_idle_per_host: Option<usize>,
 }
 
 impl Default for FlinkSettings {
@@ -52,6 +59,8 @@ impl Default for FlinkSettings {
             metric_orders: Vec::default(),
             headers: Vec::default(),
             max_retries: Self::DEFAULT_MAX_RETRIES,
+            pool_idle_timeout: None,
+            pool_max_idle_per_host: None,
         }
     }
 }

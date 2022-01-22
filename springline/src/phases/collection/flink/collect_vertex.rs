@@ -27,10 +27,7 @@ use url::Url;
 /// my use cases), so a simple Telemetry doesn't work and I need to parameterize even though
 /// I'll only use wrt Telemetry.
 #[derive(Debug)]
-pub struct CollectVertex<Out>
-where
-    Out: Unpack,
-{
+pub struct CollectVertex<Out> {
     scopes: Vec<FlinkScope>,
     context: TaskContext,
     orders: Arc<Vec<MetricOrder>>,
@@ -41,10 +38,7 @@ where
 
 const NAME: &str = "collect_vertex";
 
-impl<Out> CollectVertex<Out>
-where
-    Out: Unpack,
-{
+impl<Out> CollectVertex<Out> {
     pub fn new(orders: Arc<Vec<MetricOrder>>, context: TaskContext) -> Result<Self, CollectionError> {
         let scopes = vec![FlinkScope::Task, FlinkScope::Kafka, FlinkScope::Kinesis];
         let trigger = Inlet::new(NAME, "trigger");
@@ -67,20 +61,14 @@ where
     }
 }
 
-impl<Out> SourceShape for CollectVertex<Out>
-where
-    Out: Unpack,
-{
+impl<Out> SourceShape for CollectVertex<Out> {
     type Out = Out;
     fn outlet(&self) -> Outlet<Self::Out> {
         self.outlet.clone()
     }
 }
 
-impl<Out> SinkShape for CollectVertex<Out>
-where
-    Out: Unpack,
-{
+impl<Out> SinkShape for CollectVertex<Out> {
     type In = ();
     fn inlet(&self) -> Inlet<Self::In> {
         self.trigger.clone()
@@ -147,14 +135,16 @@ where
                 .reserve_send(async {
                     let flink_span = tracing::info_span!("query Flink REST APIs");
 
-                    let out: Result<Out, CollectionError> = self.query_active_jobs()
+                    let out: Result<Out, CollectionError> = self
+                        .query_active_jobs()
                         .and_then(|active_jobs| async {
                             let nr_active_jobs = active_jobs.len();
                             let metric_telemetry = Arc::new(Mutex::new(HashMap::with_capacity(nr_active_jobs + 1)));
 
                             let _vertex_gather_tasks: Vec<()> =
                                 futures::future::join_all(active_jobs.into_iter().map(|job| async {
-                                    self.merge_job_telemetry(job, metric_telemetry.clone(), &metric_orders).await
+                                    self.merge_job_telemetry(job, metric_telemetry.clone(), &metric_orders)
+                                        .await
                                 }))
                                 .await;
                             //todo: clean up once vertex_gather_tasks proves ok in real env
@@ -488,18 +478,10 @@ fn start_flink_query_vertex_avail_telemetry_timer() -> HistogramTimer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::phases::collection::flink::STD_METRIC_ORDERS;
-    use std::borrow::Cow;
-    use std::collections::HashSet;
-    // use crate::phases::collection::flink::{FLINK_COLLECTION_ERRORS, FLINK_COLLECTION_TIME};
-    // use proctor::graph::stage::STAGE_EVAL_TIME;
-    // use inspect_prometheus::{self, Metric, MetricFamily, MetricLabel};
-    // use prometheus::Registry;
     use crate::phases::collection::flink;
     use crate::phases::collection::flink::api_model::{JobState, TaskState, VertexDetail};
-    use crate::phases::MetricCatalog;
+    use crate::phases::collection::flink::STD_METRIC_ORDERS;
     use claim::*;
-    use fake::{Fake, Faker};
     use pretty_assertions::assert_eq;
     use proctor::elements::{Telemetry, TelemetryType, Timestamp};
     use reqwest::header::HeaderMap;
@@ -507,6 +489,8 @@ mod tests {
     use reqwest_retry::policies::ExponentialBackoff;
     use reqwest_retry::RetryTransientMiddleware;
     use serde_json::json;
+    use std::borrow::Cow;
+    use std::collections::HashSet;
     use std::sync::atomic::{AtomicU32, Ordering};
     use std::time::Duration;
     use tokio::sync::mpsc;

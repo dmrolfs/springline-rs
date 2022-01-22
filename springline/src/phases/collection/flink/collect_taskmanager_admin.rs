@@ -19,10 +19,7 @@ use tracing::Instrument;
 /// my use cases), so a simple Telemetry doesn't work and I need to parameterize even though
 /// I'll only use wrt Telemetry.
 #[derive(Debug)]
-pub struct CollectTaskmanagerAdmin<Out>
-where
-    Out: Unpack,
-{
+pub struct CollectTaskmanagerAdmin<Out> {
     context: TaskContext,
     trigger: Inlet<()>,
     outlet: Outlet<Out>,
@@ -30,10 +27,7 @@ where
 
 const NAME: &str = "collect_taskmanager_admin";
 
-impl<Out> CollectTaskmanagerAdmin<Out>
-where
-    Out: Unpack,
-{
+impl<Out> CollectTaskmanagerAdmin<Out> {
     pub fn new(context: TaskContext) -> Self {
         let trigger = Inlet::new(NAME, "trigger");
         let outlet = Outlet::new(NAME, "outlet");
@@ -41,20 +35,14 @@ where
     }
 }
 
-impl<Out> SourceShape for CollectTaskmanagerAdmin<Out>
-where
-    Out: Unpack,
-{
+impl<Out> SourceShape for CollectTaskmanagerAdmin<Out> {
     type Out = Out;
     fn outlet(&self) -> Outlet<Self::Out> {
         self.outlet.clone()
     }
 }
 
-impl<Out> SinkShape for CollectTaskmanagerAdmin<Out>
-where
-    Out: Unpack,
-{
+impl<Out> SinkShape for CollectTaskmanagerAdmin<Out> {
     type In = ();
     fn inlet(&self) -> Inlet<Self::In> {
         self.trigger.clone()
@@ -140,7 +128,6 @@ where
                             telemetry.insert(MC_CLUSTER__NR_TASK_MANAGERS.to_string(), taskmanagers.into());
                             Out::unpack(telemetry.into()).map_err(|err| err.into())
                         });
-
 
                     super::identity_or_track_error(SCOPE, result).or_else(|_err| Ok(Out::default()))
                 })

@@ -10,7 +10,7 @@ use proctor::graph::{Connect, Graph, SinkShape, SourceShape};
 use proctor::phases::collection::TelemetrySource;
 use proctor::SharedString;
 use reqwest::Method;
-use reqwest_middleware::ClientBuilder;
+use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
 use reqwest_retry::policies::ExponentialBackoff;
 use reqwest_retry::RetryTransientMiddleware;
 use tokio::task::JoinHandle;
@@ -73,15 +73,31 @@ fn make_scheduler_source(name: &str, settings: &FlinkSettings) -> stage::Tick<()
     )
 }
 
+fn do_make_http_client(settings: &FlinkSettings) -> Result<ClientWithMiddleware, CollectionError> {
+    let headers = settings.header_map()?;
+
+    let mut client_builder = reqwest::Client::builder()
+        .pool_idle_timeout(settings.pool_idle_timeout)
+        .default_headers(headers);
+
+    let client_builder = if let Some(pool_max_idle_per_host) = settings.pool_max_idle_per_host {
+        client_builder.pool_max_idle_per_host(pool_max_idle_per_host)
+    } else {
+        client_builder
+    };
+
+    let client = client_builder.build()?;
+
+    let retry_policy = ExponentialBackoff::builder().build_with_max_retries(settings.max_retries);
+    Ok(ClientBuilder::new(client)
+        .with(RetryTransientMiddleware::new_with_policy(retry_policy))
+        .build())
+}
+
 fn make_flink_generator(
     settings: &FlinkSettings,
 ) -> Result<impl FnMut(()) -> Pin<Box<(dyn Future<Output = Option<Telemetry>> + Send)>>, CollectionError> {
-    let headers = settings.header_map()?;
-    let client = reqwest::Client::builder().default_headers(headers).build()?;
-    let retry_policy = ExponentialBackoff::builder().build_with_max_retries(settings.max_retries);
-    let client = ClientBuilder::new(client)
-        .with(RetryTransientMiddleware::new_with_policy(retry_policy))
-        .build();
+    let client = do_make_http_client(settings)?;
     let context = TaskContext { client, base_url: settings.base_url()? };
 
     let mut orders = STD_METRIC_ORDERS.clone();

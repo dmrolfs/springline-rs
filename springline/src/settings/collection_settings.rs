@@ -151,6 +151,8 @@ mod tests {
                 ],
                 headers: vec![(reqwest::header::AUTHORIZATION.to_string(), "foobar".to_string())],
                 max_retries: 5,
+                pool_idle_timeout: None,
+                pool_max_idle_per_host: None,
             },
             // only doing one pair at a time until *convenient* way to pin order and test is determined
             sources: maplit::hashmap! {
