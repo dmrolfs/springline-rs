@@ -12,6 +12,7 @@ use proctor::{AppData, ProctorResult, SharedString};
 use reqwest::Method;
 use std::collections::HashMap;
 use std::fmt::Debug;
+use std::sync::Arc;
 use tracing::Instrument;
 
 /// Load telemetry for a specify scope from the Flink Job Manager REST API; e.g., Job or Taskmanager.
@@ -20,7 +21,7 @@ use tracing::Instrument;
 /// I'll only use wrt Telemetry.
 #[derive(Debug)]
 pub struct CollectTaskmanagerAdmin<Out> {
-    context: TaskContext,
+    context: Arc<TaskContext>,
     trigger: Inlet<()>,
     outlet: Outlet<Out>,
 }
@@ -28,7 +29,7 @@ pub struct CollectTaskmanagerAdmin<Out> {
 const NAME: &str = "collect_taskmanager_admin";
 
 impl<Out> CollectTaskmanagerAdmin<Out> {
-    pub fn new(context: TaskContext) -> Self {
+    pub fn new(context: Arc<TaskContext>) -> Self {
         let trigger = Inlet::new(NAME, "trigger");
         let outlet = Outlet::new(NAME, "outlet");
         Self { context, trigger, outlet }
@@ -183,7 +184,7 @@ mod tests {
     async fn test_stage_for(
         context: TaskContext,
     ) -> (tokio::task::JoinHandle<()>, mpsc::Sender<()>, mpsc::Receiver<Telemetry>) {
-        let mut stage = CollectTaskmanagerAdmin::new(context);
+        let mut stage = CollectTaskmanagerAdmin::new(Arc::new(context));
         let (tx_trigger, rx_trigger) = mpsc::channel(1);
         let (tx_out, rx_out) = mpsc::channel(8);
         stage.trigger.attach("trigger".into(), rx_trigger).await;

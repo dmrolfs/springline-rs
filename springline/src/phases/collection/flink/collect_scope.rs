@@ -23,14 +23,14 @@ use url::Url;
 #[derive(Debug)]
 pub struct CollectScope<Out> {
     scope: FlinkScope,
-    context: TaskContext,
+    context: Arc<TaskContext>,
     orders: Arc<Vec<MetricOrder>>,
     trigger: Inlet<()>,
     outlet: Outlet<Out>,
 }
 
 impl<Out> CollectScope<Out> {
-    pub fn new(scope: FlinkScope, orders: Arc<Vec<MetricOrder>>, context: TaskContext) -> Self {
+    pub fn new(scope: FlinkScope, orders: Arc<Vec<MetricOrder>>, context: Arc<TaskContext>) -> Self {
         let name: SharedString = format!("Collect{}", scope).to_snake_case().into();
         let trigger = Inlet::new(name.clone(), "trigger");
         let outlet = Outlet::new(name, "outlet");
@@ -234,7 +234,7 @@ mod tests {
     async fn test_stage_for(
         scope: FlinkScope, orders: &Vec<MetricOrder>, context: TaskContext,
     ) -> (tokio::task::JoinHandle<()>, mpsc::Sender<()>, mpsc::Receiver<Telemetry>) {
-        let mut stage = CollectScope::new(scope, Arc::new(orders.clone()), context);
+        let mut stage = CollectScope::new(scope, Arc::new(orders.clone()), Arc::new(context));
         let (tx_trigger, rx_trigger) = mpsc::channel(1);
         let (tx_out, rx_out) = mpsc::channel(8);
         stage.trigger.attach("trigger".into(), rx_trigger).await;

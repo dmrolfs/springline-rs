@@ -1,10 +1,18 @@
 use once_cell::sync::Lazy;
+use proctor::graph::stage::{self, SourceStage, WithApi};
 use proctor::elements::telemetry::{self, Telemetry, TelemetryValue};
 use proctor::error::{CollectionError, MetricLabel, TelemetryError};
 use prometheus::{HistogramOpts, HistogramTimer, HistogramVec, IntCounterVec, Opts};
-use reqwest_middleware::ClientWithMiddleware;
+use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
 use std::collections::{HashMap, HashSet};
 use std::fmt;
+use std::sync::Arc;
+use cast_trait_object::DynCastExt;
+use proctor::graph::{Connect, Graph, SinkShape, SourceShape, UniformFanInShape, UniformFanOutShape};
+use proctor::phases::collection::TelemetrySource;
+use proctor::SharedString;
+use reqwest_retry::policies::ExponentialBackoff;
+use reqwest_retry::RetryTransientMiddleware;
 use url::Url;
 
 mod api_model;
@@ -21,8 +29,13 @@ pub use collect_vertex::{
     FLINK_QUERY_ACTIVE_JOBS_TIME, FLINK_QUERY_JOB_DETAIL_TIME, FLINK_QUERY_VERTEX_AVAIL_TELEMETRY_TIME,
     FLINK_QUERY_VERTEX_METRIC_PICKLIST_TIME, FLINK_QUERY_VERTEX_TELEMETRY_TIME,
 };
-pub use generators::make_flink_metrics_source;
+// pub use generators::make_flink_metrics_source;
 pub use metric_order::{Aggregation, FlinkScope, MetricOrder};
+pub use api_model::{JobState, TaskState, JobId, VertexId, JOB_STATES, TASK_STATES};
+use crate::phases::collection::flink::collect_scope::CollectScope;
+use crate::phases::collection::flink::collect_taskmanager_admin::CollectTaskmanagerAdmin;
+use crate::phases::collection::flink::collect_vertex::CollectVertex;
+use crate::settings::FlinkSettings;
 
 // note: `cluster.nr_task_managers` is a standard metric pulled from Flink's admin API. The order
 // mechanism may need to be expanded to consider further meta information outside of Flink Metrics
@@ -113,6 +126,66 @@ pub static STD_METRIC_ORDERS: Lazy<Vec<MetricOrder>> = Lazy::new(|| {
     .collect()
 });
 
+#[tracing::instrument(level="info", skip(name, scheduler, settings), fields(source_name=%name.as_ref()))]
+pub async fn make_flink_metrics_source(
+    name: impl AsRef<str>,
+    scheduler: Box<dyn SourceStage<()>>,
+    settings: &FlinkSettings
+) -> Result<Box<dyn SourceStage<Telemetry>>, CollectionError> {
+    let name: SharedString = format!("{}_flink_source", name.as_ref()).into();
+
+    let broadcast = stage::Broadcast::new(name.clone(), 4);
+
+    let orders = Arc::new(MetricOrder::extend_standard_with_settings(settings));
+    let context = Arc::new(TaskContext::new(settings)?);
+
+    let collect_jobs_scope = CollectScope::new(FlinkScope::Jobs, orders.clone(), context.clone());
+    let collect_tm_scope = CollectScope::new(FlinkScope::TaskManagers, orders.clone(), context.clone());
+    let collect_tm_admin = CollectTaskmanagerAdmin::new(context.clone());
+    let collect_vertex = CollectVertex::new(orders.clone(), context.clone())?;
+
+    let merge_combine = stage::MergeCombine::new(name.clone(), 4);
+    let composite_outlet = merge_combine.outlet();
+
+    (scheduler.outlet(), broadcast.inlet()).connect().await;
+
+    let broadcast_outlets = broadcast.outlets();
+    (broadcast_outlets.get(0).unwrap(), &collect_jobs_scope.inlet()).connect().await;
+    (broadcast_outlets.get(1).unwrap(), &collect_tm_scope.inlet()).connect().await;
+    (broadcast_outlets.get(2).unwrap(), &collect_tm_admin.inlet()).connect().await;
+    (broadcast_outlets.get(3).unwrap(), &collect_vertex.inlet()).connect().await;
+
+    let merge_inlets = merge_combine.inlets();
+    (collect_jobs_scope.outlet(), merge_inlets.get(0).await.unwrap()).connect().await;
+    (collect_tm_scope.outlet(), merge_inlets.get(1).await.unwrap()).connect().await;
+    (collect_tm_admin.outlet(), merge_inlets.get(2).await.unwrap()).connect().await;
+    (collect_vertex.outlet(), merge_inlets.get(3).await.unwrap()).connect().await;
+
+    let mut composite_graph = Graph::default();
+    composite_graph.push_back(scheduler.dyn_upcast()).await;
+    composite_graph.push_back(Box::new(broadcast)).await;
+    composite_graph.push_back(Box::new(collect_jobs_scope)).await;
+    composite_graph.push_back(Box::new(collect_tm_scope)).await;
+    composite_graph.push_back(Box::new(collect_tm_admin)).await;
+    composite_graph.push_back(Box::new(collect_vertex)).await;
+    composite_graph.push_back(Box::new(merge_combine)).await;
+
+    let composite: Box<dyn SourceStage<Telemetry>> = Box::new(
+        stage::CompositeSource::new(name, composite_graph, composite_outlet).await
+    );
+
+    Ok(composite)
+}
+
+fn make_source_scheduler(name: &str, settings: &FlinkSettings) -> stage::Tick<()> {
+    stage::Tick::new(
+        format!("flink_source_{}_tick", name),
+        settings.metrics_initial_delay,
+        settings.metrics_interval,
+        (),
+    )
+}
+
 #[derive(Clone)]
 pub struct TaskContext {
     pub client: ClientWithMiddleware,
@@ -123,6 +196,36 @@ impl fmt::Debug for TaskContext {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("TaskContext").field("base_url", &self.base_url).finish()
     }
+}
+
+impl TaskContext {
+    pub fn new(settings: &FlinkSettings) -> Result<Self, CollectionError> {
+        let client = Self::do_make_http_client(settings)?;
+        let base_url = settings.base_url()?;
+        Ok(Self { client, base_url })
+    }
+
+    fn do_make_http_client(settings: &FlinkSettings) -> Result<ClientWithMiddleware, CollectionError> {
+        let headers = settings.header_map()?;
+
+        let mut client_builder = reqwest::Client::builder()
+            .pool_idle_timeout(settings.pool_idle_timeout)
+            .default_headers(headers);
+
+        let client_builder = if let Some(pool_max_idle_per_host) = settings.pool_max_idle_per_host {
+            client_builder.pool_max_idle_per_host(pool_max_idle_per_host)
+        } else {
+            client_builder
+        };
+
+        let client = client_builder.build()?;
+
+        let retry_policy = ExponentialBackoff::builder().build_with_max_retries(settings.max_retries);
+        Ok(ClientBuilder::new(client)
+            .with(RetryTransientMiddleware::new_with_policy(retry_policy))
+            .build())
+    }
+
 }
 
 // This type is also only needed to circumvent the issue cast_trait_object places on forcing the generic Out type.

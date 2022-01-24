@@ -195,7 +195,7 @@ impl AutoscaleEngine<Building> {
 pub struct Ready {
     graph: Graph,
     monitor: Monitor,
-    tx_stop_flink_source: Option<TickApi>,
+    tx_stop_flink_source: TickApi,
     tx_clearinghouse_api: ClearinghouseApi,
     metrics_registry: Option<&'static Registry>,
 }

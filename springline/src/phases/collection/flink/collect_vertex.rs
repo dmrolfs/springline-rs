@@ -29,7 +29,7 @@ use url::Url;
 #[derive(Debug)]
 pub struct CollectVertex<Out> {
     scopes: Vec<FlinkScope>,
-    context: TaskContext,
+    context: Arc<TaskContext>,
     orders: Arc<Vec<MetricOrder>>,
     trigger: Inlet<()>,
     outlet: Outlet<Out>,
@@ -39,7 +39,7 @@ pub struct CollectVertex<Out> {
 const NAME: &str = "collect_vertex";
 
 impl<Out> CollectVertex<Out> {
-    pub fn new(orders: Arc<Vec<MetricOrder>>, context: TaskContext) -> Result<Self, CollectionError> {
+    pub fn new(orders: Arc<Vec<MetricOrder>>, context: Arc<TaskContext>) -> Result<Self, CollectionError> {
         let scopes = vec![FlinkScope::Task, FlinkScope::Kafka, FlinkScope::Kinesis];
         let trigger = Inlet::new(NAME, "trigger");
         let outlet = Outlet::new(NAME, "outlet");
@@ -143,7 +143,7 @@ where
 
                             let _vertex_gather_tasks: Vec<()> =
                                 futures::future::join_all(active_jobs.into_iter().map(|job| async {
-                                    self.merge_job_telemetry(job, metric_telemetry.clone(), &metric_orders)
+                                    self.gather_vertex_telemetry(job, metric_telemetry.clone(), &metric_orders)
                                         .await
                                 }))
                                 .await;
@@ -190,7 +190,7 @@ where
     }
 
     #[tracing::instrument(level = "info", skip(self))]
-    async fn merge_job_telemetry(
+    async fn gather_vertex_telemetry(
         &self, job: JobSummary, metric_telemetry: Arc<Mutex<HashMap<String, Vec<TelemetryValue>>>>,
         metric_orders: &OrdersByMetric,
     ) {
@@ -539,7 +539,7 @@ mod tests {
     async fn test_stage_for(
         orders: &Vec<MetricOrder>, context: TaskContext,
     ) -> (CollectVertex<Telemetry>, mpsc::Sender<()>, mpsc::Receiver<Telemetry>) {
-        let mut stage = assert_ok!(CollectVertex::new(Arc::new(orders.clone()), context));
+        let mut stage = assert_ok!(CollectVertex::new(Arc::new(orders.clone()), Arc::new(context)));
         let (tx_trigger, rx_trigger) = mpsc::channel(1);
         let (tx_out, rx_out) = mpsc::channel(8);
         stage.trigger.attach("trigger".into(), rx_trigger).await;

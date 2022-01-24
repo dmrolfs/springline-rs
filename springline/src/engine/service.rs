@@ -166,7 +166,7 @@ mod protocol {
 pub struct Service<'r> {
     tx_api: EngineServiceApi,
     rx_api: mpsc::UnboundedReceiver<EngineCmd>,
-    tx_stop_flink_source: Option<tick::TickApi>,
+    tx_stop_flink_source: tick::TickApi,
     tx_clearinghouse_api: ClearinghouseApi,
     metrics_registry: Option<&'r Registry>,
 }
@@ -181,7 +181,7 @@ impl<'r> fmt::Debug for Service<'r> {
 
 impl<'r> Service<'r> {
     pub fn new(
-        tx_stop_flink_source: Option<tick::TickApi>, tx_clearinghouse_api: ClearinghouseApi,
+        tx_stop_flink_source: tick::TickApi, tx_clearinghouse_api: ClearinghouseApi,
         metrics_registry: Option<&'r Registry>,
     ) -> Self {
         let (tx_api, rx_api) = mpsc::unbounded_channel();
@@ -296,10 +296,7 @@ impl<'r> Service<'r> {
     #[tracing::instrument(level = "info", skip(self))]
     async fn stop_flink_collection(&self) -> Result<(), EngineApiError> {
         let (cmd, rx) = tick::TickMsg::stop();
-        if let Some(ref api) = self.tx_stop_flink_source {
-            api.send(cmd)?;
-        }
-
+        self.tx_stop_flink_source.send(cmd)?;
         rx.await?.map_err(|err| EngineApiError::Handler(err.into()))
     }
 }

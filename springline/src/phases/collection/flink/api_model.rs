@@ -121,6 +121,20 @@ pub struct JobSummary {
     pub status: JobState,
 }
 
+pub const JOB_STATES: [JobState; 11] = [
+    JobState::Initializing,
+    JobState::Created,
+    JobState::Running,
+    JobState::Failing,
+    JobState::Failed,
+    JobState::Cancelling,
+    JobState::Canceled,
+    JobState::Finished,
+    JobState::Restarting,
+    JobState::Suspended,
+    JobState::Reconciling,
+];
+
 #[derive(Debug, Display, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum JobState {
@@ -143,6 +157,19 @@ impl JobState {
         !matches!(self, Self::Finished | Self::Failed | Self::Canceled | Self::Suspended)
     }
 }
+
+pub const TASK_STATES: [TaskState; 10] = [
+    TaskState::Scheduled,
+    TaskState::Created,
+    TaskState::Running,
+    TaskState::Failed,
+    TaskState::Canceling,
+    TaskState::Canceled,
+    TaskState::Finished,
+    TaskState::Deploying,
+    TaskState::Reconciling,
+    TaskState::Initializing,
+];
 
 #[derive(Debug, Display, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
@@ -187,6 +214,12 @@ impl AsRef<str> for JobId {
     }
 }
 
+impl From<String> for JobId {
+    fn from(rep: String) -> Self {
+        Self(rep)
+    }
+}
+
 impl From<JobId> for String {
     fn from(jid: JobId) -> Self {
         jid.0
@@ -198,6 +231,7 @@ impl From<&str> for JobId {
         Self(rep.to_string())
     }
 }
+
 
 #[serde_as]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -243,6 +277,12 @@ impl fmt::Display for VertexId {
 impl AsRef<str> for VertexId {
     fn as_ref(&self) -> &str {
         self.0.as_str()
+    }
+}
+
+impl From<String> for VertexId {
+    fn from(rep: String) -> Self {
+        Self(rep)
     }
 }
 

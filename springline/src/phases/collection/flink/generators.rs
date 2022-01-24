@@ -19,7 +19,7 @@ use tracing_futures::Instrument;
 use super::api_model::{build_telemetry, FlinkMetricResponse, JobSummary};
 use super::{Aggregation, FlinkScope, MetricOrder, STD_METRIC_ORDERS};
 use crate::phases::collection::flink::api_model::{JobDetail, JobId, VertexId};
-use crate::phases::collection::flink::TaskContext;
+use crate::phases::collection::flink::{make_source_scheduler, TaskContext};
 use crate::phases::{MC_CLUSTER__NR_ACTIVE_JOBS, MC_CLUSTER__NR_TASK_MANAGERS};
 use crate::settings::FlinkSettings;
 
@@ -32,7 +32,7 @@ pub async fn make_flink_metrics_source(
 ) -> Result<TelemetrySource, CollectionError> {
     let name = SharedString::Owned(format!("{}_flink_source", name.as_ref()));
 
-    let scheduler = make_scheduler_source(name.as_ref(), settings);
+    let scheduler = make_source_scheduler(name.as_ref(), settings);
     let tx_scheduler_api = scheduler.tx_api();
 
     let gen = make_flink_generator(settings)?;
@@ -64,44 +64,13 @@ pub async fn make_flink_metrics_source(
     })
 }
 
-fn make_scheduler_source(name: &str, settings: &FlinkSettings) -> stage::Tick<()> {
-    stage::Tick::new(
-        format!("flink_source_{}_tick", name),
-        settings.metrics_initial_delay,
-        settings.metrics_interval,
-        (),
-    )
-}
 
-fn do_make_http_client(settings: &FlinkSettings) -> Result<ClientWithMiddleware, CollectionError> {
-    let headers = settings.header_map()?;
-
-    let mut client_builder = reqwest::Client::builder()
-        .pool_idle_timeout(settings.pool_idle_timeout)
-        .default_headers(headers);
-
-    let client_builder = if let Some(pool_max_idle_per_host) = settings.pool_max_idle_per_host {
-        client_builder.pool_max_idle_per_host(pool_max_idle_per_host)
-    } else {
-        client_builder
-    };
-
-    let client = client_builder.build()?;
-
-    let retry_policy = ExponentialBackoff::builder().build_with_max_retries(settings.max_retries);
-    Ok(ClientBuilder::new(client)
-        .with(RetryTransientMiddleware::new_with_policy(retry_policy))
-        .build())
-}
 
 fn make_flink_generator(
     settings: &FlinkSettings,
 ) -> Result<impl FnMut(()) -> Pin<Box<(dyn Future<Output = Option<Telemetry>> + Send)>>, CollectionError> {
-    let client = do_make_http_client(settings)?;
-    let context = TaskContext { client, base_url: settings.base_url()? };
-
-    let mut orders = STD_METRIC_ORDERS.clone();
-    orders.extend(settings.metric_orders.clone());
+    let context = TaskContext::new(settings)?;
+    let orders = MetricOrder::extend_standard_with_settings(settings);
 
     let gen = move |_: ()| {
         let jobs_gen =
