@@ -471,7 +471,7 @@ mod tests {
         performance_history.add_upper_benchmark(Benchmark::new(9, 15.0.into()));
         performance_history.add_upper_benchmark(Benchmark::new(12, 25.0.into()));
 
-        tracing::warn!("DMR: starting assertions...");
+        tracing::info!("STARTING ASSERTIONS...");
         assert_eq!(Some(1), performance_history.cluster_size_for_workload(1.05.into()));
         assert_eq!(Some(2), performance_history.cluster_size_for_workload(1.75.into()));
         assert_eq!(Some(2), performance_history.cluster_size_for_workload(2.75.into()));

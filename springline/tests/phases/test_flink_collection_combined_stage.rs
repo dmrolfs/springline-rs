@@ -1,29 +1,23 @@
+use cast_trait_object::DynCastExt;
+use claim::*;
+use fake::{Fake, Faker};
+use pretty_assertions::assert_eq;
+use proctor::elements::{RecordsPerSecond, Telemetry, TelemetryValue};
+use proctor::graph::stage::{self, ActorSourceApi, ActorSourceCmd, WithApi};
+use proctor::graph::{Connect, Graph, SinkShape};
+use proctor::Ack;
+use serde_json::json;
+use springline::phases::collection::flink::{
+    make_flink_metrics_source, JobId, JobState, TaskState, VertexId, JOB_STATES, STD_METRIC_ORDERS, TASK_STATES,
+};
+use springline::phases::{MC_CLUSTER__NR_ACTIVE_JOBS, MC_CLUSTER__NR_TASK_MANAGERS, MC_FLOW__RECORDS_IN_PER_SEC};
+use springline::settings::FlinkSettings;
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
 use std::time::Duration;
-use cast_trait_object::DynCastExt;
-use fake::{Faker, Fake};
-use serde_json::json;
-use wiremock::{Match, Mock, MockServer, Request, ResponseTemplate, Times};
-use wiremock::matchers::{method, path};
-use springline::phases::collection::flink::{self, FlinkScope, JOB_STATES, JobId, JobState, make_flink_metrics_source, MetricOrder, STD_METRIC_ORDERS, TASK_STATES, TaskContext, TaskState, VertexId};
-use springline::phases::eligibility::TaskStatus;
-use super::fixtures;
-use claim::*;
-use itertools::Itertools;
-use mockall::mock;
-use pretty_assertions::assert_eq;
-use proctor::elements::{RecordsPerSecond, TelemetryValue};
-use proctor::error::CollectionError;
-use proctor::phases::collection::TelemetrySource;
-use proctor::{Ack, SharedString};
-use springline::settings::FlinkSettings;
-use proctor::graph::{Connect, Port, Outlet, Inlet, UniformFanOutShape, UniformFanInShape, SinkShape, Graph};
-use proctor::graph::stage::{self, ActorSourceApi, ActorSourceCmd, WithApi};
 use url::Url;
-use springline::phases::{MC_CLUSTER__NR_ACTIVE_JOBS, MC_CLUSTER__NR_TASK_MANAGERS, MC_FLOW__RECORDS_IN_PER_SEC};
-
+use wiremock::matchers::{method, path};
+use wiremock::{Match, Mock, MockServer, Request, ResponseTemplate, Times};
 
 struct EmptyQueryParamMatcher;
 impl Match for EmptyQueryParamMatcher {
@@ -47,15 +41,16 @@ impl Match for QueryParamKeyMatcher {
     }
 }
 
+#[derive(Debug)]
 struct MockFlinkJobsMetrics {
     pub uptime: i64,
     pub restarts: i64,
-    pub failed_checkpoints: i64
+    pub failed_checkpoints: i64,
 }
 
 impl MockFlinkJobsMetrics {
     async fn mount_mock(server: &MockServer, expect: impl Into<Times>) -> Self {
-        let uptime = Faker.fake::<chrono::Duration>().num_milliseconds();
+        let uptime = i64::abs(Faker.fake::<chrono::Duration>().num_milliseconds());
         let restarts = (0..99).fake();
         let failed_checkpoints = (0..99).fake();
         let body = json!([
@@ -71,10 +66,11 @@ impl MockFlinkJobsMetrics {
             .mount(&server)
             .await;
 
-        Self { uptime, restarts, failed_checkpoints, }
+        Self { uptime, restarts, failed_checkpoints }
     }
 }
 
+#[derive(Debug)]
 struct MockFlinkTaskmanagersMetrics {
     pub cpu_load: f64,
     pub heap_used: f64,
@@ -89,11 +85,11 @@ impl MockFlinkTaskmanagersMetrics {
         let heap_committed = 1_000_000_000. * ((0..100_000_000).fake::<i64>() as f64 / 100_000_000.);
         let nr_threads = (1..150).fake();
         let body = json!([
-                { "id": "Status.JVM.CPU.Load", "max":  cpu_load,},
-                { "id": "Status.JVM.Memory.Heap.Used", "max":  heap_used,},
-                { "id": "Status.JVM.Memory.Heap.Committed", "max":  heap_committed,},
-                { "id": "Status.JVM.Threads.Count", "max":  nr_threads as f64,},
-            ]);
+            { "id": "Status.JVM.CPU.Load", "max":  cpu_load,},
+            { "id": "Status.JVM.Memory.Heap.Used", "max":  heap_used,},
+            { "id": "Status.JVM.Memory.Heap.Committed", "max":  heap_committed,},
+            { "id": "Status.JVM.Threads.Count", "max":  nr_threads as f64,},
+        ]);
         let response = ResponseTemplate::new(200).set_body_json(body);
         Mock::given(method("GET"))
             .and(path("/taskmanagers/metrics"))
@@ -102,19 +98,24 @@ impl MockFlinkTaskmanagersMetrics {
             .mount(&server)
             .await;
 
-        Self { cpu_load, heap_used, heap_committed, nr_threads, }
+        Self { cpu_load, heap_used, heap_committed, nr_threads }
     }
 }
 
-struct  MockFlinkTaskmanagerAdminMetrics {
+#[derive(Debug)]
+struct MockFlinkTaskmanagerAdminMetrics {
     pub nr_task_managers: usize,
 }
 
 impl MockFlinkTaskmanagerAdminMetrics {
     async fn mount_mock(server: &MockServer, expect: impl Into<Times>) -> Self {
-        let nr_task_managers = (0..99).fake();
-        let tms_bodies = (0..nr_task_managers).into_iter().map(Self::generate_task_manager_body).collect();
-        let body = serde_json::Value::Array(tms_bodies);
+        let nr_task_managers = (0..9).fake();
+        tracing::info!("nr_task_managers: {nr_task_managers}");
+        let tms_bodies = (0..nr_task_managers)
+            .into_iter()
+            .map(Self::generate_task_manager_body)
+            .collect();
+        let body = json!({ "taskmanagers": serde_json::Value::Array(tms_bodies) });
         let response = ResponseTemplate::new(200).set_body_json(body);
         Mock::given(method("GET"))
             .and(path("/taskmanagers"))
@@ -123,7 +124,7 @@ impl MockFlinkTaskmanagerAdminMetrics {
             .mount(&server)
             .await;
 
-        Self { nr_task_managers, }
+        Self { nr_task_managers }
     }
 
     fn generate_task_manager_body(idx: usize) -> serde_json::Value {
@@ -180,7 +181,7 @@ struct MockFlinkJobStates {
 
 impl MockFlinkJobStates {
     pub async fn mount_mock(server: &MockServer, expect: impl Into<Times>) -> Self {
-        let nr_jobs = (0..99).fake();
+        let nr_jobs = (0..9).fake();
         let mut job_states = HashMap::with_capacity(nr_jobs);
         let mut job_state_bodies = Vec::with_capacity(nr_jobs);
         for _ in 0..nr_jobs {
@@ -188,6 +189,7 @@ impl MockFlinkJobStates {
             job_states.insert(jid, state);
             job_state_bodies.push(body);
         }
+        tracing::info!(%nr_jobs, "job_states: {:?}", job_states);
 
         let body = json!({ "jobs": serde_json::Value::Array(job_state_bodies) });
         let response = ResponseTemplate::new(200).set_body_json(body);
@@ -201,8 +203,15 @@ impl MockFlinkJobStates {
         Self { job_states }
     }
 
+    pub fn active_jobs(&self) -> Vec<JobId> {
+        self.job_states
+            .iter()
+            .filter_map(|(id, s)| if s.is_active() { Some(id.clone()) } else { None })
+            .collect()
+    }
+
     pub fn nr_active_jobs(&self) -> usize {
-        self.job_states.iter().filter(|(_, s)| s.is_active()).count() as usize
+        self.active_jobs().iter().count()
     }
 
     fn generate_active_job_body() -> (JobId, JobState, serde_json::Value) {
@@ -214,17 +223,17 @@ impl MockFlinkJobStates {
     }
 }
 
+#[allow(dead_code)]
+#[derive(Debug)]
 struct MockFlinkJobDetail {
     pub job_id: JobId,
-    pub vertex_ids: Vec<VertexId>,
+    pub job_state: JobState,
+    pub vertex_states: HashMap<VertexId, TaskState>,
 }
 
 impl MockFlinkJobDetail {
     pub async fn mount_mock(
-        job_id: Option<JobId>,
-        job_state: Option<JobState>,
-        server: &MockServer,
-        expect: impl Into<Times>
+        job_id: Option<JobId>, job_state: Option<JobState>, server: &MockServer, expect: impl Into<Times>,
     ) -> Self {
         let job_id = job_id.unwrap_or_else(|| Faker.fake::<String>().into());
         let job_state = job_state.unwrap_or_else(|| {
@@ -232,13 +241,26 @@ impl MockFlinkJobDetail {
             JOB_STATES[sel]
         });
 
-        let nr_vertices = (0..99).fake();
-        let mut vertex_ids = Vec::with_capacity(nr_vertices);
+        let vertex_states = if job_state.is_active() {
+            let nr_vertices = (0..9).fake();
+            Self::do_register_mock(&job_id, job_state, nr_vertices, server, expect).await
+        } else {
+            HashMap::default()
+        };
+        tracing::info!(nr_vertices=%vertex_states.len(), "vertices: {:?}", vertex_states);
+
+        Self { job_id, job_state, vertex_states }
+    }
+
+    async fn do_register_mock(
+        job_id: &JobId, job_state: JobState, nr_vertices: usize, server: &MockServer, expect: impl Into<Times>,
+    ) -> HashMap<VertexId, TaskState> {
+        let mut vertex_states = HashMap::with_capacity(nr_vertices);
         let mut vertex_summaries = Vec::with_capacity(nr_vertices);
         let mut vertex_plans = Vec::with_capacity(nr_vertices);
         for _ in 0..nr_vertices {
-            let (id, summary, plan) = Self::generate_vertex_summary();
-            vertex_ids.push(id);
+            let (id, task_state, summary, plan) = Self::generate_vertex_summary();
+            vertex_states.insert(id, task_state);
             vertex_summaries.push(summary);
             vertex_plans.push(plan);
         }
@@ -299,10 +321,10 @@ impl MockFlinkJobDetail {
             .mount(&server)
             .await;
 
-        Self { job_id, vertex_ids, }
+        vertex_states
     }
 
-    fn generate_vertex_summary() -> (VertexId, serde_json::Value, serde_json::Value) {
+    fn generate_vertex_summary() -> (VertexId, TaskState, serde_json::Value, serde_json::Value) {
         let id = Faker.fake::<String>().into();
 
         let max_parallelism: usize = (1..1000).fake();
@@ -357,10 +379,11 @@ impl MockFlinkJobDetail {
                 "optimizer_properties": {}
         });
 
-        (id, summary, plan)
+        (id, task_state, summary, plan)
     }
 }
 
+#[derive(Debug)]
 struct MockFlinkVertexMetricSummary;
 
 impl MockFlinkVertexMetricSummary {
@@ -424,7 +447,7 @@ impl MockFlinkVertexMetricSummary {
 
         let response = ResponseTemplate::new(200).set_body_json(body);
 
-        let  query_path = format!("/jobs/{job_id}/vertices/{vertex_id}/subtasks/metrics");
+        let query_path = format!("/jobs/{job_id}/vertices/{vertex_id}/subtasks/metrics");
 
         Mock::given(method("GET"))
             .and(path(query_path))
@@ -438,8 +461,11 @@ impl MockFlinkVertexMetricSummary {
     }
 }
 
+#[derive(Debug)]
 struct MockFlinkVertexMetrics {
+    #[allow(dead_code)]
     pub job_id: JobId,
+    #[allow(dead_code)]
     pub vertex_id: VertexId,
     pub nr_records_in_per_second: RecordsPerSecond,
     pub nr_records_out_per_second: RecordsPerSecond,
@@ -450,7 +476,9 @@ struct MockFlinkVertexMetrics {
 }
 
 impl MockFlinkVertexMetrics {
-    pub async fn mount_mock(job_id: &JobId, vertex_id: &VertexId, server: &MockServer, expect: impl Into<Times>) -> Self {
+    pub async fn mount_mock(
+        job_id: &JobId, vertex_id: &VertexId, server: &MockServer, expect: impl Into<Times>,
+    ) -> Self {
         let nr_records_in_per_second = Faker.fake::<f64>().into();
         let nr_records_out_per_second = Faker.fake::<f64>().into();
         let input_buffer_queue_len = Faker.fake::<f64>();
@@ -487,31 +515,10 @@ impl MockFlinkVertexMetrics {
             input_buffer_queue_len,
             in_buffer_pool_usage,
             output_buffer_queue_len,
-            out_buffer_pool_usage
+            out_buffer_pool_usage,
         }
     }
 }
-
-// async fn make_flink_source(name: impl AsRef<str>, settings: &FlinkSettings) -> Result<TelemetrySource, CollectionError> {
-//     let name: SharedString = format!("{}_flink_source", name.as_ref()).into();
-//     let tick = stage::Tick::new(
-//         format!("flink_source_{name}_tick", name),
-//         settings.metrics_initial_delay,
-//         settings.metrics_interval,
-//         (),
-//     );
-//
-//     let tx_tick_api = tick.tx_api();
-//     let broadcast = stage::Broadcast::new(name.clone(), 4);
-//
-//     let orders = Arc::new(MetricOrder::extend_standard_with_settings(&settings));
-//     let context = Arc::new(TaskContext::new(&settings)?);
-//
-//     let collect_jobs_scope = flink::CollectScope::new(FlinkScope::Jobs, orders.clone(), context.clone());
-//     let collect_tm_scope = flink::CollectScope::new(FlinkScope::TaskManagers, orders.clone(), context.clone());
-//
-//
-// }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn test_flink_merge_combine_collection_stage() -> anyhow::Result<()> {
@@ -521,31 +528,37 @@ async fn test_flink_merge_combine_collection_stage() -> anyhow::Result<()> {
 
     let mock_server = MockServer::start().await;
     let expected_jobs = MockFlinkJobsMetrics::mount_mock(&mock_server, 1).await;
+    tracing::info!("expected_jobs: {:?}", expected_jobs);
     let expected_tm = MockFlinkTaskmanagersMetrics::mount_mock(&mock_server, 1).await;
+    tracing::info!("expected_tm: {:?}", expected_tm);
     let expected_tm_admin = MockFlinkTaskmanagerAdminMetrics::mount_mock(&mock_server, 1).await;
+    tracing::info!("expected_tm_admin: {:?}", expected_tm_admin);
     let expected_job_states = MockFlinkJobStates::mount_mock(&mock_server, 1).await;
+    tracing::info!("expected_job_states: {:?}", expected_job_states);
 
     let mut expected_job_details = Vec::with_capacity(expected_job_states.job_states.len());
     for (job_id, job_state) in expected_job_states.job_states.iter() {
-        expected_job_details.push(
-            MockFlinkJobDetail::mount_mock(Some(job_id.clone()), Some(*job_state), &mock_server, 1).await
-        );
+        expected_job_details
+            .push(MockFlinkJobDetail::mount_mock(Some(job_id.clone()), Some(*job_state), &mock_server, 1).await);
     }
+    tracing::info!("expected_job_details: {:?}", expected_job_details);
 
     let mut expected_vertex_metric_summaries = Vec::with_capacity(expected_job_details.len());
     let mut expected_vertex_metrics = Vec::with_capacity(expected_job_details.len());
     for expected in expected_job_details.iter() {
         let job_id = &expected.job_id;
-        for vertex_id in expected.vertex_ids.iter() {
-            expected_vertex_metric_summaries.push(
-            MockFlinkVertexMetricSummary::mount_mock(job_id, vertex_id, &mock_server, 1).await
-            );
-
-            expected_vertex_metrics.push(
-            MockFlinkVertexMetrics::mount_mock(job_id, vertex_id, &mock_server, 1).await
-            );
+        for (vertex_id, _) in expected.vertex_states.iter().filter(|(_, s)| s.is_active()) {
+            let expected_vertex_summary =
+                MockFlinkVertexMetricSummary::mount_mock(job_id, vertex_id, &mock_server, 1).await;
+            expected_vertex_metric_summaries.push(expected_vertex_summary);
+            expected_vertex_metrics.push(MockFlinkVertexMetrics::mount_mock(job_id, vertex_id, &mock_server, 1).await);
         }
     }
+    tracing::info!(
+        "expected_vertex_metric_summaries: {:?}",
+        expected_vertex_metric_summaries
+    );
+    tracing::info!("expected_vertex_metrics: {:?}", expected_vertex_metrics);
 
     let mock_uri = assert_ok!(Url::parse(mock_server.uri().as_str()));
     let job_manager_host = assert_some!(mock_uri.host());
@@ -564,25 +577,18 @@ async fn test_flink_merge_combine_collection_stage() -> anyhow::Result<()> {
     let scheduler = stage::ActorSource::new("trigger");
     let tx_scheduler_api = scheduler.tx_api();
 
-    let collect_flink = make_flink_metrics_source(
-        "test_flink",
-        Box::new(scheduler),
-        &settings
-    ).await?;
+    let collect_flink = make_flink_metrics_source("test_flink", Box::new(scheduler), &settings).await?;
 
-    let mut sink = stage::Fold::new(
-        "sink",
-        Vec::default(),
-        |mut acc, item| {
-            acc.push(item);
-            acc
-        }
-    );
+    let mut sink = stage::Fold::new("sink", Telemetry::default(), |mut acc, item| {
+        tracing::info!(?item, ?acc, "PUSHING ITEM INTO ACC...");
+        acc.extend(item);
+        acc
+    });
 
     let rx_acc = assert_some!(sink.take_final_rx());
 
     (collect_flink.outlet(), sink.inlet()).connect().await;
-    let mut g  = Graph::default();
+    let mut g = Graph::default();
     g.push_back(collect_flink.dyn_upcast()).await;
     g.push_back(Box::new(sink)).await;
     let handler = tokio::spawn(async move {
@@ -591,64 +597,35 @@ async fn test_flink_merge_combine_collection_stage() -> anyhow::Result<()> {
 
     assert_ok!(trigger(&tx_scheduler_api).await);
     assert_ok!(stop(&tx_scheduler_api).await);
-    let foo = assert_ok!(handler.await);
+    assert_ok!(handler.await);
 
-    let actual = assert_some!(assert_ok!(rx_acc.await).pop());
+    let actual = assert_ok!(rx_acc.await);
+    tracing::info!(?actual, "FINAL RESULT FROM SINK");
 
-    let expected_max_records_in_per_sec = expected_vertex_metrics
-        .iter()
-        .map(|m| m.nr_records_in_per_second)
-        .max_by(|lhs, rhs| assert_some!(lhs.partial_cmp(&rhs)));
-    let expected_max_records_out_per_sec = expected_vertex_metrics
-        .iter()
-        .map(|m| m.nr_records_out_per_second)
-        .max_by(|lhs, rhs| assert_some!(lhs.partial_cmp(&rhs)));
-    let expected_max_input_queue_len = expected_vertex_metrics
-        .iter()
-        .map(|m| m.input_buffer_queue_len)
-        .max_by(|lhs, rhs| assert_some!(lhs.partial_cmp(&rhs)));
-    let expected_max_in_pool_usage = expected_vertex_metrics
-        .iter()
-        .map(|m| m.in_buffer_pool_usage)
-        .max_by(|lhs, rhs| assert_some!(lhs.partial_cmp(&rhs)));
-    let expected_max_output_queue_len = expected_vertex_metrics
-        .iter()
-        .map(|m| m.output_buffer_queue_len)
-        .max_by(|lhs, rhs| assert_some!(lhs.partial_cmp(&rhs)));
-    let expected_max_out_pool_usage = expected_vertex_metrics
-        .iter()
-        .map(|m| m.out_buffer_pool_usage)
-        .max_by(|lhs, rhs| assert_some!(lhs.partial_cmp(&rhs)));
-
-    let expected: HashMap<String, TelemetryValue> = maplit::hashmap! {
-        "health.job_uptime_millis".to_string() => expected_jobs.uptime.into(),
-        "health.job_nr_restarts".to_string() => expected_jobs.restarts.into(),
-        "health.job_nr_failed_checkpoints".to_string() => expected_jobs.failed_checkpoints.into(),
-        "cluster.task_cpu_load".to_string() => expected_tm.cpu_load.into(),
-        "cluster.task_heap_memory_used".to_string() => expected_tm.heap_used.into(),
-        "cluster.task_heap_memory_committed".to_string() => expected_tm.heap_committed.into(),
-        "cluster.task_nr_threads".to_string() => expected_tm.nr_threads.into(),
-        MC_CLUSTER__NR_ACTIVE_JOBS.to_string() => expected_job_states.nr_active_jobs().into(),
-        MC_CLUSTER__NR_TASK_MANAGERS.to_string() => expected_tm_admin.nr_task_managers.into(),
-        MC_FLOW__RECORDS_IN_PER_SEC.to_string() => expected_max_records_in_per_sec.into(),
-        "flow.records_out_per_sec".to_string() => expected_max_records_out_per_sec.into(),
-        "cluster.task_network_input_queue_len".to_string() => expected_max_input_queue_len.into(),
-        "cluster.task_network_input_pool_usage".to_string() => expected_max_in_pool_usage.into(),
-        "cluster.task_network_output_queue_len".to_string() => expected_max_output_queue_len.into(),
-        "cluster.task_network_output_pool_usage".to_string() => expected_max_out_pool_usage.into(),
-    };
+    let expected = make_expected_telemetry(
+        expected_jobs,
+        expected_tm,
+        expected_tm_admin,
+        expected_job_states,
+        &expected_job_details,
+        &expected_vertex_metric_summaries,
+        &expected_vertex_metrics,
+    );
 
     for (key, expected_v) in expected.iter() {
-        tracing::warn!("DMR: asserting {key}: {:?}", expected_v);
-        match assert_some!(actual.get(key)) {
-            TelemetryValue::Float(actual) => {
+        tracing::info!("ASSERTING TELEMETRY[{key}]: {:?} == {:?}", expected_v, actual.get(key));
+        match actual.get(key) {
+            Some(TelemetryValue::Float(actual)) => {
                 let ev: f64 = assert_ok!(expected_v.try_into());
                 if !approx::relative_eq!(*actual, ev) {
                     assert_eq!(*actual, ev, "metric: {}", key);
                 }
             },
-            actual => {
+            Some(actual) => {
                 assert_eq!((key, actual), (key, expected_v));
+            },
+            None => {
+                tracing::warn!(?actual, "actual does not have value for key:{}", key);
             },
         };
         // assert_eq!((key, actual_v), (key, expected_v));
@@ -659,7 +636,130 @@ async fn test_flink_merge_combine_collection_stage() -> anyhow::Result<()> {
     let actual_keys: BTreeSet<&String> = actual.keys().collect();
     assert_eq!(actual_keys, expected_keys);
 
+    tracing::info!("mock received requests: {:?}", mock_server.received_requests().await);
+
     Ok(())
+}
+
+fn make_expected_telemetry(
+    expected_jobs: MockFlinkJobsMetrics, expected_tm: MockFlinkTaskmanagersMetrics,
+    expected_tm_admin: MockFlinkTaskmanagerAdminMetrics, expected_job_states: MockFlinkJobStates,
+    _expected_job_details: &[MockFlinkJobDetail], _expected_vertex_metric_summaries: &[MockFlinkVertexMetricSummary],
+    expected_vertex_metrics: &[MockFlinkVertexMetrics],
+) -> Telemetry {
+    let mut expected: HashMap<String, TelemetryValue> = maplit::hashmap! {
+        "health.job_uptime_millis".to_string() => expected_jobs.uptime.into(),
+        "health.job_nr_restarts".to_string() => expected_jobs.restarts.into(),
+        "health.job_nr_failed_checkpoints".to_string() => expected_jobs.failed_checkpoints.into(),
+        "cluster.task_cpu_load".to_string() => expected_tm.cpu_load.into(),
+        "cluster.task_heap_memory_used".to_string() => expected_tm.heap_used.into(),
+        "cluster.task_heap_memory_committed".to_string() => expected_tm.heap_committed.into(),
+        "cluster.task_nr_threads".to_string() => expected_tm.nr_threads.into(),
+        MC_CLUSTER__NR_ACTIVE_JOBS.to_string() => expected_job_states.nr_active_jobs().into(),
+        MC_CLUSTER__NR_TASK_MANAGERS.to_string() => expected_tm_admin.nr_task_managers.into(),
+    };
+
+    let expected_max_records_in_per_sec = expected_vertex_metrics
+        .iter()
+        .map(|m| m.nr_records_in_per_second)
+        .max_by(|lhs, rhs| assert_some!(lhs.partial_cmp(&rhs)));
+    if let Some(expected_value) = expected_max_records_in_per_sec {
+        expected.insert(MC_FLOW__RECORDS_IN_PER_SEC.to_string(), expected_value.into());
+    }
+
+    let expected_max_records_out_per_sec = expected_vertex_metrics
+        .iter()
+        .map(|m| m.nr_records_out_per_second)
+        .max_by(|lhs, rhs| assert_some!(lhs.partial_cmp(&rhs)));
+    if let Some(expected_value) = expected_max_records_out_per_sec {
+        expected.insert("flow.records_out_per_sec".to_string(), expected_value.into());
+    }
+
+    let expected_max_input_queue_len =
+        expected_vertex_metrics
+            .iter()
+            .map(|m| m.input_buffer_queue_len)
+            .max_by(|lhs, rhs| {
+                tracing::info!(
+                    ?lhs,
+                    ?rhs,
+                    "MAX[task_network_input_queue_len]: lhs max rhs = {:?}",
+                    lhs.partial_cmp(&rhs)
+                );
+                assert_some!(lhs.partial_cmp(&rhs))
+            });
+    if let Some(expected_value) = expected_max_input_queue_len {
+        tracing::info!(%expected_value, "MAX:cluster.task_network_input_queue_len");
+        expected.insert(
+            "cluster.task_network_input_queue_len".to_string(),
+            expected_value.into(),
+        );
+    }
+
+    let expected_max_in_pool_usage =
+        expected_vertex_metrics
+            .iter()
+            .map(|m| m.in_buffer_pool_usage)
+            .max_by(|lhs, rhs| {
+                tracing::info!(
+                    ?lhs,
+                    ?rhs,
+                    "MAX[task_network_input_pool_usage]: lhs max rhs = {:?}",
+                    lhs.partial_cmp(&rhs)
+                );
+                assert_some!(lhs.partial_cmp(&rhs))
+            });
+    if let Some(expected_value) = expected_max_in_pool_usage {
+        tracing::info!(%expected_value, "MAX:cluster.task_network_input_pool_usage");
+        expected.insert(
+            "cluster.task_network_input_pool_usage".to_string(),
+            expected_value.into(),
+        );
+    }
+
+    let expected_max_output_queue_len =
+        expected_vertex_metrics
+            .iter()
+            .map(|m| m.output_buffer_queue_len)
+            .max_by(|lhs, rhs| {
+                tracing::info!(
+                    ?lhs,
+                    ?rhs,
+                    "MAX[task_network_output_queue_len]: lhs max rhs = {:?}",
+                    lhs.partial_cmp(&rhs)
+                );
+                assert_some!(lhs.partial_cmp(&rhs))
+            });
+    if let Some(expected_value) = expected_max_output_queue_len {
+        tracing::info!(%expected_value, "MAX:cluster.task_network_output_queue_len");
+        expected.insert(
+            "cluster.task_network_output_queue_len".to_string(),
+            expected_value.into(),
+        );
+    }
+
+    let expected_max_out_pool_usage =
+        expected_vertex_metrics
+            .iter()
+            .map(|m| m.out_buffer_pool_usage)
+            .max_by(|lhs, rhs| {
+                tracing::info!(
+                    ?lhs,
+                    ?rhs,
+                    "MAX[task_network_output_pool_usage]: lhs max rhs = {:?}",
+                    lhs.partial_cmp(&rhs)
+                );
+                assert_some!(lhs.partial_cmp(&rhs))
+            });
+    if let Some(expected_value) = expected_max_out_pool_usage {
+        tracing::info!(%expected_value, "MAX:cluster.task_network_output_pool_usage");
+        expected.insert(
+            "cluster.task_network_output_pool_usage".to_string(),
+            expected_value.into(),
+        );
+    }
+
+    expected.into()
 }
 
 async fn trigger(tx: &ActorSourceApi<()>) -> anyhow::Result<Ack> {

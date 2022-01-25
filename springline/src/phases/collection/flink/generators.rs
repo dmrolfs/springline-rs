@@ -10,14 +10,11 @@ use proctor::graph::{Connect, Graph, SinkShape, SourceShape};
 use proctor::phases::collection::TelemetrySource;
 use proctor::SharedString;
 use reqwest::Method;
-use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
-use reqwest_retry::policies::ExponentialBackoff;
-use reqwest_retry::RetryTransientMiddleware;
 use tokio::task::JoinHandle;
 use tracing_futures::Instrument;
 
 use super::api_model::{build_telemetry, FlinkMetricResponse, JobSummary};
-use super::{Aggregation, FlinkScope, MetricOrder, STD_METRIC_ORDERS};
+use super::{Aggregation, FlinkScope, MetricOrder};
 use crate::phases::collection::flink::api_model::{JobDetail, JobId, VertexId};
 use crate::phases::collection::flink::{make_source_scheduler, TaskContext};
 use crate::phases::{MC_CLUSTER__NR_ACTIVE_JOBS, MC_CLUSTER__NR_TASK_MANAGERS};
@@ -63,8 +60,6 @@ pub async fn make_flink_metrics_source(
         tx_stop: Some(tx_scheduler_api),
     })
 }
-
-
 
 fn make_flink_generator(
     settings: &FlinkSettings,
@@ -394,12 +389,14 @@ mod tests {
     use cast_trait_object::DynCastExt;
     use claim::*;
     use fake::{Fake, Faker};
-    use inspect_prometheus::MetricFamily;
     use pretty_assertions::assert_eq;
     use proctor::elements::{TelemetryType, Timestamp};
     use proctor::graph::stage::tick::TickMsg;
     use proctor::graph::Graph;
     use reqwest::header::HeaderMap;
+    use reqwest_middleware::ClientBuilder;
+    use reqwest_retry::policies::ExponentialBackoff;
+    use reqwest_retry::RetryTransientMiddleware;
     use serde_json::json;
     use tokio_test::block_on;
     use url::Url;
@@ -410,6 +407,7 @@ mod tests {
     use crate::phases::collection::flink::api_model::{JobId, JobState, TaskState, VertexDetail};
     use crate::phases::collection::flink::{
         distill_metric_orders_and_agg, track_flink_errors, FLINK_COLLECTION_ERRORS, FLINK_COLLECTION_TIME,
+        STD_METRIC_ORDERS,
     };
     use crate::phases::MC_FLOW__RECORDS_IN_PER_SEC;
 

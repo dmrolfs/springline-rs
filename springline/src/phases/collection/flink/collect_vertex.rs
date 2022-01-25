@@ -189,7 +189,7 @@ where
         Ok(())
     }
 
-    #[tracing::instrument(level = "info", skip(self))]
+    #[tracing::instrument(level = "info", skip(self, metric_telemetry, metric_orders))]
     async fn gather_vertex_telemetry(
         &self, job: JobSummary, metric_telemetry: Arc<Mutex<HashMap<String, Vec<TelemetryValue>>>>,
         metric_orders: &OrdersByMetric,
@@ -344,13 +344,18 @@ where
                 .client
                 .request(Method::GET, vertex_metrics_url)
                 .send()
-                .map_err(|err| err.into())
-                .and_then(|vertex_metrics_response| {
-                    super::log_response("job vertex available telemetry", &vertex_metrics_response);
-                    vertex_metrics_response.json().map_err(|err| err.into())
+                .and_then(|response| {
+                    super::log_response("job_vertex available telemetry", &response);
+                    response.text().map_err(|err| err.into())
                 })
                 .instrument(span)
                 .await
+                .map_err(|err| err.into())
+                .and_then(|body| {
+                    tracing::info!(%body, "Flink vertex metrics response body");
+                    serde_json::from_str(body.as_str()).map_err(|err| err.into())
+                    // vertex_metrics_response.json().map_err(|err| err.into())
+                })
                 .and_then(|metric_response: FlinkMetricResponse| {
                     api_model::build_telemetry(metric_response, metric_orders).map_err(|err| err.into())
                 })

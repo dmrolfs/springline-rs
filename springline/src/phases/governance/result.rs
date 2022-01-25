@@ -10,6 +10,7 @@ use crate::phases::plan::ScalePlan;
 type Item = ScalePlan;
 type Context = GovernanceContext;
 
+#[allow(clippy::cognitive_complexity)]
 pub fn make_governance_transform(
     name: impl Into<SharedString>,
 ) -> impl ThroughStage<PolicyOutcome<Item, Context>, Item> {

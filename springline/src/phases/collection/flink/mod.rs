@@ -1,18 +1,17 @@
+use cast_trait_object::DynCastExt;
 use once_cell::sync::Lazy;
-use proctor::graph::stage::{self, SourceStage, WithApi};
 use proctor::elements::telemetry::{self, Telemetry, TelemetryValue};
 use proctor::error::{CollectionError, MetricLabel, TelemetryError};
+use proctor::graph::stage::{self, SourceStage, ThroughStage};
+use proctor::graph::{Connect, Graph, SinkShape, SourceShape, UniformFanInShape, UniformFanOutShape};
+use proctor::SharedString;
 use prometheus::{HistogramOpts, HistogramTimer, HistogramVec, IntCounterVec, Opts};
 use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
+use reqwest_retry::policies::ExponentialBackoff;
+use reqwest_retry::RetryTransientMiddleware;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::sync::Arc;
-use cast_trait_object::DynCastExt;
-use proctor::graph::{Connect, Graph, SinkShape, SourceShape, UniformFanInShape, UniformFanOutShape};
-use proctor::phases::collection::TelemetrySource;
-use proctor::SharedString;
-use reqwest_retry::policies::ExponentialBackoff;
-use reqwest_retry::RetryTransientMiddleware;
 use url::Url;
 
 mod api_model;
@@ -30,12 +29,12 @@ pub use collect_vertex::{
     FLINK_QUERY_VERTEX_METRIC_PICKLIST_TIME, FLINK_QUERY_VERTEX_TELEMETRY_TIME,
 };
 // pub use generators::make_flink_metrics_source;
-pub use metric_order::{Aggregation, FlinkScope, MetricOrder};
-pub use api_model::{JobState, TaskState, JobId, VertexId, JOB_STATES, TASK_STATES};
 use crate::phases::collection::flink::collect_scope::CollectScope;
 use crate::phases::collection::flink::collect_taskmanager_admin::CollectTaskmanagerAdmin;
 use crate::phases::collection::flink::collect_vertex::CollectVertex;
 use crate::settings::FlinkSettings;
+pub use api_model::{JobId, JobState, TaskState, VertexId, JOB_STATES, TASK_STATES};
+pub use metric_order::{Aggregation, FlinkScope, MetricOrder};
 
 // note: `cluster.nr_task_managers` is a standard metric pulled from Flink's admin API. The order
 // mechanism may need to be expanded to consider further meta information outside of Flink Metrics
@@ -126,15 +125,11 @@ pub static STD_METRIC_ORDERS: Lazy<Vec<MetricOrder>> = Lazy::new(|| {
     .collect()
 });
 
-#[tracing::instrument(level="info", skip(name, scheduler, settings), fields(source_name=%name.as_ref()))]
+#[tracing::instrument(level="info", skip(name, scheduler, settings), fields(source_name=%name))]
 pub async fn make_flink_metrics_source(
-    name: impl AsRef<str>,
-    scheduler: Box<dyn SourceStage<()>>,
-    settings: &FlinkSettings
+    name: &str, scheduler: Box<dyn SourceStage<()>>, settings: &FlinkSettings,
 ) -> Result<Box<dyn SourceStage<Telemetry>>, CollectionError> {
-    let name: SharedString = format!("{}_flink_source", name.as_ref()).into();
-
-    let broadcast = stage::Broadcast::new(name.clone(), 4);
+    let name: SharedString = format!("{}_flink_source", name).into();
 
     let orders = Arc::new(MetricOrder::extend_standard_with_settings(settings));
     let context = Arc::new(TaskContext::new(settings)?);
@@ -143,36 +138,56 @@ pub async fn make_flink_metrics_source(
     let collect_tm_scope = CollectScope::new(FlinkScope::TaskManagers, orders.clone(), context.clone());
     let collect_tm_admin = CollectTaskmanagerAdmin::new(context.clone());
     let collect_vertex = CollectVertex::new(orders.clone(), context.clone())?;
+    let flink_collectors: Vec<Box<dyn ThroughStage<(), Telemetry>>> = vec![
+        Box::new(collect_jobs_scope),
+        Box::new(collect_tm_scope),
+        Box::new(collect_tm_admin),
+        Box::new(collect_vertex),
+    ];
 
-    let merge_combine = stage::MergeCombine::new(name.clone(), 4);
+    let broadcast = stage::Broadcast::new(name.clone(), flink_collectors.len());
+
+    let merge_combine = stage::MergeCombine::new(name.clone(), flink_collectors.len());
     let composite_outlet = merge_combine.outlet();
 
     (scheduler.outlet(), broadcast.inlet()).connect().await;
 
     let broadcast_outlets = broadcast.outlets();
-    (broadcast_outlets.get(0).unwrap(), &collect_jobs_scope.inlet()).connect().await;
-    (broadcast_outlets.get(1).unwrap(), &collect_tm_scope.inlet()).connect().await;
-    (broadcast_outlets.get(2).unwrap(), &collect_tm_admin.inlet()).connect().await;
-    (broadcast_outlets.get(3).unwrap(), &collect_vertex.inlet()).connect().await;
-
     let merge_inlets = merge_combine.inlets();
-    (collect_jobs_scope.outlet(), merge_inlets.get(0).await.unwrap()).connect().await;
-    (collect_tm_scope.outlet(), merge_inlets.get(1).await.unwrap()).connect().await;
-    (collect_tm_admin.outlet(), merge_inlets.get(2).await.unwrap()).connect().await;
-    (collect_vertex.outlet(), merge_inlets.get(3).await.unwrap()).connect().await;
+    for (pos, collector) in flink_collectors.iter().enumerate() {
+        (broadcast_outlets.get(pos).unwrap(), &collector.inlet()).connect().await;
+
+        (collector.outlet(), merge_inlets.get(pos).await.unwrap()).connect().await;
+    }
+
+    // (broadcast_outlets.get(0).unwrap(), &collect_jobs_scope.inlet())
+    //     .connect()
+    //     .await;
+    // (broadcast_outlets.get(1).unwrap(), &collect_tm_scope.inlet()).connect().await;
+    // (broadcast_outlets.get(2).unwrap(), &collect_tm_admin.inlet()).connect().await;
+    // (broadcast_outlets.get(3).unwrap(), &collect_vertex.inlet()).connect().await;
+
+    // (collect_jobs_scope.outlet(), merge_inlets.get(0).await.unwrap())
+    //     .connect()
+    //     .await;
+    // (collect_tm_scope.outlet(), merge_inlets.get(1).await.unwrap()).connect().await;
+    // (collect_tm_admin.outlet(), merge_inlets.get(2).await.unwrap()).connect().await;
+    // (collect_vertex.outlet(), merge_inlets.get(3).await.unwrap()).connect().await;
 
     let mut composite_graph = Graph::default();
     composite_graph.push_back(scheduler.dyn_upcast()).await;
     composite_graph.push_back(Box::new(broadcast)).await;
-    composite_graph.push_back(Box::new(collect_jobs_scope)).await;
-    composite_graph.push_back(Box::new(collect_tm_scope)).await;
-    composite_graph.push_back(Box::new(collect_tm_admin)).await;
-    composite_graph.push_back(Box::new(collect_vertex)).await;
+    for collector in flink_collectors {
+        composite_graph.push_back(collector.dyn_upcast()).await;
+    }
+    // composite_graph.push_back(Box::new(collect_jobs_scope)).await;
+    // composite_graph.push_back(Box::new(collect_tm_scope)).await;
+    // composite_graph.push_back(Box::new(collect_tm_admin)).await;
+    // composite_graph.push_back(Box::new(collect_vertex)).await;
     composite_graph.push_back(Box::new(merge_combine)).await;
 
-    let composite: Box<dyn SourceStage<Telemetry>> = Box::new(
-        stage::CompositeSource::new(name, composite_graph, composite_outlet).await
-    );
+    let composite: Box<dyn SourceStage<Telemetry>> =
+        Box::new(stage::CompositeSource::new(name, composite_graph, composite_outlet).await);
 
     Ok(composite)
 }
@@ -208,7 +223,7 @@ impl TaskContext {
     fn do_make_http_client(settings: &FlinkSettings) -> Result<ClientWithMiddleware, CollectionError> {
         let headers = settings.header_map()?;
 
-        let mut client_builder = reqwest::Client::builder()
+        let client_builder = reqwest::Client::builder()
             .pool_idle_timeout(settings.pool_idle_timeout)
             .default_headers(headers);
 
@@ -225,7 +240,6 @@ impl TaskContext {
             .with(RetryTransientMiddleware::new_with_policy(retry_policy))
             .build())
     }
-
 }
 
 // This type is also only needed to circumvent the issue cast_trait_object places on forcing the generic Out type.
@@ -357,10 +371,10 @@ fn log_response(label: &str, response: &reqwest::Response) {
     const PREAMBLE: &str = "flink telemetry response received";
     let status = response.status();
     if status.is_success() || status.is_informational() {
-        tracing::info!(?response, "{}:{}", PREAMBLE, label);
+        tracing::info!(?response, "{PREAMBLE}:{label}");
     } else if status.is_client_error() {
-        tracing::error!(?response, "{}:{}", PREAMBLE, label);
+        tracing::error!(?response, "{PREAMBLE}:{label}");
     } else {
-        tracing::warn!(?response, "{}:{}", PREAMBLE, label);
+        tracing::warn!(?response, "{PREAMBLE}:{label}");
     }
 }

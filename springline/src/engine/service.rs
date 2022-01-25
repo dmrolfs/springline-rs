@@ -275,7 +275,7 @@ impl<'r> Service<'r> {
 
             Ok(MetricsReport(report))
         } else {
-            tracing::error!("DMR: NO METRICS_REGISTRY");
+            tracing::warn!("no metrics_registry - creating default");
             Ok(MetricsReport::default())
         }
     }

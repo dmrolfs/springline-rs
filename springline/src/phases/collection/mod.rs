@@ -24,15 +24,11 @@ pub async fn make_collection_phase(
         "springline_flink",
         settings.flink.metrics_initial_delay,
         settings.flink.metrics_interval,
-        ()
+        (),
     );
     let tx_scheduler_api = scheduler.tx_api();
 
-    let flink_source = flink::make_flink_metrics_source(
-        "springline",
-        Box::new(scheduler),
-        &settings.flink
-    ).await?;
+    let flink_source = flink::make_flink_metrics_source("springline", Box::new(scheduler), &settings.flink).await?;
 
     sources.push(flink_source);
 

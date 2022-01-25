@@ -232,7 +232,6 @@ impl From<&str> for JobId {
     }
 }
 
-
 #[serde_as]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct JobDetail {

@@ -1,14 +1,14 @@
 use std::collections::HashMap;
 use std::fmt::{self, Display};
 
+use crate::phases::collection::flink::STD_METRIC_ORDERS;
+use crate::settings::FlinkSettings;
 use itertools::Itertools;
 use proctor::elements::telemetry::combine::{self, TelemetryCombinator};
 use proctor::elements::TelemetryType;
 use serde::de::{self, Deserializer, MapAccess, SeqAccess, Visitor};
 use serde::ser::SerializeTupleStruct;
 use serde::{Deserialize, Serialize, Serializer};
-use crate::phases::collection::flink::STD_METRIC_ORDERS;
-use crate::settings::FlinkSettings;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct MetricOrder {
@@ -20,7 +20,7 @@ pub struct MetricOrder {
 }
 
 impl MetricOrder {
-    pub fn extend_standard_with_settings(settings: &FlinkSettings) -> Vec<MetricOrder> {
+    pub fn extend_standard_with_settings(settings: &FlinkSettings) -> Vec<Self> {
         let mut orders = STD_METRIC_ORDERS.clone();
         orders.extend(settings.metric_orders.clone());
         orders
