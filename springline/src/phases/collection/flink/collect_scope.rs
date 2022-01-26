@@ -140,11 +140,16 @@ where
                         .send()
                         .and_then(|response| {
                             super::log_response(format!("{} scope response", scope_rep.clone()).as_str(), &response);
-                            response.json::<api_model::FlinkMetricResponse>().map_err(|err| err.into())
+                            response.text().map_err(|err| err.into())
                         })
                         .instrument(tracing::info_span!("Flink scope metrics REST API", scope=%self.scope))
                         .await
                         .map_err(|err| err.into())
+                        .and_then(|body| {
+                            let result = serde_json::from_str(body.as_str()).map_err(|err| err.into());
+                            tracing::info!(%body, ?result, "Flink {} scope metrics response body", self.scope);
+                            result
+                        })
                         .and_then(|metric_response: api_model::FlinkMetricResponse| {
                             api_model::build_telemetry(metric_response, &metric_orders)
                                 // this is only needed because async_trait forcing me to parameterize this stage
@@ -227,7 +232,6 @@ mod tests {
             .with(RetryTransientMiddleware::new_with_policy(retry_policy))
             .build();
         let url = format!("{}/", &mock_server.uri());
-        // let url = "http://localhost:8081/".to_string();
         Ok(TaskContext { client, base_url: Url::parse(url.as_str())? })
     }
 

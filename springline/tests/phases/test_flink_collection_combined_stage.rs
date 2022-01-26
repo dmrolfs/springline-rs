@@ -41,6 +41,262 @@ impl Match for QueryParamKeyMatcher {
     }
 }
 
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn test_flink_merge_combine_collection_stage() -> anyhow::Result<()> {
+    once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
+    let main_span = tracing::info_span!("test_flink_merge_combine_collection_stage");
+    let _ = main_span.enter();
+
+    let mock_server = MockServer::start().await;
+    let expected_jobs = MockFlinkJobsMetrics::mount_mock(&mock_server, 1).await;
+    tracing::info!("expected_jobs: {:?}", expected_jobs);
+    let expected_tm = MockFlinkTaskmanagersMetrics::mount_mock(&mock_server, 1).await;
+    tracing::info!("expected_tm: {:?}", expected_tm);
+    let expected_tm_admin = MockFlinkTaskmanagerAdminMetrics::mount_mock(&mock_server, 1).await;
+    tracing::info!("expected_tm_admin: {:?}", expected_tm_admin);
+    let expected_job_states = MockFlinkJobStates::mount_mock(&mock_server, 1).await;
+    tracing::info!("expected_job_states: {:?}", expected_job_states);
+
+    let mut expected_job_details = Vec::with_capacity(expected_job_states.job_states.len());
+    for (job_id, job_state) in expected_job_states.job_states.iter() {
+        expected_job_details
+            .push(MockFlinkJobDetail::mount_mock(Some(job_id.clone()), Some(*job_state), &mock_server, 1).await);
+    }
+    tracing::info!("expected_job_details: {:?}", expected_job_details);
+
+    let mut expected_vertex_metric_summaries = Vec::with_capacity(expected_job_details.len());
+    let mut expected_vertex_metrics = Vec::with_capacity(expected_job_details.len());
+    for expected in expected_job_details.iter() {
+        let job_id = &expected.job_id;
+        for (vertex_id, _) in expected.vertex_states.iter().filter(|(_, s)| s.is_active()) {
+            let expected_vertex_summary =
+                MockFlinkVertexMetricSummary::mount_mock(job_id, vertex_id, &mock_server, 1).await;
+            expected_vertex_metric_summaries.push(expected_vertex_summary);
+            expected_vertex_metrics.push(MockFlinkVertexMetrics::mount_mock(job_id, vertex_id, &mock_server, 1).await);
+        }
+    }
+    tracing::info!(
+        "expected_vertex_metric_summaries: {:?}",
+        expected_vertex_metric_summaries
+    );
+    tracing::info!("expected_vertex_metrics: {:?}", expected_vertex_metrics);
+
+    let mock_uri = assert_ok!(Url::parse(mock_server.uri().as_str()));
+    let job_manager_host = assert_some!(mock_uri.host());
+    let job_manager_port = assert_some!(mock_uri.port());
+
+    let settings = FlinkSettings {
+        job_manager_uri_scheme: "http".to_string(),
+        job_manager_host: job_manager_host.to_string(), //"localhost".to_string(),
+        job_manager_port,                               //: 8081,
+        metrics_initial_delay: Duration::ZERO,
+        metrics_interval: Duration::from_secs(120),
+        metric_orders: STD_METRIC_ORDERS.clone(),
+        ..FlinkSettings::default()
+    };
+
+    let scheduler = stage::ActorSource::new("trigger");
+    let tx_scheduler_api = scheduler.tx_api();
+
+    let collect_flink = make_flink_metrics_source("test_flink", Box::new(scheduler), &settings).await?;
+
+    let mut sink = stage::Fold::new("sink", Telemetry::default(), |mut acc, item| {
+        tracing::info!(?item, ?acc, "PUSHING ITEM INTO ACC...");
+        acc.extend(item);
+        acc
+    });
+
+    let rx_acc = assert_some!(sink.take_final_rx());
+
+    (collect_flink.outlet(), sink.inlet()).connect().await;
+    let mut g = Graph::default();
+    g.push_back(collect_flink.dyn_upcast()).await;
+    g.push_back(Box::new(sink)).await;
+    let handler = tokio::spawn(async move {
+        assert_ok!(g.run().await);
+    });
+
+    assert_ok!(trigger(&tx_scheduler_api).await);
+    assert_ok!(stop(&tx_scheduler_api).await);
+    assert_ok!(handler.await);
+
+    let actual = assert_ok!(rx_acc.await);
+    tracing::info!(?actual, "FINAL RESULT FROM SINK");
+
+    let expected = make_expected_telemetry(
+        expected_jobs,
+        expected_tm,
+        expected_tm_admin,
+        expected_job_states,
+        &expected_job_details,
+        &expected_vertex_metric_summaries,
+        &expected_vertex_metrics,
+    );
+
+    for (key, expected_v) in expected.iter() {
+        tracing::info!("ASSERTING TELEMETRY[{key}]: {:?} == {:?}", expected_v, actual.get(key));
+        match actual.get(key) {
+            Some(TelemetryValue::Float(actual)) => {
+                let ev: f64 = assert_ok!(expected_v.try_into());
+                if !approx::relative_eq!(*actual, ev) {
+                    assert_eq!(*actual, ev, "metric: {}", key);
+                }
+            },
+            Some(actual) => {
+                assert_eq!((key, actual), (key, expected_v));
+            },
+            None => {
+                tracing::warn!(?actual, "actual does not have value for key:{}", key);
+            },
+        };
+        // assert_eq!((key, actual_v), (key, expected_v));
+    }
+
+    use std::collections::BTreeSet;
+    let expected_keys: BTreeSet<&String> = expected.keys().collect();
+    let actual_keys: BTreeSet<&String> = actual.keys().collect();
+    assert_eq!(actual_keys, expected_keys);
+
+    tracing::info!("mock received requests: {:?}", mock_server.received_requests().await);
+
+    Ok(())
+}
+
+async fn trigger(tx: &ActorSourceApi<()>) -> anyhow::Result<Ack> {
+    let (cmd, rx) = ActorSourceCmd::push(());
+    tx.send(cmd)?;
+    rx.await.map_err(|err| err.into())
+}
+
+async fn stop(tx: &ActorSourceApi<()>) -> anyhow::Result<Ack> {
+    let (cmd, rx) = ActorSourceCmd::stop();
+    tx.send(cmd)?;
+    rx.await.map_err(|err| err.into())
+}
+
+fn make_expected_telemetry(
+    expected_jobs: MockFlinkJobsMetrics, expected_tm: MockFlinkTaskmanagersMetrics,
+    expected_tm_admin: MockFlinkTaskmanagerAdminMetrics, expected_job_states: MockFlinkJobStates,
+    _expected_job_details: &[MockFlinkJobDetail], _expected_vertex_metric_summaries: &[MockFlinkVertexMetricSummary],
+    expected_vertex_metrics: &[MockFlinkVertexMetrics],
+) -> Telemetry {
+    let mut expected: HashMap<String, TelemetryValue> = maplit::hashmap! {
+        "health.job_uptime_millis".to_string() => expected_jobs.uptime.into(),
+        "health.job_nr_restarts".to_string() => expected_jobs.restarts.into(),
+        "health.job_nr_failed_checkpoints".to_string() => expected_jobs.failed_checkpoints.into(),
+        "cluster.task_cpu_load".to_string() => expected_tm.cpu_load.into(),
+        "cluster.task_heap_memory_used".to_string() => expected_tm.heap_used.into(),
+        "cluster.task_heap_memory_committed".to_string() => expected_tm.heap_committed.into(),
+        "cluster.task_nr_threads".to_string() => expected_tm.nr_threads.into(),
+        MC_CLUSTER__NR_ACTIVE_JOBS.to_string() => expected_job_states.nr_active_jobs().into(),
+        MC_CLUSTER__NR_TASK_MANAGERS.to_string() => expected_tm_admin.nr_task_managers.into(),
+    };
+
+    let expected_max_records_in_per_sec = expected_vertex_metrics
+        .iter()
+        .map(|m| m.nr_records_in_per_second)
+        .max_by(|lhs, rhs| assert_some!(lhs.partial_cmp(&rhs)));
+    if let Some(expected_value) = expected_max_records_in_per_sec {
+        expected.insert(MC_FLOW__RECORDS_IN_PER_SEC.to_string(), expected_value.into());
+    }
+
+    let expected_max_records_out_per_sec = expected_vertex_metrics
+        .iter()
+        .map(|m| m.nr_records_out_per_second)
+        .max_by(|lhs, rhs| assert_some!(lhs.partial_cmp(&rhs)));
+    if let Some(expected_value) = expected_max_records_out_per_sec {
+        expected.insert("flow.records_out_per_sec".to_string(), expected_value.into());
+    }
+
+    let expected_max_input_queue_len =
+        expected_vertex_metrics
+            .iter()
+            .map(|m| m.input_buffer_queue_len)
+            .max_by(|lhs, rhs| {
+                tracing::info!(
+                    ?lhs,
+                    ?rhs,
+                    "MAX[task_network_input_queue_len]: lhs max rhs = {:?}",
+                    lhs.partial_cmp(&rhs)
+                );
+                assert_some!(lhs.partial_cmp(&rhs))
+            });
+    if let Some(expected_value) = expected_max_input_queue_len {
+        tracing::info!(%expected_value, "MAX:cluster.task_network_input_queue_len");
+        expected.insert(
+            "cluster.task_network_input_queue_len".to_string(),
+            expected_value.into(),
+        );
+    }
+
+    let expected_max_in_pool_usage =
+        expected_vertex_metrics
+            .iter()
+            .map(|m| m.in_buffer_pool_usage)
+            .max_by(|lhs, rhs| {
+                tracing::info!(
+                    ?lhs,
+                    ?rhs,
+                    "MAX[task_network_input_pool_usage]: lhs max rhs = {:?}",
+                    lhs.partial_cmp(&rhs)
+                );
+                assert_some!(lhs.partial_cmp(&rhs))
+            });
+    if let Some(expected_value) = expected_max_in_pool_usage {
+        tracing::info!(%expected_value, "MAX:cluster.task_network_input_pool_usage");
+        expected.insert(
+            "cluster.task_network_input_pool_usage".to_string(),
+            expected_value.into(),
+        );
+    }
+
+    let expected_max_output_queue_len =
+        expected_vertex_metrics
+            .iter()
+            .map(|m| m.output_buffer_queue_len)
+            .max_by(|lhs, rhs| {
+                tracing::info!(
+                    ?lhs,
+                    ?rhs,
+                    "MAX[task_network_output_queue_len]: lhs max rhs = {:?}",
+                    lhs.partial_cmp(&rhs)
+                );
+                assert_some!(lhs.partial_cmp(&rhs))
+            });
+    if let Some(expected_value) = expected_max_output_queue_len {
+        tracing::info!(%expected_value, "MAX:cluster.task_network_output_queue_len");
+        expected.insert(
+            "cluster.task_network_output_queue_len".to_string(),
+            expected_value.into(),
+        );
+    }
+
+    let expected_max_out_pool_usage =
+        expected_vertex_metrics
+            .iter()
+            .map(|m| m.out_buffer_pool_usage)
+            .max_by(|lhs, rhs| {
+                tracing::info!(
+                    ?lhs,
+                    ?rhs,
+                    "MAX[task_network_output_pool_usage]: lhs max rhs = {:?}",
+                    lhs.partial_cmp(&rhs)
+                );
+                assert_some!(lhs.partial_cmp(&rhs))
+            });
+    if let Some(expected_value) = expected_max_out_pool_usage {
+        tracing::info!(%expected_value, "MAX:cluster.task_network_output_pool_usage");
+        expected.insert(
+            "cluster.task_network_output_pool_usage".to_string(),
+            expected_value.into(),
+        );
+    }
+
+    expected.into()
+}
+
+
 #[derive(Debug)]
 struct MockFlinkJobsMetrics {
     pub uptime: i64,
@@ -518,258 +774,4 @@ impl MockFlinkVertexMetrics {
             out_buffer_pool_usage,
         }
     }
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn test_flink_merge_combine_collection_stage() -> anyhow::Result<()> {
-    once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
-    let main_span = tracing::info_span!("test_flink_merge_combine_collection_stage");
-    let _ = main_span.enter();
-
-    let mock_server = MockServer::start().await;
-    let expected_jobs = MockFlinkJobsMetrics::mount_mock(&mock_server, 1).await;
-    tracing::info!("expected_jobs: {:?}", expected_jobs);
-    let expected_tm = MockFlinkTaskmanagersMetrics::mount_mock(&mock_server, 1).await;
-    tracing::info!("expected_tm: {:?}", expected_tm);
-    let expected_tm_admin = MockFlinkTaskmanagerAdminMetrics::mount_mock(&mock_server, 1).await;
-    tracing::info!("expected_tm_admin: {:?}", expected_tm_admin);
-    let expected_job_states = MockFlinkJobStates::mount_mock(&mock_server, 1).await;
-    tracing::info!("expected_job_states: {:?}", expected_job_states);
-
-    let mut expected_job_details = Vec::with_capacity(expected_job_states.job_states.len());
-    for (job_id, job_state) in expected_job_states.job_states.iter() {
-        expected_job_details
-            .push(MockFlinkJobDetail::mount_mock(Some(job_id.clone()), Some(*job_state), &mock_server, 1).await);
-    }
-    tracing::info!("expected_job_details: {:?}", expected_job_details);
-
-    let mut expected_vertex_metric_summaries = Vec::with_capacity(expected_job_details.len());
-    let mut expected_vertex_metrics = Vec::with_capacity(expected_job_details.len());
-    for expected in expected_job_details.iter() {
-        let job_id = &expected.job_id;
-        for (vertex_id, _) in expected.vertex_states.iter().filter(|(_, s)| s.is_active()) {
-            let expected_vertex_summary =
-                MockFlinkVertexMetricSummary::mount_mock(job_id, vertex_id, &mock_server, 1).await;
-            expected_vertex_metric_summaries.push(expected_vertex_summary);
-            expected_vertex_metrics.push(MockFlinkVertexMetrics::mount_mock(job_id, vertex_id, &mock_server, 1).await);
-        }
-    }
-    tracing::info!(
-        "expected_vertex_metric_summaries: {:?}",
-        expected_vertex_metric_summaries
-    );
-    tracing::info!("expected_vertex_metrics: {:?}", expected_vertex_metrics);
-
-    let mock_uri = assert_ok!(Url::parse(mock_server.uri().as_str()));
-    let job_manager_host = assert_some!(mock_uri.host());
-    let job_manager_port = assert_some!(mock_uri.port());
-
-    let settings = FlinkSettings {
-        job_manager_uri_scheme: "http".to_string(),
-        job_manager_host: job_manager_host.to_string(), //"localhost".to_string(),
-        job_manager_port,                               //: 8081,
-        metrics_initial_delay: Duration::ZERO,
-        metrics_interval: Duration::from_secs(120),
-        metric_orders: STD_METRIC_ORDERS.clone(),
-        ..FlinkSettings::default()
-    };
-
-    let scheduler = stage::ActorSource::new("trigger");
-    let tx_scheduler_api = scheduler.tx_api();
-
-    let collect_flink = make_flink_metrics_source("test_flink", Box::new(scheduler), &settings).await?;
-
-    let mut sink = stage::Fold::new("sink", Telemetry::default(), |mut acc, item| {
-        tracing::info!(?item, ?acc, "PUSHING ITEM INTO ACC...");
-        acc.extend(item);
-        acc
-    });
-
-    let rx_acc = assert_some!(sink.take_final_rx());
-
-    (collect_flink.outlet(), sink.inlet()).connect().await;
-    let mut g = Graph::default();
-    g.push_back(collect_flink.dyn_upcast()).await;
-    g.push_back(Box::new(sink)).await;
-    let handler = tokio::spawn(async move {
-        assert_ok!(g.run().await);
-    });
-
-    assert_ok!(trigger(&tx_scheduler_api).await);
-    assert_ok!(stop(&tx_scheduler_api).await);
-    assert_ok!(handler.await);
-
-    let actual = assert_ok!(rx_acc.await);
-    tracing::info!(?actual, "FINAL RESULT FROM SINK");
-
-    let expected = make_expected_telemetry(
-        expected_jobs,
-        expected_tm,
-        expected_tm_admin,
-        expected_job_states,
-        &expected_job_details,
-        &expected_vertex_metric_summaries,
-        &expected_vertex_metrics,
-    );
-
-    for (key, expected_v) in expected.iter() {
-        tracing::info!("ASSERTING TELEMETRY[{key}]: {:?} == {:?}", expected_v, actual.get(key));
-        match actual.get(key) {
-            Some(TelemetryValue::Float(actual)) => {
-                let ev: f64 = assert_ok!(expected_v.try_into());
-                if !approx::relative_eq!(*actual, ev) {
-                    assert_eq!(*actual, ev, "metric: {}", key);
-                }
-            },
-            Some(actual) => {
-                assert_eq!((key, actual), (key, expected_v));
-            },
-            None => {
-                tracing::warn!(?actual, "actual does not have value for key:{}", key);
-            },
-        };
-        // assert_eq!((key, actual_v), (key, expected_v));
-    }
-
-    use std::collections::BTreeSet;
-    let expected_keys: BTreeSet<&String> = expected.keys().collect();
-    let actual_keys: BTreeSet<&String> = actual.keys().collect();
-    assert_eq!(actual_keys, expected_keys);
-
-    tracing::info!("mock received requests: {:?}", mock_server.received_requests().await);
-
-    Ok(())
-}
-
-fn make_expected_telemetry(
-    expected_jobs: MockFlinkJobsMetrics, expected_tm: MockFlinkTaskmanagersMetrics,
-    expected_tm_admin: MockFlinkTaskmanagerAdminMetrics, expected_job_states: MockFlinkJobStates,
-    _expected_job_details: &[MockFlinkJobDetail], _expected_vertex_metric_summaries: &[MockFlinkVertexMetricSummary],
-    expected_vertex_metrics: &[MockFlinkVertexMetrics],
-) -> Telemetry {
-    let mut expected: HashMap<String, TelemetryValue> = maplit::hashmap! {
-        "health.job_uptime_millis".to_string() => expected_jobs.uptime.into(),
-        "health.job_nr_restarts".to_string() => expected_jobs.restarts.into(),
-        "health.job_nr_failed_checkpoints".to_string() => expected_jobs.failed_checkpoints.into(),
-        "cluster.task_cpu_load".to_string() => expected_tm.cpu_load.into(),
-        "cluster.task_heap_memory_used".to_string() => expected_tm.heap_used.into(),
-        "cluster.task_heap_memory_committed".to_string() => expected_tm.heap_committed.into(),
-        "cluster.task_nr_threads".to_string() => expected_tm.nr_threads.into(),
-        MC_CLUSTER__NR_ACTIVE_JOBS.to_string() => expected_job_states.nr_active_jobs().into(),
-        MC_CLUSTER__NR_TASK_MANAGERS.to_string() => expected_tm_admin.nr_task_managers.into(),
-    };
-
-    let expected_max_records_in_per_sec = expected_vertex_metrics
-        .iter()
-        .map(|m| m.nr_records_in_per_second)
-        .max_by(|lhs, rhs| assert_some!(lhs.partial_cmp(&rhs)));
-    if let Some(expected_value) = expected_max_records_in_per_sec {
-        expected.insert(MC_FLOW__RECORDS_IN_PER_SEC.to_string(), expected_value.into());
-    }
-
-    let expected_max_records_out_per_sec = expected_vertex_metrics
-        .iter()
-        .map(|m| m.nr_records_out_per_second)
-        .max_by(|lhs, rhs| assert_some!(lhs.partial_cmp(&rhs)));
-    if let Some(expected_value) = expected_max_records_out_per_sec {
-        expected.insert("flow.records_out_per_sec".to_string(), expected_value.into());
-    }
-
-    let expected_max_input_queue_len =
-        expected_vertex_metrics
-            .iter()
-            .map(|m| m.input_buffer_queue_len)
-            .max_by(|lhs, rhs| {
-                tracing::info!(
-                    ?lhs,
-                    ?rhs,
-                    "MAX[task_network_input_queue_len]: lhs max rhs = {:?}",
-                    lhs.partial_cmp(&rhs)
-                );
-                assert_some!(lhs.partial_cmp(&rhs))
-            });
-    if let Some(expected_value) = expected_max_input_queue_len {
-        tracing::info!(%expected_value, "MAX:cluster.task_network_input_queue_len");
-        expected.insert(
-            "cluster.task_network_input_queue_len".to_string(),
-            expected_value.into(),
-        );
-    }
-
-    let expected_max_in_pool_usage =
-        expected_vertex_metrics
-            .iter()
-            .map(|m| m.in_buffer_pool_usage)
-            .max_by(|lhs, rhs| {
-                tracing::info!(
-                    ?lhs,
-                    ?rhs,
-                    "MAX[task_network_input_pool_usage]: lhs max rhs = {:?}",
-                    lhs.partial_cmp(&rhs)
-                );
-                assert_some!(lhs.partial_cmp(&rhs))
-            });
-    if let Some(expected_value) = expected_max_in_pool_usage {
-        tracing::info!(%expected_value, "MAX:cluster.task_network_input_pool_usage");
-        expected.insert(
-            "cluster.task_network_input_pool_usage".to_string(),
-            expected_value.into(),
-        );
-    }
-
-    let expected_max_output_queue_len =
-        expected_vertex_metrics
-            .iter()
-            .map(|m| m.output_buffer_queue_len)
-            .max_by(|lhs, rhs| {
-                tracing::info!(
-                    ?lhs,
-                    ?rhs,
-                    "MAX[task_network_output_queue_len]: lhs max rhs = {:?}",
-                    lhs.partial_cmp(&rhs)
-                );
-                assert_some!(lhs.partial_cmp(&rhs))
-            });
-    if let Some(expected_value) = expected_max_output_queue_len {
-        tracing::info!(%expected_value, "MAX:cluster.task_network_output_queue_len");
-        expected.insert(
-            "cluster.task_network_output_queue_len".to_string(),
-            expected_value.into(),
-        );
-    }
-
-    let expected_max_out_pool_usage =
-        expected_vertex_metrics
-            .iter()
-            .map(|m| m.out_buffer_pool_usage)
-            .max_by(|lhs, rhs| {
-                tracing::info!(
-                    ?lhs,
-                    ?rhs,
-                    "MAX[task_network_output_pool_usage]: lhs max rhs = {:?}",
-                    lhs.partial_cmp(&rhs)
-                );
-                assert_some!(lhs.partial_cmp(&rhs))
-            });
-    if let Some(expected_value) = expected_max_out_pool_usage {
-        tracing::info!(%expected_value, "MAX:cluster.task_network_output_pool_usage");
-        expected.insert(
-            "cluster.task_network_output_pool_usage".to_string(),
-            expected_value.into(),
-        );
-    }
-
-    expected.into()
-}
-
-async fn trigger(tx: &ActorSourceApi<()>) -> anyhow::Result<Ack> {
-    let (cmd, rx) = ActorSourceCmd::push(());
-    tx.send(cmd)?;
-    rx.await.map_err(|err| err.into())
-}
-
-async fn stop(tx: &ActorSourceApi<()>) -> anyhow::Result<Ack> {
-    let (cmd, rx) = ActorSourceCmd::stop();
-    tx.send(cmd)?;
-    rx.await.map_err(|err| err.into())
 }

@@ -160,30 +160,12 @@ pub async fn make_flink_metrics_source(
         (collector.outlet(), merge_inlets.get(pos).await.unwrap()).connect().await;
     }
 
-    // (broadcast_outlets.get(0).unwrap(), &collect_jobs_scope.inlet())
-    //     .connect()
-    //     .await;
-    // (broadcast_outlets.get(1).unwrap(), &collect_tm_scope.inlet()).connect().await;
-    // (broadcast_outlets.get(2).unwrap(), &collect_tm_admin.inlet()).connect().await;
-    // (broadcast_outlets.get(3).unwrap(), &collect_vertex.inlet()).connect().await;
-
-    // (collect_jobs_scope.outlet(), merge_inlets.get(0).await.unwrap())
-    //     .connect()
-    //     .await;
-    // (collect_tm_scope.outlet(), merge_inlets.get(1).await.unwrap()).connect().await;
-    // (collect_tm_admin.outlet(), merge_inlets.get(2).await.unwrap()).connect().await;
-    // (collect_vertex.outlet(), merge_inlets.get(3).await.unwrap()).connect().await;
-
     let mut composite_graph = Graph::default();
     composite_graph.push_back(scheduler.dyn_upcast()).await;
     composite_graph.push_back(Box::new(broadcast)).await;
     for collector in flink_collectors {
         composite_graph.push_back(collector.dyn_upcast()).await;
     }
-    // composite_graph.push_back(Box::new(collect_jobs_scope)).await;
-    // composite_graph.push_back(Box::new(collect_tm_scope)).await;
-    // composite_graph.push_back(Box::new(collect_tm_admin)).await;
-    // composite_graph.push_back(Box::new(collect_vertex)).await;
     composite_graph.push_back(Box::new(merge_combine)).await;
 
     let composite: Box<dyn SourceStage<Telemetry>> =

@@ -216,19 +216,32 @@ where
             .send()
             .and_then(|response| {
                 super::log_response("active jobs", &response);
-                response.json().map_err(|err| err.into())
+                response.text().map_err(|err| err.into())
             })
             .instrument(span)
             .await
             .map_err(|err: reqwest_middleware::Error| err.into())
+            .and_then(|body| {
+                let result = serde_json::from_str(body.as_str()).map_err(|err| err.into());
+                tracing::info!(%body, ?result, "Flink job summary response body");
+                result
+            })
             .and_then(|jobs_json_value: serde_json::Value| {
-                jobs_json_value
+                let result = jobs_json_value
                     .get("jobs")
                     .cloned()
                     .map(|json| serde_json::from_value::<Vec<JobSummary>>(json).map_err(|err| err.into()))
-                    .unwrap_or_else(|| Ok(Vec::default()))
+                    .unwrap_or_else(|| Ok(Vec::default()));
+                tracing::info!(?result, "Flink job summary response json parsing");
+                result
             })
-            .map(|jobs: Vec<JobSummary>| jobs.into_iter().filter(|j| j.status.is_active()).collect());
+            .map(|jobs: Vec<JobSummary>| jobs.into_iter().filter(|job_summary| {
+                let is_job_active = job_summary.status.is_active();
+                if !is_job_active {
+                    tracing::info!(?job_summary, "filtering out job detail since");
+                }
+                is_job_active
+            }).collect());
 
         super::identity_or_track_error(FlinkScope::Jobs, result)
     }
@@ -250,11 +263,16 @@ where
             .send()
             .and_then(|response| {
                 super::log_response("job detail", &response);
-                response.json().map_err(|err| err.into())
+                response.text().map_err(|err| err.into())
             })
             .instrument(span)
             .await
-            .map_err(|err: reqwest_middleware::Error| err.into());
+            .map_err(|err| err.into())
+            .and_then(|body| {
+                let result = serde_json::from_str(body.as_str()).map_err(|err| err.into());
+                tracing::info!(%body, ?result, "Flink job detail response body");
+                result
+            });
 
         super::identity_or_track_error(FlinkScope::Jobs, result)
     }
@@ -352,9 +370,9 @@ where
                 .await
                 .map_err(|err| err.into())
                 .and_then(|body| {
-                    tracing::info!(%body, "Flink vertex metrics response body");
-                    serde_json::from_str(body.as_str()).map_err(|err| err.into())
-                    // vertex_metrics_response.json().map_err(|err| err.into())
+                    let result = serde_json::from_str(body.as_str()).map_err(|err| err.into());
+                    tracing::info!(%body, ?result, "Flink vertex metrics response body");
+                    result
                 })
                 .and_then(|metric_response: FlinkMetricResponse| {
                     api_model::build_telemetry(metric_response, metric_orders).map_err(|err| err.into())

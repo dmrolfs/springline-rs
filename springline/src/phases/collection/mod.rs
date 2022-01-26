@@ -29,7 +29,6 @@ pub async fn make_collection_phase(
     let tx_scheduler_api = scheduler.tx_api();
 
     let flink_source = flink::make_flink_metrics_source("springline", Box::new(scheduler), &settings.flink).await?;
-
     sources.push(flink_source);
 
     Ok((

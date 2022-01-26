@@ -122,15 +122,10 @@ where
                         .await
                         .map_err(|err| err.into())
                         .and_then(|body| {
-                            tracing::info!(%body, "Flink taskmanager_admin response body");
-                            serde_json::from_str::<serde_json::Value>(body.as_str()).map_err(|err| err.into())
+                            let result = serde_json::from_str::<serde_json::Value>(body.as_str()).map_err(|err| err.into());
+                            tracing::info!(%body, ?result, "Flink taskmanager_admin response body");
+                            result
                         })
-                        // .and_then(|response| {
-                        //     response.json::<serde_json::Value>().map_err(|err| err.into())
-                        // })
-                        // .instrument(tracing::info_span!("Flink taskmanager REST API", scope=%SCOPE))
-                        // .await
-                        // .map_err(|err| err.into())
                         .map(|resp: serde_json::Value| {
                             resp["taskmanagers"].as_array().map(|tms| tms.len()).unwrap_or(0)
                         })
