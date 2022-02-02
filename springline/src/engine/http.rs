@@ -8,7 +8,7 @@ use axum::routing::get;
 use axum::{AddExtensionLayer, BoxError, Json, Router};
 use proctor::phases::collection::ClearinghouseSnapshot;
 use settings_loader::common::http::HttpServerSettings;
-use tokio::net::TcpListener;
+use tokio::task::JoinHandle;
 use tower::ServiceBuilder;
 use tower_http::trace::TraceLayer;
 
@@ -20,9 +20,9 @@ struct State {
 }
 
 #[tracing::instrument(level = "info", skip(tx_api))]
-pub async fn run_http_server<'s>(
+pub fn run_http_server<'s>(
     tx_api: EngineServiceApi, settings: &HttpServerSettings,
-) -> Result<(), EngineApiError> {
+) -> Result<JoinHandle<Result<(), EngineApiError>>, EngineApiError> {
     let shared_state = Arc::new(State { tx_api });
 
     let middleware_stack = ServiceBuilder::new()
@@ -40,14 +40,26 @@ pub async fn run_http_server<'s>(
 
     // debug_router!(app);
 
-    let address = format!("{}:{}", settings.host, settings.port);
-    let listener = TcpListener::bind(&address).await?.into_std()?;
-    // let port = listener.local_addr()?.port();
+    let host = settings.host.clone();
+    let port = settings.port;
 
-    tracing::info!("autoscale engine API listening on {}", address);
-    axum::Server::from_tcp(listener)?.serve(app.into_make_service()).await?;
+    let handle: JoinHandle<Result<(), EngineApiError>> = tokio::spawn(async move {
+        let address = format!("{host}:{port}");
+        let listener = tokio::net::TcpListener::bind(&address).await?;
+        let std_listener = listener.into_std()?;
 
-    Ok(())
+        tracing::warn!(
+            "{:?} autoscale engine API listening on {}",
+            std::env::current_exe(),
+            address
+        );
+        let builder = axum::Server::from_tcp(std_listener)?;
+        let server = builder.serve(app.into_make_service());
+        server.await?;
+        Ok(())
+    });
+
+    Ok(handle)
 }
 
 // #[debug_handler]

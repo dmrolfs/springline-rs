@@ -16,6 +16,8 @@ pub(crate) use context::{
     ELIGIBILITY_CTX_ALL_SINKS_HEALTHY, ELIGIBILITY_CTX_CLUSTER_IS_DEPLOYING, ELIGIBILITY_CTX_CLUSTER_LAST_DEPLOYMENT,
     ELIGIBILITY_CTX_TASK_LAST_FAILURE,
 };
+pub(crate) use policy::ELIGIBILITY_POLICY_INELIGIBLE_DECISIONS_COUNT;
+
 pub use policy::{EligibilityPolicy, EligibilityTemplateData};
 
 pub type EligibilityOutcome = MetricCatalog;

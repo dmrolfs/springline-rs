@@ -1,3 +1,4 @@
+use once_cell::sync::Lazy;
 use std::collections::{HashMap, HashSet};
 
 use oso::{Oso, PolarClass, PolarValue};
@@ -5,6 +6,7 @@ use proctor::elements::{PolicySource, PolicySubscription, QueryPolicy, QueryResu
 use proctor::error::PolicyError;
 use proctor::phases::collection::TelemetrySubscription;
 use proctor::{ProctorContext, ProctorIdGenerator, SharedString};
+use prometheus::{IntCounterVec, Opts};
 use serde::{Deserialize, Serialize};
 
 use super::context::DecisionContext;
@@ -147,6 +149,29 @@ impl QueryPolicy for DecisionPolicy {
 
     fn query_policy(&self, engine: &Oso, args: Self::Args) -> Result<QueryResult, PolicyError> {
         QueryResult::from_query(engine.query_rule("scale", args)?)
+        // .map(|query_result| {
+        // if query_result.passed {
+        //     let decision = query_result
+        //         .bindings
+        //         .get(DECISION)
+        //         .and_then(|rs| rs.first())
+        //         .map(|r| r.to_string())
+        //         .unwrap_or("no_action".into());
+        //
+        //     let reason = query_result
+        //         .bindings
+        //         .get(REASON)
+        //         .and_then(|rs| rs.first())
+        //         .map(|r| r.to_string())
+        //         .unwrap_or("unspecified".into());
+        //
+        //     DECISION_SCALING_DECISION_COUNT_METRIC
+        //         .with_label_values(&[&decision, &reason])
+        //         .inc();
+        // }
+        //
+        // query_result
+        // })
     }
 
     fn zero_context(&self) -> Option<Self::Context> {
@@ -165,6 +190,17 @@ impl QueryPolicy for DecisionPolicy {
         }
     }
 }
+
+pub static DECISION_SCALING_DECISION_COUNT_METRIC: Lazy<IntCounterVec> = Lazy::new(|| {
+    IntCounterVec::new(
+        Opts::new(
+            "decision_scaling_decision_count",
+            "Count of decisions for scaling planning made.",
+        ),
+        &["decision", "reason"],
+    )
+    .expect("failed creating decision_scaling_decision_count metric")
+});
 
 #[cfg(test)]
 mod tests {
@@ -363,6 +399,10 @@ mod tests {
         |scale(item, context, direction, reason) if scale_down(item, context, direction, reason) and direction = "down";
         |scale_up(item, _context, _, reason) if 3 < item.flow.records_in_per_sec and reason = "load_up";
         |scale_down(item, _context, _, reason) if item.flow.records_in_per_sec < 1 and reason = "load_down";
+        |
+        |# no action rules to avoid policy errors if corresponding up/down rules not specified in basis.polar
+        |scale_up(_, _, _, _) if false;
+        |scale_down(_, _, _, _) if false;
         "##
         .trim_margin_with("|")
         .unwrap();

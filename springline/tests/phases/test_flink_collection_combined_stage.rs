@@ -41,7 +41,6 @@ impl Match for QueryParamKeyMatcher {
     }
 }
 
-
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn test_flink_merge_combine_collection_stage() -> anyhow::Result<()> {
     once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
@@ -295,7 +294,6 @@ fn make_expected_telemetry(
 
     expected.into()
 }
-
 
 #[derive(Debug)]
 struct MockFlinkJobsMetrics {

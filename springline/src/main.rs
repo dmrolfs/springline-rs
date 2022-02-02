@@ -44,10 +44,14 @@ fn main() -> Result<()> {
             .await?
             .run();
 
-        http::run_http_server(engine.inner.tx_service_api.clone(), &settings.http).await?;
+        tracing::info!("Starting autoscale management server API...");
+        let api_handle = http::run_http_server(engine.inner.tx_service_api.clone(), &settings.http)?;
 
+        tracing::info!("autoscale engine fully running...");
         engine.block_for_completion().await?;
+        api_handle.await??;
 
+        tracing::warn!("autoscaling engine stopped.");
         Ok(())
     })
 }

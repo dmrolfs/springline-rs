@@ -1,3 +1,4 @@
+use once_cell::sync::Lazy;
 use std::collections::{HashMap, HashSet};
 
 use oso::{Oso, PolarClass, PolarValue};
@@ -5,6 +6,7 @@ use proctor::elements::{PolicySource, PolicySubscription, QueryPolicy, QueryResu
 use proctor::error::PolicyError;
 use proctor::phases::collection::TelemetrySubscription;
 use proctor::{ProctorContext, SharedString};
+use prometheus::{IntCounterVec, Opts};
 use serde::{Deserialize, Serialize};
 
 use super::context::{ClusterStatus, EligibilityContext, TaskStatus};
@@ -75,6 +77,9 @@ impl PolicySubscription for EligibilityPolicy {
     }
 }
 
+// const ELIGIBLE: &str = "eligible";
+const INELIGIBLE: &str = "ineligible";
+
 impl QueryPolicy for EligibilityPolicy {
     type Args = (Self::Item, Self::Context, PolarValue);
     type Context = EligibilityContext;
@@ -114,7 +119,20 @@ impl QueryPolicy for EligibilityPolicy {
     }
 
     fn query_policy(&self, engine: &Oso, args: Self::Args) -> Result<QueryResult, PolicyError> {
-        QueryResult::from_query(engine.query_rule("eligible", args)?)
+        QueryResult::from_query(engine.query_rule(INELIGIBLE, args)?).map(|mut query_result| {
+            // goal is to pass on ELIGIBLE; however in order to surface reasons on the "negative"
+            // it's cheaper to query on negative then reverse the passed status
+            query_result.passed = !query_result.passed;
+            if !query_result.passed {
+                if let Some(reason) = query_result.bindings.get("reason").and_then(|rs| rs.first()) {
+                    ELIGIBILITY_POLICY_INELIGIBLE_DECISIONS_COUNT
+                        .with_label_values(&[&reason.to_string()])
+                        .inc();
+                }
+            }
+
+            query_result
+        })
     }
 
     fn base_template_name() -> &'static str {
@@ -137,6 +155,17 @@ impl QueryPolicy for EligibilityPolicy {
         &mut self.sources
     }
 }
+
+pub static ELIGIBILITY_POLICY_INELIGIBLE_DECISIONS_COUNT: Lazy<IntCounterVec> = Lazy::new(|| {
+    IntCounterVec::new(
+        Opts::new(
+            "eligibility_policy_ineligible_decisions_count",
+            "number of ineligible decisions",
+        ),
+        &["reason"],
+    )
+    .expect("failed creating eligibility_policy_ineligible_decisions_count metric")
+});
 
 #[cfg(test)]
 mod tests {

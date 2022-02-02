@@ -20,6 +20,7 @@ use proctor::{AppData, ProctorResult, SharedString};
 use serde_json::json;
 use thiserror::Error;
 use tokio::sync::broadcast;
+use tracing::Instrument;
 
 const STAGE_NAME: &str = "execute_scaling";
 
@@ -27,6 +28,9 @@ const STAGE_NAME: &str = "execute_scaling";
 pub enum ExecutionPhaseError {
     #[error("failure in kubernetes client: {0}")]
     Kube(#[from] kube::Error),
+
+    #[error("failure in kubernetes api:{0}")]
+    KubeApi(#[from] kube::error::ErrorResponse),
 
     #[error("failure occurred in the PatchReplicas inlet port: {0}")]
     Port(#[from] proctor::error::PortError),
@@ -43,6 +47,7 @@ impl MetricLabel for ExecutionPhaseError {
     fn next(&self) -> Either<SharedString, Box<&dyn MetricLabel>> {
         match self {
             Self::Kube(_) => Left("kubernetes".into()),
+            Self::KubeApi(e) => Left(format!("kubernetes::{}", e.reason).into()),
             Self::Port(e) => Right(Box::new(e)),
             Self::Stage(_) => Left("stage".into()),
         }
@@ -229,20 +234,48 @@ where
     async fn patch_replicas_for(
         plan: &In, stateful_set: &kube::Api<StatefulSet>, workload_resource: &KubernetesWorkloadResource,
     ) -> Result<(), ExecutionPhaseError> {
+        fn convert_kube_error(error: kube::Error) -> ExecutionPhaseError {
+            match error {
+                kube::Error::Api(resp) => resp.into(),
+                err => err.into(),
+            }
+        }
+
         let name = workload_resource.get_name();
         let target_nr_task_managers = plan.target_replicas();
 
-        let scale = stateful_set.get_scale(name).await?;
-        tracing::info!("scale recv for {}: {:?}", name, scale.spec);
+        let k8s_get_scale_span = tracing::info_span!(
+            "Kubernetes Admin Server",
+            phase=%"execution",
+            action=%"get_scale",
+            correlation=%plan.correlation()
+        );
+
+        let original_scale = stateful_set
+            .get_scale(name)
+            .instrument(k8s_get_scale_span)
+            .await
+            .map_err(convert_kube_error)?;
+        tracing::info!("scale recv for {}: {:?}", name, original_scale.spec);
+
+        let k8s_patch_scale_span = tracing::info_span!(
+            "Kubernetes Admin Server",
+            phase=%"execution",
+            action=%"patch_scale",
+            correlation=%plan.correlation()
+        );
 
         let patch_params = kube::api::PatchParams::default();
         let fs = json!({ "spec": { "replicas": target_nr_task_managers }});
         let patched_scale = stateful_set
             .patch_scale(name, &patch_params, &kube::api::Patch::Merge(&fs))
-            .await?;
+            .instrument(k8s_patch_scale_span)
+            .await
+            .map_err(convert_kube_error)?;
+
         tracing::info!("Patched scale for {}: {:?}", name, patched_scale.spec);
-        if let Some(current_nr_task_managers) = scale.spec.clone().and_then(|s| s.replicas) {
-            if target_nr_task_managers == current_nr_task_managers as usize {
+        if let Some(original_nr_task_managers) = original_scale.spec.clone().and_then(|s| s.replicas) {
+            if target_nr_task_managers == original_nr_task_managers as usize {
                 tracing::warn!(
                     %target_nr_task_managers,
                     "patched scale when current cluster size equals scale plan to be executed."

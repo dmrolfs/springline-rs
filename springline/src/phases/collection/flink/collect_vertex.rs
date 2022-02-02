@@ -214,13 +214,17 @@ where
             .client
             .request(Method::GET, self.jobs_endpoint.clone())
             .send()
+            .map_err(|error| {
+                tracing::error!(?error, "failed Flink API job_summary response");
+                error.into()
+            })
             .and_then(|response| {
                 super::log_response("active jobs", &response);
                 response.text().map_err(|err| err.into())
             })
             .instrument(span)
             .await
-            .map_err(|err: reqwest_middleware::Error| err.into())
+            // .map_err(|err: reqwest_middleware::Error| err.into())
             .and_then(|body| {
                 let result = serde_json::from_str(body.as_str()).map_err(|err| err.into());
                 tracing::info!(%body, ?result, "Flink job summary response body");
@@ -235,13 +239,17 @@ where
                 tracing::info!(?result, "Flink job summary response json parsing");
                 result
             })
-            .map(|jobs: Vec<JobSummary>| jobs.into_iter().filter(|job_summary| {
-                let is_job_active = job_summary.status.is_active();
-                if !is_job_active {
-                    tracing::info!(?job_summary, "filtering out job detail since");
-                }
-                is_job_active
-            }).collect());
+            .map(|jobs: Vec<JobSummary>| {
+                jobs.into_iter()
+                    .filter(|job_summary| {
+                        let is_job_active = job_summary.status.is_active();
+                        if !is_job_active {
+                            tracing::info!(?job_summary, "filtering out job detail since");
+                        }
+                        is_job_active
+                    })
+                    .collect()
+            });
 
         super::identity_or_track_error(FlinkScope::Jobs, result)
     }
@@ -261,13 +269,17 @@ where
             .client
             .request(Method::GET, url)
             .send()
+            .map_err(|error| {
+                tracing::error!(?error, "failed Flink API job_detail response");
+                error.into()
+            })
             .and_then(|response| {
                 super::log_response("job detail", &response);
                 response.text().map_err(|err| err.into())
             })
             .instrument(span)
             .await
-            .map_err(|err| err.into())
+            // .map_err(|err| err.into())
             .and_then(|body| {
                 let result = serde_json::from_str(body.as_str()).map_err(|err| err.into());
                 tracing::info!(%body, ?result, "Flink job detail response body");
@@ -315,7 +327,10 @@ where
             .client
             .request(Method::GET, vertex_metrics_url)
             .send()
-            .map_err(|err| err.into())
+            .map_err(|error| {
+                tracing::error!(?error, "failed Flink API vertex_metrics response");
+                error.into()
+            })
             .and_then(|response| {
                 super::log_response("vertex metric picklet", &response);
                 response.json::<FlinkMetricResponse>().map_err(|err| err.into())
@@ -362,13 +377,17 @@ where
                 .client
                 .request(Method::GET, vertex_metrics_url)
                 .send()
+                .map_err(|error| {
+                    tracing::error!(?error, "failed Flink API job_vertex available_telemetry response");
+                    error.into()
+                })
                 .and_then(|response| {
                     super::log_response("job_vertex available telemetry", &response);
                     response.text().map_err(|err| err.into())
                 })
                 .instrument(span)
                 .await
-                .map_err(|err| err.into())
+                // .map_err(|err| err.into())
                 .and_then(|body| {
                     let result = serde_json::from_str(body.as_str()).map_err(|err| err.into());
                     tracing::info!(%body, ?result, "Flink vertex metrics response body");

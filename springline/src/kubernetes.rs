@@ -41,7 +41,7 @@ pub async fn make_client(settings: &KubernetesSettings) -> Result<Client, Kubern
             Config::from_cluster_env()?
         },
         LoadKubeConfig::KubeConfig(options) => {
-            tracing::info!("create kuberenetes client config from the default local kubeconfig file.");
+            tracing::info!("create kubernetes client config from the default local kubeconfig file.");
             Config::from_kubeconfig(&options.clone().into()).await?
         },
         LoadKubeConfig::CustomKubeConfig { kubeconfig, options } => {
@@ -52,8 +52,17 @@ pub async fn make_client(settings: &KubernetesSettings) -> Result<Client, Kubern
         },
     };
 
-    let client = Client::try_from(config)?;
-    Ok(client)
+    tracing::info!(
+        k8s_cluster_url=%config.cluster_url, default_namespace=%config.default_namespace,
+        timeout=?config.timeout, accept_invalid_certs=%config.accept_invalid_certs,
+        proxy_url=?config.proxy_url,
+        "making kubernetes client using config..."
+    );
+    let client = Client::try_from(config).map_err(|err| err.into());
+    if let Err(ref error) = client {
+        tracing::error!(?error, "failed to make kubernetes client.");
+    }
+    client
 }
 
 struct KubeUrl(url::Url);

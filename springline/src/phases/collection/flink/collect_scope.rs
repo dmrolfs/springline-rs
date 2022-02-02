@@ -120,7 +120,7 @@ where
         let scope_rep = SharedString::Owned(self.scope.to_string().to_lowercase());
         let metrics = metric_orders.keys();
         let url = self.extend_url_for(metrics, agg_span.iter());
-        tracing::info!("url = {:?}", url);
+        tracing::info!("flink sensing url = {:?}", url);
         let name = self.name();
 
         while self.trigger.recv().await.is_some() {
@@ -138,13 +138,17 @@ where
                         .client
                         .request(Method::GET, url.clone())
                         .send()
+                        .map_err(|error| {
+                            tracing::error!(?error, "failed Flink API {} response", self.scope);
+                            error.into()
+                        })
                         .and_then(|response| {
                             super::log_response(format!("{} scope response", scope_rep.clone()).as_str(), &response);
                             response.text().map_err(|err| err.into())
                         })
                         .instrument(tracing::info_span!("Flink scope metrics REST API", scope=%self.scope))
                         .await
-                        .map_err(|err| err.into())
+                        // .map_err(|err| err.into())
                         .and_then(|body| {
                             let result = serde_json::from_str(body.as_str()).map_err(|err| err.into());
                             tracing::info!(%body, ?result, "Flink {} scope metrics response body", self.scope);

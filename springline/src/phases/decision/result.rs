@@ -2,6 +2,8 @@ use std::cmp::Ordering;
 use std::convert::TryFrom;
 use std::fmt::{self, Debug};
 
+use crate::phases::decision::DECISION_SCALING_DECISION_COUNT_METRIC;
+use crate::phases::REASON;
 use itertools::Itertools;
 use proctor::elements::{PolicyOutcome, TelemetryType, TelemetryValue, ToTelemetry};
 use proctor::error::{DecisionError, TelemetryError};
@@ -49,8 +51,36 @@ where
                     grouped
                         .first()
                         .map(|(d, _)| match d.as_str() {
-                            SCALE_UP => DecisionResult::ScaleUp(outcome.item.clone()),
-                            SCALE_DOWN => DecisionResult::ScaleDown(outcome.item.clone()),
+                            SCALE_UP => {
+                                let reason = outcome
+                                    .policy_results
+                                    .bindings
+                                    .get(REASON)
+                                    .and_then(|rs| rs.first())
+                                    .map(|r| r.to_string())
+                                    .unwrap_or_else(|| "unspecified".into());
+
+                                DECISION_SCALING_DECISION_COUNT_METRIC
+                                    .with_label_values(&[SCALE_UP, &reason])
+                                    .inc();
+
+                                DecisionResult::ScaleUp(outcome.item.clone())
+                            },
+                            SCALE_DOWN => {
+                                let reason = outcome
+                                    .policy_results
+                                    .bindings
+                                    .get(REASON)
+                                    .and_then(|rs| rs.first())
+                                    .map(|r| r.to_string())
+                                    .unwrap_or_else(|| "unspecified".into());
+
+                                DECISION_SCALING_DECISION_COUNT_METRIC
+                                    .with_label_values(&[SCALE_DOWN, &reason])
+                                    .inc();
+
+                                DecisionResult::ScaleDown(outcome.item.clone())
+                            },
                             direction => {
                                 tracing::warn!(%direction, "unknown direction determined by policy - NoAction");
                                 DecisionResult::NoAction(outcome.item.clone())

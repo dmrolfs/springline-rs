@@ -3,6 +3,7 @@ mod policy;
 mod result;
 
 pub use context::DecisionContext;
+pub(crate) use policy::DECISION_SCALING_DECISION_COUNT_METRIC;
 pub use policy::{DecisionPolicy, DecisionTemplateData};
 pub use result::make_decision_transform;
 pub use result::DecisionResult;

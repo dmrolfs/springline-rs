@@ -143,7 +143,7 @@ mod tests {
     use std::{env, panic};
 
     use chrono::TimeZone;
-    use claim::assert_ok;
+    use claim::*;
     use config::{Config, FileFormat};
     use once_cell::sync::Lazy;
     use pretty_assertions::assert_eq;
@@ -476,24 +476,33 @@ mod tests {
         let before_env = Settings::load(&options);
         tracing::info!("from Settings::load: {:?}", before_env);
         let before_env = assert_ok!(before_env);
-        assert_eq!(before_env.engine, EngineSettings { machine_id: 1, node_id: 1 });
+        assert_eq!(
+            before_env.plan.performance_repository,
+            PerformanceRepositorySettings {
+                storage: PerformanceRepositoryType::Memory,
+                storage_path: None,
+            }
+        );
 
         with_env_vars(
             "test_settings_applications_load",
             vec![
                 ("APP_ENVIRONMENT", None),
-                ("APP__ENGINE__MACHINE_ID", Some("7")),
-                ("APP__ENGINE__NODE_ID", Some("3")),
+                ("APP__ENGINE__MACHINE_ID", Some("17")),
+                ("APP__ENGINE__NODE_ID", Some("13")),
             ],
             || {
                 let actual: Settings = assert_ok!(Settings::load(&options));
-                assert_eq!(actual.engine, EngineSettings { machine_id: 7, node_id: 3 });
+                assert_eq!(actual.engine, EngineSettings { machine_id: 17, node_id: 13 });
 
                 let expected = Settings {
+                    engine: EngineSettings { machine_id: 17, node_id: 13 },
                     collection: CollectionSettings {
                         flink: FlinkSettings {
                             job_manager_uri_scheme: "http".to_string(),
-                            metrics_initial_delay: Duration::from_secs(15),
+                            metrics_initial_delay: Duration::from_secs(0),
+                            pool_idle_timeout: Some(Duration::from_secs(60)),
+                            pool_max_idle_per_host: Some(5),
                             metric_orders: Vec::default(),
                             headers: Vec::default(),
                             ..SETTINGS.collection.flink.clone()
@@ -514,6 +523,13 @@ mod tests {
                             ..SETTINGS.decision.template_data.clone().unwrap()
                         }),
                         ..SETTINGS.decision.clone()
+                    },
+                    plan: PlanSettings {
+                        performance_repository: PerformanceRepositorySettings {
+                            storage: PerformanceRepositoryType::Memory,
+                            storage_path: None,
+                        },
+                        ..SETTINGS.plan.clone()
                     },
                     ..SETTINGS.clone()
                 };
@@ -538,7 +554,13 @@ mod tests {
         let before_env = Settings::load(&options);
         tracing::info!("from Settings::load: {:?}", before_env);
         let before_env = assert_ok!(before_env);
-        assert_eq!(before_env.engine, EngineSettings { machine_id: 1, node_id: 1 });
+        assert_eq!(
+            before_env.plan.performance_repository,
+            PerformanceRepositorySettings {
+                storage: PerformanceRepositoryType::Memory,
+                storage_path: None,
+            }
+        );
 
         with_env_vars("test_local_load", vec![("APP_ENVIRONMENT", Some("local"))], || {
             let actual: Settings = assert_ok!(Settings::load(&options));
@@ -553,7 +575,7 @@ mod tests {
                 collection: CollectionSettings {
                     flink: FlinkSettings {
                         job_manager_uri_scheme: "http".to_string(),
-                        metrics_initial_delay: Duration::from_secs(30),
+                        metrics_initial_delay: Duration::from_secs(10),
                         headers: Vec::default(),
                         metric_orders: Vec::default(),
                         max_retries: 0,
@@ -602,7 +624,13 @@ mod tests {
         let before_env = Settings::load(&options);
         tracing::info!("from Settings::load: {:?}", before_env);
         let before_env = assert_ok!(before_env);
-        assert_eq!(before_env.engine, EngineSettings { machine_id: 1, node_id: 1 });
+        assert_eq!(
+            before_env.plan.performance_repository,
+            PerformanceRepositorySettings {
+                storage: PerformanceRepositoryType::Memory,
+                storage_path: None,
+            }
+        );
 
         with_env_vars(
             "test_production_load",
@@ -612,11 +640,24 @@ mod tests {
                 assert_eq!(actual.engine, EngineSettings { machine_id: 7, node_id: 3 });
 
                 let expected = Settings {
+                    http: HttpServerSettings {
+                        host: "localhost".to_string(),
+                        ..SETTINGS.http.clone()
+                    },
+                    eligibility: EligibilitySettings {
+                        template_data: Some(EligibilityTemplateData {
+                            cooling_secs: Some(60),
+                            ..SETTINGS.eligibility.template_data.clone().unwrap()
+                        }),
+                        ..SETTINGS.eligibility.clone()
+                    },
                     collection: CollectionSettings {
                         flink: FlinkSettings {
                             job_manager_uri_scheme: "http".to_string(),
-                            job_manager_host: "dr-flink-jm-0".to_string(),
-                            metrics_initial_delay: Duration::from_secs(15),
+                            job_manager_host: "host.lima.internal".to_string(),
+                            metrics_initial_delay: Duration::from_secs(0),
+                            pool_idle_timeout: Some(Duration::from_secs(60)),
+                            pool_max_idle_per_host: Some(5),
                             headers: Vec::default(),
                             metric_orders: Vec::default(),
                             ..SETTINGS.collection.flink.clone()
@@ -626,9 +667,18 @@ mod tests {
                     },
                     decision: DecisionSettings {
                         template_data: Some(DecisionTemplateData {
+                            max_healthy_cpu_load: Some(0.0006),
+                            min_healthy_cpu_load: Some(0.0003),
                             ..SETTINGS.decision.template_data.clone().unwrap()
                         }),
                         ..SETTINGS.decision.clone()
+                    },
+                    plan: PlanSettings {
+                        performance_repository: PerformanceRepositorySettings {
+                            storage: PerformanceRepositoryType::Memory,
+                            storage_path: None,
+                        },
+                        ..SETTINGS.plan.clone()
                     },
                     ..SETTINGS.clone()
                 };

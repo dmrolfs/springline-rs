@@ -7,12 +7,14 @@
             job_manager_uri_scheme: "http", // default value
             job_manager_host: "localhost",  // default value
             job_manager_port: 8081,         // default value
-            metrics_initial_delay_secs: 15,
+            metrics_initial_delay_secs: 0,
             metrics_interval_secs: 15,
             metric_orders: [
 //                ("Kafka", "records-lag-max", "value", "flow.input_records_lag_max", "Integer"),
             ],
             max_retries: 3,                 // default value
+            pool_idle_timeout_secs: 60,
+            pool_max_idle_per_host: 5,
         ),
         sources: {
 //            "foo": ( type: "csv", path: "./resources/bar.toml", ),
@@ -43,11 +45,11 @@
         ),
     ),
     plan: (
+        performance_repository: ( storage: "memory" ),
         min_scaling_step: 2,
         restart: (secs: 120, nanos: 0),
         max_catch_up: (secs: 600, nanos: 0),
         recovery_valid: (secs: 300, nanos: 0),
-        performance_repository: ( storage: "file", storage_path: "./tmp", ),
         window: 20,
         spike: (
             std_deviation_threshold: 5.0,

@@ -8,8 +8,7 @@ use proctor::elements::{Telemetry, Timestamp};
 use proctor::graph::stage::{ActorSourceApi, ActorSourceCmd};
 use proctor::phases::plan::PlanMonitor;
 use proctor::serde::FORMAT;
-use prometheus::{IntCounter, IntCounterVec, IntGauge, Opts};
-use prometheus_static_metric::make_static_metric;
+use prometheus::{IntCounter, IntGauge};
 
 use crate::phases::decision::{DecisionContext, DecisionEvent, DecisionMonitor, DecisionResult};
 use crate::phases::eligibility::{EligibilityContext, EligibilityEvent, EligibilityMonitor};
@@ -170,12 +169,13 @@ impl Monitor {
                 tracing::info!(?observation, correlation=?observation.correlation_id, "observation added to planning");
                 PLAN_OBSERVATION_COUNT.inc()
             },
+
             PlanEvent::DecisionPlanned(decision, plan) => {
-                match decision {
-                    DecisionResult::ScaleUp(_) => DECISION_SCALING_DECISION_COUNT.up.inc(),
-                    DecisionResult::ScaleDown(_) => DECISION_SCALING_DECISION_COUNT.down.inc(),
-                    DecisionResult::NoAction(_) => DECISION_SCALING_DECISION_COUNT.no_action.inc(),
-                }
+                // match decision {
+                //     DecisionResult::ScaleUp(_) => DECISION_SCALING_DECISION_COUNT.up.inc(),
+                //     DecisionResult::ScaleDown(_) => DECISION_SCALING_DECISION_COUNT.down.inc(),
+                //     DecisionResult::NoAction(_) => DECISION_SCALING_DECISION_COUNT.no_action.inc(),
+                // }
 
                 match decision {
                     DecisionResult::ScaleUp(_) | DecisionResult::ScaleDown(_) => {
@@ -191,11 +191,11 @@ impl Monitor {
             PlanEvent::DecisionIgnored(decision) => {
                 tracing::info!(?event, correlation=?decision.item().correlation_id, "planning is ignoring decision result.");
 
-                match decision {
-                    DecisionResult::ScaleUp(_) => DECISION_SCALING_DECISION_COUNT.up.inc(),
-                    DecisionResult::ScaleDown(_) => DECISION_SCALING_DECISION_COUNT.down.inc(),
-                    DecisionResult::NoAction(_) => DECISION_SCALING_DECISION_COUNT.no_action.inc(),
-                }
+                // match decision {
+                //     DecisionResult::ScaleUp(_) => DECISION_SCALING_DECISION_COUNT.up.inc(),
+                //     DecisionResult::ScaleDown(_) => DECISION_SCALING_DECISION_COUNT.down.inc(),
+                //     DecisionResult::NoAction(_) => DECISION_SCALING_DECISION_COUNT.no_action.inc(),
+                // }
             },
         }
     }
@@ -272,17 +272,17 @@ impl Monitor {
     }
 }
 
-make_static_metric! {
-    pub label_enum ScalingDecision {
-        up,
-        down,
-        no_action,
-    }
-
-    pub struct ScalingDecisionsCount: IntCounter {
-        "decision" => ScalingDecision,
-    }
-}
+// make_static_metric! {
+//     pub label_enum ScalingDecision {
+//         up,
+//         down,
+//         no_action,
+//     }
+//
+//     pub struct ScalingDecisionsCount: IntCounter {
+//         "decision" => ScalingDecision,
+//     }
+// }
 
 pub(crate) static ELIGIBILITY_IS_ELIGIBLE_FOR_SCALING: Lazy<IntGauge> = Lazy::new(|| {
     IntGauge::new(
@@ -300,19 +300,19 @@ pub(crate) static DECISION_SHOULD_PLAN_FOR_SCALING: Lazy<IntGauge> = Lazy::new(|
     .expect("failed creating decision_should_plan_for_scaling metric")
 });
 
-pub(crate) static DECISION_SCALING_DECISION_COUNT_METRIC: Lazy<IntCounterVec> = Lazy::new(|| {
-    IntCounterVec::new(
-        Opts::new(
-            "decision_scaling_decision_count",
-            "Count of decisions for scaling planning made.",
-        ),
-        &["decision"],
-    )
-    .expect("failed creating decision_scaling_decision_count metric")
-});
-
-pub(crate) static DECISION_SCALING_DECISION_COUNT: Lazy<ScalingDecisionsCount> =
-    Lazy::new(|| ScalingDecisionsCount::from(&DECISION_SCALING_DECISION_COUNT_METRIC));
+// pub(crate) static DECISION_SCALING_DECISION_COUNT_METRIC: Lazy<IntCounterVec> = Lazy::new(|| {
+//     IntCounterVec::new(
+//         Opts::new(
+//             "decision_scaling_decision_count",
+//             "Count of decisions for scaling planning made.",
+//         ),
+//         &["decision"],
+//     )
+//     .expect("failed creating decision_scaling_decision_count metric")
+// });
+//
+// pub(crate) static DECISION_SCALING_DECISION_COUNT: Lazy<ScalingDecisionsCount> =
+//     Lazy::new(|| ScalingDecisionsCount::from(&DECISION_SCALING_DECISION_COUNT_METRIC));
 
 pub(crate) static PLAN_OBSERVATION_COUNT: Lazy<IntCounter> = Lazy::new(|| {
     IntCounter::new("plan_observation_count", "Number of observations made for planning.")

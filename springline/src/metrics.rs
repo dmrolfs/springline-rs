@@ -1,7 +1,7 @@
 use prometheus::Registry;
 
 use crate::engine::monitor;
-use crate::phases::{collection, eligibility, execution, governance, metric_catalog, plan};
+use crate::phases::{collection, decision, eligibility, execution, governance, metric_catalog, plan};
 use crate::Result;
 
 #[tracing::instrument(level = "info")]
@@ -69,6 +69,11 @@ pub fn register_metrics(registry: &Registry) -> Result<()> {
     registry.register(Box::new(eligibility::ELIGIBILITY_CTX_TASK_LAST_FAILURE.clone()))?;
     registry.register(Box::new(eligibility::ELIGIBILITY_CTX_CLUSTER_IS_DEPLOYING.clone()))?;
     registry.register(Box::new(eligibility::ELIGIBILITY_CTX_CLUSTER_LAST_DEPLOYMENT.clone()))?;
+    registry.register(Box::new(
+        eligibility::ELIGIBILITY_POLICY_INELIGIBLE_DECISIONS_COUNT.clone(),
+    ))?;
+
+    registry.register(Box::new(decision::DECISION_SCALING_DECISION_COUNT_METRIC.clone()))?;
 
     registry.register(Box::new(plan::PLANNING_FORECASTED_WORKLOAD.clone()))?;
     registry.register(Box::new(plan::PLANNING_RECOVERY_WORKLOAD_RATE.clone()))?;
@@ -80,7 +85,6 @@ pub fn register_metrics(registry: &Registry) -> Result<()> {
 
     registry.register(Box::new(monitor::ELIGIBILITY_IS_ELIGIBLE_FOR_SCALING.clone()))?;
     registry.register(Box::new(monitor::DECISION_SHOULD_PLAN_FOR_SCALING.clone()))?;
-    registry.register(Box::new(monitor::DECISION_SCALING_DECISION_COUNT_METRIC.clone()))?;
     registry.register(Box::new(monitor::PLAN_OBSERVATION_COUNT.clone()))?;
     registry.register(Box::new(monitor::DECISION_PLAN_CURRENT_NR_TASK_MANAGERS.clone()))?;
     registry.register(Box::new(monitor::PLAN_TARGET_NR_TASK_MANAGERS.clone()))?;
