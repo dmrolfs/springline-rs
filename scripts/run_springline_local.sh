@@ -3,6 +3,8 @@ set -x
 set -eo pipefail
 
 PROJECT_HOME="${SPRINGLINE_HOME:=./springline}"
+KUBECONFIG_HOME="/Users/rolfs/Documents/dev/here/olp/plm/secrets/admin/plaintext/k8setup/int-1-aws-eu-west-1"
+KUBECONFIG="${KUBECONFIG_HOME}/plm-dev-hak.kubeconfig"
 
 RESOURCES="`pwd`/resources"
 
