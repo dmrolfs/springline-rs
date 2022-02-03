@@ -10,6 +10,7 @@ RESOURCES="`pwd`/resources"
 
 docker run -d -it \
   --name springline \
+  -m 64m \
   --mount type=bind,source="${KUBECONFIG}",target="/secrets/environment.kubeconfig" \
   --mount type=bind,source="${HA_CREDENTIALS}",target="/secrets/credentials.properties" \
   --expose 8000 \

@@ -7,7 +7,7 @@ use proctor::graph::stage::{ActorSourceApi, SourceStage, WithApi, WithMonitor};
 use prometheus::Registry;
 use settings_loader::SettingsLoader;
 use springline::engine::{http, Autoscaler};
-use springline::phases::execution::PatchReplicas;
+use springline::phases::act::PatchReplicas;
 use springline::settings::{CliOptions, Settings};
 use springline::Result;
 use tracing::Subscriber;
@@ -28,18 +28,18 @@ fn main() -> Result<()> {
 
     start_pipeline(async move {
         let kube = springline::kubernetes::make_client(&settings.kubernetes).await?;
-        let patch_replicas = PatchReplicas::new(kube, &settings.execution);
-        let rx_execution_monitor = patch_replicas.rx_monitor();
+        let patch_replicas = PatchReplicas::new(kube, &settings.action);
+        let rx_action_monitor = patch_replicas.rx_monitor();
 
-        let (monitor_feedback_source, tx_monitor_feedback) = make_monitor_source_and_api();
+        let (monitor_feedback_sensor, tx_monitor_feedback) = make_monitor_sensor_and_api();
 
         let engine = Autoscaler::builder("springline")
-            .add_source(make_settings_source(&settings))
-            .add_source(monitor_feedback_source)
+            .add_sensor(make_settings_sensor(&settings))
+            .add_sensor(monitor_feedback_sensor)
             .add_monitor_feedback(tx_monitor_feedback)
             .with_metrics_registry(&METRICS_REGISTRY)
-            .with_execution(Box::new(patch_replicas))
-            .with_execution_monitor(rx_execution_monitor)
+            .with_action_stage(Box::new(patch_replicas))
+            .with_action_monitor(rx_action_monitor)
             .finish(&settings)
             .await?
             .run();
@@ -56,7 +56,7 @@ fn main() -> Result<()> {
     })
 }
 
-fn make_settings_source(settings: &Settings) -> impl SourceStage<Telemetry> {
+fn make_settings_sensor(settings: &Settings) -> impl SourceStage<Telemetry> {
     let mut settings_telemetry: proctor::elements::telemetry::TableType = maplit::hashmap! {
         "min_cluster_size".to_string() => settings.governance.rules.min_cluster_size.into(),
         "max_cluster_size".to_string() => settings.governance.rules.max_cluster_size.into(),
@@ -72,11 +72,11 @@ fn make_settings_source(settings: &Settings) -> impl SourceStage<Telemetry> {
         "cluster.last_deployment".to_string() => format!("{}", settings.context_stub.cluster_last_deployment.format(proctor::serde::date::FORMAT)).into(),
     });
 
-    proctor::graph::stage::Sequence::new("settings_source", vec![settings_telemetry.into()])
+    proctor::graph::stage::Sequence::new("settings_telemetry", vec![settings_telemetry.into()])
 }
 
-fn make_monitor_source_and_api() -> (impl SourceStage<Telemetry>, ActorSourceApi<Telemetry>) {
-    let src = proctor::graph::stage::ActorSource::new("monitor_source");
+fn make_monitor_sensor_and_api() -> (impl SourceStage<Telemetry>, ActorSourceApi<Telemetry>) {
+    let src = proctor::graph::stage::ActorSource::new("monitor_sensor");
     let tx_api = src.tx_api();
     (src, tx_api)
 }

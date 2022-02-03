@@ -6,7 +6,7 @@ use pretty_snowflake::{Id, Label};
 use proctor::elements::telemetry::UpdateMetricsFn;
 use proctor::elements::{telemetry, Telemetry, Timestamp};
 use proctor::error::DecisionError;
-use proctor::phases::collection::SubscriptionRequirements;
+use proctor::phases::sense::SubscriptionRequirements;
 use proctor::{ProctorContext, SharedString};
 use serde::{Deserialize, Serialize};
 
@@ -19,7 +19,7 @@ pub struct DecisionContext {
     pub recv_timestamp: Timestamp,
 
     #[polar(attribute)]
-    #[serde(flatten)] // flatten enables collection of extra properties
+    #[serde(flatten)] // flatten enables sense of extra properties
     pub custom: telemetry::TableType,
 }
 
@@ -56,7 +56,7 @@ impl UpdateMetrics for DecisionContext {
                 tracing::warn!(error=?err, %phase_name, "failed to update decision context metrics on subscription: {}", subscription_name);
                 proctor::track_errors(
                     phase_name.as_ref(),
-                    &proctor::error::ProctorError::DecisionError(err.into()),
+                    &proctor::error::ProctorError::DecisionPhase(err.into()),
                 );
             },
         };

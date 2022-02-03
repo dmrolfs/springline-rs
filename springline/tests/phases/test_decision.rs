@@ -10,7 +10,7 @@ use proctor::elements::{
 use proctor::elements::{PolicySettings, QueryPolicy};
 use proctor::graph::stage::{self, ThroughStage, WithApi, WithMonitor};
 use proctor::graph::{Connect, Graph, Inlet, SinkShape, SourceShape};
-use proctor::phases::collection::{self, Collect, SubscriptionRequirements, TelemetrySubscription};
+use proctor::phases::sense::{self, Sense, SubscriptionRequirements, TelemetrySubscription};
 use proctor::phases::policy_phase::PolicyPhase;
 use proctor::{AppData, ProctorContext};
 use serde::de::DeserializeOwned;
@@ -39,9 +39,9 @@ lazy_static::lazy_static! {
 #[allow(dead_code)]
 struct TestFlow<In, Out, C> {
     pub graph_handle: JoinHandle<()>,
-    pub tx_data_source_api: stage::ActorSourceApi<Telemetry>,
-    pub tx_context_source_api: stage::ActorSourceApi<Telemetry>,
-    pub tx_clearinghouse_api: collection::ClearinghouseApi,
+    pub tx_data_sensor_api: stage::ActorSourceApi<Telemetry>,
+    pub tx_context_sensor_api: stage::ActorSourceApi<Telemetry>,
+    pub tx_clearinghouse_api: sense::ClearinghouseApi,
     pub tx_decision_api: elements::PolicyFilterApi<C, DecisionTemplateData>,
     pub rx_decision_monitor: elements::PolicyFilterMonitor<In, C>,
     pub tx_sink_api: stage::FoldApi<Vec<Out>>,
@@ -55,28 +55,28 @@ where
     C: ProctorContext,
 {
     pub async fn new(
-        collect_out_subscription: TelemetrySubscription, context_subscription: TelemetrySubscription,
+        sensor_out_subscription: TelemetrySubscription, context_subscription: TelemetrySubscription,
         decision_stage: impl ThroughStage<In, Out>, decision_context_inlet: Inlet<C>,
         tx_decision_api: elements::PolicyFilterApi<C, DecisionTemplateData>,
         rx_decision_monitor: elements::PolicyFilterMonitor<In, C>,
     ) -> anyhow::Result<Self> {
-        let telemetry_source = stage::ActorSource::<Telemetry>::new("telemetry_source");
-        let tx_data_source_api = telemetry_source.tx_api();
+        let telemetry_sensor = stage::ActorSource::<Telemetry>::new("telemetry_sensor");
+        let tx_data_sensor_api = telemetry_sensor.tx_api();
 
-        let ctx_source = stage::ActorSource::<Telemetry>::new("context_source");
-        let tx_context_source_api = ctx_source.tx_api();
+        let ctx_sensor = stage::ActorSource::<Telemetry>::new("context_sensor");
+        let tx_context_sensor_api = ctx_sensor.tx_api();
 
-        let mut builder = Collect::builder(
-            "collection",
-            vec![Box::new(telemetry_source), Box::new(ctx_source)],
+        let mut builder = Sense::builder(
+            "sensor",
+            vec![Box::new(telemetry_sensor), Box::new(ctx_sensor)],
             MachineNode::default(),
         );
         let tx_clearinghouse_api = builder.clearinghouse.tx_api();
 
         let context_channel =
-            collection::SubscriptionChannel::<C>::connect_subscription(context_subscription, (&mut builder).into())
+            sense::SubscriptionChannel::<C>::connect_subscription(context_subscription, (&mut builder).into())
                 .await?;
-        let collect = builder.build_for_out_subscription(collect_out_subscription).await?;
+        let sense = builder.build_for_out_subscription(sensor_out_subscription).await?;
 
         let mut sink = stage::Fold::<_, Out, _>::new("sink", Vec::new(), |mut acc, item| {
             acc.push(item);
@@ -85,16 +85,16 @@ where
         let tx_sink_api = sink.tx_api();
         let rx_sink = sink.take_final_rx();
 
-        (collect.outlet(), decision_stage.inlet()).connect().await;
+        (sense.outlet(), decision_stage.inlet()).connect().await;
         (context_channel.outlet(), decision_context_inlet).connect().await;
         (decision_stage.outlet(), sink.inlet()).connect().await;
 
-        assert!(collect.outlet().is_attached().await);
+        assert!(sense.outlet().is_attached().await);
         assert!(decision_stage.inlet().is_attached().await);
         assert!(decision_stage.outlet().is_attached().await);
 
         let mut graph = Graph::default();
-        graph.push_back(Box::new(collect)).await;
+        graph.push_back(Box::new(sense)).await;
         graph.push_back(Box::new(context_channel)).await;
         graph.push_back(Box::new(decision_stage)).await;
         graph.push_back(Box::new(sink)).await;
@@ -112,8 +112,8 @@ where
 
         Ok(Self {
             graph_handle,
-            tx_data_source_api,
-            tx_context_source_api,
+            tx_data_sensor_api,
+            tx_context_sensor_api,
             tx_clearinghouse_api,
             tx_decision_api,
             rx_decision_monitor,
@@ -124,7 +124,7 @@ where
 
     pub async fn push_telemetry(&self, telemetry: Telemetry) -> anyhow::Result<()> {
         let (cmd, ack) = stage::ActorSourceCmd::push(telemetry);
-        self.tx_data_source_api.send(cmd)?;
+        self.tx_data_sensor_api.send(cmd)?;
         ack.await.map_err(|err| err.into())
     }
 
@@ -134,7 +134,7 @@ where
     {
         let telemetry = context_data.into_iter().collect();
         let (cmd, ack) = stage::ActorSourceCmd::push(telemetry);
-        self.tx_context_source_api.send(cmd)?;
+        self.tx_context_sensor_api.send(cmd)?;
         ack.await.map_err(|err| err.into())
     }
 
@@ -223,10 +223,10 @@ where
     #[tracing::instrument(level = "warn", skip(self))]
     pub async fn close(mut self) -> anyhow::Result<Vec<Out>> {
         let (stop, _) = stage::ActorSourceCmd::stop();
-        self.tx_data_source_api.send(stop)?;
+        self.tx_data_sensor_api.send(stop)?;
 
         let (stop, _) = stage::ActorSourceCmd::stop();
-        self.tx_context_source_api.send(stop)?;
+        self.tx_context_sensor_api.send(stop)?;
 
         self.graph_handle.await?;
 

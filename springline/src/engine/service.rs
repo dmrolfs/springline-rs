@@ -1,7 +1,7 @@
 use std::fmt;
 
 use proctor::graph::stage::tick;
-use proctor::phases::collection::{ClearinghouseApi, ClearinghouseCmd, ClearinghouseSnapshot};
+use proctor::phases::sense::{ClearinghouseApi, ClearinghouseCmd, ClearinghouseSnapshot};
 use prometheus::{Encoder, Registry, TextEncoder};
 pub use protocol::{EngineApiError, EngineCmd, EngineServiceApi, MetricsReport, MetricsSpan};
 use regex::RegexSet;
@@ -20,7 +20,7 @@ mod protocol {
     use once_cell::sync::Lazy;
     use proctor::error::MetricLabel;
     use proctor::graph::stage::tick::TickMsg;
-    use proctor::phases::collection::{ClearinghouseCmd, ClearinghouseSnapshot};
+    use proctor::phases::sense::{ClearinghouseCmd, ClearinghouseSnapshot};
     use proctor::SharedString;
     use regex::RegexSet;
     use serde::Deserialize;
@@ -40,7 +40,7 @@ mod protocol {
             subscription: Option<String>,
             tx: oneshot::Sender<Result<ClearinghouseSnapshot, EngineApiError>>,
         },
-        StopFlinkCollection {
+        StopFlinkSensor {
             tx: oneshot::Sender<Result<(), EngineApiError>>,
         },
     }
@@ -63,9 +63,9 @@ mod protocol {
         }
 
         #[inline]
-        pub fn stop_flink_collection() -> (Self, oneshot::Receiver<Result<(), EngineApiError>>) {
+        pub fn stop_flink_sensor() -> (Self, oneshot::Receiver<Result<(), EngineApiError>>) {
             let (tx, rx) = oneshot::channel();
-            (Self::StopFlinkCollection { tx }, rx)
+            (Self::StopFlinkSensor { tx }, rx)
         }
     }
 
@@ -87,8 +87,8 @@ mod protocol {
         #[error("Could not send command to telemetry clearinghouse: {0}")]
         ClearinghouseSend(#[from] mpsc::error::SendError<ClearinghouseCmd>),
 
-        #[error("Could not send command to flink collector: {0}")]
-        FlinkCollectionSend(#[from] mpsc::error::SendError<TickMsg>),
+        #[error("Could not send command to flink sensor: {0}")]
+        FlinkSensorSend(#[from] mpsc::error::SendError<TickMsg>),
 
         #[error("Could not receive response from underlying API handler: {0}")]
         ApiHandlerRecv(#[from] oneshot::error::RecvError),
@@ -126,12 +126,12 @@ mod protocol {
     #[serde(rename_all(deserialize = "lowercase"))]
     pub enum MetricsSpan {
         All,
-        Collection,
+        Sense,
         Eligibility,
         Decision,
         Plan,
         Governance,
-        Execution,
+        Act,
         Clearinghouse,
         Graph,
         Policy,
@@ -146,7 +146,7 @@ mod protocol {
     static METRIC_REGEX: Lazy<HashMap<MetricsSpan, RegexSet>> = Lazy::new(|| {
         maplit::hashmap! {
             MetricsSpan::All => RegexSet::new(&[r".*",]).unwrap(),
-            MetricsSpan::Collection => RegexSet::new(&[r"(?i)catalog", r"(?i)clearinghouse",]).unwrap(),
+            MetricsSpan::Sense => RegexSet::new(&[r"(?i)catalog", r"(?i)clearinghouse",]).unwrap(),
             MetricsSpan::Eligibility => RegexSet::new(&[r"(?i)eligibility",]).unwrap(),
             MetricsSpan::Decision => RegexSet::new(&[r"(?i)decision",]).unwrap(),
             MetricsSpan::Plan => RegexSet::new(&[r"(?i)plan",]).unwrap(),
@@ -166,7 +166,7 @@ mod protocol {
 pub struct Service<'r> {
     tx_api: EngineServiceApi,
     rx_api: mpsc::UnboundedReceiver<EngineCmd>,
-    tx_stop_flink_source: tick::TickApi,
+    tx_stop_flink_sensor: tick::TickApi,
     tx_clearinghouse_api: ClearinghouseApi,
     metrics_registry: Option<&'r Registry>,
 }
@@ -181,14 +181,14 @@ impl<'r> fmt::Debug for Service<'r> {
 
 impl<'r> Service<'r> {
     pub fn new(
-        tx_stop_flink_source: tick::TickApi, tx_clearinghouse_api: ClearinghouseApi,
+        tx_stop_flink_sensor: tick::TickApi, tx_clearinghouse_api: ClearinghouseApi,
         metrics_registry: Option<&'r Registry>,
     ) -> Self {
         let (tx_api, rx_api) = mpsc::unbounded_channel();
         Self {
             tx_api,
             rx_api,
-            tx_stop_flink_source,
+            tx_stop_flink_sensor,
             tx_clearinghouse_api,
             metrics_registry,
         }
@@ -229,13 +229,13 @@ impl<'r> Service<'r> {
                             let _ = tx.send(snapshot);
                         },
 
-                        EngineCmd::StopFlinkCollection { tx } => {
-                            let stop_response = self.stop_flink_collection().await;
+                        EngineCmd::StopFlinkSensor { tx } => {
+                            let stop_response = self.stop_flink_sensor().await;
 
                             if stop_response.is_ok() {
-                                tracing::info!("Engine stopped Flink telemetry collection by command.");
+                                tracing::info!("Engine stopped Flink sensor by command.");
                             } else {
-                                tracing::error!(error=?stop_response, "Engine failed to stop Flink telemetry collection.");
+                                tracing::error!(error=?stop_response, "Engine failed to stop Flink sensor.");
                             }
 
                             let _ = tx.send(stop_response);
@@ -294,9 +294,9 @@ impl<'r> Service<'r> {
     }
 
     #[tracing::instrument(level = "info", skip(self))]
-    async fn stop_flink_collection(&self) -> Result<(), EngineApiError> {
+    async fn stop_flink_sensor(&self) -> Result<(), EngineApiError> {
         let (cmd, rx) = tick::TickMsg::stop();
-        self.tx_stop_flink_source.send(cmd)?;
+        self.tx_stop_flink_sensor.send(cmd)?;
         rx.await?.map_err(|err| EngineApiError::Handler(err.into()))
     }
 }

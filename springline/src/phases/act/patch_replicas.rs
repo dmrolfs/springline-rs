@@ -3,10 +3,10 @@ use std::fmt;
 use std::sync::Arc;
 
 use super::protocol;
-use crate::phases::execution::ExecutionEvent;
+use crate::phases::act::ActEvent;
 use crate::phases::governance::GovernanceOutcome;
 use crate::phases::MetricCatalog;
-use crate::settings::{ExecutionSettings, KubernetesWorkloadResource};
+use crate::settings::{ActionSettings, KubernetesWorkloadResource};
 use async_trait::async_trait;
 use cast_trait_object::dyn_upcast;
 use either::{Either, Left, Right};
@@ -25,7 +25,7 @@ use tracing::Instrument;
 const STAGE_NAME: &str = "execute_scaling";
 
 #[derive(Debug, Error)]
-pub enum ExecutionPhaseError {
+pub enum ActPhaseError {
     #[error("failure in kubernetes client: {0}")]
     Kube(#[from] kube::Error),
 
@@ -39,9 +39,9 @@ pub enum ExecutionPhaseError {
     Stage(#[from] anyhow::Error),
 }
 
-impl MetricLabel for ExecutionPhaseError {
+impl MetricLabel for ActPhaseError {
     fn slug(&self) -> SharedString {
-        SharedString::Borrowed("execution")
+        SharedString::Borrowed("actact")
     }
 
     fn next(&self) -> Either<SharedString, Box<&dyn MetricLabel>> {
@@ -54,14 +54,14 @@ impl MetricLabel for ExecutionPhaseError {
     }
 }
 
-pub trait ExecutionScalePlan {
+pub trait ScaleActionPlan {
     fn correlation(&self) -> Id<MetricCatalog>;
     fn recv_timestamp(&self) -> Timestamp;
     fn current_replicas(&self) -> usize;
     fn target_replicas(&self) -> usize;
 }
 
-impl ExecutionScalePlan for GovernanceOutcome {
+impl ScaleActionPlan for GovernanceOutcome {
     fn correlation(&self) -> Id<MetricCatalog> {
         self.correlation_id.clone()
     }
@@ -84,20 +84,20 @@ pub struct PatchReplicas<In> {
     kube: kube::Client,
     workload_resource: KubernetesWorkloadResource,
     inlet: Inlet<In>,
-    pub tx_execution_monitor: broadcast::Sender<Arc<protocol::ExecutionEvent<In>>>,
+    pub tx_action_monitor: broadcast::Sender<Arc<protocol::ActEvent<In>>>,
 }
 
 impl<In> PatchReplicas<In> {
     #[tracing::instrument(level = "info", skip(kube))]
-    pub fn new(kube: kube::Client, exec_settings: &ExecutionSettings) -> Self {
+    pub fn new(kube: kube::Client, exec_settings: &ActionSettings) -> Self {
         let workload_resource = exec_settings.k8s_workload_resource.clone();
-        let (tx_execution_monitor, _) = broadcast::channel(num_cpus::get() * 2);
+        let (tx_action_monitor, _) = broadcast::channel(num_cpus::get() * 2);
 
         Self {
             kube,
             workload_resource,
             inlet: Inlet::new(STAGE_NAME, PORT_DATA),
-            tx_execution_monitor,
+            tx_action_monitor,
         }
     }
 }
@@ -112,10 +112,10 @@ impl<In> fmt::Debug for PatchReplicas<In> {
 }
 
 impl<In> proctor::graph::stage::WithMonitor for PatchReplicas<In> {
-    type Receiver = protocol::ExecutionMonitor<In>;
+    type Receiver = protocol::ActMonitor<In>;
 
     fn rx_monitor(&self) -> Self::Receiver {
-        self.tx_execution_monitor.subscribe()
+        self.tx_action_monitor.subscribe()
     }
 }
 
@@ -132,7 +132,7 @@ impl<In> SinkShape for PatchReplicas<In> {
 #[async_trait]
 impl<In> Stage for PatchReplicas<In>
 where
-    In: AppData + ExecutionScalePlan,
+    In: AppData + ScaleActionPlan,
 {
     #[inline]
     fn name(&self) -> SharedString {
@@ -141,35 +141,35 @@ where
 
     #[tracing::instrument(level = "info", skip(self))]
     async fn check(&self) -> ProctorResult<()> {
-        self.do_check().await.map_err(|err| ProctorError::PhaseError(err.into()))?;
+        self.do_check().await.map_err(|err| ProctorError::Phase(err.into()))?;
         Ok(())
     }
 
     #[tracing::instrument(level = "info", name = "run patch replicas", skip(self))]
     async fn run(&mut self) -> ProctorResult<()> {
-        self.do_run().await.map_err(|err| ProctorError::PhaseError(err.into()))?;
+        self.do_run().await.map_err(|err| ProctorError::Phase(err.into()))?;
         Ok(())
     }
 
     #[tracing::instrument(level = "info", skip(self))]
     async fn close(self: Box<Self>) -> ProctorResult<()> {
-        self.do_close().await.map_err(|err| ProctorError::PhaseError(err.into()))?;
+        self.do_close().await.map_err(|err| ProctorError::Phase(err.into()))?;
         Ok(())
     }
 }
 
 impl<In> PatchReplicas<In>
 where
-    In: AppData + ExecutionScalePlan,
+    In: AppData + ScaleActionPlan,
 {
     #[inline]
-    async fn do_check(&self) -> Result<(), ExecutionPhaseError> {
+    async fn do_check(&self) -> Result<(), ActPhaseError> {
         self.inlet.check_attachment().await?;
         Ok(())
     }
 
     #[inline]
-    async fn do_run(&mut self) -> Result<(), ExecutionPhaseError> {
+    async fn do_run(&mut self) -> Result<(), ActPhaseError> {
         let workload_resource = &self.workload_resource;
         let mut inlet = self.inlet.clone();
         let stateful_set: kube::Api<StatefulSet> = kube::Api::default_namespaced(self.kube.clone());
@@ -180,11 +180,11 @@ where
             match Self::patch_replicas_for(&plan, &stateful_set, workload_resource).await {
                 Ok(_) => {
                     tracing::warn!(scale_plan=?plan, "EXECUTE SCALE PLAN: task manager replicas patched!");
-                    self.notify_execution_succeeded(plan)
+                    self.notify_action_succeeded(plan)
                 },
                 Err(err) => {
                     tracing::error!(error=?err, ?plan, "failed to patch replicas for plan");
-                    self.notify_execution_failed(plan, err);
+                    self.notify_action_failed(plan, err);
                 },
             }
         }
@@ -193,12 +193,12 @@ where
     }
 
     #[tracing::instrument(level = "info", skip(self))]
-    fn notify_execution_succeeded(&self, plan: In) {
+    fn notify_action_succeeded(&self, plan: In) {
         let correlation = plan.correlation();
         let recv_timestamp = plan.recv_timestamp();
         match self
-            .tx_execution_monitor
-            .send(Arc::new(ExecutionEvent::PlanExecuted(plan)))
+            .tx_action_monitor
+            .send(Arc::new(ActEvent::PlanExecuted(plan)))
         {
             Ok(recipients) => {
                 tracing::info!(?correlation, %recv_timestamp, "published PlanExecuted to {} recipients", recipients);
@@ -210,22 +210,22 @@ where
     }
 
     #[tracing::instrument(level = "info", skip(self, error))]
-    fn notify_execution_failed<E>(&self, plan: In, error: E)
+    fn notify_action_failed<E>(&self, plan: In, error: E)
     where
         E: Error + MetricLabel,
     {
         let correlation = plan.correlation();
         let recv_timestamp = plan.recv_timestamp();
         let label = error.label();
-        match self.tx_execution_monitor.send(Arc::new(ExecutionEvent::PlanFailed {
+        match self.tx_action_monitor.send(Arc::new(ActEvent::PlanFailed {
             plan,
             error_metric_label: label.into(),
         })) {
             Ok(recipients) => {
-                tracing::info!(?correlation, %recv_timestamp, execution_error=?error, "published PlanFailed to {} recipients", recipients);
+                tracing::info!(?correlation, %recv_timestamp, action_error=?error, "published PlanFailed to {} recipients", recipients);
             },
             Err(err) => {
-                tracing::error!(?correlation, %recv_timestamp, execution_error=?error, publish_error=?err, "failed to publish PlanFailed event.");
+                tracing::error!(?correlation, %recv_timestamp, action_error=?error, publish_error=?err, "failed to publish PlanFailed event.");
             },
         }
     }
@@ -233,8 +233,8 @@ where
     #[tracing::instrument(level = "info", skip(stateful_set))]
     async fn patch_replicas_for(
         plan: &In, stateful_set: &kube::Api<StatefulSet>, workload_resource: &KubernetesWorkloadResource,
-    ) -> Result<(), ExecutionPhaseError> {
-        fn convert_kube_error(error: kube::Error) -> ExecutionPhaseError {
+    ) -> Result<(), ActPhaseError> {
+        fn convert_kube_error(error: kube::Error) -> ActPhaseError {
             match error {
                 kube::Error::Api(resp) => resp.into(),
                 err => err.into(),
@@ -246,7 +246,7 @@ where
 
         let k8s_get_scale_span = tracing::info_span!(
             "Kubernetes Admin Server",
-            phase=%"execution",
+            phase=%"actact",
             action=%"get_scale",
             correlation=%plan.correlation()
         );
@@ -260,7 +260,7 @@ where
 
         let k8s_patch_scale_span = tracing::info_span!(
             "Kubernetes Admin Server",
-            phase=%"execution",
+            phase=%"actact",
             action=%"patch_scale",
             correlation=%plan.correlation()
         );
@@ -286,8 +286,8 @@ where
     }
 
     #[inline]
-    async fn do_close(mut self: Box<Self>) -> Result<(), ExecutionPhaseError> {
-        tracing::trace!("closing patch replicas execution phase inlet.");
+    async fn do_close(mut self: Box<Self>) -> Result<(), ActPhaseError> {
+        tracing::trace!("closing patch replicas actact phase inlet.");
         self.inlet.close().await;
         Ok(())
     }

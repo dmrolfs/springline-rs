@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
-use proctor::error::IncompatibleSourceSettingsError;
-use proctor::phases::collection::SourceSetting;
+use proctor::error::IncompatibleSensorSettings;
+use proctor::phases::sense::SensorSetting;
 use serde::{Deserialize, Serialize};
 
 mod flink_settings;
@@ -11,9 +11,9 @@ pub use flink_settings::FlinkSettings;
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 #[serde(default)]
 #[cfg_attr(test, derive(PartialEq))]
-pub struct CollectionSettings {
+pub struct SensorSettings {
     pub flink: FlinkSettings,
-    pub sources: HashMap<String, SourceSetting>,
+    pub sensors: HashMap<String, SensorSetting>,
 }
 
 #[cfg(test)]
@@ -22,17 +22,17 @@ mod tests {
     use std::time::Duration;
 
     use proctor::elements::telemetry::TelemetryType;
-    use proctor::phases::collection::HttpQuery;
+    use proctor::phases::sense::HttpQuery;
     use reqwest::header::{AUTHORIZATION, CONTENT_LENGTH};
     use reqwest::{Method, Url};
     use serde_test::{assert_tokens, Token};
 
     use super::*;
-    use crate::phases::collection::flink::{Aggregation, FlinkScope, MetricOrder};
+    use crate::phases::sense::flink::{Aggregation, FlinkScope, MetricOrder};
 
     #[test]
-    fn test_serde_collection_settings_1() {
-        let settings_csv = CollectionSettings {
+    fn test_serde_sensor_settings_1() {
+        let settings_csv = SensorSettings {
             // only doing one pair at a time until *convenient* way to pin order and test is determined
             flink: FlinkSettings {
                 job_manager_host: "dr-flink-jm-0".to_string(),
@@ -61,15 +61,15 @@ mod tests {
                 ],
                 ..FlinkSettings::default()
             },
-            sources: maplit::hashmap! {
-                "foo".to_string() => SourceSetting::Csv { path: PathBuf::from("./resources/bar.toml"),},
+            sensors: maplit::hashmap! {
+                "foo".to_string() => SensorSetting::Csv { path: PathBuf::from("./resources/bar.toml"),},
             },
         };
 
         assert_tokens(
             &settings_csv,
             &vec![
-                Token::Struct { name: "CollectionSettings", len: 2 },
+                Token::Struct { name: "SensorSettings", len: 2 },
                 Token::Str("flink"),
                 Token::Struct { name: "FlinkSettings", len: 7 },
                 Token::Str("job_manager_uri_scheme"),
@@ -109,10 +109,10 @@ mod tests {
                 Token::Str("max_retries"),
                 Token::U32(3),
                 Token::StructEnd,
-                Token::Str("sources"),
+                Token::Str("sensors"),
                 Token::Map { len: Some(1) },
                 Token::Str("foo"),
-                Token::Struct { name: "SourceSetting", len: 2 },
+                Token::Struct { name: "SensorSetting", len: 2 },
                 Token::Str("type"),
                 Token::Str("csv"),
                 Token::Str("path"),
@@ -125,8 +125,8 @@ mod tests {
     }
 
     #[test]
-    fn test_serde_collection_settings_2() {
-        let settings_rest = CollectionSettings {
+    fn test_serde_sensor_settings_2() {
+        let settings_rest = SensorSettings {
             flink: FlinkSettings {
                 job_manager_uri_scheme: "http".to_string(),
                 job_manager_host: "dr-flink-jm-0".to_string(),
@@ -155,8 +155,8 @@ mod tests {
                 pool_max_idle_per_host: None,
             },
             // only doing one pair at a time until *convenient* way to pin order and test is determined
-            sources: maplit::hashmap! {
-                "foo".to_string() => SourceSetting::RestApi(HttpQuery {
+            sensors: maplit::hashmap! {
+                "foo".to_string() => SensorSetting::RestApi(HttpQuery {
                     interval: Duration::from_secs(7),
                     method: Method::GET,
                     url: Url::parse("https://www.example.com/foobar").unwrap(),
@@ -172,7 +172,7 @@ mod tests {
         assert_tokens(
             &settings_rest,
             &vec![
-                Token::Struct { name: "CollectionSettings", len: 2 },
+                Token::Struct { name: "SensorSettings", len: 2 },
                 Token::Str("flink"),
                 Token::Struct { name: "FlinkSettings", len: 8 },
                 Token::Str("job_manager_uri_scheme"),
@@ -212,7 +212,7 @@ mod tests {
                 Token::Str("max_retries"),
                 Token::U32(5),
                 Token::StructEnd,
-                Token::Str("sources"),
+                Token::Str("sensors"),
                 Token::Map { len: Some(1) },
                 Token::Str("foo"),
                 Token::Struct { name: "HttpQuery", len: 6 },

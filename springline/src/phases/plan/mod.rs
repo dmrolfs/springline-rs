@@ -6,7 +6,7 @@ use once_cell::sync::Lazy;
 use pretty_snowflake::{Id, Label};
 use proctor::elements::{RecordsPerSecond, Timestamp};
 use proctor::graph::{Connect, SinkShape, SourceShape};
-use proctor::phases::collection::{
+use proctor::phases::sense::{
     ClearinghouseSubscriptionMagnet, SubscriptionChannel, SubscriptionRequirements, TelemetrySubscription,
 };
 use proctor::phases::plan::{Plan, Planning};

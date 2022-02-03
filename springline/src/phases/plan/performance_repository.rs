@@ -58,10 +58,7 @@ impl FromStr for PerformanceRepositoryType {
         match rep.to_lowercase().as_str() {
             "memory" => Ok(Self::Memory),
             "file" => Ok(Self::File),
-            s => Err(PlanError::ParseError(format!(
-                "unknown performance repository type, {}",
-                s
-            ))),
+            unknown_type => Err(PlanError::UnknownRepositoryType(unknown_type.to_string())),
         }
     }
 }
@@ -166,12 +163,12 @@ impl PerformanceRepository for PerformanceFileRepository {
             // todo: once stable change to: return
             // Err(PlanError::IOError(std::io::ErrorKind::NotADirectory.into()))
             tracing::error!(storage_path=?self.root_path, "storage path for planning performance history repository is not a directory");
-            return Err(PlanError::IOError(std::io::ErrorKind::InvalidInput.into()));
+            return Err(PlanError::IO(std::io::ErrorKind::InvalidInput.into()));
         }
 
         if root_meta.permissions().readonly() {
             tracing::error!(storage_path=?self.root_path, "cannot save planning performance history data files - application cannot write to storage path");
-            return Err(PlanError::IOError(std::io::ErrorKind::PermissionDenied.into()));
+            return Err(PlanError::IO(std::io::ErrorKind::PermissionDenied.into()));
         }
 
         Ok(())

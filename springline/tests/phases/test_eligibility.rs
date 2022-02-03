@@ -32,8 +32,8 @@ lazy_static! {
 #[allow(dead_code)]
 struct TestFlow {
     pub graph_handle: JoinHandle<()>,
-    pub tx_data_source_api: stage::ActorSourceApi<Data>,
-    pub tx_context_source_api: stage::ActorSourceApi<Context>,
+    pub tx_data_sensor_api: stage::ActorSourceApi<Data>,
+    pub tx_context_sensor_api: stage::ActorSourceApi<Context>,
     pub tx_stage_api: elements::PolicyFilterApi<Context, EligibilityTemplateData>,
     pub rx_stage_monitor: elements::PolicyFilterMonitor<Data, Context>,
     pub tx_sink_api: stage::FoldApi<Vec<Data>>,
@@ -42,11 +42,11 @@ struct TestFlow {
 
 impl TestFlow {
     pub async fn new(stage: PolicyPhase<Data, Data, Context, EligibilityTemplateData>) -> anyhow::Result<Self> {
-        let data_source: stage::ActorSource<Data> = stage::ActorSource::new("plan_source");
-        let tx_data_source_api = data_source.tx_api();
+        let data_sensor: stage::ActorSource<Data> = stage::ActorSource::new("plan_sensor");
+        let tx_data_sensor_api = data_sensor.tx_api();
 
-        let context_source: stage::ActorSource<Context> = stage::ActorSource::new("context_source");
-        let tx_context_source_api = context_source.tx_api();
+        let context_sensor: stage::ActorSource<Context> = stage::ActorSource::new("context_sensor");
+        let tx_context_sensor_api = context_sensor.tx_api();
 
         let tx_stage_api = stage.tx_api();
         let rx_stage_monitor = stage.rx_monitor();
@@ -58,16 +58,16 @@ impl TestFlow {
         let tx_sink_api = sink.tx_api();
         let rx_sink = sink.take_final_rx();
 
-        (data_source.outlet(), stage.inlet()).connect().await;
-        (context_source.outlet(), stage.context_inlet()).connect().await;
+        (data_sensor.outlet(), stage.inlet()).connect().await;
+        (context_sensor.outlet(), stage.context_inlet()).connect().await;
         (stage.outlet(), sink.inlet()).connect().await;
         assert!(stage.inlet().is_attached().await);
         assert!(stage.context_inlet().is_attached().await);
         assert!(stage.outlet().is_attached().await);
 
         let mut graph = Graph::default();
-        graph.push_back(Box::new(data_source)).await;
-        graph.push_back(Box::new(context_source)).await;
+        graph.push_back(Box::new(data_sensor)).await;
+        graph.push_back(Box::new(context_sensor)).await;
         graph.push_back(Box::new(stage)).await;
         graph.push_back(Box::new(sink)).await;
 
@@ -84,8 +84,8 @@ impl TestFlow {
 
         Ok(Self {
             graph_handle,
-            tx_data_source_api,
-            tx_context_source_api,
+            tx_data_sensor_api,
+            tx_context_sensor_api,
             tx_stage_api,
             rx_stage_monitor,
             tx_sink_api,
@@ -95,13 +95,13 @@ impl TestFlow {
 
     pub async fn push_data(&self, data: Data) -> anyhow::Result<()> {
         let (cmd, ack) = stage::ActorSourceCmd::push(data);
-        self.tx_data_source_api.send(cmd)?;
+        self.tx_data_sensor_api.send(cmd)?;
         Ok(ack.await?)
     }
 
     pub async fn push_context(&self, context: Context) -> anyhow::Result<()> {
         let (cmd, ack) = stage::ActorSourceCmd::push(context);
-        self.tx_context_source_api.send(cmd)?;
+        self.tx_context_sensor_api.send(cmd)?;
         Ok(ack.await?)
     }
 
@@ -163,7 +163,7 @@ impl TestFlow {
         let result = assert_ok!(
             self.check_sink_accumulation(label, timeout, |acc| {
                 let check_span =
-                    tracing::info_span!("DMR check collection accumulation", %label, ?expectation, ?timeout);
+                    tracing::info_span!("DMR check sensesensor accumulation", %label, ?expectation, ?timeout);
                 let _ = check_span.enter();
 
                 tracing::warn!(
@@ -256,10 +256,10 @@ impl TestFlow {
     #[tracing::instrument(level = "warn", skip(self))]
     pub async fn close(mut self) -> anyhow::Result<Vec<Data>> {
         let (stop, _) = stage::ActorSourceCmd::stop();
-        self.tx_data_source_api.send(stop)?;
+        self.tx_data_sensor_api.send(stop)?;
 
         let (stop, _) = stage::ActorSourceCmd::stop();
-        self.tx_context_source_api.send(stop)?;
+        self.tx_context_sensor_api.send(stop)?;
 
         self.graph_handle.await?;
 

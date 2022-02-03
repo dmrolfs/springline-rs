@@ -1,5 +1,5 @@
 use proctor::elements::{PolicyFilterEvent, PolicySubscription};
-use proctor::phases::collection::{ClearinghouseSubscriptionMagnet, SubscriptionChannel};
+use proctor::phases::sense::{ClearinghouseSubscriptionMagnet, SubscriptionChannel};
 use proctor::phases::policy_phase::PolicyPhase;
 use proctor::SharedString;
 

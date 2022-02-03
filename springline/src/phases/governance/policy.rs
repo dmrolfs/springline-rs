@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use oso::{Oso, PolarClass, PolarValue};
 use proctor::elements::{PolicySource, PolicySubscription, QueryPolicy, QueryResult, Telemetry};
 use proctor::error::PolicyError;
-use proctor::phases::collection::TelemetrySubscription;
+use proctor::phases::sense::TelemetrySubscription;
 use proctor::{ProctorContext, SharedString};
 use serde::{Deserialize, Serialize};
 

@@ -43,19 +43,19 @@ lazy_static! {
 #[allow(dead_code)]
 struct TestFlow {
     pub graph_handle: JoinHandle<ProctorResult<()>>,
-    pub tx_data_source_api: stage::ActorSourceApi<InData>,
-    pub tx_decision_source_api: stage::ActorSourceApi<InDecision>,
+    pub tx_data_sensor_api: stage::ActorSourceApi<InData>,
+    pub tx_decision_sensor_api: stage::ActorSourceApi<InDecision>,
     pub tx_sink_api: stage::FoldApi<Vec<Out>>,
     pub rx_sink: Option<oneshot::Receiver<Vec<Out>>>,
 }
 
 impl TestFlow {
     pub async fn new(planning_stage: TestStage) -> anyhow::Result<Self> {
-        let data_source: stage::ActorSource<InData> = stage::ActorSource::new("data_source");
-        let tx_data_source_api = data_source.tx_api();
+        let data_sensor: stage::ActorSource<InData> = stage::ActorSource::new("data_sensor");
+        let tx_data_sensor_api = data_sensor.tx_api();
 
-        let decision_source: stage::ActorSource<InDecision> = stage::ActorSource::new("decision_source");
-        let tx_decision_source_api = decision_source.tx_api();
+        let decision_sensor: stage::ActorSource<InDecision> = stage::ActorSource::new("decision_sensor");
+        let tx_decision_sensor_api = decision_sensor.tx_api();
 
         let mut sink = stage::Fold::<_, Out, _>::new("sink", Vec::new(), |mut acc, item| {
             acc.push(item);
@@ -64,13 +64,13 @@ impl TestFlow {
         let tx_sink_api = sink.tx_api();
         let rx_sink = sink.take_final_rx();
 
-        (data_source.outlet(), planning_stage.inlet()).connect().await;
-        (decision_source.outlet(), planning_stage.decision_inlet()).connect().await;
+        (data_sensor.outlet(), planning_stage.inlet()).connect().await;
+        (decision_sensor.outlet(), planning_stage.decision_inlet()).connect().await;
         (planning_stage.outlet(), sink.inlet()).connect().await;
 
         let mut graph = Graph::default();
-        graph.push_back(Box::new(data_source)).await;
-        graph.push_back(Box::new(decision_source)).await;
+        graph.push_back(Box::new(data_sensor)).await;
+        graph.push_back(Box::new(decision_sensor)).await;
         graph.push_back(Box::new(planning_stage)).await;
         graph.push_back(Box::new(sink)).await;
 
@@ -78,8 +78,8 @@ impl TestFlow {
 
         Ok(Self {
             graph_handle,
-            tx_data_source_api,
-            tx_decision_source_api,
+            tx_data_sensor_api,
+            tx_decision_sensor_api,
             tx_sink_api,
             rx_sink,
         })
@@ -88,14 +88,14 @@ impl TestFlow {
     pub async fn push_data(&self, metrics: MetricCatalog) -> anyhow::Result<()> {
         let measurement: PlanningMeasurement = metrics.into();
         let (cmd, ack) = stage::ActorSourceCmd::push(measurement);
-        self.tx_data_source_api.send(cmd)?;
+        self.tx_data_sensor_api.send(cmd)?;
         let _ack = ack.await?;
         Ok(())
     }
 
     pub async fn push_decision(&self, decision: InDecision) -> anyhow::Result<()> {
         let (cmd, ack) = stage::ActorSourceCmd::push(decision);
-        self.tx_decision_source_api.send(cmd)?;
+        self.tx_decision_sensor_api.send(cmd)?;
         let _ack = ack.await?;
         Ok(())
     }
@@ -154,10 +154,10 @@ impl TestFlow {
     #[tracing::instrument(level = "warn", skip(self))]
     pub async fn close(mut self) -> anyhow::Result<Vec<Out>> {
         let (stop, _) = stage::ActorSourceCmd::stop();
-        self.tx_data_source_api.send(stop)?;
+        self.tx_data_sensor_api.send(stop)?;
 
         let (stop, _) = stage::ActorSourceCmd::stop();
-        self.tx_decision_source_api.send(stop)?;
+        self.tx_decision_sensor_api.send(stop)?;
 
         self.graph_handle.await??;
 

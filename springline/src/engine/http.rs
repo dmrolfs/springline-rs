@@ -6,7 +6,7 @@ use axum::extract::{Extension, Path};
 use axum::http::{Method, StatusCode, Uri};
 use axum::routing::get;
 use axum::{AddExtensionLayer, BoxError, Json, Router};
-use proctor::phases::collection::ClearinghouseSnapshot;
+use proctor::phases::sense::ClearinghouseSnapshot;
 use settings_loader::common::http::HttpServerSettings;
 use tokio::task::JoinHandle;
 use tower::ServiceBuilder;

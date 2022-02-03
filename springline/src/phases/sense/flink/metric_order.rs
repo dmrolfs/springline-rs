@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::fmt::{self, Display};
 
-use crate::phases::collection::flink::STD_METRIC_ORDERS;
+use crate::phases::sense::flink::STD_METRIC_ORDERS;
 use crate::settings::FlinkSettings;
 use itertools::Itertools;
 use proctor::elements::telemetry::combine::{self, TelemetryCombinator};

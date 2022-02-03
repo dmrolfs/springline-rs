@@ -12,16 +12,16 @@ use settings_loader::{Environment, LoadingOptions, SettingsError, SettingsLoader
 use crate::phases::decision::DecisionTemplateData;
 use crate::phases::eligibility::EligibilityTemplateData;
 
-mod collection_settings;
+mod sensor_settings;
 mod engine_settings;
-mod execution_settings;
+mod action_settings;
 mod governance_settings;
 mod kubernetes_settings;
 mod plan_settings;
 
-pub use collection_settings::{CollectionSettings, FlinkSettings};
+pub use sensor_settings::{SensorSettings, FlinkSettings};
 pub use engine_settings::EngineSettings;
-pub use execution_settings::{ExecutionSettings, KubernetesWorkloadResource};
+pub use action_settings::{ActionSettings, KubernetesWorkloadResource};
 pub use governance_settings::{GovernancePolicySettings, GovernanceRuleSettings, GovernanceSettings};
 pub use kubernetes_settings::{KubernetesSettings, LoadKubeConfig};
 pub use plan_settings::PlanSettings;
@@ -38,7 +38,7 @@ pub struct Settings {
     #[serde(default)]
     pub engine: EngineSettings,
     #[serde(default)]
-    pub collection: CollectionSettings,
+    pub sensor: SensorSettings,
     #[serde(default)]
     pub eligibility: EligibilitySettings,
     #[serde(default)]
@@ -47,7 +47,7 @@ pub struct Settings {
     pub plan: PlanSettings,
     #[serde(default)]
     pub governance: GovernanceSettings,
-    pub execution: ExecutionSettings,
+    pub action: ActionSettings,
     pub context_stub: ContextStubSettings,
 }
 
@@ -148,10 +148,10 @@ mod tests {
     use once_cell::sync::Lazy;
     use pretty_assertions::assert_eq;
     use proctor::elements::{PolicySource, TelemetryType, ToTelemetry};
-    use proctor::phases::collection::SourceSetting;
+    use proctor::phases::sense::SensorSetting;
 
     use super::*;
-    use crate::phases::collection::flink::{Aggregation, FlinkScope, MetricOrder};
+    use crate::phases::sense::flink::{Aggregation, FlinkScope, MetricOrder};
     use crate::phases::plan::{PerformanceRepositorySettings, PerformanceRepositoryType, SpikeSettings};
 
     static SERIAL_TEST: Lazy<Mutex<()>> = Lazy::new(|| Default::default());
@@ -224,7 +224,7 @@ mod tests {
             http: HttpServerSettings { host: "0.0.0.0".to_string(), port: 8000 },
             kubernetes: KubernetesSettings::default(),
             engine: Default::default(),
-            collection: CollectionSettings {
+            sensor: SensorSettings {
                 flink: FlinkSettings {
                     job_manager_uri_scheme: "http".to_string(),
                     job_manager_host: "dr-flink-jm-0".to_string(),
@@ -252,8 +252,8 @@ mod tests {
                     pool_idle_timeout: None,
                     pool_max_idle_per_host: None,
                 },
-                sources: maplit::hashmap! {
-                    "foo".to_string() => SourceSetting::Csv { path: PathBuf::from("../resources/bar.toml"), },
+                sensors: maplit::hashmap! {
+                    "foo".to_string() => SensorSetting::Csv { path: PathBuf::from("../resources/bar.toml"), },
                 },
             },
             eligibility: EligibilitySettings {
@@ -317,7 +317,7 @@ mod tests {
                     custom: maplit::hashmap! { "foo".to_string() => 17_i64.to_telemetry(), },
                 },
             },
-            execution: ExecutionSettings {
+            action: ActionSettings {
                 k8s_workload_resource: KubernetesWorkloadResource::StatefulSet { name: "dr-springline-tm".to_string() },
             },
             context_stub: ContextStubSettings {
@@ -370,7 +370,7 @@ mod tests {
         http: HttpServerSettings { host: "0.0.0.0".to_string(), port: 8000 },
         kubernetes: KubernetesSettings::default(),
         engine: EngineSettings { machine_id: 7, node_id: 3 },
-        collection: CollectionSettings {
+        sensor: SensorSettings {
             flink: FlinkSettings {
                 job_manager_uri_scheme: "https".to_string(),
                 job_manager_host: "localhost".to_string(),
@@ -389,8 +389,8 @@ mod tests {
                 pool_idle_timeout: None,
                 pool_max_idle_per_host: None,
             },
-            sources: maplit::hashmap! {
-                "foo".to_string() => SourceSetting::Csv { path: PathBuf::from("./resources/bar.toml"),},
+            sensors: maplit::hashmap! {
+                "foo".to_string() => SensorSetting::Csv { path: PathBuf::from("./resources/bar.toml"),},
             },
         },
         eligibility: EligibilitySettings::default()
@@ -451,7 +451,7 @@ mod tests {
                 custom: HashMap::default(),
             },
         },
-        execution: ExecutionSettings {
+        action: ActionSettings {
             k8s_workload_resource: KubernetesWorkloadResource::StatefulSet { name: "dr-springline-tm".to_string() },
         },
         context_stub: ContextStubSettings {
@@ -497,7 +497,7 @@ mod tests {
 
                 let expected = Settings {
                     engine: EngineSettings { machine_id: 17, node_id: 13 },
-                    collection: CollectionSettings {
+                    sensor: SensorSettings {
                         flink: FlinkSettings {
                             job_manager_uri_scheme: "http".to_string(),
                             metrics_initial_delay: Duration::from_secs(0),
@@ -505,10 +505,10 @@ mod tests {
                             pool_max_idle_per_host: Some(5),
                             metric_orders: Vec::default(),
                             headers: Vec::default(),
-                            ..SETTINGS.collection.flink.clone()
+                            ..SETTINGS.sensor.flink.clone()
                         },
-                        sources: HashMap::default(),
-                        ..SETTINGS.collection.clone()
+                        sensors: HashMap::default(),
+                        ..SETTINGS.sensor.clone()
                     },
                     eligibility: EligibilitySettings {
                         template_data: Some(EligibilityTemplateData {
@@ -572,7 +572,7 @@ mod tests {
                     ..SETTINGS.http.clone()
                 },
                 engine: EngineSettings { machine_id: 1, node_id: 1 },
-                collection: CollectionSettings {
+                sensor: SensorSettings {
                     flink: FlinkSettings {
                         job_manager_uri_scheme: "http".to_string(),
                         metrics_initial_delay: Duration::from_secs(10),
@@ -581,10 +581,10 @@ mod tests {
                         max_retries: 0,
                         pool_idle_timeout: Some(Duration::from_secs(60)),
                         pool_max_idle_per_host: Some(5),
-                        ..SETTINGS.collection.flink.clone()
+                        ..SETTINGS.sensor.flink.clone()
                     },
-                    sources: HashMap::default(),
-                    ..SETTINGS.collection.clone()
+                    sensors: HashMap::default(),
+                    ..SETTINGS.sensor.clone()
                 },
                 eligibility: EligibilitySettings {
                     template_data: Some(EligibilityTemplateData {
@@ -651,7 +651,7 @@ mod tests {
                         }),
                         ..SETTINGS.eligibility.clone()
                     },
-                    collection: CollectionSettings {
+                    sensor: SensorSettings {
                         flink: FlinkSettings {
                             job_manager_uri_scheme: "http".to_string(),
                             job_manager_host: "host.lima.internal".to_string(),
@@ -660,10 +660,10 @@ mod tests {
                             pool_max_idle_per_host: Some(5),
                             headers: Vec::default(),
                             metric_orders: Vec::default(),
-                            ..SETTINGS.collection.flink.clone()
+                            ..SETTINGS.sensor.flink.clone()
                         },
-                        sources: HashMap::default(),
-                        ..SETTINGS.collection.clone()
+                        sensors: HashMap::default(),
+                        ..SETTINGS.sensor.clone()
                     },
                     decision: DecisionSettings {
                         template_data: Some(DecisionTemplateData {

@@ -8,7 +8,7 @@ use pretty_snowflake::{Id, Label};
 use proctor::elements::telemetry::UpdateMetricsFn;
 use proctor::elements::{telemetry, Telemetry, Timestamp};
 use proctor::error::{PolicyError, ProctorError};
-use proctor::phases::collection::SubscriptionRequirements;
+use proctor::phases::sense::SubscriptionRequirements;
 use proctor::SharedString;
 use prometheus::{Gauge, IntGauge};
 use serde::{Deserialize, Serialize};
@@ -396,9 +396,9 @@ impl UpdateMetrics for MetricCatalog {
             Err(err) => {
                 tracing::warn!(
                     error=?err, phase_name=%name,
-                    "failed to update data collection metrics on subscription: {}", subscription_name
+                    "failed to update sensor metrics for subscription: {}", subscription_name
                 );
-                proctor::track_errors(name.as_ref(), &ProctorError::CollectionError(err.into()));
+                proctor::track_errors(name.as_ref(), &ProctorError::SensePhase(err.into()));
             },
         };
 
@@ -572,7 +572,7 @@ mod tests {
     use pretty_assertions::assert_eq;
     use proctor::elements::{Telemetry, TelemetryType, TelemetryValue, ToTelemetry};
     use proctor::error::TelemetryError;
-    use proctor::phases::collection::{SUBSCRIPTION_CORRELATION, SUBSCRIPTION_TIMESTAMP};
+    use proctor::phases::sense::{SUBSCRIPTION_CORRELATION, SUBSCRIPTION_TIMESTAMP};
     use proctor::ProctorIdGenerator;
     use serde_test::{assert_tokens, Token};
 

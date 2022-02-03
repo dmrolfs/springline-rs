@@ -1,7 +1,7 @@
 use cast_trait_object::DynCastExt;
 use once_cell::sync::Lazy;
 use proctor::elements::telemetry::{self, Telemetry, TelemetryValue};
-use proctor::error::{CollectionError, MetricLabel, TelemetryError};
+use proctor::error::{SenseError, MetricLabel, TelemetryError};
 use proctor::graph::stage::{self, SourceStage, ThroughStage};
 use proctor::graph::{Connect, Graph, SinkShape, SourceShape, UniformFanInShape, UniformFanOutShape};
 use proctor::SharedString;
@@ -15,23 +15,23 @@ use std::sync::Arc;
 use url::Url;
 
 mod api_model;
-mod collect_scope;
-mod collect_taskmanager_admin;
-mod collect_vertex;
+mod scope_sensor;
+mod taskmanager_admin_sensor;
+mod vertex_sensor;
 mod metric_order;
 
-#[allow(dead_code)]
-mod generators;
+// #[allow(dead_code)]
+// mod generators;
 
 use crate::phases::MC_FLOW__RECORDS_IN_PER_SEC;
-pub use collect_vertex::{
-    FLINK_QUERY_ACTIVE_JOBS_TIME, FLINK_QUERY_JOB_DETAIL_TIME, FLINK_QUERY_VERTEX_AVAIL_TELEMETRY_TIME,
-    FLINK_QUERY_VERTEX_METRIC_PICKLIST_TIME, FLINK_QUERY_VERTEX_TELEMETRY_TIME,
+pub use vertex_sensor::{
+    FLINK_ACTIVE_JOBS_SENSOR_TIME, FLINK_QUERY_JOB_DETAIL_TIME, FLINK_VERTEX_SENSOR_AVAIL_TELEMETRY_TIME,
+    FLINK_VERTEX_SENSOR_METRIC_PICKLIST_TIME, FLINK_VERTEX_SENSOR_TIME,
 };
 // pub use generators::make_flink_metrics_source;
-use crate::phases::collection::flink::collect_scope::CollectScope;
-use crate::phases::collection::flink::collect_taskmanager_admin::CollectTaskmanagerAdmin;
-use crate::phases::collection::flink::collect_vertex::CollectVertex;
+use crate::phases::sense::flink::scope_sensor::ScopeSensor;
+use crate::phases::sense::flink::taskmanager_admin_sensor::TaskmanagerAdminSensor;
+use crate::phases::sense::flink::vertex_sensor::VertexSensor;
 use crate::settings::FlinkSettings;
 pub use api_model::{JobId, JobState, TaskState, VertexId, JOB_STATES, TASK_STATES};
 pub use metric_order::{Aggregation, FlinkScope, MetricOrder};
@@ -125,46 +125,46 @@ pub static STD_METRIC_ORDERS: Lazy<Vec<MetricOrder>> = Lazy::new(|| {
     .collect()
 });
 
-#[tracing::instrument(level="info", skip(name, scheduler, settings), fields(source_name=%name))]
-pub async fn make_flink_metrics_source(
+#[tracing::instrument(level="info", skip(name, scheduler, settings), fields(sensor=%name))]
+pub async fn make_sensor(
     name: &str, scheduler: Box<dyn SourceStage<()>>, settings: &FlinkSettings,
-) -> Result<Box<dyn SourceStage<Telemetry>>, CollectionError> {
-    let name: SharedString = format!("{}_flink_source", name).into();
+) -> Result<Box<dyn SourceStage<Telemetry>>, SenseError> {
+    let name: SharedString = format!("{}_flink_sensor", name).into();
 
     let orders = Arc::new(MetricOrder::extend_standard_with_settings(settings));
     let context = Arc::new(TaskContext::new(settings)?);
 
-    let collect_jobs_scope = CollectScope::new(FlinkScope::Jobs, orders.clone(), context.clone());
-    let collect_tm_scope = CollectScope::new(FlinkScope::TaskManagers, orders.clone(), context.clone());
-    let collect_tm_admin = CollectTaskmanagerAdmin::new(context.clone());
-    let collect_vertex = CollectVertex::new(orders.clone(), context.clone())?;
-    let flink_collectors: Vec<Box<dyn ThroughStage<(), Telemetry>>> = vec![
-        Box::new(collect_jobs_scope),
-        Box::new(collect_tm_scope),
-        Box::new(collect_tm_admin),
-        Box::new(collect_vertex),
+    let jobs_scope_sensor = ScopeSensor::new(FlinkScope::Jobs, orders.clone(), context.clone());
+    let tm_scope_sensor = ScopeSensor::new(FlinkScope::TaskManagers, orders.clone(), context.clone());
+    let tm_admin_sensor = TaskmanagerAdminSensor::new(context.clone());
+    let vertex_sensor = VertexSensor::new(orders.clone(), context.clone())?;
+    let flink_sensors: Vec<Box<dyn ThroughStage<(), Telemetry>>> = vec![
+        Box::new(jobs_scope_sensor),
+        Box::new(tm_scope_sensor),
+        Box::new(tm_admin_sensor),
+        Box::new(vertex_sensor),
     ];
 
-    let broadcast = stage::Broadcast::new(name.clone(), flink_collectors.len());
+    let broadcast = stage::Broadcast::new(name.clone(), flink_sensors.len());
 
-    let merge_combine = stage::MergeCombine::new(name.clone(), flink_collectors.len());
+    let merge_combine = stage::MergeCombine::new(name.clone(), flink_sensors.len());
     let composite_outlet = merge_combine.outlet();
 
     (scheduler.outlet(), broadcast.inlet()).connect().await;
 
     let broadcast_outlets = broadcast.outlets();
     let merge_inlets = merge_combine.inlets();
-    for (pos, collector) in flink_collectors.iter().enumerate() {
-        (broadcast_outlets.get(pos).unwrap(), &collector.inlet()).connect().await;
+    for (pos, sensor) in flink_sensors.iter().enumerate() {
+        (broadcast_outlets.get(pos).unwrap(), &sensor.inlet()).connect().await;
 
-        (collector.outlet(), merge_inlets.get(pos).await.unwrap()).connect().await;
+        (sensor.outlet(), merge_inlets.get(pos).await.unwrap()).connect().await;
     }
 
     let mut composite_graph = Graph::default();
     composite_graph.push_back(scheduler.dyn_upcast()).await;
     composite_graph.push_back(Box::new(broadcast)).await;
-    for collector in flink_collectors {
-        composite_graph.push_back(collector.dyn_upcast()).await;
+    for sensor in flink_sensors {
+        composite_graph.push_back(sensor.dyn_upcast()).await;
     }
     composite_graph.push_back(Box::new(merge_combine)).await;
 
@@ -174,14 +174,14 @@ pub async fn make_flink_metrics_source(
     Ok(composite)
 }
 
-fn make_source_scheduler(name: &str, settings: &FlinkSettings) -> stage::Tick<()> {
-    stage::Tick::new(
-        format!("flink_source_{}_tick", name),
-        settings.metrics_initial_delay,
-        settings.metrics_interval,
-        (),
-    )
-}
+// fn make_source_scheduler(name: &str, settings: &FlinkSettings) -> stage::Tick<()> {
+//     stage::Tick::new(
+//         format!("flink_source_{}_tick", name),
+//         settings.metrics_initial_delay,
+//         settings.metrics_interval,
+//         (),
+//     )
+// }
 
 #[derive(Clone)]
 pub struct TaskContext {
@@ -196,13 +196,13 @@ impl fmt::Debug for TaskContext {
 }
 
 impl TaskContext {
-    pub fn new(settings: &FlinkSettings) -> Result<Self, CollectionError> {
+    pub fn new(settings: &FlinkSettings) -> Result<Self, SenseError> {
         let client = Self::do_make_http_client(settings)?;
         let base_url = settings.base_url()?;
         Ok(Self { client, base_url })
     }
 
-    fn do_make_http_client(settings: &FlinkSettings) -> Result<ClientWithMiddleware, CollectionError> {
+    fn do_make_http_client(settings: &FlinkSettings) -> Result<ClientWithMiddleware, SenseError> {
         let headers = settings.header_map()?;
 
         let client_builder = reqwest::Client::builder()
@@ -236,36 +236,36 @@ impl Unpack for Telemetry {
     }
 }
 
-pub(crate) static FLINK_COLLECTION_TIME: Lazy<HistogramVec> = Lazy::new(|| {
+pub(crate) static FLINK_SENSOR_TIME: Lazy<HistogramVec> = Lazy::new(|| {
     HistogramVec::new(
         HistogramOpts::new(
-            "flink_collection_time",
+            "flink_sensor_time",
             "Time spent collecting telemetry from Flink in seconds",
         )
         .buckets(vec![0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0, 5.0]),
         &["flink_scope"],
     )
-    .expect("failed creating flink_collection_time metric")
+    .expect("failed creating flink_sensor_time metric")
 });
 
-pub(crate) static FLINK_COLLECTION_ERRORS: Lazy<IntCounterVec> = Lazy::new(|| {
+pub(crate) static FLINK_SENSOR_ERRORS: Lazy<IntCounterVec> = Lazy::new(|| {
     IntCounterVec::new(
-        Opts::new("flink_collection_errors", "Number of errors collecting Flink telemetry"),
+        Opts::new("flink_sensor_errors", "Number of errors collecting Flink telemetry"),
         &["flink_scope", "error_type"],
     )
-    .expect("failed creating flink_collection_errors metric")
+    .expect("failed creating flink_sensor_errors metric")
 });
 
 #[inline]
-pub(crate) fn start_flink_collection_timer(scope: &FlinkScope) -> HistogramTimer {
-    FLINK_COLLECTION_TIME
+pub(crate) fn start_flink_sensor_timer(scope: &FlinkScope) -> HistogramTimer {
+    FLINK_SENSOR_TIME
         .with_label_values(&[scope.to_string().as_str()])
         .start_timer()
 }
 
 #[inline]
-pub(crate) fn track_flink_errors(scope: &FlinkScope, error: &CollectionError) {
-    FLINK_COLLECTION_ERRORS
+pub(crate) fn track_flink_sensor_errors(scope: &FlinkScope, error: &SenseError) {
+    FLINK_SENSOR_ERRORS
         .with_label_values(&[scope.to_string().as_str(), error.label().as_ref()])
         .inc()
 }
@@ -274,16 +274,16 @@ const JOB_SCOPE: &str = "Jobs";
 const TASK_SCOPE: &str = "Tasks";
 
 #[inline]
-fn identity_or_track_error<T, E>(scope: FlinkScope, data: Result<T, E>) -> Result<T, CollectionError>
+fn identity_or_track_error<T, E>(scope: FlinkScope, data: Result<T, E>) -> Result<T, SenseError>
 where
-    E: Into<CollectionError>,
+    E: Into<SenseError>,
 {
     match data {
         Ok(data) => Ok(data),
         Err(err) => {
             let error = err.into();
-            tracing::error!(%scope, ?error, "failed to collect Flink {} telemetry part", scope);
-            track_flink_errors(&scope, &error);
+            tracing::error!(%scope, ?error, "failed to collect telemetry from Flink {} sensor", scope);
+            track_flink_sensor_errors(&scope, &error);
             Err(error)
         },
     }

@@ -10,7 +10,7 @@ pub use result::DecisionResult;
 pub use result::DECISION_DIRECTION;
 
 use proctor::elements::PolicySubscription;
-use proctor::phases::collection::{ClearinghouseSubscriptionMagnet, SubscriptionChannel};
+use proctor::phases::sense::{ClearinghouseSubscriptionMagnet, SubscriptionChannel};
 use proctor::phases::policy_phase::PolicyPhase;
 use proctor::SharedString;
 

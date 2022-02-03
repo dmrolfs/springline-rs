@@ -2,17 +2,17 @@
 pub use metric_catalog::*;
 use proctor::elements::telemetry::UpdateMetricsFn;
 use proctor::graph::{Connect, SourceShape};
-use proctor::phases::collection::{ClearinghouseSubscriptionMagnet, SubscriptionChannel, TelemetrySubscription};
+use proctor::phases::sense::{ClearinghouseSubscriptionMagnet, SubscriptionChannel, TelemetrySubscription};
 use proctor::phases::policy_phase::PolicyPhase;
 use proctor::{AppData, ProctorContext, SharedString};
 use serde::Serialize;
 
 use crate::Result;
 
-pub mod collection;
+pub mod sense;
 pub mod decision;
 pub mod eligibility;
-pub mod execution;
+pub mod act;
 pub mod governance;
 pub mod metric_catalog;
 pub mod plan;
