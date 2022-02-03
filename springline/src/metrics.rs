@@ -55,14 +55,14 @@ pub fn register_metrics(registry: &Registry) -> Result<()> {
 
     registry.register(Box::new(sense::flink::FLINK_SENSOR_TIME.clone()))?;
     registry.register(Box::new(sense::flink::FLINK_SENSOR_ERRORS.clone()))?;
-    registry.register(Box::new(sense::flink::FLINK_QUERY_ACTIVE_JOBS_TIME.clone()))?;
+    registry.register(Box::new(sense::flink::FLINK_ACTIVE_JOBS_SENSOR_TIME.clone()))?;
     registry.register(Box::new(sense::flink::FLINK_QUERY_JOB_DETAIL_TIME.clone()))?;
-    registry.register(Box::new(sense::flink::FLINK_QUERY_VERTEX_TELEMETRY_TIME.clone()))?;
+    registry.register(Box::new(sense::flink::FLINK_VERTEX_SENSOR_TIME.clone()))?;
     registry.register(Box::new(
-        sense::flink::FLINK_QUERY_VERTEX_METRIC_PICKLIST_TIME.clone(),
+        sense::flink::FLINK_VERTEX_SENSOR_METRIC_PICKLIST_TIME.clone(),
     ))?;
     registry.register(Box::new(
-        sense::flink::FLINK_QUERY_VERTEX_AVAIL_TELEMETRY_TIME.clone(),
+        sense::flink::FLINK_VERTEX_SENSOR_AVAIL_TELEMETRY_TIME.clone(),
     ))?;
 
     registry.register(Box::new(eligibility::ELIGIBILITY_CTX_ALL_SINKS_HEALTHY.clone()))?;

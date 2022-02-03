@@ -206,7 +206,7 @@ where
 
     #[tracing::instrument(level = "info", skip(self))]
     async fn query_active_jobs(&self) -> Result<Vec<JobSummary>, SenseError> {
-        let _timer = start_flink_query_active_jobs_timer();
+        let _timer = start_flink_active_jobs_sensor_timer();
         let span = tracing::info_span!("query Flink active jobs");
 
         let result: Result<Vec<JobSummary>, SenseError> = self
@@ -302,7 +302,7 @@ where
             .push("subtasks")
             .push("metrics");
 
-        let _timer = start_flink_query_vertex_telemetry_timer();
+        let _timer = start_flink_vertex_sensor_timer();
         let span = tracing::info_span!("query Flink vertex telemetry");
 
         self.do_query_vertex_metric_picklist(url.clone(), metric_orders)
@@ -319,7 +319,7 @@ where
     async fn do_query_vertex_metric_picklist(
         &self, vertex_metrics_url: Url, metric_orders: &OrdersByMetric,
     ) -> Result<Vec<String>, SenseError> {
-        let _timer = start_flink_query_vertex_metric_picklist_time();
+        let _timer = start_flink_vertex_sensor_metric_picklist_time();
         let span = tracing::info_span!("query Flink vertex metric picklist");
 
         let picklist: Result<Vec<String>, SenseError> = self
@@ -370,7 +370,7 @@ where
                     .append_pair("agg", agg_span.into_iter().join(",").as_str());
             }
 
-            let _timer = start_flink_query_vertex_avail_telemetry_timer();
+            let _timer = start_flink_vertex_sensor_avail_telemetry_timer();
             let span = tracing::info_span!("query Flink vertex available telemetry");
 
             self.context
@@ -426,21 +426,21 @@ where
     }
 }
 
-pub static FLINK_QUERY_ACTIVE_JOBS_TIME: Lazy<HistogramVec> = Lazy::new(|| {
+pub static FLINK_ACTIVE_JOBS_SENSOR_TIME: Lazy<HistogramVec> = Lazy::new(|| {
     HistogramVec::new(
         HistogramOpts::new(
-            "flink_query_active_jobs_time",
+            "flink_active_jobs_sensor_time",
             "Time spent collecting active jobs from Flink in seconds",
         )
         .buckets(vec![0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0, 5.0]),
         &["flink_scope"],
     )
-    .expect("failed creating flink_query_active_jobs_time metric")
+    .expect("failed creating flink_active_jobs_sensor_time metric")
 });
 
 #[inline]
-fn start_flink_query_active_jobs_timer() -> HistogramTimer {
-    FLINK_QUERY_ACTIVE_JOBS_TIME.with_label_values(&[JOB_SCOPE]).start_timer()
+fn start_flink_active_jobs_sensor_timer() -> HistogramTimer {
+    FLINK_ACTIVE_JOBS_SENSOR_TIME.with_label_values(&[JOB_SCOPE]).start_timer()
 }
 
 pub static FLINK_QUERY_JOB_DETAIL_TIME: Lazy<HistogramVec> = Lazy::new(|| {
@@ -460,59 +460,59 @@ fn start_flink_query_job_detail_timer() -> HistogramTimer {
     FLINK_QUERY_JOB_DETAIL_TIME.with_label_values(&[JOB_SCOPE]).start_timer()
 }
 
-pub static FLINK_QUERY_VERTEX_TELEMETRY_TIME: Lazy<HistogramVec> = Lazy::new(|| {
+pub static FLINK_VERTEX_SENSOR_TIME: Lazy<HistogramVec> = Lazy::new(|| {
     HistogramVec::new(
         HistogramOpts::new(
-            "flink_query_vertex_telemetry_time",
+            "flink_vertex_sensor_time",
             "Time spent collecting vertex telemetry from Flink in seconds",
         )
         .buckets(vec![0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0, 5.0]),
         &["flink_scope"],
     )
-    .expect("failed creating flink_query_vertex_telemetry_time metric")
+    .expect("failed creating flink_vertex_sensor_time metric")
 });
 
 #[inline]
-fn start_flink_query_vertex_telemetry_timer() -> HistogramTimer {
-    FLINK_QUERY_VERTEX_TELEMETRY_TIME
+fn start_flink_vertex_sensor_timer() -> HistogramTimer {
+    FLINK_VERTEX_SENSOR_TIME
         .with_label_values(&[TASK_SCOPE])
         .start_timer()
 }
 
-pub static FLINK_QUERY_VERTEX_METRIC_PICKLIST_TIME: Lazy<HistogramVec> = Lazy::new(|| {
+pub static FLINK_VERTEX_SENSOR_METRIC_PICKLIST_TIME: Lazy<HistogramVec> = Lazy::new(|| {
     HistogramVec::new(
         HistogramOpts::new(
-            "flink_query_vertex_metric_picklist_time",
+            "flink_vertex_sensor_metric_picklist_time",
             "Time spent getting the vertex metric picklist Flink in seconds",
         )
         .buckets(vec![0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0, 5.0]),
         &["flink_scope"],
     )
-    .expect("failed creating flink_query_vertex_metric_picklist_time metric")
+    .expect("failed creating flink_vertex_sensor_metric_picklist_time metric")
 });
 
 #[inline]
-fn start_flink_query_vertex_metric_picklist_time() -> HistogramTimer {
-    FLINK_QUERY_VERTEX_METRIC_PICKLIST_TIME
+fn start_flink_vertex_sensor_metric_picklist_time() -> HistogramTimer {
+    FLINK_VERTEX_SENSOR_METRIC_PICKLIST_TIME
         .with_label_values(&[TASK_SCOPE])
         .start_timer()
 }
 
-pub static FLINK_QUERY_VERTEX_AVAIL_TELEMETRY_TIME: Lazy<HistogramVec> = Lazy::new(|| {
+pub static FLINK_VERTEX_SENSOR_AVAIL_TELEMETRY_TIME: Lazy<HistogramVec> = Lazy::new(|| {
     HistogramVec::new(
         HistogramOpts::new(
-            "flink_query_vertex_avail_telemetry_time",
+            "flink_vertex_sensor_avail_telemetry_time",
             "Time spent collecting available vertex metrics from Flink in seconds",
         )
         .buckets(vec![0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0, 5.0]),
         &["flink_scope"],
     )
-    .expect("failed creating flink_query_vertex_avail_telemetry_time metric")
+    .expect("failed creating flink_vertex_sensor_avail_telemetry_time metric")
 });
 
 #[inline]
-fn start_flink_query_vertex_avail_telemetry_timer() -> HistogramTimer {
-    FLINK_QUERY_VERTEX_AVAIL_TELEMETRY_TIME
+fn start_flink_vertex_sensor_avail_telemetry_timer() -> HistogramTimer {
+    FLINK_VERTEX_SENSOR_AVAIL_TELEMETRY_TIME
         .with_label_values(&[JOB_SCOPE])
         .start_timer()
 }
