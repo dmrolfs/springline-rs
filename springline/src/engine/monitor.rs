@@ -12,22 +12,22 @@ use prometheus::{IntCounter, IntGauge};
 
 use crate::phases::decision::{DecisionContext, DecisionEvent, DecisionMonitor, DecisionResult};
 use crate::phases::eligibility::{EligibilityContext, EligibilityEvent, EligibilityMonitor};
-use crate::phases::execution::{
-    ExecutionEvent, ExecutionMonitor, EXECUTION_ERRORS, EXECUTION_SCALE_ACTION_COUNT, PIPELINE_CYCLE_TIME,
+use crate::phases::act::{
+    ActEvent, ActMonitor, ACT_PHASE_ERRORS, ACT_SCALE_ACTION_COUNT, PIPELINE_CYCLE_TIME,
 };
 use crate::phases::governance::{GovernanceContext, GovernanceEvent, GovernanceMonitor, GovernanceOutcome};
 use crate::phases::plan::{PlanEvent, PlanningStrategy};
 
-#[bitflags(default = Collection | Plan | Execution)]
+#[bitflags(default = Sense | Plan | Act)]
 #[repr(u8)]
 #[derive(Debug, Display, Copy, Clone, PartialEq)]
-enum PhaseLoaded {
-    Collection = 1 << 0,
+enum ReadyPhases {
+    Sense = 1 << 0,
     Eligibility = 1 << 1,
     Decision = 1 << 2,
     Plan = 1 << 3,
     Governance = 1 << 4,
-    Execution = 1 << 5,
+    Act = 1 << 5,
 }
 
 pub struct Monitor {
@@ -35,7 +35,7 @@ pub struct Monitor {
     rx_decision_monitor: DecisionMonitor,
     rx_plan_monitor: PlanMonitor<PlanningStrategy>,
     rx_governance_monitor: GovernanceMonitor,
-    rx_execution_monitor: Option<ExecutionMonitor<GovernanceOutcome>>,
+    rx_action_monitor: Option<ActMonitor<GovernanceOutcome>>,
     tx_feedback: Option<ActorSourceApi<Telemetry>>,
 }
 
@@ -46,7 +46,7 @@ impl std::fmt::Debug for Monitor {
             .field("rx_decision", &self.rx_decision_monitor)
             .field("rx_plan", &self.rx_plan_monitor)
             .field("rx_governance", &self.rx_governance_monitor)
-            .field("rx_execution", &self.rx_execution_monitor)
+            .field("rx_action", &self.rx_action_monitor)
             .field("tx_feedback", &self.tx_feedback)
             .finish()
     }
@@ -56,7 +56,7 @@ impl Monitor {
     pub fn new(
         rx_eligibility_monitor: EligibilityMonitor, rx_decision_monitor: DecisionMonitor,
         rx_plan_monitor: PlanMonitor<PlanningStrategy>, rx_governance_monitor: GovernanceMonitor,
-        rx_execution_monitor: Option<ExecutionMonitor<GovernanceOutcome>>,
+        rx_action_monitor: Option<ActMonitor<GovernanceOutcome>>,
         tx_feedback: Option<ActorSourceApi<Telemetry>>,
     ) -> Self {
         Self {
@@ -64,17 +64,17 @@ impl Monitor {
             rx_decision_monitor,
             rx_plan_monitor,
             rx_governance_monitor,
-            rx_execution_monitor,
+            rx_action_monitor,
             tx_feedback,
         }
     }
 
     #[tracing::instrument(level = "info", skip(self), name = "monitor phase events")]
     pub async fn run(mut self) {
-        let mut loaded = BitFlags::<PhaseLoaded>::default();
+        let mut loaded = BitFlags::<ReadyPhases>::default();
         Self::mark_ready_phases(&mut loaded);
 
-        let mut rx_execution = self.rx_execution_monitor.unwrap_or_else(|| {
+        let mut rx_action = self.rx_action_monitor.unwrap_or_else(|| {
             let (_, rx_dummy) = tokio::sync::broadcast::channel(0);
             rx_dummy
         });
@@ -90,7 +90,7 @@ impl Monitor {
                 Ok(e) = self.rx_decision_monitor.recv() => Self::handle_decision_event(e, &mut loaded),
                 Ok(e) = self.rx_plan_monitor.recv() => Self::handle_plan_event(e),
                 Ok(e) = self.rx_governance_monitor.recv() => Self::handle_governance_event(e, &mut loaded),
-                Ok(e) = rx_execution.recv() => Self::handle_execution_event(e, tx_feedback, &mut loaded).await,
+                Ok(e) = rx_action.recv() => Self::handle_action_event(e, tx_feedback, &mut loaded).await,
                 else => {
                     tracing::info!("springline monitor stopping...");
                     break;
@@ -104,16 +104,16 @@ impl Monitor {
     }
 
     #[tracing::instrument(level = "info")]
-    fn mark_ready_phases(loaded: &mut BitFlags<PhaseLoaded>) {
-        use proctor::phases::collection::SubscriptionRequirements;
+    fn mark_ready_phases(loaded: &mut BitFlags<ReadyPhases>) {
+        use proctor::phases::sense::SubscriptionRequirements;
 
         vec![
             (
-                PhaseLoaded::Eligibility,
+                ReadyPhases::Eligibility,
                 EligibilityContext::required_fields().is_empty(),
             ),
-            (PhaseLoaded::Decision, DecisionContext::required_fields().is_empty()),
-            (PhaseLoaded::Governance, GovernanceContext::required_fields().is_empty()),
+            (ReadyPhases::Decision, DecisionContext::required_fields().is_empty()),
+            (ReadyPhases::Governance, GovernanceContext::required_fields().is_empty()),
         ]
         .into_iter()
         .for_each(|(phase, is_ready)| {
@@ -125,7 +125,7 @@ impl Monitor {
     }
 
     #[allow(clippy::cognitive_complexity)]
-    fn handle_eligibility_event(event: Arc<EligibilityEvent>, loaded: &mut BitFlags<PhaseLoaded>) {
+    fn handle_eligibility_event(event: Arc<EligibilityEvent>, loaded: &mut BitFlags<ReadyPhases>) {
         match &*event {
             EligibilityEvent::ItemPassed(_item, query_result) => {
                 tracing::info!(?event, ?query_result, "data item passed eligibility");
@@ -135,16 +135,16 @@ impl Monitor {
                 tracing::info!(?event, ?query_result, "data item blocked in eligibility");
                 ELIGIBILITY_IS_ELIGIBLE_FOR_SCALING.set(false as i64)
             },
-            EligibilityEvent::ContextChanged(Some(_ctx)) if !loaded.contains(PhaseLoaded::Eligibility) => {
+            EligibilityEvent::ContextChanged(Some(_ctx)) if !loaded.contains(ReadyPhases::Eligibility) => {
                 tracing::info!(?event, "Eligibility Phase initial context loaded!");
-                loaded.toggle(PhaseLoaded::Eligibility);
+                loaded.toggle(ReadyPhases::Eligibility);
             },
             ignored_event => tracing::warn!(?ignored_event, "ignoring eligibility event"),
         }
     }
 
     #[allow(clippy::cognitive_complexity)]
-    fn handle_decision_event(event: Arc<DecisionEvent>, loaded: &mut BitFlags<PhaseLoaded>) {
+    fn handle_decision_event(event: Arc<DecisionEvent>, loaded: &mut BitFlags<ReadyPhases>) {
         match &*event {
             DecisionEvent::ItemPassed(_item, query_result) => {
                 tracing::info!(?event, ?query_result, "data item passed scaling decision");
@@ -154,9 +154,9 @@ impl Monitor {
                 tracing::info!(?event, ?query_result, "data item blocked by scaling decision");
                 DECISION_SHOULD_PLAN_FOR_SCALING.set(false as i64)
             },
-            DecisionEvent::ContextChanged(Some(_ctx)) if !loaded.contains(PhaseLoaded::Decision) => {
+            DecisionEvent::ContextChanged(Some(_ctx)) if !loaded.contains(ReadyPhases::Decision) => {
                 tracing::info!(?event, "Decision Phase initial context loaded!");
-                loaded.toggle(PhaseLoaded::Decision);
+                loaded.toggle(ReadyPhases::Decision);
             },
             ignored_event => tracing::warn!(?ignored_event, "ignoring decision event"),
         }
@@ -201,7 +201,7 @@ impl Monitor {
     }
 
     #[allow(clippy::cognitive_complexity)]
-    fn handle_governance_event(event: Arc<GovernanceEvent>, loaded: &mut BitFlags<PhaseLoaded>) {
+    fn handle_governance_event(event: Arc<GovernanceEvent>, loaded: &mut BitFlags<ReadyPhases>) {
         match &*event {
             GovernanceEvent::ItemPassed(_item, query_result) => {
                 tracing::info!(?event, ?query_result, "data item passed governance");
@@ -211,22 +211,22 @@ impl Monitor {
                 tracing::info!(?event, ?query_result, "data item blocked in governance");
                 GOVERNANCE_PLAN_ACCEPTED.set(false as i64)
             },
-            GovernanceEvent::ContextChanged(Some(_ctx)) if !loaded.contains(PhaseLoaded::Governance) => {
+            GovernanceEvent::ContextChanged(Some(_ctx)) if !loaded.contains(ReadyPhases::Governance) => {
                 tracing::info!(?event, "Governance Phase initial context loaded!");
-                loaded.toggle(PhaseLoaded::Governance);
+                loaded.toggle(ReadyPhases::Governance);
             },
             ignored_event => tracing::warn!(?ignored_event, "ignoring governance event"),
         }
     }
 
-    async fn handle_execution_event(
-        event: Arc<ExecutionEvent<GovernanceOutcome>>, tx_feedback: Option<&ActorSourceApi<Telemetry>>,
-        _loaded: &mut BitFlags<PhaseLoaded>,
+    async fn handle_action_event(
+        event: Arc<ActEvent<GovernanceOutcome>>, tx_feedback: Option<&ActorSourceApi<Telemetry>>,
+        _loaded: &mut BitFlags<ReadyPhases>,
     ) {
         match &*event {
-            ExecutionEvent::PlanExecuted(plan) => {
+            ActEvent::PlanExecuted(plan) => {
                 tracing::info!(?plan, correlation=?plan.correlation_id, "plan executed");
-                EXECUTION_SCALE_ACTION_COUNT
+                ACT_SCALE_ACTION_COUNT
                     .with_label_values(&[
                         plan.current_nr_task_managers.to_string().as_str(),
                         plan.target_nr_task_managers.to_string().as_str(),
@@ -258,9 +258,9 @@ impl Monitor {
                     }
                 }
             },
-            ExecutionEvent::PlanFailed { plan, error_metric_label } => {
-                tracing::error!(%error_metric_label, ?plan, "plan execution failed.");
-                EXECUTION_ERRORS
+            ActEvent::PlanFailed { plan, error_metric_label } => {
+                tracing::error!(%error_metric_label, ?plan, "plan actaction failed.");
+                ACT_PHASE_ERRORS
                     .with_label_values(&[
                         plan.current_nr_task_managers.to_string().as_str(),
                         plan.target_nr_task_managers.to_string().as_str(),

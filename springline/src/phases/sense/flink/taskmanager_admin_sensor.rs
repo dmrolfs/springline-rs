@@ -1,11 +1,11 @@
 use super::{FlinkScope, Unpack};
-use crate::phases::collection::flink::TaskContext;
+use crate::phases::sense::flink::TaskContext;
 use crate::phases::MC_CLUSTER__NR_TASK_MANAGERS;
 use async_trait::async_trait;
 use cast_trait_object::dyn_upcast;
 use futures_util::TryFutureExt;
 use proctor::elements::telemetry;
-use proctor::error::{CollectionError, ProctorError};
+use proctor::error::{SenseError, ProctorError};
 use proctor::graph::stage::{self, Stage};
 use proctor::graph::{Inlet, Outlet, Port, SinkShape, SourceShape};
 use proctor::{AppData, ProctorResult, SharedString};
@@ -20,15 +20,15 @@ use tracing::Instrument;
 /// my use cases), so a simple Telemetry doesn't work and I need to parameterize even though
 /// I'll only use wrt Telemetry.
 #[derive(Debug)]
-pub struct CollectTaskmanagerAdmin<Out> {
+pub struct TaskmanagerAdminSensor<Out> {
     context: Arc<TaskContext>,
     trigger: Inlet<()>,
     outlet: Outlet<Out>,
 }
 
-const NAME: &str = "collect_taskmanager_admin";
+const NAME: &str = "taskmanager_admin_sensor";
 
-impl<Out> CollectTaskmanagerAdmin<Out> {
+impl<Out> TaskmanagerAdminSensor<Out> {
     pub fn new(context: Arc<TaskContext>) -> Self {
         let trigger = Inlet::new(NAME, "trigger");
         let outlet = Outlet::new(NAME, "outlet");
@@ -36,14 +36,14 @@ impl<Out> CollectTaskmanagerAdmin<Out> {
     }
 }
 
-impl<Out> SourceShape for CollectTaskmanagerAdmin<Out> {
+impl<Out> SourceShape for TaskmanagerAdminSensor<Out> {
     type Out = Out;
     fn outlet(&self) -> Outlet<Self::Out> {
         self.outlet.clone()
     }
 }
 
-impl<Out> SinkShape for CollectTaskmanagerAdmin<Out> {
+impl<Out> SinkShape for TaskmanagerAdminSensor<Out> {
     type In = ();
     fn inlet(&self) -> Inlet<Self::In> {
         self.trigger.clone()
@@ -52,7 +52,7 @@ impl<Out> SinkShape for CollectTaskmanagerAdmin<Out> {
 
 #[dyn_upcast]
 #[async_trait]
-impl<Out> Stage for CollectTaskmanagerAdmin<Out>
+impl<Out> Stage for TaskmanagerAdminSensor<Out>
 where
     Out: AppData + Unpack,
 {
@@ -62,11 +62,11 @@ where
 
     #[tracing::instrument(Level = "info", skip(self))]
     async fn check(&self) -> ProctorResult<()> {
-        self.do_check().await.map_err(|err| ProctorError::PhaseError(err.into()))?;
+        self.do_check().await.map_err(|err| ProctorError::SensePhase(err.into()))?;
         Ok(())
     }
 
-    #[tracing::instrument(level = "info", name = "run collect taskmanager admin stage", skip(self))]
+    #[tracing::instrument(level = "info", name = "run Flink taskmanager admin sensor stage", skip(self))]
     async fn run(&mut self) -> ProctorResult<()> {
         self.do_run().await?;
         Ok(())
@@ -81,17 +81,17 @@ where
 
 const SCOPE: FlinkScope = FlinkScope::TaskManagers;
 
-impl<Out> CollectTaskmanagerAdmin<Out>
+impl<Out> TaskmanagerAdminSensor<Out>
 where
     Out: AppData + Unpack,
 {
-    async fn do_check(&self) -> Result<(), CollectionError> {
+    async fn do_check(&self) -> Result<(), SenseError> {
         self.trigger.check_attachment().await?;
         self.outlet.check_attachment().await?;
         Ok(())
     }
 
-    async fn do_run(&mut self) -> Result<(), CollectionError> {
+    async fn do_run(&mut self) -> Result<(), SenseError> {
         let mut url = self.context.base_url.clone();
         url.path_segments_mut().unwrap().push("taskmanagers");
         tracing::info!("url = {:?}", url);
@@ -103,13 +103,13 @@ where
             let _stage_timer = stage::start_stage_eval_time(name.as_ref());
 
             let span = tracing::info_span!("collect Flink taskmanager admin telemetry");
-            let collection_and_send = self
+            let send_telemetry = self
                 .outlet
-                .reserve_send::<_, CollectionError>(async {
+                .reserve_send::<_, SenseError>(async {
                     // timer spans all retries
-                    let _flink_timer = super::start_flink_collection_timer(&SCOPE);
+                    let _flink_timer = super::start_flink_sensor_timer(&SCOPE);
 
-                    let result: Result<Out, CollectionError> = self
+                    let result: Result<Out, SenseError> = self
                         .context
                         .client
                         .request(Method::GET, url.clone())
@@ -145,13 +145,13 @@ where
                 .instrument(span)
                 .await;
 
-            let _ = super::identity_or_track_error(SCOPE, collection_and_send);
+            let _ = super::identity_or_track_error(SCOPE, send_telemetry);
         }
 
         Ok(())
     }
 
-    async fn do_close(mut self: Box<Self>) -> Result<(), CollectionError> {
+    async fn do_close(mut self: Box<Self>) -> Result<(), SenseError> {
         self.trigger.close().await;
         self.outlet.close().await;
         Ok(())
@@ -161,8 +161,8 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    // use crate::phases::collection::flink::STD_METRIC_ORDERS;
-    // use crate::phases::collection::flink::{FLINK_COLLECTION_ERRORS, FLINK_COLLECTION_TIME};
+    // use crate::phases::sense::flink::STD_METRIC_ORDERS;
+    // use crate::phases::sense::flink::{FLINK_COLLECTION_ERRORS, FLINK_COLLECTION_TIME};
     use claim::*;
     // use fake::{Fake, Faker};
     // use inspect_prometheus::{self, Metric, MetricFamily, MetricLabel};
@@ -194,7 +194,7 @@ mod tests {
     async fn test_stage_for(
         context: TaskContext,
     ) -> (tokio::task::JoinHandle<()>, mpsc::Sender<()>, mpsc::Receiver<Telemetry>) {
-        let mut stage = CollectTaskmanagerAdmin::new(Arc::new(context));
+        let mut stage = TaskmanagerAdminSensor::new(Arc::new(context));
         let (tx_trigger, rx_trigger) = mpsc::channel(1);
         let (tx_out, rx_out) = mpsc::channel(8);
         stage.trigger.attach("trigger".into(), rx_trigger).await;
@@ -299,9 +299,9 @@ mod tests {
     }
 
     #[test]
-    fn test_flink_collect_taskmanager_admin() {
+    fn test_flink_taskmanager_admin_sensor() {
         once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
-        let main_span = tracing::info_span!("test_flink_collect_taskmanager_admin");
+        let main_span = tracing::info_span!("test_flink_taskmanager_admin_sensor");
         let _ = main_span.enter();
 
         // let registry_name = "test_metrics";
@@ -325,12 +325,12 @@ mod tests {
             let context = assert_ok!(context_for(&mock_server));
             let (handle, tx_trigger, mut rx_out) = test_stage_for(context).await;
 
-            let source_handle = tokio::spawn(async move {
+            let sensor_handle = tokio::spawn(async move {
                 assert_ok!(tx_trigger.send(()).await);
                 assert_ok!(tx_trigger.send(()).await);
             });
 
-            assert_ok!(source_handle.await);
+            assert_ok!(sensor_handle.await);
             assert_ok!(handle.await);
 
             for _ in 0..2 {
@@ -356,7 +356,7 @@ mod tests {
         //             assert_eq!(
         //                 actual,
         //                 vec![
-        //                     "error_type|collection::http_integration".into(),
+        //                     "error_type|sense::http_integration".into(),
         //                     "flink_scope|Jobs".into(),
         //                 ]
         //             )

@@ -7,7 +7,7 @@ use pretty_snowflake::{Id, Label};
 use proctor::elements::telemetry::UpdateMetricsFn;
 use proctor::elements::{telemetry, Telemetry, Timestamp};
 use proctor::error::GovernanceError;
-use proctor::phases::collection::SubscriptionRequirements;
+use proctor::phases::sense::SubscriptionRequirements;
 use proctor::{ProctorContext, SharedString};
 use prometheus::IntGauge;
 use serde::{Deserialize, Serialize};
@@ -83,7 +83,7 @@ impl UpdateMetrics for GovernanceContext {
                 tracing::warn!(error=?err, %phase_name, "failed to update governance context metrics on subscription: {}", subscription_name);
                 proctor::track_errors(
                     phase_name.as_ref(),
-                    &proctor::error::ProctorError::GovernanceError(err.into()),
+                    &proctor::error::ProctorError::GovernancePhase(err.into()),
                 );
             },
         };

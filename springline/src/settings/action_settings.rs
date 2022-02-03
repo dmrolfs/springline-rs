@@ -4,7 +4,7 @@ use std::fmt;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(test, derive(PartialEq))]
-pub struct ExecutionSettings {
+pub struct ActionSettings {
     pub k8s_workload_resource: KubernetesWorkloadResource,
 }
 
@@ -86,14 +86,14 @@ mod tests {
     const EXPECTED_REP: &str = "\"statefulset/springline\"";
 
     #[test]
-    fn test_serde_execution_settings_tokens() {
-        let settings = ExecutionSettings {
+    fn test_serde_action_settings_tokens() {
+        let settings = ActionSettings {
             k8s_workload_resource: KubernetesWorkloadResource::StatefulSet { name: "springline".to_string() },
         };
         assert_tokens(
             &settings,
             &vec![
-                Token::Struct { name: "ExecutionSettings", len: 1 },
+                Token::Struct { name: "ActionSettings", len: 1 },
                 Token::Str("k8s_workload_resource"),
                 Token::Str("statefulset/springline"),
                 Token::StructEnd,
@@ -102,8 +102,8 @@ mod tests {
     }
 
     #[test]
-    fn test_serde_execution_settings() {
-        let settings = ExecutionSettings {
+    fn test_serde_action_settings() {
+        let settings = ActionSettings {
             k8s_workload_resource: KubernetesWorkloadResource::StatefulSet { name: "springline".to_string() },
         };
 

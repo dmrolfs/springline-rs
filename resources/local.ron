@@ -1,7 +1,7 @@
 (
     engine: ( machine_id: 1, node_id: 1, ),
     http: ( host: "localhost", ),
-    collection: (
+    sensor: (
         flink: (
             // job_manager_host: "host.lima.internal", // host springline in local docker
             metrics_initial_delay_secs: 10,

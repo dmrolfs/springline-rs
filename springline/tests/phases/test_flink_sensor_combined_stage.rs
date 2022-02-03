@@ -7,8 +7,8 @@ use proctor::graph::stage::{self, ActorSourceApi, ActorSourceCmd, WithApi};
 use proctor::graph::{Connect, Graph, SinkShape};
 use proctor::Ack;
 use serde_json::json;
-use springline::phases::collection::flink::{
-    make_flink_metrics_source, JobId, JobState, TaskState, VertexId, JOB_STATES, STD_METRIC_ORDERS, TASK_STATES,
+use springline::phases::sense::flink::{
+    make_sensor, JobId, JobState, TaskState, VertexId, JOB_STATES, STD_METRIC_ORDERS, TASK_STATES,
 };
 use springline::phases::{MC_CLUSTER__NR_ACTIVE_JOBS, MC_CLUSTER__NR_TASK_MANAGERS, MC_FLOW__RECORDS_IN_PER_SEC};
 use springline::settings::FlinkSettings;
@@ -42,9 +42,9 @@ impl Match for QueryParamKeyMatcher {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn test_flink_merge_combine_collection_stage() -> anyhow::Result<()> {
+async fn test_flink_sensor_merge_combine_stage() -> anyhow::Result<()> {
     once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
-    let main_span = tracing::info_span!("test_flink_merge_combine_collection_stage");
+    let main_span = tracing::info_span!("test_flink_sensor_merge_combine_stage");
     let _ = main_span.enter();
 
     let mock_server = MockServer::start().await;
@@ -98,7 +98,7 @@ async fn test_flink_merge_combine_collection_stage() -> anyhow::Result<()> {
     let scheduler = stage::ActorSource::new("trigger");
     let tx_scheduler_api = scheduler.tx_api();
 
-    let collect_flink = make_flink_metrics_source("test_flink", Box::new(scheduler), &settings).await?;
+    let flink_sensor = make_sensor("test_flink", Box::new(scheduler), &settings).await?;
 
     let mut sink = stage::Fold::new("sink", Telemetry::default(), |mut acc, item| {
         tracing::info!(?item, ?acc, "PUSHING ITEM INTO ACC...");
@@ -108,9 +108,9 @@ async fn test_flink_merge_combine_collection_stage() -> anyhow::Result<()> {
 
     let rx_acc = assert_some!(sink.take_final_rx());
 
-    (collect_flink.outlet(), sink.inlet()).connect().await;
+    (flink_sensor.outlet(), sink.inlet()).connect().await;
     let mut g = Graph::default();
-    g.push_back(collect_flink.dyn_upcast()).await;
+    g.push_back(flink_sensor.dyn_upcast()).await;
     g.push_back(Box::new(sink)).await;
     let handler = tokio::spawn(async move {
         assert_ok!(g.run().await);

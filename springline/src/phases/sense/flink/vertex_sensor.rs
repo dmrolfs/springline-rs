@@ -1,7 +1,7 @@
 use super::FlinkScope;
 use super::{api_model, Aggregation, MetricOrder, Unpack};
-use crate::phases::collection::flink::api_model::{FlinkMetricResponse, JobDetail, JobId, JobSummary, VertexId};
-use crate::phases::collection::flink::{OrdersByMetric, TaskContext, JOB_SCOPE, TASK_SCOPE};
+use crate::phases::sense::flink::api_model::{FlinkMetricResponse, JobDetail, JobId, JobSummary, VertexId};
+use crate::phases::sense::flink::{OrdersByMetric, TaskContext, JOB_SCOPE, TASK_SCOPE};
 use crate::phases::MC_CLUSTER__NR_ACTIVE_JOBS;
 use async_trait::async_trait;
 use cast_trait_object::dyn_upcast;
@@ -9,7 +9,7 @@ use futures_util::TryFutureExt;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
 use proctor::elements::{Telemetry, TelemetryValue};
-use proctor::error::{CollectionError, ProctorError};
+use proctor::error::{SenseError, ProctorError};
 use proctor::graph::stage::{self, Stage};
 use proctor::graph::{Inlet, Outlet, Port, SinkShape, SourceShape};
 use proctor::{AppData, ProctorResult, SharedString};
@@ -27,7 +27,7 @@ use url::Url;
 /// my use cases), so a simple Telemetry doesn't work and I need to parameterize even though
 /// I'll only use wrt Telemetry.
 #[derive(Debug)]
-pub struct CollectVertex<Out> {
+pub struct VertexSensor<Out> {
     scopes: Vec<FlinkScope>,
     context: Arc<TaskContext>,
     orders: Arc<Vec<MetricOrder>>,
@@ -36,10 +36,10 @@ pub struct CollectVertex<Out> {
     jobs_endpoint: Url,
 }
 
-const NAME: &str = "collect_vertex";
+const NAME: &str = "vertex_sensor";
 
-impl<Out> CollectVertex<Out> {
-    pub fn new(orders: Arc<Vec<MetricOrder>>, context: Arc<TaskContext>) -> Result<Self, CollectionError> {
+impl<Out> VertexSensor<Out> {
+    pub fn new(orders: Arc<Vec<MetricOrder>>, context: Arc<TaskContext>) -> Result<Self, SenseError> {
         let scopes = vec![FlinkScope::Task, FlinkScope::Kafka, FlinkScope::Kinesis];
         let trigger = Inlet::new(NAME, "trigger");
         let outlet = Outlet::new(NAME, "outlet");
@@ -47,7 +47,7 @@ impl<Out> CollectVertex<Out> {
         let mut jobs_endpoint = context.base_url.clone();
         jobs_endpoint
             .path_segments_mut()
-            .map_err(|_| CollectionError::NotABaseUrl(context.base_url.clone()))?
+            .map_err(|_| SenseError::NotABaseUrl(context.base_url.clone()))?
             .push("jobs");
 
         Ok(Self {
@@ -61,14 +61,14 @@ impl<Out> CollectVertex<Out> {
     }
 }
 
-impl<Out> SourceShape for CollectVertex<Out> {
+impl<Out> SourceShape for VertexSensor<Out> {
     type Out = Out;
     fn outlet(&self) -> Outlet<Self::Out> {
         self.outlet.clone()
     }
 }
 
-impl<Out> SinkShape for CollectVertex<Out> {
+impl<Out> SinkShape for VertexSensor<Out> {
     type In = ();
     fn inlet(&self) -> Inlet<Self::In> {
         self.trigger.clone()
@@ -77,7 +77,7 @@ impl<Out> SinkShape for CollectVertex<Out> {
 
 #[dyn_upcast]
 #[async_trait]
-impl<Out> Stage for CollectVertex<Out>
+impl<Out> Stage for VertexSensor<Out>
 where
     Out: AppData + Unpack,
 {
@@ -87,11 +87,11 @@ where
 
     #[tracing::instrument(Level = "info", skip(self))]
     async fn check(&self) -> ProctorResult<()> {
-        self.do_check().await.map_err(|err| ProctorError::PhaseError(err.into()))?;
+        self.do_check().await.map_err(|err| ProctorError::SensePhase(err.into()))?;
         Ok(())
     }
 
-    #[tracing::instrument(level = "info", name = "run collect flink vertex stage", skip(self))]
+    #[tracing::instrument(level = "info", name = "run flink vertex sensor stage", skip(self))]
     async fn run(&mut self) -> ProctorResult<()> {
         self.do_run().await?;
         Ok(())
@@ -104,24 +104,24 @@ where
     }
 }
 
-impl<Out> CollectVertex<Out>
+impl<Out> VertexSensor<Out>
 where
     Out: AppData + Unpack,
 {
-    async fn do_check(&self) -> Result<(), CollectionError> {
+    async fn do_check(&self) -> Result<(), SenseError> {
         self.trigger.check_attachment().await?;
         self.outlet.check_attachment().await?;
         Ok(())
     }
 
-    async fn do_run(&mut self) -> Result<(), CollectionError> {
+    async fn do_run(&mut self) -> Result<(), SenseError> {
         let scopes = self.scopes.iter().copied().collect();
         let (metric_orders, _agg_span) = super::distill_metric_orders_and_agg(&scopes, &self.orders);
         if metric_orders.is_empty() {
             //todo: best to end this useless stage or do nothing in loop? I hope end is best.
             tracing::warn!(
                 stage=%self.name(), scopes=?self.scopes,
-                "no flink metric orders to collect for vertex - stopping vertex collection stage."
+                "no flink metric orders for vertex - stopping vertex sensesensor stage."
             );
             return Ok(());
         }
@@ -130,12 +130,12 @@ where
             let _stage_timer = stage::start_stage_eval_time(self.name().as_ref());
 
             let span = tracing::info_span!("collect Flink vertex telemetry");
-            let collection_and_send: Result<(), CollectionError> = self
+            let send_telemetry: Result<(), SenseError> = self
                 .outlet
                 .reserve_send(async {
                     let flink_span = tracing::info_span!("query Flink REST APIs");
 
-                    let out: Result<Out, CollectionError> = self
+                    let out: Result<Out, SenseError> = self
                         .query_active_jobs()
                         .and_then(|active_jobs| async {
                             let nr_active_jobs = active_jobs.len();
@@ -183,7 +183,7 @@ where
                 .instrument(span)
                 .await;
 
-            let _ = super::identity_or_track_error(FlinkScope::Task, collection_and_send);
+            let _ = super::identity_or_track_error(FlinkScope::Task, send_telemetry);
         }
 
         Ok(())
@@ -205,11 +205,11 @@ where
     }
 
     #[tracing::instrument(level = "info", skip(self))]
-    async fn query_active_jobs(&self) -> Result<Vec<JobSummary>, CollectionError> {
+    async fn query_active_jobs(&self) -> Result<Vec<JobSummary>, SenseError> {
         let _timer = start_flink_query_active_jobs_timer();
         let span = tracing::info_span!("query Flink active jobs");
 
-        let result: Result<Vec<JobSummary>, CollectionError> = self
+        let result: Result<Vec<JobSummary>, SenseError> = self
             .context
             .client
             .request(Method::GET, self.jobs_endpoint.clone())
@@ -255,16 +255,16 @@ where
     }
 
     #[tracing::instrument(level = "info", skip(self))]
-    async fn query_job_details(&self, job_id: &JobId) -> Result<JobDetail, CollectionError> {
+    async fn query_job_details(&self, job_id: &JobId) -> Result<JobDetail, SenseError> {
         let mut url = self.jobs_endpoint.clone();
         url.path_segments_mut()
-            .map_err(|_| CollectionError::NotABaseUrl(self.jobs_endpoint.clone()))?
+            .map_err(|_| SenseError::NotABaseUrl(self.jobs_endpoint.clone()))?
             .push(job_id.as_ref());
 
         let _timer = start_flink_query_job_detail_timer();
         let span = tracing::info_span!("query FLink job detail");
 
-        let result: Result<JobDetail, CollectionError> = self
+        let result: Result<JobDetail, SenseError> = self
             .context
             .client
             .request(Method::GET, url)
@@ -292,10 +292,10 @@ where
     #[tracing::instrument(level = "info", skip(self, metric_orders))]
     async fn query_vertex_telemetry(
         &self, job_id: &JobId, vertex_id: &VertexId, metric_orders: &OrdersByMetric,
-    ) -> Result<Telemetry, CollectionError> {
+    ) -> Result<Telemetry, SenseError> {
         let mut url = self.jobs_endpoint.clone();
         url.path_segments_mut()
-            .map_err(|_| CollectionError::NotABaseUrl(self.jobs_endpoint.clone()))?
+            .map_err(|_| SenseError::NotABaseUrl(self.jobs_endpoint.clone()))?
             .push(job_id.as_ref())
             .push("vertices")
             .push(vertex_id.as_ref())
@@ -318,11 +318,11 @@ where
     #[tracing::instrument(level = "info", skip(self, vertex_metrics_url, metric_orders))]
     async fn do_query_vertex_metric_picklist(
         &self, vertex_metrics_url: Url, metric_orders: &OrdersByMetric,
-    ) -> Result<Vec<String>, CollectionError> {
+    ) -> Result<Vec<String>, SenseError> {
         let _timer = start_flink_query_vertex_metric_picklist_time();
         let span = tracing::info_span!("query Flink vertex metric picklist");
 
-        let picklist: Result<Vec<String>, CollectionError> = self
+        let picklist: Result<Vec<String>, SenseError> = self
             .context
             .client
             .request(Method::GET, vertex_metrics_url)
@@ -350,7 +350,7 @@ where
     #[tracing::instrument(level = "info", skip(self, picklist, metric_orders, vertex_metrics_url))]
     async fn do_query_vertex_available_telemetry(
         &self, picklist: Vec<String>, metric_orders: &OrdersByMetric, mut vertex_metrics_url: Url,
-    ) -> Result<Telemetry, CollectionError> {
+    ) -> Result<Telemetry, SenseError> {
         let agg_span = Self::agg_span_for(&picklist, metric_orders);
         tracing::info!(
             ?picklist,
@@ -358,7 +358,7 @@ where
             "vertex metric picklist and aggregation span for metric order"
         );
 
-        let telemetry: Result<Telemetry, CollectionError> = if !metric_orders.is_empty() {
+        let telemetry: Result<Telemetry, SenseError> = if !metric_orders.is_empty() {
             vertex_metrics_url
                 .query_pairs_mut()
                 .clear()
@@ -419,7 +419,7 @@ where
             .collect()
     }
 
-    async fn do_close(mut self: Box<Self>) -> Result<(), CollectionError> {
+    async fn do_close(mut self: Box<Self>) -> Result<(), SenseError> {
         self.trigger.close().await;
         self.outlet.close().await;
         Ok(())
@@ -520,9 +520,9 @@ fn start_flink_query_vertex_avail_telemetry_timer() -> HistogramTimer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::phases::collection::flink;
-    use crate::phases::collection::flink::api_model::{JobState, TaskState, VertexDetail};
-    use crate::phases::collection::flink::STD_METRIC_ORDERS;
+    use crate::phases::sense::flink;
+    use crate::phases::sense::flink::api_model::{JobState, TaskState, VertexDetail};
+    use crate::phases::sense::flink::STD_METRIC_ORDERS;
     use claim::*;
     use pretty_assertions::assert_eq;
     use proctor::elements::{Telemetry, TelemetryType, Timestamp};
@@ -580,8 +580,8 @@ mod tests {
 
     async fn test_stage_for(
         orders: &Vec<MetricOrder>, context: TaskContext,
-    ) -> (CollectVertex<Telemetry>, mpsc::Sender<()>, mpsc::Receiver<Telemetry>) {
-        let mut stage = assert_ok!(CollectVertex::new(Arc::new(orders.clone()), Arc::new(context)));
+    ) -> (VertexSensor<Telemetry>, mpsc::Sender<()>, mpsc::Receiver<Telemetry>) {
+        let mut stage = assert_ok!(VertexSensor::new(Arc::new(orders.clone()), Arc::new(context)));
         let (tx_trigger, rx_trigger) = mpsc::channel(1);
         let (tx_out, rx_out) = mpsc::channel(8);
         stage.trigger.attach("trigger".into(), rx_trigger).await;
@@ -1121,7 +1121,7 @@ mod tests {
     //     //             assert_eq!(
     //     //                 actual,
     //     //                 vec![
-    //     //                     "error_type|collection::http_integration".into(),
+    //     //                     "error_type|sense::http_integration".into(),
     //     //                     "flink_scope|Jobs".into(),
     //     //                 ]
     //     //             )

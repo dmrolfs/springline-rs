@@ -6,8 +6,8 @@ use serde::{Deserialize, Serialize};
 use serde_with::{serde_as, DurationSeconds};
 use url::Url;
 
-use super::IncompatibleSourceSettingsError;
-use crate::phases::collection::flink::MetricOrder;
+use super::IncompatibleSensorSettings;
+use crate::phases::sense::flink::MetricOrder;
 
 #[serde_as]
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -97,7 +97,7 @@ impl FlinkSettings {
         Url::parse(rep.as_str())
     }
 
-    pub fn header_map(&self) -> Result<HeaderMap, IncompatibleSourceSettingsError> {
+    pub fn header_map(&self) -> Result<HeaderMap, IncompatibleSensorSettings> {
         let mut result = HeaderMap::with_capacity(self.headers.len());
 
         for (k, v) in self.headers.iter() {
@@ -109,7 +109,7 @@ impl FlinkSettings {
         Ok(result)
     }
 
-    pub fn base_url(&self) -> Result<Url, IncompatibleSourceSettingsError> {
+    pub fn base_url(&self) -> Result<Url, IncompatibleSensorSettings> {
         let url = Url::parse(
             format!(
                 "{}://{}:{}/",
@@ -119,7 +119,7 @@ impl FlinkSettings {
         )?;
 
         if url.cannot_be_a_base() {
-            return Err(IncompatibleSourceSettingsError::UrlCannotBeBase(url));
+            return Err(IncompatibleSensorSettings::UrlCannotBeBase(url));
         }
 
         Ok(url)
@@ -133,7 +133,7 @@ mod tests {
     use proctor::elements::telemetry::TelemetryType;
 
     use super::*;
-    use crate::phases::collection::flink::{Aggregation, FlinkScope};
+    use crate::phases::sense::flink::{Aggregation, FlinkScope};
 
     #[test]
     fn test_flink_settings_default() {

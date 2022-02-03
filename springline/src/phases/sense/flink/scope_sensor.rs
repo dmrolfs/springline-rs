@@ -1,12 +1,12 @@
 use super::FlinkScope;
 use super::{api_model, Aggregation, MetricOrder, Unpack};
-use crate::phases::collection::flink::TaskContext;
+use crate::phases::sense::flink::TaskContext;
 use async_trait::async_trait;
 use cast_trait_object::dyn_upcast;
 use futures_util::TryFutureExt;
 use heck::ToSnakeCase;
 use itertools::Itertools;
-use proctor::error::{CollectionError, ProctorError};
+use proctor::error::{SenseError, ProctorError};
 use proctor::graph::stage::{self, Stage};
 use proctor::graph::{Inlet, Outlet, Port, SinkShape, SourceShape};
 use proctor::{AppData, ProctorResult, SharedString};
@@ -21,7 +21,7 @@ use url::Url;
 /// my use cases), so a simple Telemetry doesn't work and I need to parameterize even though
 /// I'll only use wrt Telemetry.
 #[derive(Debug)]
-pub struct CollectScope<Out> {
+pub struct ScopeSensor<Out> {
     scope: FlinkScope,
     context: Arc<TaskContext>,
     orders: Arc<Vec<MetricOrder>>,
@@ -29,23 +29,23 @@ pub struct CollectScope<Out> {
     outlet: Outlet<Out>,
 }
 
-impl<Out> CollectScope<Out> {
+impl<Out> ScopeSensor<Out> {
     pub fn new(scope: FlinkScope, orders: Arc<Vec<MetricOrder>>, context: Arc<TaskContext>) -> Self {
-        let name: SharedString = format!("Collect{}", scope).to_snake_case().into();
+        let name: SharedString = format!("{scope}Sensor").to_snake_case().into();
         let trigger = Inlet::new(name.clone(), "trigger");
         let outlet = Outlet::new(name, "outlet");
         Self { scope, context, orders, trigger, outlet }
     }
 }
 
-impl<Out> SourceShape for CollectScope<Out> {
+impl<Out> SourceShape for ScopeSensor<Out> {
     type Out = Out;
     fn outlet(&self) -> Outlet<Self::Out> {
         self.outlet.clone()
     }
 }
 
-impl<Out> SinkShape for CollectScope<Out> {
+impl<Out> SinkShape for ScopeSensor<Out> {
     type In = ();
     fn inlet(&self) -> Inlet<Self::In> {
         self.trigger.clone()
@@ -54,7 +54,7 @@ impl<Out> SinkShape for CollectScope<Out> {
 
 #[dyn_upcast]
 #[async_trait]
-impl<Out> Stage for CollectScope<Out>
+impl<Out> Stage for ScopeSensor<Out>
 where
     Out: AppData + Unpack,
 {
@@ -64,11 +64,11 @@ where
 
     #[tracing::instrument(Level = "info", skip(self))]
     async fn check(&self) -> ProctorResult<()> {
-        self.do_check().await.map_err(|err| ProctorError::PhaseError(err.into()))?;
+        self.do_check().await.map_err(|err| ProctorError::SensePhase(err.into()))?;
         Ok(())
     }
 
-    #[tracing::instrument(level = "info", name = "run collect flink scope stage", skip(self))]
+    #[tracing::instrument(level = "info", name = "run flink scope sensor stage", skip(self))]
     async fn run(&mut self) -> ProctorResult<()> {
         self.do_run().await?;
         Ok(())
@@ -81,11 +81,11 @@ where
     }
 }
 
-impl<Out> CollectScope<Out>
+impl<Out> ScopeSensor<Out>
 where
     Out: AppData + Unpack,
 {
-    async fn do_check(&self) -> Result<(), CollectionError> {
+    async fn do_check(&self) -> Result<(), SenseError> {
         self.trigger.check_attachment().await?;
         self.outlet.check_attachment().await?;
         Ok(())
@@ -105,14 +105,14 @@ where
         url
     }
 
-    async fn do_run(&mut self) -> Result<(), CollectionError> {
+    async fn do_run(&mut self) -> Result<(), SenseError> {
         let scopes = maplit::hashset! { self.scope };
         let (metric_orders, agg_span) = super::distill_metric_orders_and_agg(&scopes, &self.orders);
         if metric_orders.is_empty() {
             //todo: best to end this useless stage or do nothing in loop? I hope end is best.
             tracing::warn!(
                 stage=%self.name(), scope=%self.scope,
-                "no flink metric orders to collect for scope - stopping scope collection stage."
+                "no flink metric orders for scope - stopping scope sensesensor stage."
             );
             return Ok(());
         }
@@ -126,14 +126,14 @@ where
         while self.trigger.recv().await.is_some() {
             let _stage_timer = stage::start_stage_eval_time(name.as_ref());
 
-            let span = tracing::info_span!("collect Flink scope telemetry", scope=%self.scope);
-            let collection_and_send: Result<(), CollectionError> = self
+            let span = tracing::info_span!("collect Flink scope sensor telemetry", scope=%self.scope);
+            let send_telemetry: Result<(), SenseError> = self
                 .outlet
-                .reserve_send::<_, CollectionError>(async {
+                .reserve_send::<_, SenseError>(async {
                     // timer spans all retries
-                    let _flink_timer = super::start_flink_collection_timer(&self.scope);
+                    let _flink_timer = super::start_flink_sensor_timer(&self.scope);
 
-                    let out: Result<Out, CollectionError> = self
+                    let out: Result<Out, SenseError> = self
                         .context
                         .client
                         .request(Method::GET, url.clone())
@@ -166,13 +166,13 @@ where
                 .instrument(span)
                 .await;
 
-            let _ = super::identity_or_track_error(self.scope, collection_and_send);
+            let _ = super::identity_or_track_error(self.scope, send_telemetry);
         }
 
         Ok(())
     }
 
-    async fn do_close(mut self: Box<Self>) -> Result<(), CollectionError> {
+    async fn do_close(mut self: Box<Self>) -> Result<(), SenseError> {
         self.trigger.close().await;
         self.outlet.close().await;
         Ok(())
@@ -182,11 +182,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::phases::collection::flink::STD_METRIC_ORDERS;
-    // use crate::phases::collection::flink::{FLINK_COLLECTION_ERRORS, FLINK_COLLECTION_TIME};
-    // use proctor::graph::stage::STAGE_EVAL_TIME;
-    // use inspect_prometheus::{self, Metric, MetricFamily, MetricLabel};
-    // use prometheus::Registry;
+    use crate::phases::sense::flink::STD_METRIC_ORDERS;
     use claim::*;
     use fake::{Fake, Faker};
     use pretty_assertions::assert_eq;
@@ -242,7 +238,7 @@ mod tests {
     async fn test_stage_for(
         scope: FlinkScope, orders: &Vec<MetricOrder>, context: TaskContext,
     ) -> (tokio::task::JoinHandle<()>, mpsc::Sender<()>, mpsc::Receiver<Telemetry>) {
-        let mut stage = CollectScope::new(scope, Arc::new(orders.clone()), Arc::new(context));
+        let mut stage = ScopeSensor::new(scope, Arc::new(orders.clone()), Arc::new(context));
         let (tx_trigger, rx_trigger) = mpsc::channel(1);
         let (tx_out, rx_out) = mpsc::channel(8);
         stage.trigger.attach("trigger".into(), rx_trigger).await;
@@ -254,9 +250,9 @@ mod tests {
     }
 
     #[test]
-    fn test_flink_collect_scope_failure() {
+    fn test_flink_scope_sensor_failure() {
         once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
-        let main_span = tracing::info_span!("test_flink_collect_scope_failure");
+        let main_span = tracing::info_span!("test_flink_scope_sensor_failure");
         let _ = main_span.enter();
 
         // let registry_name = "test_metrics";
@@ -279,12 +275,12 @@ mod tests {
             let context = assert_ok!(context_for(&mock_server));
             let (handle, tx_trigger, mut rx_out) = test_stage_for(FlinkScope::Jobs, &STD_METRIC_ORDERS, context).await;
 
-            let source_handle = tokio::spawn(async move {
+            let sensor_handle = tokio::spawn(async move {
                 assert_ok!(tx_trigger.send(()).await);
                 assert_ok!(tx_trigger.send(()).await);
             });
 
-            assert_ok!(source_handle.await);
+            assert_ok!(sensor_handle.await);
             assert_ok!(handle.await);
             // assert_none!(rx_out.recv().await);
             let empty = assert_some!(rx_out.recv().await);
@@ -303,7 +299,7 @@ mod tests {
         //             assert_eq!(
         //                 actual,
         //                 vec![
-        //                     "error_type|collection::http_integration".into(),
+        //                     "error_type|sense::http_integration".into(),
         //                     "flink_scope|Jobs".into(),
         //                 ]
         //             )
@@ -342,9 +338,9 @@ mod tests {
     }
 
     #[test]
-    fn test_flink_collect_scope_simple_jobs() {
+    fn test_flink_scope_sensor_simple_jobs() {
         once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
-        let main_span = tracing::info_span!("test_flink_collect_scope_simple_jobs");
+        let main_span = tracing::info_span!("test_flink_scope_sensor_simple_jobs");
         let _ = main_span.enter();
 
         // let registry_name = "test_metrics";
@@ -368,12 +364,12 @@ mod tests {
             let context = assert_ok!(context_for(&mock_server));
             let (handle, tx_trigger, mut rx_out) = test_stage_for(FlinkScope::Jobs, &STD_METRIC_ORDERS, context).await;
 
-            let source_handle = tokio::spawn(async move {
+            let sensor_handle = tokio::spawn(async move {
                 assert_ok!(tx_trigger.send(()).await);
                 assert_ok!(tx_trigger.send(()).await);
             });
 
-            assert_ok!(source_handle.await);
+            assert_ok!(sensor_handle.await);
             assert_ok!(handle.await);
 
             for _ in 0..2 {
@@ -406,9 +402,9 @@ mod tests {
     }
 
     #[test]
-    fn test_flink_collect_scope_jobs_retry() {
+    fn test_flink_scope_sensor_simple_jobs_jobs_sensor_retry() {
         once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
-        let main_span = tracing::info_span!("test_flink_collect_scope_jobs_retry");
+        let main_span = tracing::info_span!("test_flink_scope_jobs_sensor_retry");
         let _ = main_span.enter();
 
         // let registry_name = "test_metrics";
@@ -432,12 +428,12 @@ mod tests {
             let context = assert_ok!(context_for(&mock_server));
             let (handle, tx_trigger, mut rx_out) = test_stage_for(FlinkScope::Jobs, &STD_METRIC_ORDERS, context).await;
 
-            let source_handle = tokio::spawn(async move {
+            let sensor_handle = tokio::spawn(async move {
                 assert_ok!(tx_trigger.send(()).await);
                 assert_ok!(tx_trigger.send(()).await);
             });
 
-            assert_ok!(source_handle.await);
+            assert_ok!(sensor_handle.await);
             assert_ok!(handle.await);
 
             for _ in 0..2 {
@@ -470,9 +466,9 @@ mod tests {
     }
 
     #[test]
-    fn test_flink_collect_scope_taskmanagers() {
+    fn test_flink_scope_taskmanagers_sensor() {
         once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
-        let main_span = tracing::info_span!("test_flink_collect_scope_taskmanagers");
+        let main_span = tracing::info_span!("test_flink_scope_taskmanagers_sensor");
         let _ = main_span.enter();
 
         // let registry_name = "test_metrics";
@@ -515,12 +511,12 @@ mod tests {
             let (handle, tx_trigger, mut rx_out) =
                 test_stage_for(FlinkScope::TaskManagers, &STD_METRIC_ORDERS, context).await;
 
-            let source_handle = tokio::spawn(async move {
+            let sensor_handle = tokio::spawn(async move {
                 assert_ok!(tx_trigger.send(()).await);
                 assert_ok!(tx_trigger.send(()).await);
             });
 
-            assert_ok!(source_handle.await);
+            assert_ok!(sensor_handle.await);
             assert_ok!(handle.await);
 
             for _ in 0..2 {

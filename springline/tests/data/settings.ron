@@ -2,7 +2,7 @@
     // set engine.machine_id and engine.node_id via environment variable
     http: ( host: "0.0.0.0", port: 8000, ),
     kubernetes: ( client_config: "infer", ),
-    collection: (
+    sensor: (
         flink: (
             job_manager_host: "dr-flink-jm-0",
             metrics_initial_delay_secs: 300,
@@ -12,7 +12,7 @@
             ],
             headers: [("accept", "*.json")],
         ),
-        sources: {
+        sensors: {
             "foo": ( type: "csv", path: "../resources/bar.toml", ),
         }
     ),
@@ -81,7 +81,7 @@
             },
         ),
     ),
-    execution: (
+    action: (
         k8s_workload_resource: "statefulset/dr-springline-tm",
     ),
     context_stub: (

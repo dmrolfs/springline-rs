@@ -10,7 +10,7 @@ pub use policy::{GovernancePolicy, GovernanceTemplateData};
 pub use result::make_governance_transform;
 
 use proctor::elements::{PolicyFilterEvent, PolicySubscription};
-use proctor::phases::collection::{ClearinghouseSubscriptionMagnet, SubscriptionChannel};
+use proctor::phases::sense::{ClearinghouseSubscriptionMagnet, SubscriptionChannel};
 use proctor::phases::policy_phase::PolicyPhase;
 use proctor::SharedString;
 

@@ -8,7 +8,7 @@ use pretty_snowflake::{Id, Label};
 use proctor::elements::telemetry::UpdateMetricsFn;
 use proctor::elements::{telemetry, Telemetry, Timestamp};
 use proctor::error::{EligibilityError, ProctorError};
-use proctor::phases::collection::SubscriptionRequirements;
+use proctor::phases::sense::SubscriptionRequirements;
 use proctor::{ProctorContext, SharedString};
 use prometheus::IntGauge;
 use serde::{Deserialize, Serialize};
@@ -89,7 +89,7 @@ impl UpdateMetrics for EligibilityContext {
                     error=?err, %phase_name,
                     "failed to update eligibility context metrics on subscription: {}", subscription_name
                 );
-                proctor::track_errors(phase_name.as_ref(), &ProctorError::EligibilityError(err.into()));
+                proctor::track_errors(phase_name.as_ref(), &ProctorError::EligibilityPhase(err.into()));
             },
         };
 
