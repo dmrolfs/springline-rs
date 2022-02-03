@@ -22,11 +22,11 @@ path = "src/main.rs"
 
 [dependencies]
 springline = { path = "../springline", version = "*" }
-#proctor = { git = "https://github.com/dmrolfs/proctor-rs", branch = "main" }
-proctor = { path = "../../proctor-rs" }
+proctor = { git = "https://github.com/dmrolfs/proctor-rs", branch = "main" }
+#proctor = { path = "../../proctor-rs" }
 anyhow = "1.0.53"
 chrono = "0.4.19"
-clap = { version = "3.0.13", features = ["derive"] }
+clap = { version = "3.0.14", features = ["derive"] }
 # until ron feature and builder fns in *published* config-rs
 config = { git = "https://github.com/dmrolfs/config-rs" } # until ron feature and builder fns in *published* config-rs
 #config = { version = "^0.11", default_features = true, features = ["ron"] }
