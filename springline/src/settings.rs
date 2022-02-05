@@ -500,6 +500,7 @@ mod tests {
                     sensor: SensorSettings {
                         flink: FlinkSettings {
                             job_manager_uri_scheme: "http".to_string(),
+                            job_manager_host: "host.springline".to_string(),
                             metrics_initial_delay: Duration::from_secs(0),
                             pool_idle_timeout: Some(Duration::from_secs(60)),
                             pool_max_idle_per_host: Some(5),
@@ -575,6 +576,7 @@ mod tests {
                 sensor: SensorSettings {
                     flink: FlinkSettings {
                         job_manager_uri_scheme: "http".to_string(),
+                        job_manager_host: "host.springline".to_string(),
                         metrics_initial_delay: Duration::from_secs(10),
                         headers: Vec::default(),
                         metric_orders: Vec::default(),
