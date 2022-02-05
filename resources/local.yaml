@@ -1,0 +1,23 @@
+---
+engine:
+  machine_id: 1
+  node_id: 1
+http:
+  host: localhost
+sensor:
+  flink:
+    metrics_initial_delay_secs: 10
+    max_retries: 0
+    pool_idle_timeout_secs: 60
+    pool_max_idle_per_host: 5
+eligibility:
+  template_data:
+    cooling_secs: 60
+decision:
+  template_data:
+    max_healthy_cpu_load: 0.0006
+    min_healthy_cpu_load: 0.0003
+plan:
+  performance_repository:
+    storage: file
+    storage_path: "./tmp"

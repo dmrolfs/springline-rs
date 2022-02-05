@@ -106,10 +106,11 @@ impl WorkloadForecastBuilder for LeastSquaresWorkloadForecastBuilder {
             );
         }
 
-        self.data.push_back(data);
-        while self.window_size < self.data.len() {
+        while self.window_size <= self.data.len() {
             self.data.pop_front();
         }
+        self.data.push_back(data);
+        assert!(self.data.len() <= self.window_size);
     }
 
     fn clear(&mut self) {

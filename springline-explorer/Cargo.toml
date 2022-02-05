@@ -24,6 +24,9 @@ path = "src/main.rs"
 springline = { path = "../springline", version = "*" }
 proctor = { git = "https://github.com/dmrolfs/proctor-rs", branch = "main" }
 #proctor = { path = "../../proctor-rs" }
+settings_loader = { git = "https://github.com/dmrolfs/settings-loader-rs", features = ["http"] }
+#settings_loader = { path = "../../settings-loader-rs", features = ["http"] }
+
 anyhow = "1.0.53"
 chrono = "0.4.19"
 clap = { version = "3.0.14", features = ["derive"] }
@@ -40,7 +43,6 @@ ron = "0.7.0"
 serde = "1.0.136"
 serde_json = "1.0.78"
 serde-transcode = "1.1.1"
-settings_loader = { git = "https://github.com/dmrolfs/settings-loader-rs", features = ["http"] }
 tailcall = "0.1.6"
 tracing = "0.1.29"
 trim-margin = "0.1.0"

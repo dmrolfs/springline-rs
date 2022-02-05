@@ -26,8 +26,7 @@ FROM debian:bullseye-slim AS runtime
 
 WORKDIR /app
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends openssl \
-    && apt-get install -y fontconfig \
+#    && apt-get install -y --no-install-recommends openssl \
     && apt-get install -y python3.9 python3-pip \
     && apt-get install -y curl \
     # Clean up
@@ -54,13 +53,12 @@ RUN adduser \
 USER appuser:appuser
 
 COPY --from=builder ["/app/target/release/springline", "springline"]
-COPY ["./resources", "resources"]
 
-ENV KUBECONFIG "/secrets/environment.kubeconfig"
+#COPY ["./resources", "resources"]
+ENV APP_ENVIRONMENT production
 
 COPY ["./hak/hak", "/usr/local/bin/hak"]
 
-ENV APP_ENVIRONMENT production
 #ENV RUST_LOG "info,tokio=trace,runtime=trace"
 ENV RUST_LOG "info"
 ENV RUST_BACKTRACE 1
