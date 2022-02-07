@@ -1,6 +1,6 @@
 use proctor::elements::{PolicyFilterEvent, PolicySubscription};
-use proctor::phases::sense::{ClearinghouseSubscriptionMagnet, SubscriptionChannel};
 use proctor::phases::policy_phase::PolicyPhase;
+use proctor::phases::sense::{ClearinghouseSubscriptionMagnet, SubscriptionChannel};
 use proctor::SharedString;
 
 use crate::phases::{self, MetricCatalog};

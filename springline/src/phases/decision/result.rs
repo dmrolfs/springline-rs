@@ -210,7 +210,10 @@ where
             match decision.as_str() {
                 SCALE_UP => Ok(Self::ScaleUp(item)),
                 SCALE_DOWN => Ok(Self::ScaleDown(item)),
-                rep => Err(DecisionError::Binding { key: T_SCALE_DECISION.to_string(), value: rep.to_string() }),
+                rep => Err(DecisionError::Binding {
+                    key: T_SCALE_DECISION.to_string(),
+                    value: rep.to_string(),
+                }),
             }
         } else {
             // todo resolves into DecisionError::Other. Improve precision?

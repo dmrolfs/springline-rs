@@ -18,7 +18,7 @@ use tokio::task::JoinHandle;
 use crate::engine::service::{EngineServiceApi, Service};
 use crate::phases::act::ActMonitor;
 use crate::phases::governance::{self, GovernanceOutcome};
-use crate::phases::{sense, decision, eligibility, act, plan};
+use crate::phases::{act, decision, eligibility, plan, sense};
 use crate::phases::{MetricCatalog, UpdateMetrics};
 use crate::settings::Settings;
 use crate::{metrics, Result};
@@ -176,7 +176,7 @@ impl AutoscaleEngine<Building> {
             inner: Ready {
                 // name: self.inner.name,
                 graph,
-                tx_stop_flink_sensor: tx_stop_flink_sensor,
+                tx_stop_flink_sensor,
                 tx_clearinghouse_api,
                 monitor: Monitor::new(
                     rx_eligibility_monitor,

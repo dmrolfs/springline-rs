@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use cast_trait_object::dyn_upcast;
 use futures_util::TryFutureExt;
 use proctor::elements::telemetry;
-use proctor::error::{SenseError, ProctorError};
+use proctor::error::{ProctorError, SenseError};
 use proctor::graph::stage::{self, Stage};
 use proctor::graph::{Inlet, Outlet, Port, SinkShape, SourceShape};
 use proctor::{AppData, ProctorResult, SharedString};

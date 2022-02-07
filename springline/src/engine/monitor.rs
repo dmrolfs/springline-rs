@@ -10,11 +10,9 @@ use proctor::phases::plan::PlanMonitor;
 use proctor::serde::FORMAT;
 use prometheus::{IntCounter, IntGauge};
 
+use crate::phases::act::{ActEvent, ActMonitor, ACT_PHASE_ERRORS, ACT_SCALE_ACTION_COUNT, PIPELINE_CYCLE_TIME};
 use crate::phases::decision::{DecisionContext, DecisionEvent, DecisionMonitor, DecisionResult};
 use crate::phases::eligibility::{EligibilityContext, EligibilityEvent, EligibilityMonitor};
-use crate::phases::act::{
-    ActEvent, ActMonitor, ACT_PHASE_ERRORS, ACT_SCALE_ACTION_COUNT, PIPELINE_CYCLE_TIME,
-};
 use crate::phases::governance::{GovernanceContext, GovernanceEvent, GovernanceMonitor, GovernanceOutcome};
 use crate::phases::plan::{PlanEvent, PlanningStrategy};
 
@@ -56,8 +54,7 @@ impl Monitor {
     pub fn new(
         rx_eligibility_monitor: EligibilityMonitor, rx_decision_monitor: DecisionMonitor,
         rx_plan_monitor: PlanMonitor<PlanningStrategy>, rx_governance_monitor: GovernanceMonitor,
-        rx_action_monitor: Option<ActMonitor<GovernanceOutcome>>,
-        tx_feedback: Option<ActorSourceApi<Telemetry>>,
+        rx_action_monitor: Option<ActMonitor<GovernanceOutcome>>, tx_feedback: Option<ActorSourceApi<Telemetry>>,
     ) -> Self {
         Self {
             rx_eligibility_monitor,
