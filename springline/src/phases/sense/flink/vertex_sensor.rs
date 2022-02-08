@@ -9,7 +9,7 @@ use futures_util::TryFutureExt;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
 use proctor::elements::{Telemetry, TelemetryValue};
-use proctor::error::{ProctorError, SenseError};
+use proctor::error::SenseError;
 use proctor::graph::stage::{self, Stage};
 use proctor::graph::{Inlet, Outlet, Port, SinkShape, SourceShape};
 use proctor::{AppData, ProctorResult, SharedString};
@@ -87,7 +87,7 @@ where
 
     #[tracing::instrument(Level = "info", skip(self))]
     async fn check(&self) -> ProctorResult<()> {
-        self.do_check().await.map_err(|err| ProctorError::SensePhase(err.into()))?;
+        self.do_check().await?;
         Ok(())
     }
 
