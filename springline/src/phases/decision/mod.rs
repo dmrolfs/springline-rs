@@ -10,8 +10,8 @@ pub use result::DecisionResult;
 pub use result::DECISION_DIRECTION;
 
 use proctor::elements::PolicySubscription;
-use proctor::phases::sense::{ClearinghouseSubscriptionMagnet, SubscriptionChannel};
 use proctor::phases::policy_phase::PolicyPhase;
+use proctor::phases::sense::{ClearinghouseSubscriptionMagnet, SubscriptionChannel};
 use proctor::SharedString;
 
 use crate::phases::eligibility::EligibilityOutcome;

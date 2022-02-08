@@ -7,7 +7,7 @@ use proctor::graph::stage::{ActorSourceApi, SourceStage, WithApi, WithMonitor};
 use prometheus::Registry;
 use settings_loader::SettingsLoader;
 use springline::engine::{http, Autoscaler};
-use springline::phases::act::PatchReplicas;
+use springline::phases::act::ScaleActuator;
 use springline::settings::{CliOptions, Settings};
 use springline::Result;
 use tracing::Subscriber;
@@ -28,7 +28,7 @@ fn main() -> Result<()> {
 
     start_pipeline(async move {
         let kube = springline::kubernetes::make_client(&settings.kubernetes).await?;
-        let patch_replicas = PatchReplicas::new(kube, &settings.action);
+        let patch_replicas = ScaleActuator::new(kube, &settings.action);
         let rx_action_monitor = patch_replicas.rx_monitor();
 
         let (monitor_feedback_sensor, tx_monitor_feedback) = make_monitor_sensor_and_api();

@@ -9,7 +9,7 @@ use futures_util::TryFutureExt;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
 use proctor::elements::{Telemetry, TelemetryValue};
-use proctor::error::{SenseError, ProctorError};
+use proctor::error::SenseError;
 use proctor::graph::stage::{self, Stage};
 use proctor::graph::{Inlet, Outlet, Port, SinkShape, SourceShape};
 use proctor::{AppData, ProctorResult, SharedString};
@@ -87,7 +87,7 @@ where
 
     #[tracing::instrument(Level = "info", skip(self))]
     async fn check(&self) -> ProctorResult<()> {
-        self.do_check().await.map_err(|err| ProctorError::SensePhase(err.into()))?;
+        self.do_check().await?;
         Ok(())
     }
 
@@ -474,9 +474,7 @@ pub static FLINK_VERTEX_SENSOR_TIME: Lazy<HistogramVec> = Lazy::new(|| {
 
 #[inline]
 fn start_flink_vertex_sensor_timer() -> HistogramTimer {
-    FLINK_VERTEX_SENSOR_TIME
-        .with_label_values(&[TASK_SCOPE])
-        .start_timer()
+    FLINK_VERTEX_SENSOR_TIME.with_label_values(&[TASK_SCOPE]).start_timer()
 }
 
 pub static FLINK_VERTEX_SENSOR_METRIC_PICKLIST_TIME: Lazy<HistogramVec> = Lazy::new(|| {

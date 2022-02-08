@@ -12,19 +12,19 @@ use settings_loader::{Environment, LoadingOptions, SettingsError, SettingsLoader
 use crate::phases::decision::DecisionTemplateData;
 use crate::phases::eligibility::EligibilityTemplateData;
 
-mod sensor_settings;
-mod engine_settings;
 mod action_settings;
+mod engine_settings;
 mod governance_settings;
 mod kubernetes_settings;
 mod plan_settings;
+mod sensor_settings;
 
-pub use sensor_settings::{SensorSettings, FlinkSettings};
-pub use engine_settings::EngineSettings;
 pub use action_settings::{ActionSettings, KubernetesWorkloadResource};
+pub use engine_settings::EngineSettings;
 pub use governance_settings::{GovernancePolicySettings, GovernanceRuleSettings, GovernanceSettings};
 pub use kubernetes_settings::{KubernetesSettings, LoadKubeConfig};
 pub use plan_settings::PlanSettings;
+pub use sensor_settings::{FlinkSettings, SensorSettings};
 
 pub type EligibilitySettings = PolicySettings<EligibilityTemplateData>;
 pub type DecisionSettings = PolicySettings<DecisionTemplateData>;
@@ -151,8 +151,8 @@ mod tests {
     use proctor::phases::sense::SensorSetting;
 
     use super::*;
-    use crate::phases::sense::flink::{Aggregation, FlinkScope, MetricOrder};
     use crate::phases::plan::{PerformanceRepositorySettings, PerformanceRepositoryType, SpikeSettings};
+    use crate::phases::sense::flink::{Aggregation, FlinkScope, MetricOrder};
 
     static SERIAL_TEST: Lazy<Mutex<()>> = Lazy::new(|| Default::default());
 

@@ -10,8 +10,8 @@ use proctor::elements::{
 use proctor::elements::{PolicySettings, QueryPolicy};
 use proctor::graph::stage::{self, ThroughStage, WithApi, WithMonitor};
 use proctor::graph::{Connect, Graph, Inlet, SinkShape, SourceShape};
-use proctor::phases::sense::{self, Sense, SubscriptionRequirements, TelemetrySubscription};
 use proctor::phases::policy_phase::PolicyPhase;
+use proctor::phases::sense::{self, Sense, SubscriptionRequirements, TelemetrySubscription};
 use proctor::{AppData, ProctorContext};
 use serde::de::DeserializeOwned;
 use springline::phases::decision::{make_decision_transform, DecisionResult, DECISION_DIRECTION};
@@ -74,8 +74,7 @@ where
         let tx_clearinghouse_api = builder.clearinghouse.tx_api();
 
         let context_channel =
-            sense::SubscriptionChannel::<C>::connect_subscription(context_subscription, (&mut builder).into())
-                .await?;
+            sense::SubscriptionChannel::<C>::connect_subscription(context_subscription, (&mut builder).into()).await?;
         let sense = builder.build_for_out_subscription(sensor_out_subscription).await?;
 
         let mut sink = stage::Fold::<_, Out, _>::new("sink", Vec::new(), |mut acc, item| {

@@ -1,7 +1,7 @@
 use prometheus::Registry;
 
 use crate::engine::monitor;
-use crate::phases::{sense, decision, eligibility, act, governance, metric_catalog, plan};
+use crate::phases::{act, decision, eligibility, governance, metric_catalog, plan, sense};
 use crate::Result;
 
 #[tracing::instrument(level = "info")]
@@ -58,12 +58,8 @@ pub fn register_metrics(registry: &Registry) -> Result<()> {
     registry.register(Box::new(sense::flink::FLINK_ACTIVE_JOBS_SENSOR_TIME.clone()))?;
     registry.register(Box::new(sense::flink::FLINK_QUERY_JOB_DETAIL_TIME.clone()))?;
     registry.register(Box::new(sense::flink::FLINK_VERTEX_SENSOR_TIME.clone()))?;
-    registry.register(Box::new(
-        sense::flink::FLINK_VERTEX_SENSOR_METRIC_PICKLIST_TIME.clone(),
-    ))?;
-    registry.register(Box::new(
-        sense::flink::FLINK_VERTEX_SENSOR_AVAIL_TELEMETRY_TIME.clone(),
-    ))?;
+    registry.register(Box::new(sense::flink::FLINK_VERTEX_SENSOR_METRIC_PICKLIST_TIME.clone()))?;
+    registry.register(Box::new(sense::flink::FLINK_VERTEX_SENSOR_AVAIL_TELEMETRY_TIME.clone()))?;
 
     registry.register(Box::new(eligibility::ELIGIBILITY_CTX_ALL_SINKS_HEALTHY.clone()))?;
     registry.register(Box::new(eligibility::ELIGIBILITY_CTX_TASK_LAST_FAILURE.clone()))?;

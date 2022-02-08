@@ -1,12 +1,46 @@
+use either::{Either, Left, Right};
 use once_cell::sync::Lazy;
+use proctor::error::MetricLabel;
 use proctor::graph::stage::{self, SinkStage};
+use proctor::SharedString;
 use prometheus::{Histogram, HistogramOpts, IntCounterVec, Opts};
+use thiserror::Error;
 
 use crate::phases::governance::GovernanceOutcome;
 
-mod patch_replicas;
+mod scale_actuator;
 
-pub use patch_replicas::{ActPhaseError, PatchReplicas};
+pub use scale_actuator::ScaleActuator;
+
+#[derive(Debug, Error)]
+pub enum ActError {
+    #[error("failure in kubernetes client: {0}")]
+    Kube(#[from] kube::Error),
+
+    #[error("failure in kubernetes api:{0}")]
+    KubeApi(#[from] kube::error::ErrorResponse),
+
+    #[error("failure occurred in the PatchReplicas inlet port: {0}")]
+    Port(#[from] proctor::error::PortError),
+
+    #[error("failure occurred while processing data in the PatchReplicas stage: {0}")]
+    Stage(#[from] anyhow::Error),
+}
+
+impl MetricLabel for ActError {
+    fn slug(&self) -> SharedString {
+        SharedString::Borrowed("actact")
+    }
+
+    fn next(&self) -> Either<SharedString, Box<&dyn MetricLabel>> {
+        match self {
+            Self::Kube(_) => Left("kubernetes".into()),
+            Self::KubeApi(e) => Left(format!("kubernetes::{}", e.reason).into()),
+            Self::Port(e) => Right(Box::new(e)),
+            Self::Stage(_) => Left("stage".into()),
+        }
+    }
+}
 
 mod protocol {
     use std::sync::Arc;

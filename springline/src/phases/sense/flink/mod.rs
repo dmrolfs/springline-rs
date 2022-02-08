@@ -1,7 +1,7 @@
 use cast_trait_object::DynCastExt;
 use once_cell::sync::Lazy;
 use proctor::elements::telemetry::{self, Telemetry, TelemetryValue};
-use proctor::error::{SenseError, MetricLabel, TelemetryError};
+use proctor::error::{MetricLabel, SenseError, TelemetryError};
 use proctor::graph::stage::{self, SourceStage, ThroughStage};
 use proctor::graph::{Connect, Graph, SinkShape, SourceShape, UniformFanInShape, UniformFanOutShape};
 use proctor::SharedString;
@@ -15,10 +15,10 @@ use std::sync::Arc;
 use url::Url;
 
 mod api_model;
+mod metric_order;
 mod scope_sensor;
 mod taskmanager_admin_sensor;
 mod vertex_sensor;
-mod metric_order;
 
 // #[allow(dead_code)]
 // mod generators;
