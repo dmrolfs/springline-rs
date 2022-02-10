@@ -779,7 +779,7 @@ mod tests {
             state: JobState::Running,
             start_time: Timestamp::new(1639156793, 312_000_000),
             end_time: None,
-            duration: Duration::from_millis(23079),
+            duration: Some(Duration::from_millis(23079)),
             max_parallelism: None,
             now: Timestamp::new(1639156816, 391_000_000),
             timestamps: maplit::hashmap! {
@@ -804,7 +804,7 @@ mod tests {
                     status: TaskState::Running,
                     start_time: Timestamp::new(1639156794, 188_000_000),
                     end_time: None,
-                    duration: Duration::from_millis(22203),
+                    duration: Some(Duration::from_millis(22203)),
                     tasks: maplit::hashmap! {
                         TaskState::Scheduled => 0,
                         TaskState::Finished => 0,
@@ -838,7 +838,7 @@ mod tests {
                     status: TaskState::Running,
                     start_time: Timestamp::new(1639156794, 193_000_000),
                     end_time: None,
-                    duration: Duration::from_millis(22198),
+                    duration: Some(Duration::from_millis(22198)),
                     tasks: maplit::hashmap! {
                         TaskState::Scheduled => 0,
                         TaskState::Finished => 0,

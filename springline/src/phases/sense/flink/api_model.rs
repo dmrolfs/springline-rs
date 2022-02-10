@@ -8,7 +8,7 @@ use once_cell::sync::Lazy;
 use proctor::elements::{Telemetry, TelemetryValue, Timestamp};
 use proctor::error::TelemetryError;
 use serde::{de, Deserialize, Deserializer, Serialize};
-use serde_with::{formats::Flexible, serde_as, DurationMilliSeconds};
+use serde_with::serde_as;
 
 use super::{Aggregation, MetricOrder};
 
@@ -244,8 +244,8 @@ pub struct JobDetail {
     pub start_time: Timestamp,
     #[serde(alias = "end-time", deserialize_with = "deserialize_opt_timestamp_millis")]
     pub end_time: Option<Timestamp>,
-    #[serde_as(as = "DurationMilliSeconds<String, Flexible>")]
-    pub duration: Duration,
+    #[serde(deserialize_with = "deserialize_opt_duration_millis")]
+    pub duration: Option<Duration>,
     #[serde(alias = "maxParallelism", deserialize_with = "deserialize_i64_as_opt_usize")]
     pub max_parallelism: Option<usize>,
     #[serde(deserialize_with = "deserialize_timestamp_millis")]
@@ -310,8 +310,8 @@ pub struct VertexDetail {
     pub start_time: Timestamp,
     #[serde(alias = "end-time", deserialize_with = "deserialize_opt_timestamp_millis")]
     pub end_time: Option<Timestamp>,
-    #[serde_as(as = "DurationMilliSeconds<String, Flexible>")]
-    pub duration: Duration,
+    #[serde(deserialize_with = "deserialize_opt_duration_millis")]
+    pub duration: Option<Duration>,
     pub tasks: HashMap<TaskState, usize>,
     pub metrics: HashMap<String, TelemetryValue>,
 }
@@ -331,6 +331,15 @@ where
     let millis = i64::deserialize(deserializer)?;
     let result = if millis < 0 { None } else { Some(Timestamp::from_milliseconds(millis)) };
     Ok(result)
+}
+
+fn deserialize_opt_duration_millis<'de, D>(deserializer: D) -> Result<Option<Duration>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let millis = i64::deserialize(deserializer)?;
+    let duration = if millis < 0 { None } else { Some(Duration::from_millis(millis as u64)) };
+    Ok(duration)
 }
 
 fn deserialize_i64_as_opt_usize<'de, D>(deserializer: D) -> Result<Option<usize>, D::Error>
@@ -537,7 +546,7 @@ mod tests {
                 status: TaskState::Running,
                 start_time: Timestamp::new(1638989054, 310 * 1_000_000),
                 end_time: None,
-                duration: Duration::from_millis(35010565),
+                duration: Some(Duration::from_millis(35010565)),
                 tasks: maplit::hashmap! {
                     TaskState::Scheduled => 0,
                     TaskState::Finished => 0,
@@ -713,7 +722,7 @@ mod tests {
                 state: JobState::Running,
                 start_time: Timestamp::new(1638989050, 332_000_000),
                 end_time: None,
-                duration: Duration::from_millis(35014543),
+                duration: Some(Duration::from_millis(35014543)),
                 max_parallelism: None,
                 now: Timestamp::new(1639024064, 875_000_000),
                 timestamps: maplit::hashmap! {
@@ -738,7 +747,7 @@ mod tests {
                         status: TaskState::Running,
                         start_time: Timestamp::new(1638989054, 310 * 1_000_000),
                         end_time: None,
-                        duration: Duration::from_millis(35010565),
+                        duration: Some(Duration::from_millis(35010565)),
                         tasks: maplit::hashmap! {
                             TaskState::Scheduled => 0,
                             TaskState::Finished => 0,
@@ -772,7 +781,7 @@ mod tests {
                         status: TaskState::Running,
                         start_time: Timestamp::new(1638989054, 320 * 1_000_000),
                         end_time: None,
-                        duration: Duration::from_millis(35010555),
+                        duration: Some(Duration::from_millis(35010555)),
                         tasks: maplit::hashmap! {
                             TaskState::Scheduled => 0,
                             TaskState::Finished => 0,
