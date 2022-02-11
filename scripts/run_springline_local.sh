@@ -18,7 +18,9 @@ docker run -d -it \
   --network host \
   springline:latest
 
-#  --add-host host.springline:host-gateway \ #todo: enable host networking?? point to host-gateway, other?
+
+#todo: enable host networking?? point to host-gateway, other?
+#  --add-host host.springline:host-gateway \
 #  --mount type=bind,source="${RESOURCES}",target="/app/resources" \
 #  --entrypoint /bin/bash \
 #  --add-host host.docker.internal:host-gateway \

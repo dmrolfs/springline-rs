@@ -211,7 +211,7 @@ where
 
         let k8s_get_scale_span = tracing::info_span!(
             "Kubernetes Admin Server",
-            phase=%"actact",
+            phase=%"act",
             action=%"get_scale",
             correlation=%plan.correlation()
         );
@@ -225,7 +225,7 @@ where
 
         let k8s_patch_scale_span = tracing::info_span!(
             "Kubernetes Admin Server",
-            phase=%"actact",
+            phase=%"act",
             action=%"patch_scale",
             correlation=%plan.correlation()
         );
@@ -252,7 +252,7 @@ where
 
     #[inline]
     async fn do_close(mut self: Box<Self>) -> Result<(), ActError> {
-        tracing::trace!("closing patch replicas actact phase inlet.");
+        tracing::trace!("closing patch replicas act phase inlet.");
         self.inlet.close().await;
         Ok(())
     }
