@@ -71,7 +71,7 @@ pub(crate) static PIPELINE_CYCLE_TIME: Lazy<Histogram> = Lazy::new(|| {
             "pipeline_cycle_time",
             "cycle time processing for act actions taken on telemetry from receipt in seconds",
         )
-        .buckets(vec![1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 7.5, 10.0]),
+        .buckets(vec![0.1, 0.1, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.75, 1.0]),
     )
     .expect("failed creating pipeline_cycle_time metric")
 });
