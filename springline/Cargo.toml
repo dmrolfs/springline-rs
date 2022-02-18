@@ -37,27 +37,27 @@ axum = "0.4.5"
 axum-debug = "0.3.3"
 cast_trait_object = "0.1.3"
 chrono = "0.4.19"
-clap = { version = "3.0.14", features = ["derive"] }
+clap = { version = "3.1.0", features = ["derive"] }
 # until ron feature and builder fns in *published* config-rs
 config = { git = "https://github.com/dmrolfs/config-rs" } # until ron feature and builder fns in *published* config-rs
 #config = { version = "^0.11", default_features = true, features = ["ron"] }
 #config = { version = "^0.11" }
 console = "0.15.0"
-console-subscriber = "0.1.1"
-dashmap = "5.0.0"
-dialoguer = { version = "0.9.0", features = ["fuzzy-select"] }
+console-subscriber = "0.1.2"
+dashmap = "5.1.0"
+dialoguer = { version = "0.10.0", features = ["fuzzy-select"] }
 either = { version = "1.6.1", features = ["serde"] }
 enum-display-derive = "0.1.1"
 enumflags2 = "0.7.3"
 frunk = "0.4.0"
-futures = "0.3.19"
-futures-util = "0.3.19"
+futures = "0.3.21"
+futures-util = "0.3.21"
 fuzzy-matcher = "0.3.7"
 heck = "0.4.0"
 http = "0.2.6"
-hyper = { version = "0.14.16", features = ["server", "tcp", "stream"] }
+hyper = { version = "0.14.17", features = ["server", "tcp", "stream"] }
 itertools = "0.10.3"
-kube = { version = "0.68.0", features = ["oauth", "client", "rustls-tls"] }
+kube = { version = "0.69.1", features = ["oauth", "client", "rustls-tls"] }
 k8s-openapi = "0.14.0"
 maplit = "1.0.2"
 nalgebra = "0.30.1"
@@ -75,21 +75,21 @@ reqwest-retry = "0.1.3"
 ron = "0.7.0"
 secrecy = "0.8.0"
 serde = "1.0.136"
-serde_json = "1.0.78"
+serde_json = "1.0.79"
 serde_repr = "0.1.7"
-serde_with = { version = "1.11.0", features = ["chrono", "json", "macros"] }
+serde_with = { version = "1.12.0", features = ["chrono", "json", "macros"] }
 serde-transcode = "1.1.1"
 splines = "4.0.3"
 tailcall = "0.1.6"
 thiserror = "1.0.30"
-tokio = { version = "1.16.1", features = ["full", "net", "tracing"] }
-tower = { version = "0.4.11", features = ["timeout", "limit"] }
-tower-http = { version = "0.2.1", features = ["trace"] }
-tracing = "0.1.29"
+tokio = { version = "1.17.0", features = ["full", "net", "tracing"] }
+tower = { version = "0.4.12", features = ["timeout", "limit"] }
+tower-http = { version = "0.2.2", features = ["trace"] }
+tracing = "0.1.31"
 tracing-bunyan-formatter = "0.3.2"
 tracing-flame = "0.2.0"
 tracing-futures = "0.2.5"
-tracing-subscriber = { version = "0.3.7", features = ["env-filter", "json"] }
+tracing-subscriber = { version = "0.3.9", features = ["env-filter", "json"] }
 trim-margin = "0.1.0"
 url = { version = "2.2.2", features = ["serde"] }
 

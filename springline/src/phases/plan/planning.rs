@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use proctor::error::PlanError;
-use proctor::graph::Outlet;
+use proctor::graph::{Inlet, Outlet};
 use proctor::phases::plan::Planning;
 
 use crate::phases::decision::DecisionResult;
@@ -13,6 +13,7 @@ use crate::phases::plan::performance_history::PerformanceHistory;
 use crate::phases::plan::performance_repository::PerformanceRepository;
 use crate::phases::plan::PLANNING_FORECASTED_WORKLOAD;
 use crate::phases::MetricCatalog;
+use crate::phases::plan::context::PlanningContext;
 
 // todo: this needs to be worked into Plan stage...  Need to determine best design
 // todo: pub type FlinkPlanningApi = mpsc::UnboundedSender<FlinkPlanningCmd>;
@@ -30,6 +31,7 @@ pub struct FlinkPlanning<F: WorkloadForecastBuilder> {
     forecast_calculator: ForecastCalculator<F>,
     performance_history: PerformanceHistory,
     performance_repository: Box<dyn PerformanceRepository>,
+    //WORK HERE: context_inlet: Inlet<PlanningContext>,
     outlet: Option<Outlet<ScalePlan>>,
     /* todo: tx_api: mpsc::UnboundedSender<FlinkPlanningCmd>,
      * todo: rx_api: mpsc::UnboundedReceiver<FlinkPlanningCmd>, */
@@ -37,8 +39,13 @@ pub struct FlinkPlanning<F: WorkloadForecastBuilder> {
 
 impl<F: WorkloadForecastBuilder> FlinkPlanning<F> {
     pub async fn new(
-        planning_name: &str, min_scaling_step: usize, restart: Duration, max_catch_up: Duration,
-        recovery_valid: Duration, forecast_builder: F, performance_repository: Box<dyn PerformanceRepository>,
+        planning_name: &str,
+        min_scaling_step: usize,
+        restart: Duration,
+        max_catch_up: Duration,
+        recovery_valid: Duration,
+        forecast_builder: F,
+        performance_repository: Box<dyn PerformanceRepository>,
     ) -> Result<Self, PlanError> {
         performance_repository.check().await?;
 

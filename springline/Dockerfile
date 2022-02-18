@@ -26,9 +26,9 @@ FROM debian:bullseye-slim AS runtime
 
 WORKDIR /app
 RUN apt-get update \
-#    && apt-get install -y --no-install-recommends openssl \
+#   python is only needed for the access server client
     && apt-get install -y python3.9 python3-pip \
-    && apt-get install -y curl \
+#    && apt-get install -y curl \
     # Clean up
     && apt-get autoremove -y \
     && apt-get clean -y \
@@ -54,7 +54,7 @@ USER appuser:appuser
 
 COPY --from=builder ["/app/target/release/springline", "springline"]
 
-#COPY ["./resources", "resources"]
+COPY ["./resources", "resources"]
 ENV APP_ENVIRONMENT production
 
 
@@ -65,4 +65,4 @@ ENV POLAR_LOG 1
 
 
 ENTRYPOINT ["./springline"]
-#CMD ["-s", "resources/secrets.yaml"]
+#CMD ["-s", "/secrets/secret.yaml"]

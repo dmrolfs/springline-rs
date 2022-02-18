@@ -16,12 +16,17 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
 mod benchmark;
+mod context;
 mod forecast;
 mod model;
 mod performance_history;
 mod performance_repository;
 mod planning;
 
+pub use context::{
+    PLANNING_CTX_FORECASTING_MAX_CATCH_UP_SECS, PLANNING_CTX_FORECASTING_RECOVERY_VALID_SECS,
+    PLANNING_CTX_FORECASTING_RESTART_SECS, PLANNING_CTX_MIN_SCALING_STEP,
+};
 pub use forecast::{LeastSquaresWorkloadForecastBuilder, SpikeSettings, WorkloadForecastBuilder, WorkloadMeasurement};
 pub use model::ScalePlan;
 pub use performance_repository::{PerformanceRepositorySettings, PerformanceRepositoryType};
@@ -68,6 +73,7 @@ pub async fn make_plan_phase(
 ) -> Result<PlanningPhase> {
     let name: SharedString = "planning".into();
     let data_channel = do_connect_plan_data(name.clone(), clearinghouse_magnet).await?;
+    // WORK HERE add magnet
     let flink_planning = do_make_planning_strategy(name.as_ref(), settings).await?;
     let plan = Box::new(Plan::new(name.into_owned(), flink_planning));
 
@@ -113,6 +119,7 @@ async fn do_connect_plan_data(
 
 #[tracing::instrument(level = "info")]
 async fn do_make_planning_strategy(name: &str, plan_settings: &PlanSettings) -> Result<PlanningStrategy> {
+    // WORK HERE add magnet
     let planning = PlanningStrategy::new(
         name,
         plan_settings.min_scaling_step as usize,

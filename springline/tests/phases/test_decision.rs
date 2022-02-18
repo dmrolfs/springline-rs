@@ -73,6 +73,7 @@ where
         );
         let tx_clearinghouse_api = builder.clearinghouse.tx_api();
 
+        tracing::info!("CONNECT CONTEXT SUBSCRIPTION...");
         let context_channel =
             sense::SubscriptionChannel::<C>::connect_subscription(context_subscription, (&mut builder).into()).await?;
         let sense = builder.build_for_out_subscription(sensor_out_subscription).await?;
@@ -278,6 +279,7 @@ async fn test_decision_carry_policy_result() -> anyhow::Result<()> {
     )
     .await?;
 
+    tracing::info!("PUSHING CONTEXT...");
     flow.push_context(maplit::hashmap! {
         "all_sinks_healthy" => true.to_telemetry(),
         MC_CLUSTER__NR_ACTIVE_JOBS => 1.to_telemetry(),

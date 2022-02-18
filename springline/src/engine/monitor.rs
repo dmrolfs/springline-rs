@@ -82,6 +82,7 @@ impl Monitor {
             let span = tracing::info_span!("monitor event cycle");
             let _span_guard = span.enter();
 
+            // WORK HERE To add act events and context fields -- see notebook
             tokio::select! {
                 Ok(e) = self.rx_eligibility_monitor.recv() => Self::handle_eligibility_event(e, &mut loaded),
                 Ok(e) = self.rx_decision_monitor.recv() => Self::handle_decision_event(e, &mut loaded),
