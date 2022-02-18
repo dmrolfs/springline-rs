@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use super::WorkloadForecast;
 use crate::phases::plan::forecast::regression::{LinearRegression, QuadraticRegression};
-use crate::phases::plan::forecast::WorkloadForecastBuilder;
+use crate::phases::plan::forecast::Forecaster;
 use crate::phases::plan::forecast::WorkloadMeasurement;
 
 #[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
@@ -32,7 +32,7 @@ impl Default for SpikeSettings {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct LeastSquaresWorkloadForecastBuilder {
+pub struct LeastSquaresWorkloadForecaster {
     window_size: usize,
     spike_length_threshold: usize,
     data: VecDeque<Point>,
@@ -42,13 +42,13 @@ pub struct LeastSquaresWorkloadForecastBuilder {
 
 const OBSERVATION_WINDOW_SIZE: usize = 20;
 
-impl Default for LeastSquaresWorkloadForecastBuilder {
+impl Default for LeastSquaresWorkloadForecaster {
     fn default() -> Self {
         Self::new(OBSERVATION_WINDOW_SIZE, SpikeSettings::default())
     }
 }
 
-impl LeastSquaresWorkloadForecastBuilder {
+impl LeastSquaresWorkloadForecaster {
     pub fn new(window: usize, spike_settings: SpikeSettings) -> Self {
         Self {
             window_size: window,
@@ -88,7 +88,7 @@ impl LeastSquaresWorkloadForecastBuilder {
     }
 }
 
-impl WorkloadForecastBuilder for LeastSquaresWorkloadForecastBuilder {
+impl Forecaster for LeastSquaresWorkloadForecaster {
     fn observations_needed(&self) -> (usize, usize) {
         (self.window_size - self.data.len(), self.window_size)
     }
@@ -119,7 +119,7 @@ impl WorkloadForecastBuilder for LeastSquaresWorkloadForecastBuilder {
         self.spike_length = 0;
     }
 
-    fn build_forecast(&mut self) -> Result<Box<dyn WorkloadForecast>, PlanError> {
+    fn forecast(&mut self) -> Result<Box<dyn WorkloadForecast>, PlanError> {
         if !self.have_enough_data() {
             return Err(PlanError::NotEnoughData { supplied: self.data.len(), need: self.window_size });
         }
@@ -131,7 +131,7 @@ impl WorkloadForecastBuilder for LeastSquaresWorkloadForecastBuilder {
     }
 }
 
-impl LeastSquaresWorkloadForecastBuilder {
+impl LeastSquaresWorkloadForecaster {
     pub fn have_enough_data(&self) -> bool {
         self.window_size <= self.data.len()
     }
@@ -140,28 +140,33 @@ impl LeastSquaresWorkloadForecastBuilder {
     fn do_select_model(data: &[Point]) -> Box<dyn WorkloadForecast> {
         let linear = LinearRegression::from_data(data);
         let linear_r = linear.correlation_coefficient;
-        if let Some(quadratic) = QuadraticRegression::from_data(data) {
-            let quadratic_r = quadratic.correlation_coefficient;
 
-            let model: Box<dyn WorkloadForecast> = match (linear_r, quadratic_r) {
-                (_, q_r) if q_r.is_nan() => Box::new(linear),
-                (l_r, _) if l_r.is_nan() => Box::new(quadratic),
-                (l_r, q_r) if l_r < q_r => Box::new(quadratic),
-                _ => Box::new(linear),
-            };
+        QuadraticRegression::from_data(data).map_or_else(
+            || {
+                tracing::debug!(
+                    "failed to calculate the quadratic model due to a matrix decomposition issue - using linear model."
+                );
+                let model: Box<dyn WorkloadForecast> = Box::new(linear);
+                model
+            },
+            |quadratic| {
+                let quadratic_r = quadratic.correlation_coefficient;
 
-            tracing::debug!(%linear_r, %quadratic_r, "selected workload prediction model: {}", model.name());
-            model
-        } else {
-            tracing::debug!(
-                "failed to calculate the quadratic model due to a matrix decomposition issue - using linear model."
-            );
-            Box::new(linear)
-        }
+                let model: Box<dyn WorkloadForecast> = match (linear_r, quadratic_r) {
+                    (_, q_r) if q_r.is_nan() => Box::new(linear),
+                    (l_r, _) if l_r.is_nan() => Box::new(quadratic),
+                    (l_r, q_r) if l_r < q_r => Box::new(quadratic),
+                    _ => Box::new(linear),
+                };
+
+                tracing::debug!(%linear_r, %quadratic_r, "selected workload prediction model: {}", model.name());
+                model
+            },
+        )
     }
 }
 
-impl std::ops::Add<WorkloadMeasurement> for LeastSquaresWorkloadForecastBuilder {
+impl std::ops::Add<WorkloadMeasurement> for LeastSquaresWorkloadForecaster {
     type Output = Self;
 
     fn add(mut self, rhs: WorkloadMeasurement) -> Self::Output {
@@ -306,7 +311,7 @@ mod tests {
                 length_threshold: SPIKE_LENGTH_THRESHOLD,
             };
 
-            let mut forecast_builder = LeastSquaresWorkloadForecastBuilder::new(30, spike_settings);
+            let mut forecast_builder = LeastSquaresWorkloadForecaster::new(30, spike_settings);
 
             for (pt, expected) in test_data.into_iter() {
                 let actual = forecast_builder.assess_spike(pt);
@@ -404,7 +409,7 @@ mod tests {
             (4., 11.97),
         ];
 
-        let model_1 = LeastSquaresWorkloadForecastBuilder::do_select_model(&data_1);
+        let model_1 = LeastSquaresWorkloadForecaster::do_select_model(&data_1);
         assert_eq!(model_1.name(), "QuadraticRegression");
 
         let data_2 = vec![
@@ -420,7 +425,7 @@ mod tests {
             (10., 10.),
         ];
 
-        let model_2 = LeastSquaresWorkloadForecastBuilder::do_select_model(&data_2);
+        let model_2 = LeastSquaresWorkloadForecaster::do_select_model(&data_2);
         assert_eq!(model_2.name(), "LinearRegression");
 
         let data_3 = vec![
@@ -436,7 +441,7 @@ mod tests {
             (10., 0.),
         ];
 
-        let model_3 = LeastSquaresWorkloadForecastBuilder::do_select_model(&data_3);
+        let model_3 = LeastSquaresWorkloadForecaster::do_select_model(&data_3);
         assert_eq!(model_3.name(), "LinearRegression");
 
         let data_4 = vec![
@@ -452,7 +457,7 @@ mod tests {
             (10., 17.),
         ];
 
-        let model_4 = LeastSquaresWorkloadForecastBuilder::do_select_model(&data_4);
+        let model_4 = LeastSquaresWorkloadForecaster::do_select_model(&data_4);
         assert_eq!(model_4.name(), "LinearRegression");
 
         Ok(())
@@ -514,7 +519,7 @@ mod tests {
             length_threshold: SPIKE_LENGTH_THRESHOLD,
         };
 
-        let mut forecast_builder = LeastSquaresWorkloadForecastBuilder::new(20, spike_settings);
+        let mut forecast_builder = LeastSquaresWorkloadForecaster::new(20, spike_settings);
 
         for (i, (workload, expected)) in workload_expected.into_iter().enumerate() {
             let ts = Utc.timestamp(now + (i as i64) * step, 0);
@@ -529,7 +534,7 @@ mod tests {
             let measurement = make_measurement(ts, workload);
             forecast_builder.add_observation(measurement);
 
-            let forecast = forecast_builder.build_forecast();
+            let forecast = forecast_builder.forecast();
             if let Some(e) = expected {
                 let forecast = assert_ok!(forecast);
                 let actual = assert_ok!(forecast.workload_at(ts.into()));
@@ -546,7 +551,7 @@ mod tests {
 
     #[test]
     fn test_forecast_window_size_is_capped() {
-        let mut forecast_builder = LeastSquaresWorkloadForecastBuilder::new(
+        let mut forecast_builder = LeastSquaresWorkloadForecaster::new(
             13,
             SpikeSettings {
                 std_deviation_threshold: 5.,

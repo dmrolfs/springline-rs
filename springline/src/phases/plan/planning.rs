@@ -7,13 +7,13 @@ use proctor::graph::{Inlet, Outlet};
 use proctor::phases::plan::Planning;
 
 use crate::phases::decision::DecisionResult;
-use crate::phases::plan::forecast::{ForecastCalculator, WorkloadForecastBuilder};
+use crate::phases::plan::context::PlanningContext;
+use crate::phases::plan::forecast::{ForecastCalculator, Forecaster};
 use crate::phases::plan::model::ScalePlan;
 use crate::phases::plan::performance_history::PerformanceHistory;
 use crate::phases::plan::performance_repository::PerformanceRepository;
 use crate::phases::plan::PLANNING_FORECASTED_WORKLOAD;
 use crate::phases::MetricCatalog;
-use crate::phases::plan::context::PlanningContext;
 
 // todo: this needs to be worked into Plan stage...  Need to determine best design
 // todo: pub type FlinkPlanningApi = mpsc::UnboundedSender<FlinkPlanningCmd>;
@@ -25,7 +25,7 @@ use crate::phases::plan::context::PlanningContext;
 // todo: }
 
 #[derive(Debug)]
-pub struct FlinkPlanning<F: WorkloadForecastBuilder> {
+pub struct FlinkPlanning<F: Forecaster> {
     name: String,
     min_scaling_step: usize,
     forecast_calculator: ForecastCalculator<F>,
@@ -37,15 +37,10 @@ pub struct FlinkPlanning<F: WorkloadForecastBuilder> {
      * todo: rx_api: mpsc::UnboundedReceiver<FlinkPlanningCmd>, */
 }
 
-impl<F: WorkloadForecastBuilder> FlinkPlanning<F> {
+impl<F: Forecaster> FlinkPlanning<F> {
     pub async fn new(
-        planning_name: &str,
-        min_scaling_step: usize,
-        restart: Duration,
-        max_catch_up: Duration,
-        recovery_valid: Duration,
-        forecast_builder: F,
-        performance_repository: Box<dyn PerformanceRepository>,
+        planning_name: &str, min_scaling_step: usize, restart: Duration, max_catch_up: Duration,
+        recovery_valid: Duration, forecast_builder: F, performance_repository: Box<dyn PerformanceRepository>,
     ) -> Result<Self, PlanError> {
         performance_repository.check().await?;
 
@@ -171,7 +166,7 @@ impl<F: WorkloadForecastBuilder> FlinkPlanning<F> {
 }
 
 #[async_trait]
-impl<F: WorkloadForecastBuilder> Planning for FlinkPlanning<F> {
+impl<F: Forecaster> Planning for FlinkPlanning<F> {
     type Decision = DecisionResult<MetricCatalog>;
     type Observation = super::PlanningMeasurement;
     type Out = ScalePlan;
@@ -227,9 +222,9 @@ mod tests {
     use crate::phases::plan::{PerformanceRepositorySettings, MINIMAL_CLUSTER_SIZE};
     use crate::phases::{ClusterMetrics, FlowMetrics, JobHealthMetrics};
 
-    type TestPlanning = FlinkPlanning<LeastSquaresWorkloadForecastBuilder>;
+    type TestPlanning = FlinkPlanning<LeastSquaresWorkloadForecaster>;
     #[allow(dead_code)]
-    type Calculator = ForecastCalculator<LeastSquaresWorkloadForecastBuilder>;
+    type Calculator = ForecastCalculator<LeastSquaresWorkloadForecaster>;
 
     const STEP: i64 = 15;
     const NOW: i64 = 1624061766 + (30 * STEP);
@@ -262,7 +257,7 @@ mod tests {
         planning_name: &str, outlet: Outlet<ScalePlan>, signal_type: SignalType,
     ) -> anyhow::Result<Arc<Mutex<TestPlanning>>> {
         let mut calc = ForecastCalculator::new(
-            LeastSquaresWorkloadForecastBuilder::new(20, SpikeSettings { influence: 0.25, ..SpikeSettings::default() }),
+            LeastSquaresWorkloadForecaster::new(20, SpikeSettings { influence: 0.25, ..SpikeSettings::default() }),
             Duration::from_secs(2 * 60),  // restart
             Duration::from_secs(13 * 60), // max_catch_up
             Duration::from_secs(5 * 60),  // valid_offset

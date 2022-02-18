@@ -27,7 +27,7 @@ pub use context::{
     PLANNING_CTX_FORECASTING_MAX_CATCH_UP_SECS, PLANNING_CTX_FORECASTING_RECOVERY_VALID_SECS,
     PLANNING_CTX_FORECASTING_RESTART_SECS, PLANNING_CTX_MIN_SCALING_STEP,
 };
-pub use forecast::{LeastSquaresWorkloadForecastBuilder, SpikeSettings, WorkloadForecastBuilder, WorkloadMeasurement};
+pub use forecast::{Forecaster, LeastSquaresWorkloadForecaster, SpikeSettings, WorkloadMeasurement};
 pub use model::ScalePlan;
 pub use performance_repository::{PerformanceRepositorySettings, PerformanceRepositoryType};
 pub use planning::FlinkPlanning;
@@ -36,7 +36,7 @@ pub use performance_repository::make_performance_repository;
 
 const MINIMAL_CLUSTER_SIZE: usize = 1;
 
-pub type PlanningStrategy = planning::FlinkPlanning<forecast::LeastSquaresWorkloadForecastBuilder>;
+pub type PlanningStrategy = planning::FlinkPlanning<forecast::LeastSquaresWorkloadForecaster>;
 pub type PlanningOutcome = <PlanningStrategy as Planning>::Out;
 pub type PlanningPhase = (Box<Plan<PlanningStrategy>>, SubscriptionChannel<PlanningMeasurement>);
 pub type PlanEvent = proctor::phases::plan::PlanEvent<PlanningMeasurement, DecisionResult<MetricCatalog>, ScalePlan>;
@@ -126,7 +126,7 @@ async fn do_make_planning_strategy(name: &str, plan_settings: &PlanSettings) -> 
         plan_settings.restart,
         plan_settings.max_catch_up,
         plan_settings.recovery_valid,
-        forecast::LeastSquaresWorkloadForecastBuilder::new(plan_settings.window, plan_settings.spike),
+        forecast::LeastSquaresWorkloadForecaster::new(plan_settings.window, plan_settings.spike),
         performance_repository::make_performance_repository(&plan_settings.performance_repository)?,
     )
     .await?;

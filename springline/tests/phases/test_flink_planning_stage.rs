@@ -15,8 +15,8 @@ use proctor::ProctorResult;
 use springline::phases::decision::DecisionResult;
 use springline::phases::plan::{make_performance_repository, PlanningMeasurement};
 use springline::phases::plan::{
-    FlinkPlanning, LeastSquaresWorkloadForecastBuilder, PerformanceRepositorySettings, PerformanceRepositoryType,
-    ScalePlan, SpikeSettings,
+    FlinkPlanning, LeastSquaresWorkloadForecaster, PerformanceRepositorySettings, PerformanceRepositoryType, ScalePlan,
+    SpikeSettings,
 };
 use springline::phases::{ClusterMetrics, FlowMetrics, JobHealthMetrics, MetricCatalog};
 use tokio::sync::oneshot;
@@ -28,8 +28,8 @@ type InData = PlanningMeasurement;
 type InDecision = DecisionResult<MetricCatalog>;
 type Out = ScalePlan;
 #[allow(dead_code)]
-type ForecastBuilder = LeastSquaresWorkloadForecastBuilder;
-type TestPlanning = FlinkPlanning<LeastSquaresWorkloadForecastBuilder>;
+type ForecastBuilder = LeastSquaresWorkloadForecaster;
+type TestPlanning = FlinkPlanning<LeastSquaresWorkloadForecaster>;
 type TestStage = Plan<TestPlanning>;
 
 lazy_static! {
@@ -251,7 +251,7 @@ async fn test_flink_planning_linear() {
     let max_catch_up_duration = Duration::from_secs(13 * 60);
     let recovery_valid_offset = Duration::from_secs(5 * 60);
 
-    let forecast_builder = LeastSquaresWorkloadForecastBuilder::new(20, SpikeSettings::default());
+    let forecast_builder = LeastSquaresWorkloadForecaster::new(20, SpikeSettings::default());
     let performance_repository = assert_ok!(make_performance_repository(&PerformanceRepositorySettings {
         storage: PerformanceRepositoryType::Memory,
         storage_path: None,
@@ -360,7 +360,7 @@ async fn test_flink_planning_sine() {
     let max_catch_up_duration = Duration::from_secs(13 * 60);
     let recovery_valid_offset = Duration::from_secs(5 * 60);
 
-    let forecast_builder = LeastSquaresWorkloadForecastBuilder::new(20, SpikeSettings::default());
+    let forecast_builder = LeastSquaresWorkloadForecaster::new(20, SpikeSettings::default());
     let performance_repository = assert_ok!(make_performance_repository(&PerformanceRepositorySettings {
         storage: PerformanceRepositoryType::Memory,
         storage_path: None,
