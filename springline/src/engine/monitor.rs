@@ -240,9 +240,10 @@ impl Monitor {
                     let now: chrono::DateTime<Utc> = now.into();
                     let now_rep = format!("{}", now.format(FORMAT));
                     let telemetry = maplit::hashmap! { crate::phases::eligibility::CLUSTER__LAST_DEPLOYMENT.to_string() => now_rep.into(), };
-                    let (cmd, rx) = ActorSourceCmd::push(telemetry.into());
-
-                    match tx.send(cmd) {
+                    match ActorSourceCmd::push(&tx, telemetry.into()).await {
+                        // let (cmd, rx) = ActorSourceCmd::push(telemetry.into());
+                        //
+                        // match tx.send(cmd) {
                         Ok(_) => {
                             tracing::info!(scale_deployment_timestamp=?now, "notify springline of scale deployment");
                         },
@@ -251,9 +252,9 @@ impl Monitor {
                         },
                     }
 
-                    if let Err(error) = rx.await {
-                        tracing::error!(?error, "scale deployment notification failed at clearinghouse")
-                    }
+                    // if let Err(error) = rx.await {
+                    //     tracing::error!(?error, "scale deployment notification failed at clearinghouse")
+                    // }
                 }
             },
             ActEvent::PlanFailed { plan, error_metric_label } => {

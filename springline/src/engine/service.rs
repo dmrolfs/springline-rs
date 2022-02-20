@@ -14,13 +14,13 @@ mod protocol {
     use axum::body::{self, BoxBody};
     use axum::http::{Response, StatusCode};
     use axum::response::IntoResponse;
-    use either::Left;
+    use either::{Left, Right};
     use enum_display_derive::Display;
     use itertools::Either;
     use once_cell::sync::Lazy;
     use proctor::error::MetricLabel;
-    use proctor::graph::stage::tick::TickMsg;
-    use proctor::phases::sense::{ClearinghouseCmd, ClearinghouseSnapshot};
+    use proctor::graph::stage::tick;
+    use proctor::phases::sense::ClearinghouseSnapshot;
     use proctor::SharedString;
     use regex::RegexSet;
     use serde::Deserialize;
@@ -85,10 +85,10 @@ mod protocol {
         Prometheus(#[from] prometheus::Error),
 
         #[error("Could not send command to telemetry clearinghouse: {0}")]
-        ClearinghouseSend(#[from] mpsc::error::SendError<ClearinghouseCmd>),
+        Clearinghouse(#[from] proctor::error::SenseError),
 
         #[error("Could not send command to flink sensor: {0}")]
-        FlinkSensorSend(#[from] mpsc::error::SendError<TickMsg>),
+        FlinkSensorSend(#[from] mpsc::error::SendError<tick::TickCmd>),
 
         #[error("Could not receive response from underlying API handler: {0}")]
         ApiHandlerRecv(#[from] oneshot::error::RecvError),
@@ -118,7 +118,16 @@ mod protocol {
         }
 
         fn next(&self) -> Either<SharedString, Box<&dyn MetricLabel>> {
-            Left("engine".into())
+            match self {
+                Self::Bootstrap(_) => Left("bootstrap".into()),
+                Self::EngineSend(_) => Left("command".into()),
+                Self::Prometheus(_) => Left("prometheus".into()),
+                Self::Clearinghouse(e) => Right(Box::new(e)),
+                Self::FlinkSensorSend(_) => Left("sensor".into()),
+                Self::ApiHandlerRecv(_) => Left("handler::response".into()),
+                Self::IO(_) => Left("io".into()),
+                Self::Handler(_) => Left("handler".into()),
+            }
         }
     }
 
@@ -284,19 +293,28 @@ impl<'r> Service<'r> {
     async fn get_clearinghouse_snapshot(
         &self, subscription: &Option<String>,
     ) -> Result<ClearinghouseSnapshot, EngineApiError> {
-        let (cmd, rx) = subscription
-            .as_ref()
-            .map(ClearinghouseCmd::get_subscription_snapshot)
-            .unwrap_or_else(ClearinghouseCmd::get_clearinghouse_snapshot);
-        let _ = self.tx_clearinghouse_api.send(cmd)?;
-        let snapshot = rx.await?;
-        Ok(snapshot)
+        let snapshot = match subscription.as_ref() {
+            Some(s) => ClearinghouseCmd::get_subscription_snapshot(&self.tx_clearinghouse_api, s).await,
+            None => ClearinghouseCmd::get_clearinghouse_snapshot(&self.tx_clearinghouse_api).await,
+        };
+
+        snapshot.map_err(|err| err.into())
+        // let (cmd, rx) = subscription
+        //     .as_ref()
+        //     .map(ClearinghouseCmd::get_subscription_snapshot)
+        //     .unwrap_or_else(ClearinghouseCmd::get_clearinghouse_snapshot);
+        // let _ = self.tx_clearinghouse_api.send(cmd)?;
+        // let snapshot = rx.await?;
+        // Ok(snapshot)
     }
 
     #[tracing::instrument(level = "info", skip(self))]
     async fn stop_flink_sensor(&self) -> Result<(), EngineApiError> {
-        let (cmd, rx) = tick::TickMsg::stop();
-        self.tx_stop_flink_sensor.send(cmd)?;
-        rx.await?.map_err(|err| EngineApiError::Handler(err.into()))
+        tick::TickCmd::stop(&self.tx_stop_flink_sensor)
+            .await
+            .map_err(|err| EngineApiError::Handler(err.into()))
+        // let (cmd, rx) = tick::TickMsg::stop();
+        // self.tx_stop_flink_sensor.send(cmd)?;
+        // rx.await?.map_err(|err| EngineApiError::Handler(err.into()))
     }
 }
