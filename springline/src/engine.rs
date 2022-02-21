@@ -129,19 +129,20 @@ impl AutoscaleEngine<Building> {
         let (mut sense_builder, tx_stop_flink_sensor) =
             sense::make_sense_phase("data", &settings.sensor, self.inner.sensors, machine_node).await?;
         let (eligibility_phase, eligibility_channel) =
-            eligibility::make_eligibility_phase(&settings.eligibility, (&mut sense_builder).into()).await?;
+            eligibility::make_eligibility_phase(&settings.eligibility, &mut sense_builder).await?;
         let rx_eligibility_monitor = eligibility_phase.rx_monitor();
 
         let (decision_phase, decision_channel) =
-            decision::make_decision_phase(&settings.decision, (&mut sense_builder).into()).await?;
+            decision::make_decision_phase(&settings.decision, &mut sense_builder).await?;
         let rx_decision_monitor = decision_phase.rx_monitor();
 
-        let (planning_phase, planning_channel) =
-            plan::make_plan_phase(&settings.plan, (&mut sense_builder).into()).await?;
-        let rx_plan_monitor = planning_phase.rx_monitor();
+        // let (planning_phase, planning_data_channel, planning_context_channel) =
+        let planning_phase = plan::make_plan_phase(&settings.plan, &mut sense_builder).await?;
+        let rx_plan_monitor = planning_phase.phase.rx_monitor();
+        let rx_flink_planning_monitor = planning_phase.rx_flink_planning_monitor;
 
         let (governance_phase, governance_channel) =
-            governance::make_governance_phase(&settings.governance, (&mut sense_builder).into()).await?;
+            governance::make_governance_phase(&settings.governance, &mut sense_builder).await?;
         let rx_governance_monitor = governance_phase.rx_monitor();
 
         let act = self.inner.act.unwrap_or_else(act::make_logger_act_phase);
@@ -156,19 +157,22 @@ impl AutoscaleEngine<Building> {
 
         (sense.outlet(), eligibility_phase.inlet()).connect().await;
         (eligibility_phase.outlet(), decision_phase.inlet()).connect().await;
-        (decision_phase.outlet(), planning_phase.decision_inlet()).connect().await;
-        (planning_phase.outlet(), governance_phase.inlet()).connect().await;
+        (decision_phase.outlet(), planning_phase.phase.decision_inlet())
+            .connect()
+            .await;
+        (planning_phase.phase.outlet(), governance_phase.inlet()).connect().await;
         (governance_phase.outlet(), act.inlet()).connect().await;
 
         let mut graph = Graph::default();
         graph.push_back(Box::new(sense)).await;
         graph.push_back(Box::new(eligibility_channel)).await;
         graph.push_back(Box::new(decision_channel)).await;
-        graph.push_back(Box::new(planning_channel)).await;
+        graph.push_back(Box::new(planning_phase.data_channel)).await;
+        graph.push_back(Box::new(planning_phase.context_channel)).await;
         graph.push_back(Box::new(governance_channel)).await;
         graph.push_back(eligibility_phase).await;
         graph.push_back(decision_phase).await;
-        graph.push_back(planning_phase).await;
+        graph.push_back(planning_phase.phase).await;
         graph.push_back(governance_phase).await;
         graph.push_back(act.dyn_upcast()).await;
 
@@ -182,6 +186,7 @@ impl AutoscaleEngine<Building> {
                     rx_eligibility_monitor,
                     rx_decision_monitor,
                     rx_plan_monitor,
+                    rx_flink_planning_monitor,
                     rx_governance_monitor,
                     self.inner.rx_action_monitor,
                     self.inner.tx_monitor_feedback,

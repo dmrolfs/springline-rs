@@ -4,22 +4,24 @@ use chrono::{DateTime, TimeZone, Utc};
 use claim::*;
 use fake::locales::EN;
 use fake::Fake;
-use lazy_static::lazy_static;
+use once_cell::sync::Lazy;
 use pretty_assertions::assert_eq;
 use proctor::elements::telemetry;
 use proctor::elements::Timestamp;
 use proctor::graph::stage::{self, WithApi, WithMonitor};
-use proctor::graph::{Connect, Graph, SinkShape, SourceShape};
+use proctor::graph::{self, Connect, Graph, Inlet, SinkShape, SourceShape};
 use proctor::phases::plan::Plan;
 use proctor::ProctorResult;
 use springline::phases::decision::DecisionResult;
-use springline::phases::plan::{make_performance_repository, PlanningMeasurement};
+use springline::phases::plan::{
+    make_performance_repository, FlinkPlanningMonitor, ForecastInputs, PlanningContext, PlanningMeasurement,
+};
 use springline::phases::plan::{
     FlinkPlanning, LeastSquaresWorkloadForecaster, PerformanceRepositorySettings, PerformanceRepositoryType, ScalePlan,
     SpikeSettings,
 };
 use springline::phases::{ClusterMetrics, FlowMetrics, JobHealthMetrics, MetricCatalog};
-use tokio::sync::oneshot;
+use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 
 use crate::CORRELATION_ID;
@@ -32,25 +34,26 @@ type ForecastBuilder = LeastSquaresWorkloadForecaster;
 type TestPlanning = FlinkPlanning<LeastSquaresWorkloadForecaster>;
 type TestStage = Plan<TestPlanning>;
 
-lazy_static! {
-    static ref DT_1: DateTime<Utc> = DateTime::parse_from_str("2021-05-05T17:11:07.246310806Z", "%+")
+static DT_1: Lazy<DateTime<Utc>> = Lazy::new(|| {
+    DateTime::parse_from_str("2021-05-05T17:11:07.246310806Z", "%+")
         .unwrap()
-        .with_timezone(&Utc);
-    static ref DT_1_STR: String = format!("{}", DT_1.format("%+"));
-    static ref DT_1_TS: i64 = DT_1.timestamp();
-}
+        .with_timezone(&Utc)
+});
+static DT_1_STR: Lazy<String> = Lazy::new(|| format!("{}", DT_1.format("%+")));
+static DT_1_TS: Lazy<i64> = Lazy::new(|| DT_1.timestamp());
 
 #[allow(dead_code)]
 struct TestFlow {
     pub graph_handle: JoinHandle<ProctorResult<()>>,
     pub tx_data_sensor_api: stage::ActorSourceApi<InData>,
     pub tx_decision_sensor_api: stage::ActorSourceApi<InDecision>,
+    pub rx_planning_monitor: FlinkPlanningMonitor,
     pub tx_sink_api: stage::FoldApi<Vec<Out>>,
     pub rx_sink: Option<oneshot::Receiver<Vec<Out>>>,
 }
 
 impl TestFlow {
-    pub async fn new(planning_stage: TestStage) -> anyhow::Result<Self> {
+    pub async fn new(planning_stage: TestStage, rx_planning_monitor: FlinkPlanningMonitor) -> anyhow::Result<Self> {
         let data_sensor: stage::ActorSource<InData> = stage::ActorSource::new("data_sensor");
         let tx_data_sensor_api = data_sensor.tx_api();
 
@@ -80,6 +83,7 @@ impl TestFlow {
             graph_handle,
             tx_data_sensor_api,
             tx_decision_sensor_api,
+            rx_planning_monitor,
             tx_sink_api,
             rx_sink,
         })
@@ -87,28 +91,21 @@ impl TestFlow {
 
     pub async fn push_data(&self, metrics: MetricCatalog) -> anyhow::Result<()> {
         let measurement: PlanningMeasurement = metrics.into();
-        let (cmd, ack) = stage::ActorSourceCmd::push(measurement);
-        self.tx_data_sensor_api.send(cmd)?;
-        let _ack = ack.await?;
-        Ok(())
+        stage::ActorSourceCmd::push(&self.tx_data_sensor_api, measurement).await.map_err(|err| err.into())
     }
 
     pub async fn push_decision(&self, decision: InDecision) -> anyhow::Result<()> {
-        let (cmd, ack) = stage::ActorSourceCmd::push(decision);
-        self.tx_decision_sensor_api.send(cmd)?;
-        let _ack = ack.await?;
-        Ok(())
+        stage::ActorSourceCmd::push(&self.tx_decision_sensor_api, decision).await.map_err(|err| err.into())
     }
 
     pub async fn inspect_sink(&self) -> anyhow::Result<Vec<Out>> {
-        let (cmd, acc) = stage::FoldCmd::get_accumulation();
-        self.tx_sink_api.send(cmd)?;
-        let result = acc.await.map(|a| {
+        stage::FoldCmd::get_accumulation(&self.tx_sink_api)
+            .await
+        .map(|a| {
             tracing::info!(accumulation=?a, "inspected sink accumulation");
             a
-        })?;
-
-        Ok(result)
+        })
+            .map_err(|err| err.into())
     }
 
     #[tracing::instrument(level = "info", skip(self, check_size))]
@@ -153,12 +150,8 @@ impl TestFlow {
 
     #[tracing::instrument(level = "warn", skip(self))]
     pub async fn close(mut self) -> anyhow::Result<Vec<Out>> {
-        let (stop, _) = stage::ActorSourceCmd::stop();
-        self.tx_data_sensor_api.send(stop)?;
-
-        let (stop, _) = stage::ActorSourceCmd::stop();
-        self.tx_decision_sensor_api.send(stop)?;
-
+        stage::ActorSourceCmd::stop(&self.tx_data_sensor_api).await?;
+        stage::ActorSourceCmd::stop(&self.tx_decision_sensor_api).await?;
         self.graph_handle.await??;
 
         let result = self.rx_sink.take().unwrap().await?;
@@ -191,6 +184,7 @@ fn make_test_data(
         flow: FlowMetrics {
             records_in_per_sec: records_per_sec,
             records_out_per_sec: records_per_sec,
+            forecasted_records_in_per_sec: Some(records_per_sec),
             input_records_lag_max: Some(input_records_lag_max),
             input_millis_behind_latest: None,
         },
@@ -250,6 +244,11 @@ async fn test_flink_planning_linear() {
     let restart_duration = Duration::from_secs(2 * 60);
     let max_catch_up_duration = Duration::from_secs(13 * 60);
     let recovery_valid_offset = Duration::from_secs(5 * 60);
+    let inputs = assert_ok!(ForecastInputs::new(
+        restart_duration,
+        max_catch_up_duration,
+        recovery_valid_offset
+    ));
 
     let forecast_builder = LeastSquaresWorkloadForecaster::new(20, SpikeSettings::default());
     let performance_repository = assert_ok!(make_performance_repository(&PerformanceRepositorySettings {
@@ -257,15 +256,19 @@ async fn test_flink_planning_linear() {
         storage_path: None,
     }));
 
+    let (tx_context, rx_context) = mpsc::channel(8);
+    let context_inlet = Inlet::new("plan context", graph::PORT_CONTEXT);
+    let mut context_inlet_2 = context_inlet.clone();
+    context_inlet_2.attach("plan_context_inlet".into(), rx_context).await;
+
     let mut planning = assert_ok!(
         TestPlanning::new(
             "test_planning_1",
             2,
-            restart_duration,
-            max_catch_up_duration,
-            recovery_valid_offset,
+            inputs,
             forecast_builder,
             performance_repository,
+            context_inlet
         )
         .await
     );
@@ -301,10 +304,11 @@ async fn test_flink_planning_linear() {
     );
     tracing::warn!("DMR: planning history = {:?}", planning);
 
+    let rx_flink_planning_monitor = planning.rx_monitor();
     let stage = TestStage::new("planning_1", planning);
     let mut plan_monitor = stage.rx_monitor();
 
-    let flow = assert_ok!(TestFlow::new(stage).await);
+    let mut flow = assert_ok!(TestFlow::new(stage, rx_flink_planning_monitor).await);
 
     tracing::info!("pushing test data into graph...");
     for d in data {
@@ -317,7 +321,7 @@ async fn test_flink_planning_linear() {
         let _ = span.enter();
 
         for i in 0..data_len {
-            let evt = assert_ok!(plan_monitor.recv().await);
+            let evt = assert_ok!(flow.rx_planning_monitor.recv().await);
             tracing::info!(?evt, "Observation[{}] made", i);
         }
     }
@@ -359,22 +363,31 @@ async fn test_flink_planning_sine() {
     let restart_duration = Duration::from_secs(2 * 60);
     let max_catch_up_duration = Duration::from_secs(13 * 60);
     let recovery_valid_offset = Duration::from_secs(5 * 60);
+    let inputs = assert_ok!(ForecastInputs::new(
+        restart_duration,
+        max_catch_up_duration,
+        recovery_valid_offset
+    ));
 
-    let forecast_builder = LeastSquaresWorkloadForecaster::new(20, SpikeSettings::default());
+    let forecaster = LeastSquaresWorkloadForecaster::new(20, SpikeSettings::default());
     let performance_repository = assert_ok!(make_performance_repository(&PerformanceRepositorySettings {
         storage: PerformanceRepositoryType::Memory,
         storage_path: None,
     }));
 
+    let (tx_context, rx_context) = mpsc::channel(8);
+    let context_inlet = Inlet::new("plan context", graph::PORT_CONTEXT);
+    let mut context_inlet_2 = context_inlet.clone();
+    context_inlet_2.attach("plan_context_inlet".into(), rx_context).await;
+
     let mut planning = assert_ok!(
         TestPlanning::new(
             "test_planning_2",
             2,
-            restart_duration,
-            max_catch_up_duration,
-            recovery_valid_offset,
-            forecast_builder,
+            inputs,
+            forecaster,
             performance_repository,
+            context_inlet,
         )
         .await
     );
@@ -409,11 +422,11 @@ async fn test_flink_planning_sine() {
             .await
     );
     tracing::warn!("DMR: planning history = {:?}", planning);
+    let rx_flink_planning_monitor = planning.rx_monitor();
 
     let stage = TestStage::new("planning_1", planning);
-    let mut plan_monitor = stage.rx_monitor();
 
-    let flow = assert_ok!(TestFlow::new(stage).await);
+    let mut flow = assert_ok!(TestFlow::new(stage, rx_flink_planning_monitor).await);
 
     tracing::info!("pushing test data into graph...");
     for d in data {
@@ -426,7 +439,7 @@ async fn test_flink_planning_sine() {
         let _ = span.enter();
 
         for i in 0..data_len {
-            let evt = assert_ok!(plan_monitor.recv().await);
+            let evt = assert_ok!(flow.rx_planning_monitor.recv().await);
             tracing::info!(?evt, "Observation[{}] made", i);
         }
     }
@@ -470,4 +483,164 @@ async fn test_flink_planning_sine() {
 
     // todo: assert performance history updated for 2 => 29. once extensible api design is worked
     // out
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn test_flink_planning_context_change() {
+    once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
+    let main_span = tracing::info_span!("test_flink_planning_sine");
+    let _ = main_span.enter();
+
+    let inputs = assert_ok!(ForecastInputs::new(
+        Duration::from_secs(2 * 60),
+        Duration::from_secs(13 * 60),
+        Duration::from_secs(5 * 60),
+    ));
+
+    let forecaster = LeastSquaresWorkloadForecaster::new(20, SpikeSettings::default());
+    let performance_repository = assert_ok!(make_performance_repository(&PerformanceRepositorySettings {
+        storage: PerformanceRepositoryType::Memory,
+        storage_path: None,
+    }));
+
+    let (tx_context, rx_context) = mpsc::channel(8);
+    let context_inlet = Inlet::new("plan context", graph::PORT_CONTEXT);
+    let mut context_inlet_2 = context_inlet.clone();
+    context_inlet_2.attach("plan_context_inlet".into(), rx_context).await;
+
+    let mut planning = assert_ok!(
+        TestPlanning::new(
+            "test_planning_3",
+            2,
+            inputs,
+            forecaster,
+            performance_repository,
+            context_inlet,
+        )
+        .await
+    );
+
+    let start: DateTime<Utc> = fake::faker::chrono::raw::DateTimeBefore(EN, Utc::now()).fake();
+    let data = make_test_data_series(start.into(), 2, 1000, |tick| 75. * ((tick as f64) / 15.).sin());
+    let data_len = data.len();
+    let penultimate_data = data[data.len() - 2].clone();
+    let last_data = data[data.len() - 1].clone();
+
+    // assert_ok!(
+    //     planning
+    //         .update_performance_history(&make_decision(DecisionType::Up, penultimate_data.recv_timestamp, 1, 2, 0, 25.))
+    //         .await
+    // );
+    // tracing::warn!("DMR: planning history = {:?}", planning);
+    assert_ok!(
+        planning
+            .update_performance_history(&make_decision(DecisionType::Up, last_data.recv_timestamp, 2, 4, 0, 75.))
+            .await
+    );
+    tracing::warn!("DMR: planning history = {:?}", planning);
+    assert_ok!(
+        planning
+            .update_performance_history(&make_decision(
+                DecisionType::Up,
+                last_data.recv_timestamp,
+                3,
+                10,
+                0,
+                250.
+            ))
+            .await
+    );
+    tracing::warn!("DMR: planning history = {:?}", planning);
+    let rx_flink_planning_monitor = planning.rx_monitor();
+    let stage = TestStage::new("planning_1", planning);
+    // let mut plan_monitor = stage.rx_monitor();
+
+    let mut flow = assert_ok!(TestFlow::new(stage, rx_flink_planning_monitor).await);
+
+    tracing::info!("pushing test data into graph...");
+    for d in data {
+        assert_ok!(flow.push_data(d).await);
+    }
+
+    tracing::info!("DMR: watching for all observations to be pushed...");
+    {
+        let span = tracing::info_span!("watching for all observations to be pushed");
+        let _ = span.enter();
+
+        for i in 0..data_len {
+            let evt = assert_ok!(flow.rx_planning_monitor.recv().await);
+            tracing::info!(?evt, "Observation[{}] made", i);
+        }
+    }
+
+    tracing::info!("pushing decision...");
+    let decision = InDecision::ScaleUp(penultimate_data);
+    let penultimate_timestamp = decision.item().recv_timestamp;
+    assert_ok!(flow.push_decision(decision).await);
+
+    assert_ok!(
+        tx_context
+            .send(PlanningContext {
+                correlation_id: CORRELATION_ID.relabel::<PlanningContext>(),
+                recv_timestamp: Timestamp::now(),
+                min_scaling_step: Some(10),
+                restart: Some(Duration::from_secs(10)),
+                max_catch_up: None,
+                recovery_valid: None,
+            })
+            .await
+    );
+
+    tracing::info!("pushing decision...");
+    let decision = InDecision::ScaleUp(last_data);
+    let last_timestamp = decision.item().recv_timestamp;
+    assert_ok!(flow.push_decision(decision).await);
+
+    tracing::info!("DMR-waiting for plan to reach sink...");
+    assert!(assert_ok!(
+        flow.check_sink_accumulation("first", Duration::from_millis(250), |acc| acc.len() == 2)
+            .await
+    ));
+
+    tracing::info!("DMR: Verify final accumulation...");
+    let actual = assert_ok!(flow.close().await);
+
+    if let Err(err) = std::panic::catch_unwind(|| {
+        assert_eq!(
+            actual,
+            vec![
+                ScalePlan {
+                    recv_timestamp: penultimate_timestamp,
+                    correlation_id: CORRELATION_ID.clone(),
+                    target_nr_task_managers: 8,
+                    current_nr_task_managers: 2,
+                },
+                ScalePlan {
+                    recv_timestamp: last_timestamp,
+                    correlation_id: CORRELATION_ID.clone(),
+                    target_nr_task_managers: 8,
+                    current_nr_task_managers: 2,
+                },
+            ]
+        )
+    }) {
+        tracing::error!(error=?err, "common lower boundary failed - trying higher..");
+        assert_eq!(
+            actual,
+            vec![
+                ScalePlan {
+                    recv_timestamp: penultimate_timestamp,
+                    correlation_id: CORRELATION_ID.clone(),
+                    target_nr_task_managers: 9,
+                    current_nr_task_managers: 2,
+                },
+                ScalePlan {
+                    recv_timestamp: last_timestamp,
+                    correlation_id: CORRELATION_ID.clone(),
+                    target_nr_task_managers: 9,
+                    current_nr_task_managers: 2,
+                },
+            ]
+        )
+    }
 }

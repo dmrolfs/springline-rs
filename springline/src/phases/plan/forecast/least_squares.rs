@@ -93,6 +93,28 @@ impl Forecaster for LeastSquaresWorkloadForecaster {
         (self.window_size - self.data.len(), self.window_size)
     }
 
+    fn expected_next_observation_timestamp(&self, from_ts: f64) -> f64 {
+        let (steps, _) = self.data.iter().map(|p| p.0).fold(
+            (Vec::<f64>::with_capacity(self.data.len() - 1), None),
+            |(mut acc, last), ts| match last {
+                None => (acc, Some(ts)),
+                Some(l) => {
+                    acc.push(ts - l);
+                    (acc, Some(ts))
+                },
+            },
+        );
+
+        let avg = if steps.is_empty() {
+            0_f64
+        } else {
+            let len = steps.len() as f64;
+            let total: f64 = steps.into_iter().sum();
+            total / len
+        };
+        from_ts + avg
+    }
+
     #[tracing::instrument(level="debug", skip(self), fields(spike_length=%self.spike_length,),)]
     fn add_observation(&mut self, measurement: WorkloadMeasurement) {
         let data = measurement.into();
@@ -184,7 +206,6 @@ impl std::ops::Add<WorkloadMeasurement> for LeastSquaresWorkloadForecaster {
 // }
 
 // impl WorkloadForecast for LeastSquaresWorkloadForecast {
-// todo WORK HERE AND PLANNING
 // at valid time calculate workload_rate
 // between now and recovery time, caluclate total records
 // calculate recovery rate via total records and catch up time

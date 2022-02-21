@@ -72,10 +72,21 @@ impl UpdateMetrics for PlanningContext {
         let update_fn = move |subscription_name: &str, telemetry: &Telemetry| match telemetry.clone().try_into::<Self>()
         {
             Ok(ctx) => {
-                PLANNING_CTX_MIN_SCALING_STEP.set(ctx.min_scaling_step as i64);
-                PLANNING_CTX_FORECASTING_RESTART_SECS.set(ctx.restart.as_secs() as i64);
-                PLANNING_CTX_FORECASTING_MAX_CATCH_UP_SECS.set(ctx.max_catch_up.as_secs() as i64);
-                PLANNING_CTX_FORECASTING_RECOVERY_VALID_SECS.set(ctx.recovery_valid.as_secs() as i64);
+                if let Some(min_scaling_step) = ctx.min_scaling_step {
+                    PLANNING_CTX_MIN_SCALING_STEP.set(min_scaling_step as i64);
+                }
+
+                if let Some(restart) = ctx.restart {
+                    PLANNING_CTX_FORECASTING_RESTART_SECS.set(restart.as_secs() as i64);
+                }
+
+                if let Some(max_catch_up) = ctx.max_catch_up {
+                    PLANNING_CTX_FORECASTING_MAX_CATCH_UP_SECS.set(max_catch_up.as_secs() as i64);
+                }
+
+                if let Some(recovery_valid) = ctx.recovery_valid {
+                    PLANNING_CTX_FORECASTING_RECOVERY_VALID_SECS.set(recovery_valid.as_secs() as i64);
+                }
             },
 
             Err(err) => {
@@ -125,25 +136,22 @@ pub static PLANNING_CTX_FORECASTING_RECOVERY_VALID_SECS: Lazy<IntGauge> = Lazy::
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use pretty_assertions::assert_eq;
     use serde_test::{assert_tokens, Token};
-    use super::*;
 
     fn test_planning_context_serde_tokens() {
         let now = Timestamp::now();
-        let corr = Id::direct("PlanningContext", "ABC");
+        let corr = Id::direct("PlanningContext", 17, "ABC");
         let context = PlanningContext {
             recv_timestamp: now,
             correlation_id: corr.clone(),
             min_scaling_step: None,
             restart: Some(Duration::from_secs(17)),
             max_catch_up: None,
-            recovery_valid:Some(Duration::from_secs(22)),
+            recovery_valid: Some(Duration::from_secs(22)),
         };
 
-        assert_tokens(
-            &context,
-            &vec![]
-        );
+        assert_tokens(&context, &vec![]);
     }
 }

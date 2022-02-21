@@ -3,7 +3,7 @@ pub use metric_catalog::*;
 use proctor::elements::telemetry::UpdateMetricsFn;
 use proctor::graph::{Connect, SourceShape};
 use proctor::phases::policy_phase::PolicyPhase;
-use proctor::phases::sense::{ClearinghouseSubscriptionMagnet, SubscriptionChannel, TelemetrySubscription};
+use proctor::phases::sense::{ClearinghouseSubscriptionAgent, SubscriptionChannel, TelemetrySubscription};
 use proctor::{AppData, ProctorContext, SharedString};
 use serde::Serialize;
 
@@ -23,18 +23,18 @@ pub trait UpdateMetrics {
     fn update_metrics_for(name: SharedString) -> UpdateMetricsFn;
 }
 
-#[tracing::instrument(level = "info")]
-pub async fn subscribe_policy_phase<In, Out, C, D>(
-    subscription: TelemetrySubscription, phase: &PolicyPhase<In, Out, C, D>,
-    magnet: ClearinghouseSubscriptionMagnet<'_>,
+#[tracing::instrument(level = "trace", skip(agent))]
+pub async fn subscribe_policy_phase<In, Out, C, D, A>(
+    subscription: TelemetrySubscription, phase: &PolicyPhase<In, Out, C, D>, agent: &mut A,
 ) -> Result<SubscriptionChannel<C>>
 where
     In: AppData + oso::ToPolar,
     Out: AppData,
     C: ProctorContext,
     D: AppData + Serialize,
+    A: ClearinghouseSubscriptionAgent,
 {
-    let context_channel = SubscriptionChannel::connect_subscription(subscription, magnet).await?;
+    let context_channel = SubscriptionChannel::connect_subscription(subscription, agent).await?;
     (context_channel.outlet(), phase.context_inlet()).connect().await;
     Ok(context_channel)
 }

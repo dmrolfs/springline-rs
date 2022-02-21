@@ -8,7 +8,7 @@ mod ridge_regression;
 use std::cmp::Ordering;
 use std::fmt::Debug;
 
-pub use calculator::ForecastCalculator;
+pub use calculator::{ForecastCalculator, ForecastInputs};
 pub use least_squares::{LeastSquaresWorkloadForecaster, SpikeSettings};
 
 use crate::phases::plan::PlanningMeasurement;
@@ -19,7 +19,9 @@ use serde::{Deserialize, Serialize};
 
 #[cfg_attr(test, automock)]
 pub trait Forecaster: Debug + Sync + Send {
+    /// report on how many observations are (needed, window_size)
     fn observations_needed(&self) -> (usize, usize);
+    fn expected_next_observation_timestamp(&self, from_ts: f64) -> f64;
     fn add_observation(&mut self, measurement: WorkloadMeasurement);
     fn clear(&mut self);
     fn forecast(&mut self) -> Result<Box<dyn WorkloadForecast>, PlanError>;

@@ -99,15 +99,11 @@ impl TestFlow {
     }
 
     pub async fn push_data(&self, data: Data) -> anyhow::Result<()> {
-        let (cmd, ack) = stage::ActorSourceCmd::push(data);
-        self.tx_data_sensor_api.send(cmd)?;
-        Ok(ack.await?)
+        stage::ActorSourceCmd::push(&self.tx_data_sensor_api, data).await.map_err(|err| err.into())
     }
 
     pub async fn push_context(&self, context: Context) -> anyhow::Result<()> {
-        let (cmd, ack) = stage::ActorSourceCmd::push(context);
-        self.tx_context_sensor_api.send(cmd)?;
-        Ok(ack.await?)
+        stage::ActorSourceCmd::push(&self.tx_context_sensor_api, context).await.map_err(|err| err.into())
     }
 
     #[allow(dead_code)]
@@ -130,21 +126,18 @@ impl TestFlow {
     pub async fn inspect_policy_context(
         &self,
     ) -> anyhow::Result<elements::PolicyFilterDetail<Context, GovernanceTemplateData>> {
-        let (cmd, detail) = elements::PolicyFilterCmd::inspect();
-        self.tx_governance_api.send(cmd)?;
-
-        let result = detail.await.map(|d| {
+        elements::PolicyFilterCmd::inspect(&self.tx_governance_api)
+            .await
+        .map(|d| {
             tracing::info!(detail=?d, "inspected policy.");
             d
-        })?;
-
-        Ok(result)
+        })
+            .map_err(|err| err.into())
     }
 
     pub async fn inspect_sink(&self) -> anyhow::Result<Vec<Data>> {
-        let (cmd, acc) = stage::FoldCmd::get_accumulation();
-        self.tx_sink_api.send(cmd)?;
-        acc.await
+        stage::FoldCmd::get_accumulation(&self.tx_sink_api)
+            .await
             .map(|a| {
                 tracing::info!(accumulation=?a, "inspected sink accumulation");
                 a
@@ -202,10 +195,8 @@ impl TestFlow {
             anyhow::bail!("failed accumulation check.")
         }
 
-        let (reset_cmd, reset_rx) = stage::FoldCmd::get_and_reset_accumulation();
-        assert_ok!(self.tx_sink_api.send(reset_cmd));
-        let ack = assert_ok!(reset_rx.await);
-        tracing::info!("sink reset ack = {:?}", ack);
+        let acc = assert_ok!(stage::FoldCmd::get_and_reset_accumulation(&self.tx_sink_api).await);
+        tracing::info!("sink acc before reset = {acc:?}");
 
         Ok(())
     }
@@ -262,12 +253,8 @@ impl TestFlow {
 
     #[tracing::instrument(level = "warn", skip(self))]
     pub async fn close(mut self) -> anyhow::Result<Vec<Data>> {
-        let (stop, _) = stage::ActorSourceCmd::stop();
-        self.tx_data_sensor_api.send(stop)?;
-
-        let (stop, _) = stage::ActorSourceCmd::stop();
-        self.tx_context_sensor_api.send(stop)?;
-
+        stage::ActorSourceCmd::stop(&self.tx_data_sensor_api).await?;
+        stage::ActorSourceCmd::stop(&self.tx_context_sensor_api).await?;
         self.graph_handle.await?;
 
         let result = self.rx_sink.take().unwrap().await?;

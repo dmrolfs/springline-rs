@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use enumflags2::{bitflags, BitFlags};
 use once_cell::sync::Lazy;
-use proctor::elements::{Telemetry, Timestamp};
+use proctor::elements::{Telemetry, TelemetryValue, Timestamp};
 use proctor::graph::stage::{ActorSourceApi, ActorSourceCmd};
 use proctor::phases::plan::PlanMonitor;
 use proctor::serde::FORMAT;
@@ -14,7 +14,7 @@ use crate::phases::act::{ActEvent, ActMonitor, ACT_PHASE_ERRORS, ACT_SCALE_ACTIO
 use crate::phases::decision::{DecisionContext, DecisionEvent, DecisionMonitor, DecisionResult};
 use crate::phases::eligibility::{EligibilityContext, EligibilityEvent, EligibilityMonitor};
 use crate::phases::governance::{GovernanceContext, GovernanceEvent, GovernanceMonitor, GovernanceOutcome};
-use crate::phases::plan::{PlanEvent, PlanningStrategy};
+use crate::phases::plan::{FlinkPlanningEvent, FlinkPlanningMonitor, PlanEvent, PlanningStrategy};
 
 #[bitflags(default = Sense | Plan | Act)]
 #[repr(u8)]
@@ -32,6 +32,7 @@ pub struct Monitor {
     rx_eligibility_monitor: EligibilityMonitor,
     rx_decision_monitor: DecisionMonitor,
     rx_plan_monitor: PlanMonitor<PlanningStrategy>,
+    rx_flink_planning_monitor: FlinkPlanningMonitor,
     rx_governance_monitor: GovernanceMonitor,
     rx_action_monitor: Option<ActMonitor<GovernanceOutcome>>,
     tx_feedback: Option<ActorSourceApi<Telemetry>>,
@@ -43,6 +44,7 @@ impl std::fmt::Debug for Monitor {
             .field("rx_eligibility", &self.rx_eligibility_monitor)
             .field("rx_decision", &self.rx_decision_monitor)
             .field("rx_plan", &self.rx_plan_monitor)
+            .field("rx_flink_planning", &self.rx_flink_planning_monitor)
             .field("rx_governance", &self.rx_governance_monitor)
             .field("rx_action", &self.rx_action_monitor)
             .field("tx_feedback", &self.tx_feedback)
@@ -53,13 +55,15 @@ impl std::fmt::Debug for Monitor {
 impl Monitor {
     pub fn new(
         rx_eligibility_monitor: EligibilityMonitor, rx_decision_monitor: DecisionMonitor,
-        rx_plan_monitor: PlanMonitor<PlanningStrategy>, rx_governance_monitor: GovernanceMonitor,
-        rx_action_monitor: Option<ActMonitor<GovernanceOutcome>>, tx_feedback: Option<ActorSourceApi<Telemetry>>,
+        rx_plan_monitor: PlanMonitor<PlanningStrategy>, rx_flink_planning_monitor: FlinkPlanningMonitor,
+        rx_governance_monitor: GovernanceMonitor, rx_action_monitor: Option<ActMonitor<GovernanceOutcome>>,
+        tx_feedback: Option<ActorSourceApi<Telemetry>>,
     ) -> Self {
         Self {
             rx_eligibility_monitor,
             rx_decision_monitor,
             rx_plan_monitor,
+            rx_flink_planning_monitor,
             rx_governance_monitor,
             rx_action_monitor,
             tx_feedback,
@@ -87,6 +91,7 @@ impl Monitor {
                 Ok(e) = self.rx_eligibility_monitor.recv() => Self::handle_eligibility_event(e, &mut loaded),
                 Ok(e) = self.rx_decision_monitor.recv() => Self::handle_decision_event(e, &mut loaded),
                 Ok(e) = self.rx_plan_monitor.recv() => Self::handle_plan_event(e),
+                Ok(e) = self.rx_flink_planning_monitor.recv() => Self::handle_flink_planning_event(e, tx_feedback).await,
                 Ok(e) = self.rx_governance_monitor.recv() => Self::handle_governance_event(e, &mut loaded),
                 Ok(e) = rx_action.recv() => Self::handle_action_event(e, tx_feedback, &mut loaded).await,
                 else => {
@@ -163,11 +168,6 @@ impl Monitor {
     #[allow(clippy::cognitive_complexity)]
     fn handle_plan_event(event: Arc<PlanEvent>) {
         match &*event {
-            PlanEvent::ObservationAdded(observation) => {
-                tracing::info!(?observation, correlation=?observation.correlation_id, "observation added to planning");
-                PLAN_OBSERVATION_COUNT.inc()
-            },
-
             PlanEvent::DecisionPlanned(decision, plan) => {
                 // match decision {
                 //     DecisionResult::ScaleUp(_) => DECISION_SCALING_DECISION_COUNT.up.inc(),
@@ -194,6 +194,43 @@ impl Monitor {
                 //     DecisionResult::ScaleDown(_) => DECISION_SCALING_DECISION_COUNT.down.inc(),
                 //     DecisionResult::NoAction(_) => DECISION_SCALING_DECISION_COUNT.no_action.inc(),
                 // }
+            },
+        }
+    }
+
+    #[allow(clippy::cognitive_complexity)]
+    async fn handle_flink_planning_event(
+        event: Arc<FlinkPlanningEvent>, tx_feedback: Option<&ActorSourceApi<Telemetry>>,
+    ) {
+        match &*event {
+            FlinkPlanningEvent::ObservationAdded { observation, next_forecast } => {
+                tracing::info!(?observation, correlation=?observation.correlation_id, "observation added to planning");
+                PLAN_OBSERVATION_COUNT.inc();
+
+                if let Some((tx, forecast)) = tx_feedback.zip(*next_forecast) {
+                    let feedback: TelemetryValue = forecast.into();
+                    let telemetry = maplit::hashmap! {
+                        crate::phases::metric_catalog::MC_FLOW__FORECASTED_RECORDS_IN_PER_SEC.to_string() => feedback,
+                    };
+                    match ActorSourceCmd::push(tx, telemetry.into()).await {
+                        Ok(_) => {
+                            tracing::info!(
+                                ?forecast, correlation=?observation.correlation_id,
+                                "feeding next forecast back into springline system"
+                            );
+                        },
+                        Err(err) => {
+                            tracing::error!(
+                                error=?err, ?forecast, correlation=?observation.correlation_id,
+                                "failed to feed forecasted workflow back into system."
+                            )
+                        },
+                    }
+                }
+            },
+
+            FlinkPlanningEvent::ContextChanged(context) => {
+                tracing::info!(?context, "Flink Planning context changed.");
             },
         }
     }
@@ -240,7 +277,7 @@ impl Monitor {
                     let now: chrono::DateTime<Utc> = now.into();
                     let now_rep = format!("{}", now.format(FORMAT));
                     let telemetry = maplit::hashmap! { crate::phases::eligibility::CLUSTER__LAST_DEPLOYMENT.to_string() => now_rep.into(), };
-                    match ActorSourceCmd::push(&tx, telemetry.into()).await {
+                    match ActorSourceCmd::push(tx, telemetry.into()).await {
                         // let (cmd, rx) = ActorSourceCmd::push(telemetry.into());
                         //
                         // match tx.send(cmd) {

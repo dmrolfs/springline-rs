@@ -5,13 +5,14 @@ use crate::Result;
 use once_cell::sync::Lazy;
 use pretty_snowflake::{Id, Label};
 use proctor::elements::{RecordsPerSecond, Timestamp};
-use proctor::graph::{Connect, SinkShape, SourceShape};
+use proctor::graph::{Connect, Inlet, SinkShape, SourceShape, PORT_CONTEXT};
 use proctor::phases::plan::{Plan, Planning};
 use proctor::phases::sense::{
-    ClearinghouseSubscriptionMagnet, SubscriptionChannel, SubscriptionRequirements, TelemetrySubscription,
+    ClearinghouseSubscriptionAgent, SubscriptionChannel, SubscriptionRequirements, TelemetrySubscription,
 };
-use proctor::SharedString;
+use proctor::{AppData, SharedString};
 use prometheus::Gauge;
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
@@ -24,22 +25,27 @@ mod performance_repository;
 mod planning;
 
 pub use context::{
-    PLANNING_CTX_FORECASTING_MAX_CATCH_UP_SECS, PLANNING_CTX_FORECASTING_RECOVERY_VALID_SECS,
+    PlanningContext, PLANNING_CTX_FORECASTING_MAX_CATCH_UP_SECS, PLANNING_CTX_FORECASTING_RECOVERY_VALID_SECS,
     PLANNING_CTX_FORECASTING_RESTART_SECS, PLANNING_CTX_MIN_SCALING_STEP,
 };
-pub use forecast::{Forecaster, LeastSquaresWorkloadForecaster, SpikeSettings, WorkloadMeasurement};
+pub use forecast::{ForecastInputs, Forecaster, LeastSquaresWorkloadForecaster, SpikeSettings, WorkloadMeasurement};
 pub use model::ScalePlan;
-pub use performance_repository::{PerformanceRepositorySettings, PerformanceRepositoryType};
-pub use planning::FlinkPlanning;
-
 pub use performance_repository::make_performance_repository;
+pub use performance_repository::{PerformanceRepositorySettings, PerformanceRepositoryType};
+pub use planning::{FlinkPlanning, FlinkPlanningEvent, FlinkPlanningMonitor};
 
 const MINIMAL_CLUSTER_SIZE: usize = 1;
 
 pub type PlanningStrategy = planning::FlinkPlanning<forecast::LeastSquaresWorkloadForecaster>;
 pub type PlanningOutcome = <PlanningStrategy as Planning>::Out;
-pub type PlanningPhase = (Box<Plan<PlanningStrategy>>, SubscriptionChannel<PlanningMeasurement>);
-pub type PlanEvent = proctor::phases::plan::PlanEvent<PlanningMeasurement, DecisionResult<MetricCatalog>, ScalePlan>;
+pub type PlanEvent = proctor::phases::plan::PlanEvent<DecisionResult<MetricCatalog>, ScalePlan>;
+
+pub struct PlanningPhase {
+    pub phase: Box<Plan<PlanningStrategy>>,
+    pub data_channel: SubscriptionChannel<PlanningMeasurement>,
+    pub context_channel: SubscriptionChannel<PlanningContext>,
+    pub rx_flink_planning_monitor: FlinkPlanningMonitor,
+}
 
 #[derive(Debug, Label, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PlanningMeasurement {
@@ -67,18 +73,30 @@ impl SubscriptionRequirements for PlanningMeasurement {
     }
 }
 
-#[tracing::instrument(level = "info", skip(settings, clearinghouse_magnet))]
-pub async fn make_plan_phase(
-    settings: &PlanSettings, clearinghouse_magnet: ClearinghouseSubscriptionMagnet<'_>,
-) -> Result<PlanningPhase> {
+#[tracing::instrument(level = "info", skip(settings, agent))]
+pub async fn make_plan_phase<A>(settings: &PlanSettings, agent: &mut A) -> Result<PlanningPhase>
+where
+    A: ClearinghouseSubscriptionAgent,
+{
     let name: SharedString = "planning".into();
-    let data_channel = do_connect_plan_data(name.clone(), clearinghouse_magnet).await?;
-    // WORK HERE add magnet
-    let flink_planning = do_make_planning_strategy(name.as_ref(), settings).await?;
-    let plan = Box::new(Plan::new(name.into_owned(), flink_planning));
+    let data_channel = do_subscribe_channel(name.clone(), agent).await?;
 
-    (data_channel.outlet(), plan.inlet()).connect().await;
-    Ok((plan, data_channel))
+    let context_channel = do_subscribe_channel(name.clone(), agent).await?;
+    let context_inlet = Inlet::new(name.clone(), PORT_CONTEXT);
+
+    let flink_planning = do_make_planning_strategy(name.as_ref(), settings, context_inlet.clone()).await?;
+    let rx_flink_planning_monitor = flink_planning.rx_monitor();
+    let phase = Box::new(Plan::new(name.into_owned(), flink_planning));
+
+    (data_channel.outlet(), phase.inlet()).connect().await;
+    (context_channel.outlet(), context_inlet).connect().await;
+
+    Ok(PlanningPhase {
+        phase,
+        data_channel,
+        context_channel,
+        rx_flink_planning_monitor,
+    })
 }
 
 pub(crate) static PLANNING_FORECASTED_WORKLOAD: Lazy<Gauge> = Lazy::new(|| {
@@ -105,29 +123,32 @@ pub(crate) static PLANNING_VALID_WORKLOAD_RATE: Lazy<Gauge> = Lazy::new(|| {
     .expect("failed creating planning_valid_workload_rate metric")
 });
 
-#[tracing::instrument(level = "info")]
-async fn do_connect_plan_data(
-    name: SharedString, mut magnet: ClearinghouseSubscriptionMagnet<'_>,
-) -> Result<SubscriptionChannel<PlanningMeasurement>> {
-    let subscription = TelemetrySubscription::new(name.as_ref()).for_requirements::<PlanningMeasurement>();
+#[tracing::instrument(level = "trace", skip(agent))]
+async fn do_subscribe_channel<T, A>(name: SharedString, agent: &mut A) -> Result<SubscriptionChannel<T>>
+where
+    T: AppData + SubscriptionRequirements + DeserializeOwned,
+    A: ClearinghouseSubscriptionAgent,
+{
+    let subscription = TelemetrySubscription::new(name.as_ref()).for_requirements::<T>();
     let channel = SubscriptionChannel::new(name).await?;
-    magnet
+    agent
         .subscribe(subscription, channel.subscription_receiver.clone())
         .await?;
     Ok(channel)
 }
 
 #[tracing::instrument(level = "info")]
-async fn do_make_planning_strategy(name: &str, plan_settings: &PlanSettings) -> Result<PlanningStrategy> {
-    // WORK HERE add magnet
+async fn do_make_planning_strategy(
+    name: &str, plan_settings: &PlanSettings, context_inlet: Inlet<PlanningContext>,
+) -> Result<PlanningStrategy> {
+    let inputs = ForecastInputs::from_settings(plan_settings)?;
     let planning = PlanningStrategy::new(
         name,
         plan_settings.min_scaling_step as usize,
-        plan_settings.restart,
-        plan_settings.max_catch_up,
-        plan_settings.recovery_valid,
+        inputs,
         forecast::LeastSquaresWorkloadForecaster::new(plan_settings.window, plan_settings.spike),
         performance_repository::make_performance_repository(&plan_settings.performance_repository)?,
+        context_inlet,
     )
     .await?;
     Ok(planning)

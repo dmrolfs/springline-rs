@@ -11,7 +11,7 @@ pub use result::make_governance_transform;
 
 use proctor::elements::{PolicyFilterEvent, PolicySubscription};
 use proctor::phases::policy_phase::PolicyPhase;
-use proctor::phases::sense::{ClearinghouseSubscriptionMagnet, SubscriptionChannel};
+use proctor::phases::sense::{ClearinghouseSubscriptionAgent, SubscriptionChannel};
 use proctor::SharedString;
 
 use crate::phases::{
@@ -31,10 +31,11 @@ pub type GovernancePhase = (
 );
 pub type GovernanceEvent = PolicyFilterEvent<PlanningOutcome, GovernanceContext>;
 
-#[tracing::instrument(level = "info")]
-pub async fn make_governance_phase(
-    settings: &GovernanceSettings, magnet: ClearinghouseSubscriptionMagnet<'_>,
-) -> Result<GovernancePhase> {
+#[tracing::instrument(level = "trace", skip(agent))]
+pub async fn make_governance_phase<A>(settings: &GovernanceSettings, agent: &mut A) -> Result<GovernancePhase>
+where
+    A: ClearinghouseSubscriptionAgent,
+{
     let name: SharedString = "governance".into();
     let policy = GovernancePolicy::new(settings);
     let subscription = policy.subscription(name.as_ref(), &settings.policy);
@@ -45,7 +46,7 @@ pub async fn make_governance_phase(
         PolicyPhase::with_transform(name.clone(), policy, make_governance_transform(name.into_owned())).await?,
     );
 
-    let channel = phases::subscribe_policy_phase(subscription, &governance, magnet).await?;
+    let channel = phases::subscribe_policy_phase(subscription, &governance, agent).await?;
     Ok((governance, channel))
 }
 

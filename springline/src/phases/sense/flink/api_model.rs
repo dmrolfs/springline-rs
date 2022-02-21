@@ -109,7 +109,7 @@ fn suffix_for(id: &str, agg: Aggregation) -> String {
         Some(2) => format!("-{}", agg.to_string().to_lowercase()), // kabab-case - Kafka
         Some(3) => format!(".{}", agg),                            // .PascalCase - TaskManagers
         _ => {
-            tracing::warn!(%id, %agg, "failed to correlate metric form to known Flink scopes - defaulting to camelCase");
+            tracing::warn!(%id, %agg, "failed to match metric id to known Flink forms - defaulting to camelCase");
             format!("{}", agg)
         },
     }
