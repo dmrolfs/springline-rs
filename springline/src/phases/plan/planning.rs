@@ -31,7 +31,7 @@ pub struct FlinkPlanning<F: Forecaster> {
     forecast_calculator: ForecastCalculator<F>,
     performance_history: PerformanceHistory,
     performance_repository: Box<dyn PerformanceRepository>,
-    //WORK HERE: context_inlet: Inlet<PlanningContext>,
+    context_inlet: Inlet<PlanningContext>,
     outlet: Option<Outlet<ScalePlan>>,
     /* todo: tx_api: mpsc::UnboundedSender<FlinkPlanningCmd>,
      * todo: rx_api: mpsc::UnboundedReceiver<FlinkPlanningCmd>, */

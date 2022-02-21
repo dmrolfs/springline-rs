@@ -21,26 +21,26 @@ pub struct PlanningContext {
 
     /// Allowed cluster size change in a rescaling action.
     #[serde(rename = "planning.min_scaling_step")]
-    pub min_scaling_step: u32,
+    pub min_scaling_step: Option<u32>,
 
     /// Time expected to restart Flink when scaling. Baseline time is set via configuration, but as
     /// springline rescales, it measures the restart duration and updates planning accordingly.
     #[serde(rename = "planning.restart")]
-    #[serde_as(as = "serde_with::DurationSeconds<u64>")]
-    pub restart: Duration,
+    #[serde_as(as = "Option<serde_with::DurationSeconds<u64>>")]
+    pub restart: Option<Duration>,
 
     /// Configured maximum time allowed to catch up processing accumulated records after the
     /// rescaling action. If the tolerating a longer catch-up time, allows the target cluster size
     /// to closely match that required for the predicted target workload. A shorter allowed catch
     /// up time may result in over-provisioning the cluster.
     #[serde(rename = "planning.max_catch_up")]
-    #[serde_as(as = "serde_with::DurationSeconds<u64>")]
-    pub max_catch_up: Duration,
+    #[serde_as(as = "Option<serde_with::DurationSeconds<u64>>")]
+    pub max_catch_up: Option<Duration>,
 
     /// The time after recovery allowed to settle the cluster.
     #[serde(rename = "planning.recovery_valid")]
-    #[serde_as(as = "serde_with::DurationSeconds<u64>")]
-    pub recovery_valid: Duration,
+    #[serde_as(as = "Option<serde_with::DurationSeconds<u64>>")]
+    pub recovery_valid: Option<Duration>,
 }
 
 impl PartialEq for PlanningContext {
@@ -64,10 +64,6 @@ impl SubscriptionRequirements for PlanningContext {
             "planning.max_catch_up".into(),
             "planning.recovery_valid".into(),
         }
-    }
-
-    fn trigger_fields() -> HashSet<SharedString> {
-        Self::optional_fields()
     }
 }
 
@@ -126,3 +122,28 @@ pub static PLANNING_CTX_FORECASTING_RECOVERY_VALID_SECS: Lazy<IntGauge> = Lazy::
     )
     .expect("failed creating planning_ctx_forecasting_recovery_valid_secs metric")
 });
+
+#[cfg(test)]
+mod tests {
+    use pretty_assertions::assert_eq;
+    use serde_test::{assert_tokens, Token};
+    use super::*;
+
+    fn test_planning_context_serde_tokens() {
+        let now = Timestamp::now();
+        let corr = Id::direct("PlanningContext", "ABC");
+        let context = PlanningContext {
+            recv_timestamp: now,
+            correlation_id: corr.clone(),
+            min_scaling_step: None,
+            restart: Some(Duration::from_secs(17)),
+            max_catch_up: None,
+            recovery_valid:Some(Duration::from_secs(22)),
+        };
+
+        assert_tokens(
+            &context,
+            &vec![]
+        );
+    }
+}
