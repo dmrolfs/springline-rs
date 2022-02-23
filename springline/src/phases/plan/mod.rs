@@ -1,11 +1,10 @@
-use crate::phases::decision::DecisionResult;
 use crate::phases::{MetricCatalog, MC_FLOW__RECORDS_IN_PER_SEC};
 use crate::settings::PlanSettings;
 use crate::Result;
 use once_cell::sync::Lazy;
 use pretty_snowflake::{Id, Label};
 use proctor::elements::{RecordsPerSecond, Timestamp};
-use proctor::graph::{Connect, Inlet, SinkShape, SourceShape, PORT_CONTEXT};
+use proctor::graph::{Connect, SinkShape, SourceShape};
 use proctor::phases::plan::{Plan, Planning};
 use proctor::phases::sense::{
     ClearinghouseSubscriptionAgent, SubscriptionChannel, SubscriptionRequirements, TelemetrySubscription,
@@ -38,7 +37,6 @@ const MINIMAL_CLUSTER_SIZE: usize = 1;
 
 pub type PlanningStrategy = planning::FlinkPlanning<forecast::LeastSquaresWorkloadForecaster>;
 pub type PlanningOutcome = <PlanningStrategy as Planning>::Out;
-pub type PlanEvent = proctor::phases::plan::PlanEvent<DecisionResult<MetricCatalog>, ScalePlan>;
 
 pub struct PlanningPhase {
     pub phase: Box<Plan<PlanningStrategy>>,
@@ -82,14 +80,13 @@ where
     let data_channel = do_subscribe_channel(name.clone(), agent).await?;
 
     let context_channel = do_subscribe_channel(name.clone(), agent).await?;
-    let context_inlet = Inlet::new(name.clone(), PORT_CONTEXT);
 
-    let flink_planning = do_make_planning_strategy(name.as_ref(), settings, context_inlet.clone()).await?;
+    let flink_planning = do_make_planning_strategy(name.as_ref(), settings).await?;
     let rx_flink_planning_monitor = flink_planning.rx_monitor();
     let phase = Box::new(Plan::new(name.into_owned(), flink_planning));
 
     (data_channel.outlet(), phase.inlet()).connect().await;
-    (context_channel.outlet(), context_inlet).connect().await;
+    (context_channel.outlet(), phase.context_inlet()).connect().await;
 
     Ok(PlanningPhase {
         phase,
@@ -138,9 +135,7 @@ where
 }
 
 #[tracing::instrument(level = "info")]
-async fn do_make_planning_strategy(
-    name: &str, plan_settings: &PlanSettings, context_inlet: Inlet<PlanningContext>,
-) -> Result<PlanningStrategy> {
+async fn do_make_planning_strategy(name: &str, plan_settings: &PlanSettings) -> Result<PlanningStrategy> {
     let inputs = ForecastInputs::from_settings(plan_settings)?;
     let planning = PlanningStrategy::new(
         name,
@@ -148,7 +143,6 @@ async fn do_make_planning_strategy(
         inputs,
         forecast::LeastSquaresWorkloadForecaster::new(plan_settings.window, plan_settings.spike),
         performance_repository::make_performance_repository(&plan_settings.performance_repository)?,
-        context_inlet,
     )
     .await?;
     Ok(planning)

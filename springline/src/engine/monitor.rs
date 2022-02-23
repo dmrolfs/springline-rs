@@ -4,9 +4,9 @@ use std::sync::Arc;
 
 use enumflags2::{bitflags, BitFlags};
 use once_cell::sync::Lazy;
-use proctor::elements::{Telemetry, TelemetryValue, Timestamp};
+use proctor::elements::{Telemetry, Timestamp};
 use proctor::graph::stage::{ActorSourceApi, ActorSourceCmd};
-use proctor::phases::plan::PlanMonitor;
+use proctor::phases::plan::{PlanEvent, PlanMonitor};
 use proctor::serde::FORMAT;
 use prometheus::{IntCounter, IntGauge};
 
@@ -14,7 +14,8 @@ use crate::phases::act::{ActEvent, ActMonitor, ACT_PHASE_ERRORS, ACT_SCALE_ACTIO
 use crate::phases::decision::{DecisionContext, DecisionEvent, DecisionMonitor, DecisionResult};
 use crate::phases::eligibility::{EligibilityContext, EligibilityEvent, EligibilityMonitor};
 use crate::phases::governance::{GovernanceContext, GovernanceEvent, GovernanceMonitor, GovernanceOutcome};
-use crate::phases::plan::{FlinkPlanningEvent, FlinkPlanningMonitor, PlanEvent, PlanningStrategy};
+use crate::phases::metric_catalog;
+use crate::phases::plan::{FlinkPlanningEvent, FlinkPlanningMonitor, PlanningStrategy};
 
 #[bitflags(default = Sense | Plan | Act)]
 #[repr(u8)]
@@ -166,7 +167,7 @@ impl Monitor {
     }
 
     #[allow(clippy::cognitive_complexity)]
-    fn handle_plan_event(event: Arc<PlanEvent>) {
+    fn handle_plan_event(event: Arc<PlanEvent<PlanningStrategy>>) {
         match &*event {
             PlanEvent::DecisionPlanned(decision, plan) => {
                 // match decision {
@@ -195,6 +196,10 @@ impl Monitor {
                 //     DecisionResult::NoAction(_) => DECISION_SCALING_DECISION_COUNT.no_action.inc(),
                 // }
             },
+
+            PlanEvent::ContextChanged(context) => {
+                tracing::info!(?context, "Flink Planning context changed.");
+            },
         }
     }
 
@@ -207,30 +212,27 @@ impl Monitor {
                 tracing::info!(?observation, correlation=?observation.correlation_id, "observation added to planning");
                 PLAN_OBSERVATION_COUNT.inc();
 
-                if let Some((tx, forecast)) = tx_feedback.zip(*next_forecast) {
-                    let feedback: TelemetryValue = forecast.into();
+                if let Some((tx, (forecast_ts, forecast_val))) = tx_feedback.zip(*next_forecast) {
                     let telemetry = maplit::hashmap! {
-                        crate::phases::metric_catalog::MC_FLOW__FORECASTED_RECORDS_IN_PER_SEC.to_string() => feedback,
+                        metric_catalog::MC_FLOW__FORECASTED_TIMESTAMP.to_string() => forecast_ts.into(),
+                        metric_catalog::MC_FLOW__FORECASTED_RECORDS_IN_PER_SEC.to_string() => forecast_val.into(),
                     };
+
                     match ActorSourceCmd::push(tx, telemetry.into()).await {
                         Ok(_) => {
                             tracing::info!(
-                                ?forecast, correlation=?observation.correlation_id,
+                                %forecast_ts, %forecast_val, correlation=?observation.correlation_id,
                                 "feeding next forecast back into springline system"
                             );
                         },
                         Err(err) => {
                             tracing::error!(
-                                error=?err, ?forecast, correlation=?observation.correlation_id,
+                                error=?err, %forecast_ts, %forecast_val, correlation=?observation.correlation_id,
                                 "failed to feed forecasted workflow back into system."
                             )
                         },
                     }
                 }
-            },
-
-            FlinkPlanningEvent::ContextChanged(context) => {
-                tracing::info!(?context, "Flink Planning context changed.");
             },
         }
     }

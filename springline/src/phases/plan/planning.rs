@@ -1,10 +1,10 @@
 use std::fmt::Debug;
 
 use async_trait::async_trait;
-use proctor::elements::RecordsPerSecond;
+use proctor::elements::{RecordsPerSecond, Timestamp};
 use proctor::error::PlanError;
-use proctor::graph::{Inlet, Outlet};
-use proctor::phases::plan::Planning;
+use proctor::graph::{Outlet, Port};
+use proctor::phases::plan::{PlanEvent, Planning};
 use std::sync::Arc;
 use tokio::sync::broadcast;
 
@@ -30,10 +30,10 @@ pub type FlinkPlanningMonitor = broadcast::Receiver<Arc<FlinkPlanningEvent>>;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum FlinkPlanningEvent {
-    ContextChanged(Option<PlanningContext>),
+    // ContextChanged(Option<PlanningContext>),
     ObservationAdded {
         observation: PlanningMeasurement,
-        next_forecast: Option<RecordsPerSecond>,
+        next_forecast: Option<(Timestamp, RecordsPerSecond)>,
     },
 }
 
@@ -41,20 +41,28 @@ pub enum FlinkPlanningEvent {
 pub struct FlinkPlanning<F: Forecaster> {
     name: String,
     min_scaling_step: usize,
-    forecast_calculator: ForecastCalculator<F>,
+    pub forecast_calculator: ForecastCalculator<F>,
     performance_history: PerformanceHistory,
     performance_repository: Box<dyn PerformanceRepository>,
-    context_inlet: Inlet<PlanningContext>,
     outlet: Option<Outlet<ScalePlan>>,
     tx_monitor: broadcast::Sender<Arc<FlinkPlanningEvent>>,
     /* todo: tx_api: mpsc::UnboundedSender<FlinkPlanningCmd>,
      * todo: rx_api: mpsc::UnboundedReceiver<FlinkPlanningCmd>, */
 }
 
+impl<F: Forecaster> PartialEq for FlinkPlanning<F> {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name
+            && self.min_scaling_step == other.min_scaling_step
+            && self.forecast_calculator.inputs == other.forecast_calculator.inputs
+            && self.performance_history == other.performance_history
+    }
+}
+
 impl<F: Forecaster> FlinkPlanning<F> {
     pub async fn new(
         planning_name: &str, min_scaling_step: usize, inputs: ForecastInputs, forecaster: F,
-        performance_repository: Box<dyn PerformanceRepository>, context_inlet: Inlet<PlanningContext>,
+        performance_repository: Box<dyn PerformanceRepository>,
     ) -> Result<Self, PlanError> {
         performance_repository.check().await?;
 
@@ -73,7 +81,6 @@ impl<F: Forecaster> FlinkPlanning<F> {
             forecast_calculator,
             performance_history,
             performance_repository,
-            context_inlet,
             outlet: None,
             tx_monitor,
             /* todo: tx_api,
@@ -191,6 +198,7 @@ impl<F: Forecaster> FlinkPlanning<F> {
 impl<F: Forecaster> Planning for FlinkPlanning<F> {
     type Observation = super::PlanningMeasurement;
     type Decision = DecisionResult<MetricCatalog>;
+    type Context = PlanningContext;
     type Out = ScalePlan;
 
     fn set_outlet(&mut self, outlet: Outlet<Self::Out>) {
@@ -203,7 +211,7 @@ impl<F: Forecaster> Planning for FlinkPlanning<F> {
             .forecast_calculator
             .calculate_next_workload(observation.recv_timestamp)
             .map(|forecast| {
-                tracing::info!(?forecast, "next observation forecasted.");
+                tracing::info!(forecast_ts=%forecast.0, forecast_val=%forecast.1, "next observation forecasted.");
                 forecast
             })
             .map_err(|err| {
@@ -224,6 +232,13 @@ impl<F: Forecaster> Planning for FlinkPlanning<F> {
     }
 
     #[tracing::instrument(level = "info", skip(self))]
+    async fn patch_context(&mut self, context: Self::Context) -> Result<Option<PlanEvent<Self>>, PlanError> {
+        context.patch_inputs(&mut self.forecast_calculator.inputs);
+        tracing::error!(forecast_inputs=?self.forecast_calculator.inputs, "DMR: patched context inputs.");
+        Ok(Some(PlanEvent::<Self>::ContextChanged(context)))
+    }
+
+    #[tracing::instrument(level = "info", skip(self))]
     async fn handle_decision(&mut self, decision: Self::Decision) -> Result<Option<ScalePlan>, PlanError> {
         self.update_performance_history(&decision).await?;
 
@@ -239,6 +254,9 @@ impl<F: Forecaster> Planning for FlinkPlanning<F> {
     async fn close(self) -> Result<(), PlanError> {
         tracing::trace!("closing flink planning.");
         self.performance_repository.close().await?;
+        if let Some(mut o) = self.outlet {
+            o.close().await;
+        }
         Ok(())
     }
 }
@@ -253,7 +271,7 @@ mod tests {
     use once_cell::sync::Lazy;
     use pretty_assertions::assert_eq;
     use pretty_snowflake::Id;
-    use proctor::elements::telemetry;
+    use proctor::elements::{telemetry, Timestamp};
     use proctor::graph;
     use tokio::sync::mpsc;
     use tokio::sync::mpsc::Receiver;
@@ -293,7 +311,6 @@ mod tests {
     });
     static SCALE_UP: Lazy<DecisionResult<MetricCatalog>> = Lazy::new(|| DecisionResult::ScaleUp(METRICS.clone()));
     static SCALE_DOWN: Lazy<DecisionResult<MetricCatalog>> = Lazy::new(|| DecisionResult::ScaleDown(METRICS.clone()));
-    static NO_SCALE: Lazy<DecisionResult<MetricCatalog>> = Lazy::new(|| DecisionResult::NoAction(METRICS.clone()));
 
     enum SignalType {
         Sine,
@@ -301,8 +318,8 @@ mod tests {
     }
 
     async fn setup_planning(
-        planning_name: &str, context_inlet: Inlet<PlanningContext>, outlet: Outlet<ScalePlan>, signal_type: SignalType,
-    ) -> anyhow::Result<Arc<Mutex<TestPlanning>>> {
+        planning_name: &str, outlet: Outlet<ScalePlan>, signal_type: SignalType,
+    ) -> anyhow::Result<TestPlanning> {
         let mut calc = ForecastCalculator::new(
             LeastSquaresWorkloadForecaster::new(20, SpikeSettings { influence: 0.25, ..SpikeSettings::default() }),
             ForecastInputs {
@@ -356,39 +373,24 @@ mod tests {
                 storage: PerformanceRepositoryType::Memory,
                 storage_path: None,
             })?,
-            context_inlet,
             outlet: Some(outlet),
             tx_monitor,
         };
 
-        Ok(Arc::new(Mutex::new(planning)))
+        Ok(planning)
     }
 
     #[tracing::instrument(level = "info", skip(planning, probe_rx))]
     async fn assert_scale_decision_scenario(
-        label: &str,
-        decision: &DecisionResult<MetricCatalog>,
-        planning: Arc<Mutex<TestPlanning>>,
-
-        // calculator: Arc<Mutex<ForecastCalculator<LeastSquaresWorkloadForecastBuilder>>>,
-        // history: PerformanceHistory,
-        // outlet: Outlet<FlinkScalePlan>,
-        probe_rx: &mut Receiver<ScalePlan>,
-        // min_step: usize,
-        expected: ScalePlan,
+        label: &str, decision: &DecisionResult<MetricCatalog>, planning: Arc<Mutex<TestPlanning>>,
+        probe_rx: &mut Receiver<ScalePlan>, expected: ScalePlan,
     ) -> anyhow::Result<()> {
         tracing::warn!("DMR - testing {}...", label);
 
         let decision = decision.clone();
         let planning_2 = Arc::clone(&planning);
-        // let calculator_2 = Arc::clone(&calculator);
-        // let history = Arc::new(Mutex::new(history));
-        // let history_2 = Arc::clone(&history);
 
         let handle = tokio::spawn(async move {
-            // let c = &mut *calculator_2.lock().await;
-            // let h = &mut *history_2.lock().await;
-            // assert_ok!(FlinkScalePlanning::handle_scale_decision(decision, c, h, &outlet, min_step).await);
             let p = &mut *planning_2.lock().await;
             assert_ok!(p.handle_scale_decision(decision).await);
         });
@@ -408,11 +410,6 @@ mod tests {
         let main_span = tracing::info_span!("test_flink_planning_handle_empty_scale_decision");
         let _main_span_guard = main_span.enter();
 
-        let (tx_context, rx_context) = mpsc::channel(8);
-        let context_inlet = Inlet::new("plan context", graph::PORT_CONTEXT);
-        let mut context_inlet_2 = context_inlet.clone();
-        block_on(async move { context_inlet_2.attach("plan_context_inlet".into(), rx_context).await });
-
         let (probe_tx, mut probe_rx) = mpsc::channel(8);
         let outlet = Outlet::new("plan outlet", graph::PORT_DATA);
         let mut outlet_2 = outlet.clone();
@@ -420,7 +417,9 @@ mod tests {
 
         let recv_timestamp = METRICS.recv_timestamp;
         let block: anyhow::Result<()> = block_on(async move {
-            let planning = setup_planning("planning_1", context_inlet, outlet, SignalType::Linear).await?;
+            let planning = Arc::new(Mutex::new(assert_ok!(
+                setup_planning("planning_1", outlet, SignalType::Linear).await
+            )));
             let min_step = planning.lock().await.min_scaling_step;
 
             assert_ok!(
@@ -487,11 +486,6 @@ mod tests {
         let main_span = tracing::info_span!("test_flink_planning_handle_scale_decision");
         let _main_span_guard = main_span.enter();
 
-        let (tx_context, rx_context) = mpsc::channel(8);
-        let context_inlet = Inlet::new("plan context", graph::PORT_CONTEXT);
-        let mut context_inlet_2 = context_inlet.clone();
-        block_on(async move { context_inlet_2.attach("plan_context_inlet".into(), rx_context).await });
-
         let (probe_tx, mut probe_rx) = mpsc::channel(8);
         let outlet = Outlet::new("plan outlet", graph::PORT_DATA);
         let mut outlet_2 = outlet.clone();
@@ -500,7 +494,9 @@ mod tests {
         let recv_timestamp = METRICS.recv_timestamp;
 
         let block: anyhow::Result<()> = block_on(async move {
-            let planning = setup_planning("planning_2", context_inlet, outlet, SignalType::Sine).await?;
+            let planning = Arc::new(Mutex::new(assert_ok!(
+                setup_planning("planning_2", outlet, SignalType::Sine).await
+            )));
 
             let mut performance_history = PerformanceHistory::default();
             performance_history.add_upper_benchmark(Benchmark::new(1, 55.0.into()));
@@ -531,5 +527,39 @@ mod tests {
         block?;
 
         Ok(())
+    }
+
+    #[test]
+    fn test_patch_forecast_inputs_from_context() {
+        block_on(async {
+            let mut planning =
+                assert_ok!(setup_planning("patch", Outlet::new("patch", graph::PORT_DATA), SignalType::Sine).await);
+
+            let expected = ForecastInputs {
+                restart: Duration::from_secs(2 * 60),
+                max_catch_up: Duration::from_secs(13 * 60),
+                valid_offset: Duration::from_secs(5 * 60),
+            };
+            assert_eq!(planning.forecast_calculator.inputs, expected);
+
+            let expected = ForecastInputs {
+                restart: Duration::from_secs(33),
+                valid_offset: Duration::from_secs(44),
+                ..expected
+            };
+
+            let context = PlanningContext {
+                correlation_id: Id::direct("planning", 17, "ABS"),
+                recv_timestamp: Timestamp::now(),
+                min_scaling_step: None,
+                restart: Some(expected.restart),
+                max_catch_up: None,
+                recovery_valid: Some(expected.valid_offset),
+            };
+
+            let event = assert_some!(assert_ok!(planning.patch_context(context.clone()).await));
+            assert_eq!(event, PlanEvent::ContextChanged(context));
+            assert_eq!(planning.forecast_calculator.inputs, expected);
+        })
     }
 }

@@ -1,3 +1,4 @@
+use crate::phases::plan::ForecastInputs;
 use crate::phases::UpdateMetrics;
 use once_cell::sync::Lazy;
 use pretty_snowflake::{Id, Label};
@@ -41,6 +42,22 @@ pub struct PlanningContext {
     #[serde(rename = "planning.recovery_valid")]
     #[serde_as(as = "Option<serde_with::DurationSeconds<u64>>")]
     pub recovery_valid: Option<Duration>,
+}
+
+impl PlanningContext {
+    pub fn patch_inputs(&self, inputs: &mut ForecastInputs) {
+        if let Some(r) = self.restart {
+            inputs.restart = r;
+        }
+
+        if let Some(c) = self.max_catch_up {
+            inputs.max_catch_up = c;
+        }
+
+        if let Some(valid) = self.recovery_valid {
+            inputs.valid_offset = valid;
+        }
+    }
 }
 
 impl PartialEq for PlanningContext {
@@ -137,9 +154,9 @@ pub static PLANNING_CTX_FORECASTING_RECOVERY_VALID_SECS: Lazy<IntGauge> = Lazy::
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pretty_assertions::assert_eq;
     use serde_test::{assert_tokens, Token};
 
+    #[test]
     fn test_planning_context_serde_tokens() {
         let now = Timestamp::now();
         let corr = Id::direct("PlanningContext", 17, "ABC");
@@ -152,6 +169,34 @@ mod tests {
             recovery_valid: Some(Duration::from_secs(22)),
         };
 
-        assert_tokens(&context, &vec![]);
+        assert_tokens(
+            &context,
+            &vec![
+                Token::Struct { name: "PlanningContext", len: 6 },
+                Token::Str("correlation_id"),
+                Token::Struct { name: "Id", len: 2 },
+                Token::Str("snowflake"),
+                Token::I64(17),
+                Token::Str("pretty"),
+                Token::Str("ABC"),
+                Token::StructEnd,
+                Token::Str("recv_timestamp"),
+                Token::TupleStruct { name: "Timestamp", len: 2 },
+                Token::I64(now.as_pair().0),
+                Token::U32(now.as_pair().1),
+                Token::TupleStructEnd,
+                Token::Str("planning.min_scaling_step"),
+                Token::None,
+                Token::Str("planning.restart"),
+                Token::Some,
+                Token::U64(17),
+                Token::Str("planning.max_catch_up"),
+                Token::None,
+                Token::Str("planning.recovery_valid"),
+                Token::Some,
+                Token::U64(22),
+                Token::StructEnd,
+            ],
+        );
     }
 }

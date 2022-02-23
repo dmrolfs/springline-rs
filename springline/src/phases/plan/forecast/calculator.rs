@@ -1,3 +1,4 @@
+use std::fmt::Debug;
 use std::time::Duration;
 
 use crate::phases::plan::{PLANNING_RECOVERY_WORKLOAD_RATE, PLANNING_VALID_WORKLOAD_RATE};
@@ -43,7 +44,7 @@ impl ForecastInputs {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ForecastCalculator<F: Forecaster> {
     forecaster: F,
     pub inputs: ForecastInputs,
@@ -52,6 +53,12 @@ pub struct ForecastCalculator<F: Forecaster> {
 impl<F: Forecaster> ForecastCalculator<F> {
     pub fn new(forecaster: F, inputs: ForecastInputs) -> Result<Self, PlanError> {
         Ok(Self { forecaster, inputs: inputs.check()? })
+    }
+
+    pub fn with_inputs(mut self, inputs: ForecastInputs) -> Result<Self, PlanError> {
+        let inputs = inputs.check()?;
+        self.forecaster.clear();
+        Ok(Self { inputs, ..self })
     }
 
     pub fn have_enough_data(&self) -> bool {
@@ -74,10 +81,14 @@ impl<F: Forecaster> ForecastCalculator<F> {
         self.forecaster.clear()
     }
 
-    pub fn calculate_next_workload(&mut self, trigger_point: Timestamp) -> Result<RecordsPerSecond, PlanError> {
-        let forecast = self.forecaster.forecast()?;
+    pub fn calculate_next_workload(
+        &mut self, trigger_point: Timestamp,
+    ) -> Result<(Timestamp, RecordsPerSecond), PlanError> {
         let next = self.forecaster.expected_next_observation_timestamp(trigger_point.as_f64());
-        forecast.workload_at(next.into())
+        self.forecaster
+            .forecast()?
+            .workload_at(next.into())
+            .map(|workload| (next.into(), workload))
     }
 
     #[tracing::instrument(level="debug", skip(self), fields(inputs=?self.inputs,))]

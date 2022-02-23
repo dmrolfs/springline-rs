@@ -84,7 +84,12 @@ impl LeastSquaresWorkloadForecaster {
 
     fn drop_data(&mut self, range: impl std::ops::RangeBounds<usize>) -> Vec<Point> {
         self.spike_length = 0;
-        self.data.drain(range).collect()
+        let dropped = self.data.drain(range).collect();
+        self.spike_detector.clear();
+        self.data.iter().for_each(|point| {
+            let _ = self.spike_detector.signal(point.1);
+        });
+        dropped
     }
 }
 
@@ -121,10 +126,10 @@ impl Forecaster for LeastSquaresWorkloadForecaster {
         self.assess_spike(data);
         // drop up to start of spike in order to establish new prediction function
         if self.exceeded_spike_threshold() {
-            let remaining = self.drop_data(..(self.data.len() - self.spike_length_threshold));
-            tracing::debug!(
-                ?remaining,
-                "exceeded spike threshold - dropping observation before spike."
+            let dropped = self.drop_data(..(self.data.len() - self.spike_length_threshold));
+            tracing::info!(
+                nr_dropped=%dropped.len(), nr_remaining=%self.data.len(),
+                "exceeded spike threshold - dropping observations before spike."
             );
         }
 
@@ -403,13 +408,26 @@ mod tests {
         Ok(())
     }
 
-    // #[test]
-    // fn test_plan_forecast_estimate_next_timestamp() -> anyhow::Result<()> {
-    //     let data = vec![(1., 32.5), (3., 37.3), (5., 36.4), (7., 32.4), (9., 28.5)];
-    //     let actual = LeastSquaresWorkloadForecast::estimate_next_timestamp(&data).unwrap();
-    //     assert_relative_eq!(actual, 11., epsilon = 1.0e-10);
-    //     Ok(())
-    // }
+    #[test]
+    fn test_plan_forecast_estimate_next_timestamp() -> anyhow::Result<()> {
+        let data = vec![(1., 32.5), (3., 37.3), (5., 36.4), (7., 32.4), (9., 28.5)];
+        let spike_settings: SpikeSettings = SpikeSettings {
+            std_deviation_threshold: 5.,
+            influence: 0.75,
+            length_threshold: SPIKE_LENGTH_THRESHOLD,
+        };
+
+        let mut forecaster = LeastSquaresWorkloadForecaster::new(3, spike_settings);
+        data.into_iter().for_each(|(timestamp_secs, workload)| {
+            forecaster.add_observation(WorkloadMeasurement {
+                timestamp_secs: timestamp_secs as i64,
+                workload: workload.into(),
+            })
+        });
+        let actual = forecaster.expected_next_observation_timestamp(9.);
+        assert_relative_eq!(actual, 11., epsilon = 1.0e-10);
+        Ok(())
+    }
 
     #[test]
     fn test_plan_forecast_model_selection() -> anyhow::Result<()> {

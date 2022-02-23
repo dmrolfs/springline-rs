@@ -99,11 +99,15 @@ impl TestFlow {
     }
 
     pub async fn push_data(&self, data: Data) -> anyhow::Result<()> {
-        stage::ActorSourceCmd::push(&self.tx_data_sensor_api, data).await.map_err(|err| err.into())
+        stage::ActorSourceCmd::push(&self.tx_data_sensor_api, data)
+            .await
+            .map_err(|err| err.into())
     }
 
     pub async fn push_context(&self, context: Context) -> anyhow::Result<()> {
-        stage::ActorSourceCmd::push(&self.tx_context_sensor_api, context).await.map_err(|err| err.into())
+        stage::ActorSourceCmd::push(&self.tx_context_sensor_api, context)
+            .await
+            .map_err(|err| err.into())
     }
 
     #[allow(dead_code)]
@@ -128,10 +132,10 @@ impl TestFlow {
     ) -> anyhow::Result<elements::PolicyFilterDetail<Context, GovernanceTemplateData>> {
         elements::PolicyFilterCmd::inspect(&self.tx_governance_api)
             .await
-        .map(|d| {
-            tracing::info!(detail=?d, "inspected policy.");
-            d
-        })
+            .map(|d| {
+                tracing::info!(detail=?d, "inspected policy.");
+                d
+            })
             .map_err(|err| err.into())
     }
 
