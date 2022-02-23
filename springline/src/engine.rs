@@ -75,7 +75,7 @@ impl AutoscaleEngine<Building> {
     }
 
     pub fn with_action_stage(self, action_stage: Box<dyn SinkStage<GovernanceOutcome>>) -> Self {
-        tracing::info!(?action_stage, "setting actact phase on autoscale engine builder.");
+        tracing::info!(?action_stage, "setting act phase on autoscale engine builder.");
         Self {
             inner: Building { act: Some(action_stage), ..self.inner },
         }
