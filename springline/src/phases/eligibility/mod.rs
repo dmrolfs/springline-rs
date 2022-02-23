@@ -1,6 +1,6 @@
 use proctor::elements::{PolicyFilterEvent, PolicySubscription};
 use proctor::phases::policy_phase::PolicyPhase;
-use proctor::phases::sense::{ClearinghouseSubscriptionMagnet, SubscriptionChannel};
+use proctor::phases::sense::{ClearinghouseSubscriptionAgent, SubscriptionChannel};
 use proctor::SharedString;
 
 use crate::phases::{self, MetricCatalog};
@@ -29,10 +29,11 @@ pub type EligibilityPhase = (
 );
 pub type EligibilityEvent = PolicyFilterEvent<MetricCatalog, EligibilityContext>;
 
-#[tracing::instrument(level = "info")]
-pub async fn make_eligibility_phase(
-    settings: &EligibilitySettings, magnet: ClearinghouseSubscriptionMagnet<'_>,
-) -> Result<EligibilityPhase> {
+#[tracing::instrument(level = "trace", skip(agent))]
+pub async fn make_eligibility_phase<A>(settings: &EligibilitySettings, agent: &mut A) -> Result<EligibilityPhase>
+where
+    A: ClearinghouseSubscriptionAgent,
+{
     let name: SharedString = "eligibility".into();
     let policy = EligibilityPolicy::new(settings);
     let subscription = policy.subscription(name.as_ref(), settings);
@@ -41,7 +42,7 @@ pub async fn make_eligibility_phase(
     // let eligibility = Box::new(
     //     PolicyPhase::with_transform(name.clone(), policy, make_eligibility_transform(name.into_owned())).await?
     // );
-    let channel = phases::subscribe_policy_phase(subscription, &eligibility, magnet).await?;
+    let channel = phases::subscribe_policy_phase(subscription, &eligibility, agent).await?;
     Ok((eligibility, channel))
 }
 

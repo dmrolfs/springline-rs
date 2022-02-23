@@ -71,6 +71,10 @@ pub fn register_metrics(registry: &Registry) -> Result<()> {
 
     registry.register(Box::new(decision::DECISION_SCALING_DECISION_COUNT_METRIC.clone()))?;
 
+    registry.register(Box::new(plan::PLANNING_CTX_MIN_SCALING_STEP.clone()))?;
+    registry.register(Box::new(plan::PLANNING_CTX_FORECASTING_RESTART_SECS.clone()))?;
+    registry.register(Box::new(plan::PLANNING_CTX_FORECASTING_MAX_CATCH_UP_SECS.clone()))?;
+    registry.register(Box::new(plan::PLANNING_CTX_FORECASTING_RECOVERY_VALID_SECS.clone()))?;
     registry.register(Box::new(plan::PLANNING_FORECASTED_WORKLOAD.clone()))?;
     registry.register(Box::new(plan::PLANNING_RECOVERY_WORKLOAD_RATE.clone()))?;
     registry.register(Box::new(plan::PLANNING_VALID_WORKLOAD_RATE.clone()))?;

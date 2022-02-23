@@ -2,11 +2,11 @@ use std::io::Write;
 use std::str::FromStr;
 use std::{fs, io, path};
 
-use clap::{App, Arg};
+use clap::{Arg, Command};
 use thiserror::Error;
 
 fn main() -> anyhow::Result<()> {
-    let matches = App::new("Springline transcode")
+    let matches = Command::new("Springline transcode")
         .arg(
             Arg::new("config")
                 .help("Source config document to transcode")

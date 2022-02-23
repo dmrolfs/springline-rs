@@ -7,7 +7,7 @@ use proctor::error::PlanError;
 
 use crate::phases::plan::forecast::WorkloadForecast;
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub struct LinearRegression {
     pub slope: f64,
     pub y_intercept: f64,
@@ -66,7 +66,7 @@ impl WorkloadForecast for LinearRegression {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub struct QuadraticRegression {
     pub a: f64,
     pub b: f64,
@@ -105,9 +105,6 @@ impl QuadraticRegression {
 
         let decomp = m_x.lu();
 
-        // .ok_or(PlanError::RegressionFailed(
-        // Utc.timestamp_millis(data[data.len() - 1].0 as i64),
-        // ))?;
         decomp.solve(&m_y).map(|coefficients| {
             let a = coefficients[(0, 0)];
             let b = coefficients[(1, 0)];

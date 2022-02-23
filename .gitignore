@@ -16,3 +16,4 @@ springline/src/phases/.DS_Store
 tmp/
 *.folded
 .vscode/
+*.iml

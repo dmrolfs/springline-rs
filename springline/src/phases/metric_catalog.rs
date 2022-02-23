@@ -111,6 +111,8 @@ pub struct JobHealthMetrics {
 }
 
 pub const MC_FLOW__RECORDS_IN_PER_SEC: &str = "flow.records_in_per_sec";
+pub const MC_FLOW__FORECASTED_TIMESTAMP: &str = "flow.forecasted_timestamp";
+pub const MC_FLOW__FORECASTED_RECORDS_IN_PER_SEC: &str = "flow.forecasted_records_in_per_sec";
 
 #[derive(PolarClass, Debug, Default, PartialEq, Clone, Serialize, Deserialize)]
 pub struct FlowMetrics {
@@ -133,6 +135,16 @@ pub struct FlowMetrics {
     #[polar(attribute)]
     #[serde(rename = "flow.records_out_per_sec")]
     pub records_out_per_sec: f64,
+
+    /// Timestamp (in fractional secs) for the forecasted_records_in_per_sec value.
+    #[polar(attribute)]
+    #[serde(rename = "flow.forecasted_timestamp")]
+    pub forecasted_timestamp: Option<f64>,
+
+    /// Forecasted rate of records flow predicted by springline.
+    #[polar(attribute)]
+    #[serde(rename = "flow.forecasted_records_in_per_sec")]
+    pub forecasted_records_in_per_sec: Option<f64>,
 
     /// Applies to Kafka input connections. Pulled from the FlinkKafkaConsumer records-lag-max
     /// metric.
@@ -699,6 +711,8 @@ mod tests {
             },
             flow: FlowMetrics {
                 records_in_per_sec: 17.,
+                forecasted_timestamp: Some(ts.as_f64()),
+                forecasted_records_in_per_sec: Some(23.),
                 input_records_lag_max: Some(314),
                 input_millis_behind_latest: None,
                 records_out_per_sec: 0.0,
@@ -748,6 +762,12 @@ mod tests {
                 Token::F64(17.),
                 Token::Str("flow.records_out_per_sec"),
                 Token::F64(0.),
+                Token::Str("flow.forecasted_timestamp"),
+                Token::Some,
+                Token::F64(ts.as_f64()),
+                Token::Str("flow.forecasted_records_in_per_sec"),
+                Token::Some,
+                Token::F64(23.),
                 Token::Str("flow.input_records_lag_max"),
                 Token::Some,
                 Token::I64(314),
@@ -797,6 +817,8 @@ mod tests {
             },
             flow: FlowMetrics {
                 records_in_per_sec: 17.,
+                forecasted_timestamp: None,
+                forecasted_records_in_per_sec: None,
                 input_records_lag_max: Some(314),
                 input_millis_behind_latest: None,
                 records_out_per_sec: 0.0,

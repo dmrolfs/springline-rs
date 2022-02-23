@@ -26,9 +26,9 @@ FROM debian:bullseye-slim AS runtime
 
 WORKDIR /app
 RUN apt-get update \
-#    && apt-get install -y --no-install-recommends openssl \
+#   python is only needed for the access server client
     && apt-get install -y python3.9 python3-pip \
-    && apt-get install -y curl \
+#    && apt-get install -y curl \
     # Clean up
     && apt-get autoremove -y \
     && apt-get clean -y \
@@ -54,7 +54,7 @@ USER appuser:appuser
 
 COPY --from=builder ["/app/target/release/springline", "springline"]
 
-#COPY ["./resources", "resources"]
+COPY ["./resources", "resources"]
 ENV APP_ENVIRONMENT production
 
 COPY ["./hak/hak", "/usr/local/bin/hak"]
@@ -70,4 +70,4 @@ ENV TILLER_NAMESPACE "here-olp-pipeline-management-dev"
 ENV CREDENTIALS_PROPERTIES "IwojIENvcHlyaWdodCAoQykgMjAxOSBIRVJFIEdsb2JhbCBCLlYuIGFuZCBpdHMgYWZmaWxpYXRlKHMpLgojIEFsbCByaWdodHMgcmVzZXJ2ZWQuCiMKIyBUaGlzIHNvZnR3YXJlIGFuZCBvdGhlciBtYXRlcmlhbHMgY29udGFpbiBwcm9wcmlldGFyeSBpbmZvcm1hdGlvbgojIGNvbnRyb2xsZWQgYnkgSEVSRSBhbmQgYXJlIHByb3RlY3RlZCBieSBhcHBsaWNhYmxlIGNvcHlyaWdodCBsZWdpc2xhdGlvbi4KIyBBbnkgdXNlIGFuZCB1dGlsaXphdGlvbiBvZiB0aGlzIHNvZnR3YXJlIGFuZCBvdGhlciBtYXRlcmlhbHMgYW5kCiMgZGlzY2xvc3VyZSB0byBhbnkgdGhpcmQgcGFydGllcyBpcyBjb25kaXRpb25hbCB1cG9uIGhhdmluZyBhIHNlcGFyYXRlCiMgYWdyZWVtZW50IHdpdGggSEVSRSBmb3IgdGhlIGFjY2VzcywgdXNlLCB1dGlsaXphdGlvbiBvciBkaXNjbG9zdXJlIG9mIHRoaXMKIyBzb2Z0d2FyZS4gSW4gdGhlIGFic2VuY2Ugb2Ygc3VjaCBhZ3JlZW1lbnQsIHRoZSB1c2Ugb2YgdGhlIHNvZnR3YXJlIGlzIG5vdAojIGFsbG93ZWQuCiMKCmhlcmUudXNlci5pZCA9IEhFUkUtZjE2ZDVhYmYtNTA1Ny00NWRkLTkzMDMtMTJmOTM2OWRmYzgxCmhlcmUuY2xpZW50LmlkID0gdUpnZzdkUkJvMXlBM2hJTTdlOUMKaGVyZS5hY2Nlc3Mua2V5LmlkID0gZGREX1g5WlU3UXRwQTVKYjBiU3Z5UQpoZXJlLmFjY2Vzcy5rZXkuc2VjcmV0ID0gMS1uLU5WMjloNWduZkxzWHFyU19mSHZPZkpVVXFzRHAyckllcWtDZi1KMEt6YWNHVWtGQmUyU0taekNBVGZyZnprQ2MxbUNMeFU4MWhEaGczRFdYbGcKaGVyZS50b2tlbi5lbmRwb2ludC51cmwgPSBodHRwczovL3N0Zy5hY2NvdW50LmFwaS5oZXJlLmNvbS9vYXV0aDIvdG9rZW4KaGVyZS5jbGllbnQuZ3JvdXAgPSBzZHA6R1JPVVAtZGExZGQyODctMmY0OS00ZTk4LTkyYWMtNjlhZGNiZmQ2MWQ3Cg=="
 
 ENTRYPOINT ["./springline"]
-#CMD ["-s", "resources/secrets.yaml"]
+#CMD ["-s", "/secrets/secret.yaml"]

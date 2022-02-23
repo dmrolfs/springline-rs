@@ -163,15 +163,11 @@ async fn test_flink_sensor_merge_combine_stage() -> anyhow::Result<()> {
 }
 
 async fn trigger(tx: &ActorSourceApi<()>) -> anyhow::Result<Ack> {
-    let (cmd, rx) = ActorSourceCmd::push(());
-    tx.send(cmd)?;
-    rx.await.map_err(|err| err.into())
+    ActorSourceCmd::push(tx, ()).await.map_err(|err| err.into())
 }
 
 async fn stop(tx: &ActorSourceApi<()>) -> anyhow::Result<Ack> {
-    let (cmd, rx) = ActorSourceCmd::stop();
-    tx.send(cmd)?;
-    rx.await.map_err(|err| err.into())
+    ActorSourceCmd::stop(tx).await.map_err(|err| err.into())
 }
 
 fn make_expected_telemetry(

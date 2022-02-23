@@ -11,7 +11,7 @@ pub use result::DECISION_DIRECTION;
 
 use proctor::elements::PolicySubscription;
 use proctor::phases::policy_phase::PolicyPhase;
-use proctor::phases::sense::{ClearinghouseSubscriptionMagnet, SubscriptionChannel};
+use proctor::phases::sense::{ClearinghouseSubscriptionAgent, SubscriptionChannel};
 use proctor::SharedString;
 
 use crate::phases::eligibility::EligibilityOutcome;
@@ -29,17 +29,18 @@ pub type DecisionPhase = (
     SubscriptionChannel<DecisionContext>,
 );
 
-#[tracing::instrument(level = "info")]
-pub async fn make_decision_phase(
-    settings: &DecisionSettings, magnet: ClearinghouseSubscriptionMagnet<'_>,
-) -> Result<DecisionPhase> {
+#[tracing::instrument(level = "trace", skip(agent))]
+pub async fn make_decision_phase<A>(settings: &DecisionSettings, agent: &mut A) -> Result<DecisionPhase>
+where
+    A: ClearinghouseSubscriptionAgent,
+{
     let name: SharedString = "decision".into();
     let policy = DecisionPolicy::new(settings);
     let subscription = policy.subscription(name.as_ref(), settings);
     let decision =
         Box::new(PolicyPhase::with_transform(name.clone(), policy, make_decision_transform(name.into_owned())).await?);
 
-    let channel = phases::subscribe_policy_phase(subscription, &decision, magnet).await?;
+    let channel = phases::subscribe_policy_phase(subscription, &decision, agent).await?;
     Ok((decision, channel))
 }
 

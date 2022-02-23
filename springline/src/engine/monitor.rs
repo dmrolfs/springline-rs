@@ -6,7 +6,7 @@ use enumflags2::{bitflags, BitFlags};
 use once_cell::sync::Lazy;
 use proctor::elements::{Telemetry, Timestamp};
 use proctor::graph::stage::{ActorSourceApi, ActorSourceCmd};
-use proctor::phases::plan::PlanMonitor;
+use proctor::phases::plan::{PlanEvent, PlanMonitor};
 use proctor::serde::FORMAT;
 use prometheus::{IntCounter, IntGauge};
 
@@ -14,7 +14,8 @@ use crate::phases::act::{ActEvent, ActMonitor, ACT_PHASE_ERRORS, ACT_SCALE_ACTIO
 use crate::phases::decision::{DecisionContext, DecisionEvent, DecisionMonitor, DecisionResult};
 use crate::phases::eligibility::{EligibilityContext, EligibilityEvent, EligibilityMonitor};
 use crate::phases::governance::{GovernanceContext, GovernanceEvent, GovernanceMonitor, GovernanceOutcome};
-use crate::phases::plan::{PlanEvent, PlanningStrategy};
+use crate::phases::metric_catalog;
+use crate::phases::plan::{FlinkPlanningEvent, FlinkPlanningMonitor, PlanningStrategy};
 
 #[bitflags(default = Sense | Plan | Act)]
 #[repr(u8)]
@@ -32,6 +33,7 @@ pub struct Monitor {
     rx_eligibility_monitor: EligibilityMonitor,
     rx_decision_monitor: DecisionMonitor,
     rx_plan_monitor: PlanMonitor<PlanningStrategy>,
+    rx_flink_planning_monitor: FlinkPlanningMonitor,
     rx_governance_monitor: GovernanceMonitor,
     rx_action_monitor: Option<ActMonitor<GovernanceOutcome>>,
     tx_feedback: Option<ActorSourceApi<Telemetry>>,
@@ -43,6 +45,7 @@ impl std::fmt::Debug for Monitor {
             .field("rx_eligibility", &self.rx_eligibility_monitor)
             .field("rx_decision", &self.rx_decision_monitor)
             .field("rx_plan", &self.rx_plan_monitor)
+            .field("rx_flink_planning", &self.rx_flink_planning_monitor)
             .field("rx_governance", &self.rx_governance_monitor)
             .field("rx_action", &self.rx_action_monitor)
             .field("tx_feedback", &self.tx_feedback)
@@ -53,13 +56,15 @@ impl std::fmt::Debug for Monitor {
 impl Monitor {
     pub fn new(
         rx_eligibility_monitor: EligibilityMonitor, rx_decision_monitor: DecisionMonitor,
-        rx_plan_monitor: PlanMonitor<PlanningStrategy>, rx_governance_monitor: GovernanceMonitor,
-        rx_action_monitor: Option<ActMonitor<GovernanceOutcome>>, tx_feedback: Option<ActorSourceApi<Telemetry>>,
+        rx_plan_monitor: PlanMonitor<PlanningStrategy>, rx_flink_planning_monitor: FlinkPlanningMonitor,
+        rx_governance_monitor: GovernanceMonitor, rx_action_monitor: Option<ActMonitor<GovernanceOutcome>>,
+        tx_feedback: Option<ActorSourceApi<Telemetry>>,
     ) -> Self {
         Self {
             rx_eligibility_monitor,
             rx_decision_monitor,
             rx_plan_monitor,
+            rx_flink_planning_monitor,
             rx_governance_monitor,
             rx_action_monitor,
             tx_feedback,
@@ -82,10 +87,12 @@ impl Monitor {
             let span = tracing::info_span!("monitor event cycle");
             let _span_guard = span.enter();
 
+            // WORK HERE To add act events and context fields -- see notebook
             tokio::select! {
                 Ok(e) = self.rx_eligibility_monitor.recv() => Self::handle_eligibility_event(e, &mut loaded),
                 Ok(e) = self.rx_decision_monitor.recv() => Self::handle_decision_event(e, &mut loaded),
                 Ok(e) = self.rx_plan_monitor.recv() => Self::handle_plan_event(e),
+                Ok(e) = self.rx_flink_planning_monitor.recv() => Self::handle_flink_planning_event(e, tx_feedback).await,
                 Ok(e) = self.rx_governance_monitor.recv() => Self::handle_governance_event(e, &mut loaded),
                 Ok(e) = rx_action.recv() => Self::handle_action_event(e, tx_feedback, &mut loaded).await,
                 else => {
@@ -160,13 +167,8 @@ impl Monitor {
     }
 
     #[allow(clippy::cognitive_complexity)]
-    fn handle_plan_event(event: Arc<PlanEvent>) {
+    fn handle_plan_event(event: Arc<PlanEvent<PlanningStrategy>>) {
         match &*event {
-            PlanEvent::ObservationAdded(observation) => {
-                tracing::info!(?observation, correlation=?observation.correlation_id, "observation added to planning");
-                PLAN_OBSERVATION_COUNT.inc()
-            },
-
             PlanEvent::DecisionPlanned(decision, plan) => {
                 // match decision {
                 //     DecisionResult::ScaleUp(_) => DECISION_SCALING_DECISION_COUNT.up.inc(),
@@ -193,6 +195,44 @@ impl Monitor {
                 //     DecisionResult::ScaleDown(_) => DECISION_SCALING_DECISION_COUNT.down.inc(),
                 //     DecisionResult::NoAction(_) => DECISION_SCALING_DECISION_COUNT.no_action.inc(),
                 // }
+            },
+
+            PlanEvent::ContextChanged(context) => {
+                tracing::info!(?context, "Flink Planning context changed.");
+            },
+        }
+    }
+
+    #[allow(clippy::cognitive_complexity)]
+    async fn handle_flink_planning_event(
+        event: Arc<FlinkPlanningEvent>, tx_feedback: Option<&ActorSourceApi<Telemetry>>,
+    ) {
+        match &*event {
+            FlinkPlanningEvent::ObservationAdded { observation, next_forecast } => {
+                tracing::info!(?observation, correlation=?observation.correlation_id, "observation added to planning");
+                PLAN_OBSERVATION_COUNT.inc();
+
+                if let Some((tx, (forecast_ts, forecast_val))) = tx_feedback.zip(*next_forecast) {
+                    let telemetry = maplit::hashmap! {
+                        metric_catalog::MC_FLOW__FORECASTED_TIMESTAMP.to_string() => forecast_ts.into(),
+                        metric_catalog::MC_FLOW__FORECASTED_RECORDS_IN_PER_SEC.to_string() => forecast_val.into(),
+                    };
+
+                    match ActorSourceCmd::push(tx, telemetry.into()).await {
+                        Ok(_) => {
+                            tracing::info!(
+                                %forecast_ts, %forecast_val, correlation=?observation.correlation_id,
+                                "feeding next forecast back into springline system"
+                            );
+                        },
+                        Err(err) => {
+                            tracing::error!(
+                                error=?err, %forecast_ts, %forecast_val, correlation=?observation.correlation_id,
+                                "failed to feed forecasted workflow back into system."
+                            )
+                        },
+                    }
+                }
             },
         }
     }
@@ -239,9 +279,10 @@ impl Monitor {
                     let now: chrono::DateTime<Utc> = now.into();
                     let now_rep = format!("{}", now.format(FORMAT));
                     let telemetry = maplit::hashmap! { crate::phases::eligibility::CLUSTER__LAST_DEPLOYMENT.to_string() => now_rep.into(), };
-                    let (cmd, rx) = ActorSourceCmd::push(telemetry.into());
-
-                    match tx.send(cmd) {
+                    match ActorSourceCmd::push(tx, telemetry.into()).await {
+                        // let (cmd, rx) = ActorSourceCmd::push(telemetry.into());
+                        //
+                        // match tx.send(cmd) {
                         Ok(_) => {
                             tracing::info!(scale_deployment_timestamp=?now, "notify springline of scale deployment");
                         },
@@ -250,9 +291,9 @@ impl Monitor {
                         },
                     }
 
-                    if let Err(error) = rx.await {
-                        tracing::error!(?error, "scale deployment notification failed at clearinghouse")
-                    }
+                    // if let Err(error) = rx.await {
+                    //     tracing::error!(?error, "scale deployment notification failed at clearinghouse")
+                    // }
                 }
             },
             ActEvent::PlanFailed { plan, error_metric_label } => {

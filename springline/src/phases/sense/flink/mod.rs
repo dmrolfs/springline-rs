@@ -242,7 +242,7 @@ pub(crate) static FLINK_SENSOR_TIME: Lazy<HistogramVec> = Lazy::new(|| {
             "flink_sensor_time",
             "Time spent collecting telemetry from Flink in seconds",
         )
-        .buckets(vec![0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0, 5.0]),
+        .buckets(vec![0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.75, 1.0, 2.5, 5.0, 10.0]),
         &["flink_scope"],
     )
     .expect("failed creating flink_sensor_time metric")

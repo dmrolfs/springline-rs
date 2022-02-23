@@ -432,7 +432,7 @@ pub static FLINK_ACTIVE_JOBS_SENSOR_TIME: Lazy<HistogramVec> = Lazy::new(|| {
             "flink_active_jobs_sensor_time",
             "Time spent collecting active jobs from Flink in seconds",
         )
-        .buckets(vec![0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0, 5.0]),
+        .buckets(vec![0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 1.0, 2.5, 5.0, 7.5, 10.0]),
         &["flink_scope"],
     )
     .expect("failed creating flink_active_jobs_sensor_time metric")
@@ -449,7 +449,7 @@ pub static FLINK_QUERY_JOB_DETAIL_TIME: Lazy<HistogramVec> = Lazy::new(|| {
             "flink_query_job_detail_time",
             "Time spent collecting job detail from Flink in seconds",
         )
-        .buckets(vec![0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0, 5.0]),
+        .buckets(vec![0.2, 0.225, 0.25, 0.275, 0.3, 0.35, 0.4, 0.45, 0.5, 0.75, 1.0]),
         &["flink_scope"],
     )
     .expect("failed creating flink_query_job_detail_time metric")
@@ -483,7 +483,7 @@ pub static FLINK_VERTEX_SENSOR_METRIC_PICKLIST_TIME: Lazy<HistogramVec> = Lazy::
             "flink_vertex_sensor_metric_picklist_time",
             "Time spent getting the vertex metric picklist Flink in seconds",
         )
-        .buckets(vec![0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0, 5.0]),
+        .buckets(vec![0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.75, 1.0, 2.5, 5.0]),
         &["flink_scope"],
     )
     .expect("failed creating flink_vertex_sensor_metric_picklist_time metric")
@@ -502,7 +502,7 @@ pub static FLINK_VERTEX_SENSOR_AVAIL_TELEMETRY_TIME: Lazy<HistogramVec> = Lazy::
             "flink_vertex_sensor_avail_telemetry_time",
             "Time spent collecting available vertex metrics from Flink in seconds",
         )
-        .buckets(vec![0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0, 5.0]),
+        .buckets(vec![0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.75, 1.0, 2.5, 5.0]),
         &["flink_scope"],
     )
     .expect("failed creating flink_vertex_sensor_avail_telemetry_time metric")

@@ -73,6 +73,7 @@ where
         );
         let tx_clearinghouse_api = builder.clearinghouse.tx_api();
 
+        tracing::info!("CONNECT CONTEXT SUBSCRIPTION...");
         let context_channel =
             sense::SubscriptionChannel::<C>::connect_subscription(context_subscription, (&mut builder).into()).await?;
         let sense = builder.build_for_out_subscription(sensor_out_subscription).await?;
@@ -122,9 +123,9 @@ where
     }
 
     pub async fn push_telemetry(&self, telemetry: Telemetry) -> anyhow::Result<()> {
-        let (cmd, ack) = stage::ActorSourceCmd::push(telemetry);
-        self.tx_data_sensor_api.send(cmd)?;
-        ack.await.map_err(|err| err.into())
+        stage::ActorSourceCmd::push(&self.tx_data_sensor_api, telemetry)
+            .await
+            .map_err(|err| err.into())
     }
 
     pub async fn push_context<'a, I>(&self, context_data: I) -> anyhow::Result<()>
@@ -132,9 +133,9 @@ where
         I: IntoIterator<Item = (&'a str, TelemetryValue)>,
     {
         let telemetry = context_data.into_iter().collect();
-        let (cmd, ack) = stage::ActorSourceCmd::push(telemetry);
-        self.tx_context_sensor_api.send(cmd)?;
-        ack.await.map_err(|err| err.into())
+        stage::ActorSourceCmd::push(&self.tx_context_sensor_api, telemetry)
+            .await
+            .map_err(|err| err.into())
     }
 
     #[allow(dead_code)]
@@ -157,9 +158,7 @@ where
     pub async fn inspect_policy_context(
         &self,
     ) -> anyhow::Result<elements::PolicyFilterDetail<C, DecisionTemplateData>> {
-        let (cmd, detail) = elements::PolicyFilterCmd::inspect();
-        self.tx_decision_api.send(cmd)?;
-        detail
+        elements::PolicyFilterCmd::inspect(&self.tx_decision_api)
             .await
             .map(|d| {
                 tracing::info!(detail=?d, "inspected policy.");
@@ -169,9 +168,8 @@ where
     }
 
     pub async fn inspect_sink(&self) -> anyhow::Result<Vec<Out>> {
-        let (cmd, acc) = stage::FoldCmd::get_accumulation();
-        self.tx_sink_api.send(cmd)?;
-        acc.await
+        stage::FoldCmd::get_accumulation(&self.tx_sink_api)
+            .await
             .map(|a| {
                 tracing::info!(accumulation=?a, "inspected sink accumulation");
                 a
@@ -221,14 +219,9 @@ where
 
     #[tracing::instrument(level = "warn", skip(self))]
     pub async fn close(mut self) -> anyhow::Result<Vec<Out>> {
-        let (stop, _) = stage::ActorSourceCmd::stop();
-        self.tx_data_sensor_api.send(stop)?;
-
-        let (stop, _) = stage::ActorSourceCmd::stop();
-        self.tx_context_sensor_api.send(stop)?;
-
+        stage::ActorSourceCmd::stop(&self.tx_data_sensor_api).await?;
+        stage::ActorSourceCmd::stop(&self.tx_context_sensor_api).await?;
         self.graph_handle.await?;
-
         self.rx_sink.take().unwrap().await.map_err(|err| err.into())
     }
 }
@@ -278,6 +271,7 @@ async fn test_decision_carry_policy_result() -> anyhow::Result<()> {
     )
     .await?;
 
+    tracing::info!("PUSHING CONTEXT...");
     flow.push_context(maplit::hashmap! {
         "all_sinks_healthy" => true.to_telemetry(),
         MC_CLUSTER__NR_ACTIVE_JOBS => 1.to_telemetry(),

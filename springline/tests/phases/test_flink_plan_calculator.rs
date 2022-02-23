@@ -3,7 +3,7 @@ use chrono::{DateTime, TimeZone, Utc};
 use claim::{assert_err, assert_ok};
 use proctor::elements::RecordsPerSecond;
 use proctor::error::PlanError;
-use springline::phases::plan::{LeastSquaresWorkloadForecastBuilder, WorkloadForecastBuilder};
+use springline::phases::plan::{Forecaster, LeastSquaresWorkloadForecaster};
 use springline::phases::plan::{SpikeSettings, WorkloadMeasurement};
 
 fn make_measurement(timestamp: DateTime<Utc>, workload: RecordsPerSecond) -> WorkloadMeasurement {
@@ -52,7 +52,7 @@ fn test_flink_plan_calculator() -> anyhow::Result<()> {
         (30.0.into(), Some(30.27993.into())),
     ];
 
-    let mut forecast_builder = LeastSquaresWorkloadForecastBuilder::new(
+    let mut forecast_builder = LeastSquaresWorkloadForecaster::new(
         20,
         SpikeSettings {
             std_deviation_threshold: 5.,
@@ -74,7 +74,7 @@ fn test_flink_plan_calculator() -> anyhow::Result<()> {
         let measurement = make_measurement(ts, workload);
         forecast_builder.add_observation(measurement);
 
-        let forecast = forecast_builder.build_forecast();
+        let forecast = forecast_builder.forecast();
         if let Some(e) = expected {
             let forecast = assert_ok!(forecast);
             let actual = assert_ok!(forecast.workload_at(ts.into()));
