@@ -6,6 +6,7 @@ http:
   host: localhost
 sensor:
   flink:
+    job_manager_host: localhost
     metrics_initial_delay_secs: 10
     max_retries: 0
     pool_idle_timeout_secs: 60

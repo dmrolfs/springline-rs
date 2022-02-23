@@ -297,7 +297,7 @@ impl Monitor {
                 }
             },
             ActEvent::PlanFailed { plan, error_metric_label } => {
-                tracing::error!(%error_metric_label, ?plan, "plan actaction failed.");
+                tracing::error!(%error_metric_label, ?plan, "plan action during act phase failed.");
                 ACT_PHASE_ERRORS
                     .with_label_values(&[
                         plan.current_nr_task_managers.to_string().as_str(),

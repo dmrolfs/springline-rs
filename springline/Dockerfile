@@ -2,17 +2,17 @@ FROM lukemathwalker/cargo-chef:latest-rust-1.58 AS chef
 WORKDIR /app
 
 
-FROM chef AS planner
-COPY ["./springline", "."]
+#FROM chef AS planner
+#COPY ["./springline", "."]
 # Compute a lock-like file for our project
-RUN cargo chef prepare --recipe-path recipe.json
+#RUN cargo chef prepare --recipe-path recipe.json
 
 
 FROM chef AS builder
-COPY --from=planner /app/recipe.json recipe.json
+#COPY --from=planner /app/recipe.json recipe.json
 
 # Build our project dependencies, not our application!
-RUN cargo chef cook --release --recipe-path recipe.json
+#RUN cargo chef cook --release --recipe-path recipe.json
 COPY ["./springline", "."]
 COPY ["./resources", "resources"]
 #ENV SQLX_OFFLINE true
