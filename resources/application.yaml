@@ -5,6 +5,12 @@ http:
 kubernetes:
   client_config: infer
 sensor:
+  # The `flink` sensor is more complicated that the modular sensors that can be specified via the
+  # `sensor` configuration. The `flink` sensor will query the job manager's REST API for the Job
+  # scope, TaskManager scope, TaskManager admin. Then it queries for the active jobs, and for each
+  # active jobs, the sensor looks for desired metrics from each task vertex. There is a default set
+  # of metrics that are queried for, but the user can specify additional metrics to query for via
+  # the `metric_orders` configuration.
   flink:
     job_manager_uri_scheme: http
     job_manager_host: host.springline
@@ -15,7 +21,13 @@ sensor:
     max_retries: 3
     pool_idle_timeout_secs: 60
     pool_max_idle_per_host: 5
+
+  # Sensors may be specified and loaded from this block. Currently, two form are supported:
+  # 1. `csv` Sensors loaded at startup for the given `path` file.
+  # 2. `rest_api` Sensors specified with `interval` (in seconds), HTTP `method`,`url`,
+  #    `headers` (array of (String, String) tuples, and `max_retries` for each iteration.
   sensors: {}
+
 eligibility:
   policies:
     - source: file

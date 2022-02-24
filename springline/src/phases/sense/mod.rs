@@ -18,7 +18,7 @@ pub async fn make_sense_phase(
     name: &str, settings: &SensorSettings, auxiliary_sensors: Vec<Box<dyn SourceStage<Telemetry>>>,
     machine_node: MachineNode,
 ) -> Result<(SenseBuilder<MetricCatalog>, TickApi)> {
-    let mut sensors = do_make_sensors(&settings.sensors, auxiliary_sensors).await?;
+    let mut sensors = do_make_modular_sensors(&settings.sensors, auxiliary_sensors).await?;
 
     let scheduler = Tick::new(
         "springline_flink",
@@ -37,8 +37,9 @@ pub async fn make_sense_phase(
     ))
 }
 
+/// Makes `SourceStage`-based sensors specified in the sensor::sensors.
 #[tracing::instrument(level = "info", skip())]
-async fn do_make_sensors(
+async fn do_make_modular_sensors(
     settings: &HashMap<String, SensorSetting>, auxiliary: Vec<Box<dyn SourceStage<Telemetry>>>,
 ) -> Result<Vec<Box<dyn SourceStage<Telemetry>>>> {
     let mut sensors = TelemetrySensor::from_settings::<MetricCatalog>(settings)
