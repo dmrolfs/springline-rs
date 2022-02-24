@@ -1,21 +1,9 @@
-FROM lukemathwalker/cargo-chef:latest-rust-1.58 AS chef
+FROM rust:1.58-bullseye AS builder
 WORKDIR /app
 
-
-#FROM chef AS planner
-#COPY ["./springline", "."]
-# Compute a lock-like file for our project
-#RUN cargo chef prepare --recipe-path recipe.json
-
-
-FROM chef AS builder
-#COPY --from=planner /app/recipe.json recipe.json
-
-# Build our project dependencies, not our application!
-#RUN cargo chef cook --release --recipe-path recipe.json
 COPY ["./springline", "."]
 COPY ["./resources", "resources"]
-#ENV SQLX_OFFLINE true
+
 # Build our project
 ENV RUSTFLAGS "--cfg tokio_unstable"
 
@@ -34,8 +22,8 @@ RUN apt-get update \
     && apt-get clean -y \
     && rm -rf /var/lib/apt/lists/*
 
+#   python is only needed for the access server client
 RUN pip install requests
-
 
 # Create appuser
 ENV USER=appuser
