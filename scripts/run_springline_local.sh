@@ -8,6 +8,7 @@ RESOURCES="$(pwd)/resources"
 
 docker run -d -it \
   -m 64m \
+  --rm \
   --name springline \
   --mount type=bind,source="${RESOURCES}",target="/app/resources" \
   --mount type=bind,source="${KUBECONFIG}",target="/secrets/environment.kubeconfig" \
