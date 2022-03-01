@@ -97,7 +97,7 @@ governance:
     custom: {}
 
 action:
-  taskmanagers:
+  taskmanager:
     # A selector to identify taskmanagers the list of returned objects by the scaling target; e.g.,
     # "app=flink,component=taskmanager"
     label_selector: "app=flink,component=taskmanager"

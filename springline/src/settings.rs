@@ -325,7 +325,7 @@ mod tests {
                 },
             },
             action: ActionSettings {
-                taskmanagers: ScaleContext {
+                taskmanager: ScaleContext {
                     label_selector: "app=flink,component=taskmanager".to_string(),
                     deploy_resource: KubernetesDeployResource::StatefulSet { name: "dr-springline-tm".to_string() },
                     kubernetes_api_constraints: KubernetesApiConstraints {
@@ -469,7 +469,7 @@ mod tests {
             },
         },
         action: ActionSettings {
-            taskmanagers: ScaleContext {
+            taskmanager: ScaleContext {
                 label_selector: "app=flink,component=taskmanager".to_string(),
                 deploy_resource: KubernetesDeployResource::StatefulSet { name: "dr-springline-tm".to_string() },
                 kubernetes_api_constraints: KubernetesApiConstraints {
@@ -561,13 +561,13 @@ mod tests {
                         ..SETTINGS.plan.clone()
                     },
                     action: ActionSettings {
-                        taskmanagers: ScaleContext {
+                        taskmanager: ScaleContext {
                             kubernetes_api_constraints: KubernetesApiConstraints {
                                 api_timeout: Duration::from_secs(290),
                                 action_poll_interval: Duration::from_secs(10),
-                                ..SETTINGS.action.taskmanagers.kubernetes_api_constraints.clone()
+                                ..SETTINGS.action.taskmanager.kubernetes_api_constraints.clone()
                             },
-                            ..SETTINGS.action.taskmanagers.clone()
+                            ..SETTINGS.action.taskmanager.clone()
                         },
                         ..SETTINGS.action.clone()
                     },
@@ -646,13 +646,13 @@ mod tests {
                     ..SETTINGS.decision.clone()
                 },
                 action: ActionSettings {
-                    taskmanagers: ScaleContext {
+                    taskmanager: ScaleContext {
                         kubernetes_api_constraints: KubernetesApiConstraints {
                             api_timeout: Duration::from_secs(290),
                             action_poll_interval: Duration::from_secs(5),
-                            ..SETTINGS.action.taskmanagers.kubernetes_api_constraints.clone()
+                            ..SETTINGS.action.taskmanager.kubernetes_api_constraints.clone()
                         },
-                        ..SETTINGS.action.taskmanagers.clone()
+                        ..SETTINGS.action.taskmanager.clone()
                     },
                     ..SETTINGS.action.clone()
                 },
@@ -738,13 +738,13 @@ mod tests {
                         ..SETTINGS.plan.clone()
                     },
                     action: ActionSettings {
-                        taskmanagers: ScaleContext {
+                        taskmanager: ScaleContext {
                             kubernetes_api_constraints: KubernetesApiConstraints {
                                 api_timeout: Duration::from_secs(290),
                                 action_poll_interval: Duration::from_secs(10),
-                                ..SETTINGS.action.taskmanagers.kubernetes_api_constraints.clone()
+                                ..SETTINGS.action.taskmanager.kubernetes_api_constraints.clone()
                             },
-                            ..SETTINGS.action.taskmanagers.clone()
+                            ..SETTINGS.action.taskmanager.clone()
                         },
                         ..SETTINGS.action.clone()
                     },

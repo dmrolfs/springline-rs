@@ -123,7 +123,6 @@ pub async fn make_sensor(
     let name: SharedString = format!("{}_flink_sensor", name).into();
 
     let orders = Arc::new(MetricOrder::extend_standard_with_settings(settings));
-    let context = Arc::new(context);
 
     let jobs_scope_sensor = ScopeSensor::new(FlinkScope::Jobs, orders.clone(), context.clone());
     let tm_scope_sensor = ScopeSensor::new(FlinkScope::TaskManagers, orders.clone(), context.clone());

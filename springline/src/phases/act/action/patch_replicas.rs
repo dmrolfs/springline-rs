@@ -103,7 +103,7 @@ where
 
         if !action_satisfied {
             let status_counts: HashMap<String, usize> = pods_by_status
-                .unwrap_or_else(|| HashMap::new())
+                .unwrap_or_else(HashMap::new)
                 .into_iter()
                 .map(|(status, pods)| (status, pods.len()))
                 .collect();
@@ -130,7 +130,7 @@ where
                 .and_then(|ps| ps.phase.clone())
                 .unwrap_or_else(|| UNKNOWN_STATUS.to_string());
 
-            let pods = result.entry(status).or_insert(vec![]);
+            let pods = result.entry(status).or_insert_with(Vec::new);
             pods.push(p);
         }
 

@@ -35,9 +35,9 @@ impl TaskmanagersContext {
         Ok(pods.items)
     }
 
-    pub async fn list_pods_for_field(&self, field_selector: impl Into<String>) -> Result<Vec<Pod>, ActError> {
+    pub async fn list_pods_for_field(&self, field_selector: &str) -> Result<Vec<Pod>, ActError> {
         let params = ListParams {
-            field_selector: Some(field_selector.into()),
+            field_selector: Some(field_selector.to_string()),
             ..self.params.clone()
         };
         let pods = self.pods.list(&params).await?;

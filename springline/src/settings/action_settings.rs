@@ -7,7 +7,7 @@ use std::time::Duration;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(test, derive(PartialEq))]
 pub struct ActionSettings {
-    pub taskmanagers: ScaleContext,
+    pub taskmanager: ScaleContext,
 }
 
 #[serde_as]
@@ -52,7 +52,7 @@ pub struct KubernetesApiConstraints {
 }
 
 impl KubernetesApiConstraints {
-    fn default_api_timeout() -> Duration {
+    const fn default_api_timeout() -> Duration {
         Duration::from_secs(295)
     }
 }
@@ -137,7 +137,7 @@ mod tests {
     #[test]
     fn test_serde_action_settings_tokens() {
         let settings = ActionSettings {
-            taskmanagers: ScaleContext {
+            taskmanager: ScaleContext {
                 label_selector: "app=flink,component=taskmanager".to_string(),
                 deploy_resource: KubernetesDeployResource::StatefulSet { name: "springline".to_string() },
                 kubernetes_api_constraints: KubernetesApiConstraints {
@@ -151,7 +151,7 @@ mod tests {
             &settings,
             &vec![
                 Token::Struct { name: "ActionSettings", len: 1 },
-                Token::Str("taskmanagers"),
+                Token::Str("taskmanager"),
                 Token::Struct { name: "ScaleContext", len: 3 },
                 Token::Str("label_selector"),
                 Token::Str("app=flink,component=taskmanager"),
@@ -175,7 +175,7 @@ mod tests {
     #[test]
     fn test_serde_action_settings() {
         let settings = ActionSettings {
-            taskmanagers: ScaleContext {
+            taskmanager: ScaleContext {
                 label_selector: "app=flink,component=taskmanager".to_string(),
                 deploy_resource: KubernetesDeployResource::StatefulSet { name: "springline".to_string() },
                 kubernetes_api_constraints: KubernetesApiConstraints {
@@ -190,7 +190,7 @@ mod tests {
         assert_eq!(
             json,
             format!(
-                r##"{{"taskmanagers":{{"label_selector":"app=flink,component=taskmanager","deploy_resource":{},"kubernetes_api_constraints":{{"api_timeout_secs":275,"action_timeout_secs":777,"action_poll_interval_secs":7}}}}}}"##,
+                r##"{{"taskmanager":{{"label_selector":"app=flink,component=taskmanager","deploy_resource":{},"kubernetes_api_constraints":{{"api_timeout_secs":275,"action_timeout_secs":777,"action_poll_interval_secs":7}}}}}}"##,
                 EXPECTED_REP
             )
         );
@@ -199,7 +199,7 @@ mod tests {
         assert_eq!(
             ron,
             format!(
-                r##"(taskmanagers:(label_selector:"app=flink,component=taskmanager",deploy_resource:{},kubernetes_api_constraints:(api_timeout_secs:275,action_timeout_secs:777,action_poll_interval_secs:7)))"##,
+                r##"(taskmanager:(label_selector:"app=flink,component=taskmanager",deploy_resource:{},kubernetes_api_constraints:(api_timeout_secs:275,action_timeout_secs:777,action_poll_interval_secs:7)))"##,
                 EXPECTED_REP
             )
         );

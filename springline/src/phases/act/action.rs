@@ -18,6 +18,6 @@ pub trait ScaleAction<P>: Debug + Send + Sync {
 pub fn make_action<T: AppData + ScaleActionPlan>(
     kube: &kube::Client, settings: &ActionSettings,
 ) -> Box<dyn ScaleAction<T>> {
-    let patch_replicas = PatchReplicas::new(&settings.taskmanagers, kube);
+    let patch_replicas = PatchReplicas::new(&settings.taskmanager, kube);
     Box::new(patch_replicas)
 }

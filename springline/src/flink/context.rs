@@ -7,20 +7,13 @@ use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
 use reqwest_retry::policies::ExponentialBackoff;
 use reqwest_retry::RetryTransientMiddleware;
 use std::fmt;
+use std::sync::Arc;
 use tracing::Instrument;
 use url::Url;
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct FlinkContext {
-    pub client: ClientWithMiddleware,
-    pub base_url: Url,
-    jobs_endpoint: Url,
-}
-
-impl fmt::Debug for FlinkContext {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("TaskContext").field("base_url", &self.base_url).finish()
-    }
+    inner: Arc<FlinkContextRef>,
 }
 
 impl FlinkContext {
@@ -31,37 +24,66 @@ impl FlinkContext {
             .map_err(|_| SenseError::NotABaseUrl(base_url.clone()))?
             .push("jobs");
 
-        Ok(Self { client, base_url, jobs_endpoint })
+        Ok(Self { inner: Arc::new(FlinkContextRef { client, base_url, jobs_endpoint }), })
     }
 
     pub fn from_settings(settings: &FlinkSettings) -> Result<Self, SenseError> {
-        let client = Self::do_make_http_client(settings)?;
+        let client = make_http_client(settings)?;
         let base_url = settings.base_url()?;
         Self::new(client, base_url)
     }
 
-    fn do_make_http_client(settings: &FlinkSettings) -> Result<ClientWithMiddleware, SenseError> {
-        let headers = settings.header_map()?;
+    pub fn client(&self) -> &ClientWithMiddleware {
+        &self.inner.client
+    }
 
-        let client_builder = reqwest::Client::builder()
-            .pool_idle_timeout(settings.pool_idle_timeout)
-            .default_headers(headers);
-
-        let client_builder = if let Some(pool_max_idle_per_host) = settings.pool_max_idle_per_host {
-            client_builder.pool_max_idle_per_host(pool_max_idle_per_host)
-        } else {
-            client_builder
-        };
-
-        let client = client_builder.build()?;
-
-        let retry_policy = ExponentialBackoff::builder().build_with_max_retries(settings.max_retries);
-        Ok(ClientBuilder::new(client)
-            .with(RetryTransientMiddleware::new_with_policy(retry_policy))
-            .build())
+    pub fn base_url(&self) -> Url {
+        self.inner.base_url.clone()
     }
 
     #[tracing::instrument(level = "info", skip(self))]
+    pub async fn query_active_jobs(&self) -> Result<Vec<JobSummary>, SenseError> {
+        self.inner.query_active_jobs().await
+    }
+}
+
+fn make_http_client(settings: &FlinkSettings) -> Result<ClientWithMiddleware, SenseError> {
+    let headers = settings.header_map()?;
+
+    let client_builder = reqwest::Client::builder()
+        .pool_idle_timeout(settings.pool_idle_timeout)
+        .default_headers(headers);
+
+    let client_builder = if let Some(pool_max_idle_per_host) = settings.pool_max_idle_per_host {
+        client_builder.pool_max_idle_per_host(pool_max_idle_per_host)
+    } else {
+        client_builder
+    };
+
+    let client = client_builder.build()?;
+
+    let retry_policy = ExponentialBackoff::builder().build_with_max_retries(settings.max_retries);
+    Ok(ClientBuilder::new(client)
+        .with(RetryTransientMiddleware::new_with_policy(retry_policy))
+        .build())
+}
+
+struct FlinkContextRef {
+    pub client: ClientWithMiddleware,
+    pub base_url: Url,
+    pub jobs_endpoint: Url,
+}
+
+impl fmt::Debug for FlinkContextRef {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("FlinkContextRef")
+            .field("base_url", &self.base_url)
+            .field("jobs_endpoint", &self.jobs_endpoint)
+            .finish()
+    }
+}
+
+impl FlinkContextRef {
     pub async fn query_active_jobs(&self) -> Result<Vec<JobSummary>, SenseError> {
         let _timer = flink::start_flink_active_jobs_timer();
         let span = tracing::info_span!("query Flink active jobs");
@@ -118,29 +140,22 @@ impl FlinkContext {
     }
 }
 
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::flink::{JobId, JobState};
-    use crate::phases::sense::flink;
-    use crate::phases::sense::flink::STD_METRIC_ORDERS;
     use claim::*;
     use pretty_assertions::assert_eq;
-    use proctor::elements::{Telemetry, TelemetryType, Timestamp};
     use reqwest::header::HeaderMap;
     use reqwest_middleware::ClientBuilder;
     use reqwest_retry::policies::ExponentialBackoff;
     use reqwest_retry::RetryTransientMiddleware;
     use serde_json::json;
-    use std::borrow::Cow;
-    use std::collections::HashSet;
-    use std::sync::atomic::{AtomicU32, Ordering};
-    use std::time::Duration;
-    use tokio::sync::mpsc;
     use tokio_test::block_on;
     use url::Url;
     use wiremock::matchers::{method, path};
-    use wiremock::{Match, Mock, MockServer, Request, Respond, ResponseTemplate};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
 
     fn context_for(mock_server: &MockServer) -> anyhow::Result<FlinkContext> {
         let client = reqwest::Client::builder().default_headers(HeaderMap::default()).build()?;

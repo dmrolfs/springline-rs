@@ -64,7 +64,7 @@ where
 {
     #[tracing::instrument(level = "info", skip(kube))]
     pub fn new(kube: kube::Client, settings: &ActionSettings) -> Self {
-        let context = settings.taskmanagers.clone();
+        let context = settings.taskmanager.clone();
         let (tx_action_monitor, _) = broadcast::channel(num_cpus::get() * 2);
         let action = action::make_action(&kube, settings);
 

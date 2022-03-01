@@ -115,12 +115,9 @@ impl FlinkSettings {
 mod tests {
     use claim::*;
     use pretty_assertions::assert_eq;
-    use proctor::elements::telemetry::TelemetryType;
-    use reqwest::header::{AUTHORIZATION, CONTENT_LENGTH};
     use serde_test::{assert_tokens, Token};
 
     use super::*;
-    use crate::phases::sense::flink::{Aggregation, FlinkScope};
 
     #[test]
     fn test_flink_settings_default() {

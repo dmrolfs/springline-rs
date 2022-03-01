@@ -84,7 +84,7 @@
         ),
     ),
     action: (
-        taskmanagers: (
+        taskmanager: (
             label_selector: "app=flink,component=taskmanager",
             deploy_resource: "statefulset/dr-springline-tm",
             kubernetes_api_constraints: (

@@ -23,14 +23,14 @@ use url::Url;
 #[derive(Debug)]
 pub struct ScopeSensor<Out> {
     scope: FlinkScope,
-    context: Arc<FlinkContext>,
+    context: FlinkContext,
     orders: Arc<Vec<MetricOrder>>,
     trigger: Inlet<()>,
     outlet: Outlet<Out>,
 }
 
 impl<Out> ScopeSensor<Out> {
-    pub fn new(scope: FlinkScope, orders: Arc<Vec<MetricOrder>>, context: Arc<FlinkContext>) -> Self {
+    pub fn new(scope: FlinkScope, orders: Arc<Vec<MetricOrder>>, context: FlinkContext) -> Self {
         let name: SharedString = format!("{scope}Sensor").to_snake_case().into();
         let trigger = Inlet::new(name.clone(), "trigger");
         let outlet = Outlet::new(name, "outlet");
@@ -95,7 +95,7 @@ where
         &self, metrics: impl Iterator<Item = &'a String>, agg: impl Iterator<Item = &'a Aggregation>,
     ) -> Url {
         let scope_rep = self.scope.to_string().to_lowercase();
-        let mut url = self.context.base_url.clone();
+        let mut url = self.context.base_url();
         url.path_segments_mut().unwrap().push(&scope_rep).push("metrics");
         url.query_pairs_mut()
             .clear()
@@ -135,7 +135,7 @@ where
 
                     let out: Result<Out, SenseError> = self
                         .context
-                        .client
+                        .client()
                         .request(Method::GET, url.clone())
                         .send()
                         .map_err(|error| {
@@ -239,7 +239,7 @@ mod tests {
     async fn test_stage_for(
         scope: FlinkScope, orders: &Vec<MetricOrder>, context: FlinkContext,
     ) -> (tokio::task::JoinHandle<()>, mpsc::Sender<()>, mpsc::Receiver<Telemetry>) {
-        let mut stage = ScopeSensor::new(scope, Arc::new(orders.clone()), Arc::new(context));
+        let mut stage = ScopeSensor::new(scope, Arc::new(orders.clone()), context);
         let (tx_trigger, rx_trigger) = mpsc::channel(1);
         let (tx_out, rx_out) = mpsc::channel(8);
         stage.trigger.attach("trigger".into(), rx_trigger).await;

@@ -30,7 +30,7 @@ use url::Url;
 #[derive(Debug)]
 pub struct VertexSensor<Out> {
     scopes: Vec<FlinkScope>,
-    context: Arc<FlinkContext>,
+    context: FlinkContext,
     orders: Arc<Vec<MetricOrder>>,
     trigger: Inlet<()>,
     outlet: Outlet<Out>,
@@ -40,15 +40,15 @@ pub struct VertexSensor<Out> {
 const NAME: &str = "vertex_sensor";
 
 impl<Out> VertexSensor<Out> {
-    pub fn new(orders: Arc<Vec<MetricOrder>>, context: Arc<FlinkContext>) -> Result<Self, SenseError> {
+    pub fn new(orders: Arc<Vec<MetricOrder>>, context: FlinkContext) -> Result<Self, SenseError> {
         let scopes = vec![FlinkScope::Task, FlinkScope::Kafka, FlinkScope::Kinesis];
         let trigger = Inlet::new(NAME, "trigger");
         let outlet = Outlet::new(NAME, "outlet");
 
-        let mut jobs_endpoint = context.base_url.clone();
+        let mut jobs_endpoint = context.base_url();
         jobs_endpoint
             .path_segments_mut()
-            .map_err(|_| SenseError::NotABaseUrl(context.base_url.clone()))?
+            .map_err(|_| SenseError::NotABaseUrl(context.base_url()))?
             .push("jobs");
 
         Ok(Self {
@@ -218,7 +218,7 @@ where
 
         let result: Result<JobDetail, SenseError> = self
             .context
-            .client
+            .client()
             .request(Method::GET, url)
             .send()
             .map_err(|error| {
@@ -276,7 +276,7 @@ where
 
         let picklist: Result<Vec<String>, SenseError> = self
             .context
-            .client
+            .client()
             .request(Method::GET, vertex_metrics_url)
             .send()
             .map_err(|error| {
@@ -326,7 +326,7 @@ where
             let span = tracing::info_span!("query Flink vertex available telemetry");
 
             self.context
-                .client
+                .client()
                 .request(Method::GET, vertex_metrics_url)
                 .send()
                 .map_err(|error| {
@@ -514,7 +514,7 @@ mod tests {
     async fn test_stage_for(
         orders: &Vec<MetricOrder>, context: FlinkContext,
     ) -> (VertexSensor<Telemetry>, mpsc::Sender<()>, mpsc::Receiver<Telemetry>) {
-        let mut stage = assert_ok!(VertexSensor::new(Arc::new(orders.clone()), Arc::new(context)));
+        let mut stage = assert_ok!(VertexSensor::new(Arc::new(orders.clone()), context));
         let (tx_trigger, rx_trigger) = mpsc::channel(1);
         let (tx_out, rx_out) = mpsc::channel(8);
         stage.trigger.attach("trigger".into(), rx_trigger).await;

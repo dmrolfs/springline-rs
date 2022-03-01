@@ -28,6 +28,6 @@ plan:
     storage_path: "./tmp"
 
 action:
-  taskmanagers:
+  taskmanager:
     kubernetes_api_constraints:
       action_poll_interval_secs: 5
