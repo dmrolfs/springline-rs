@@ -3,7 +3,7 @@ use crate::phases::act::kubernetes::{DeployApi, TaskmanagersContext};
 use crate::phases::act::kubernetes::{RUNNING_STATUS, UNKNOWN_STATUS};
 use crate::phases::act::scale_actuator::ScaleActionPlan;
 use crate::phases::act::ActError;
-use crate::settings::{KubernetesApiConstraints, KubernetesDeployResource, ScaleContext};
+use crate::settings::{KubernetesApiConstraints, KubernetesDeployResource, TaskmanagerContext};
 use async_trait::async_trait;
 use k8s_openapi::api::core::v1::Pod;
 use kube::api::ListParams;
@@ -23,7 +23,7 @@ pub struct PatchReplicas<P> {
 }
 
 impl<P> PatchReplicas<P> {
-    pub fn new(scale_target: &ScaleContext, kube: &Client) -> Self {
+    pub fn new(scale_target: &TaskmanagerContext, kube: &Client) -> Self {
         let label_selector = scale_target.label_selector.clone();
         let deploy_resource = scale_target.deploy_resource.clone();
         let api_constraints = scale_target.kubernetes_api_constraints;

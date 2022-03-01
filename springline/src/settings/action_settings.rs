@@ -7,12 +7,16 @@ use std::time::Duration;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(test, derive(PartialEq))]
 pub struct ActionSettings {
-    pub taskmanager: ScaleContext,
+    pub taskmanager: TaskmanagerContext,
+    /// Optional directory for the triggered savepoint. If not set, the default will the savepoint
+    /// directory configured with Flink.
+    #[serde(default)]
+    pub savepoint_dir: Option<String>,
 }
 
 #[serde_as]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct ScaleContext {
+pub struct TaskmanagerContext {
     /// A selector to identify taskmanagers the list of returned objects by the scaling target; e.g.,
     /// "app=flink,component=taskmanager"
     pub label_selector: String,
@@ -137,7 +141,7 @@ mod tests {
     #[test]
     fn test_serde_action_settings_tokens() {
         let settings = ActionSettings {
-            taskmanager: ScaleContext {
+            taskmanager: TaskmanagerContext {
                 label_selector: "app=flink,component=taskmanager".to_string(),
                 deploy_resource: KubernetesDeployResource::StatefulSet { name: "springline".to_string() },
                 kubernetes_api_constraints: KubernetesApiConstraints {
@@ -146,13 +150,15 @@ mod tests {
                     action_poll_interval: Duration::from_secs(10),
                 },
             },
+            savepoint_dir: Some("s3a://flink-98dnkj/foo-bar/savepoints".to_string()),
         };
+
         assert_tokens(
             &settings,
             &vec![
-                Token::Struct { name: "ActionSettings", len: 1 },
+                Token::Struct { name: "ActionSettings", len: 2 },
                 Token::Str("taskmanager"),
-                Token::Struct { name: "ScaleContext", len: 3 },
+                Token::Struct { name: "TaskmanagerContext", len: 3 },
                 Token::Str("label_selector"),
                 Token::Str("app=flink,component=taskmanager"),
                 Token::Str("deploy_resource"),
@@ -167,6 +173,9 @@ mod tests {
                 Token::U64(10),
                 Token::StructEnd,
                 Token::StructEnd,
+                Token::Str("savepoint_dir"),
+                Token::Some,
+                Token::Str("s3a://flink-98dnkj/foo-bar/savepoints"),
                 Token::StructEnd,
             ],
         );
@@ -175,7 +184,7 @@ mod tests {
     #[test]
     fn test_serde_action_settings() {
         let settings = ActionSettings {
-            taskmanager: ScaleContext {
+            taskmanager: TaskmanagerContext {
                 label_selector: "app=flink,component=taskmanager".to_string(),
                 deploy_resource: KubernetesDeployResource::StatefulSet { name: "springline".to_string() },
                 kubernetes_api_constraints: KubernetesApiConstraints {
@@ -184,13 +193,14 @@ mod tests {
                     action_poll_interval: Duration::from_secs(7),
                 },
             },
+            savepoint_dir: Some("/service_namespace_port/v1/jobs/flink_job_id/savepoints".to_string()),
         };
 
         let json = assert_ok!(serde_json::to_string(&settings));
         assert_eq!(
             json,
             format!(
-                r##"{{"taskmanager":{{"label_selector":"app=flink,component=taskmanager","deploy_resource":{},"kubernetes_api_constraints":{{"api_timeout_secs":275,"action_timeout_secs":777,"action_poll_interval_secs":7}}}}}}"##,
+                r##"{{"taskmanager":{{"label_selector":"app=flink,component=taskmanager","deploy_resource":{},"kubernetes_api_constraints":{{"api_timeout_secs":275,"action_timeout_secs":777,"action_poll_interval_secs":7}}}},"savepoint_dir":"/service_namespace_port/v1/jobs/flink_job_id/savepoints"}}"##,
                 EXPECTED_REP
             )
         );
@@ -199,7 +209,7 @@ mod tests {
         assert_eq!(
             ron,
             format!(
-                r##"(taskmanager:(label_selector:"app=flink,component=taskmanager",deploy_resource:{},kubernetes_api_constraints:(api_timeout_secs:275,action_timeout_secs:777,action_poll_interval_secs:7)))"##,
+                r##"(taskmanager:(label_selector:"app=flink,component=taskmanager",deploy_resource:{},kubernetes_api_constraints:(api_timeout_secs:275,action_timeout_secs:777,action_poll_interval_secs:7)),savepoint_dir:Some("/service_namespace_port/v1/jobs/flink_job_id/savepoints"))"##,
                 EXPECTED_REP
             )
         );

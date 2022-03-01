@@ -8,7 +8,7 @@ use crate::phases::act::action::ScaleAction;
 use crate::phases::act::{ActError, ActEvent};
 use crate::phases::governance::GovernanceOutcome;
 use crate::phases::MetricCatalog;
-use crate::settings::{ActionSettings, KubernetesDeployResource, ScaleContext};
+use crate::settings::{ActionSettings, KubernetesDeployResource, TaskmanagerContext};
 use async_trait::async_trait;
 use cast_trait_object::dyn_upcast;
 use k8s_openapi::api::apps::v1::StatefulSet;
@@ -53,7 +53,7 @@ impl ScaleActionPlan for GovernanceOutcome {
 pub struct ScaleActuator<In> {
     kube: kube::Client,
     action: Box<dyn ScaleAction<In>>,
-    context: ScaleContext,
+    context: TaskmanagerContext,
     inlet: Inlet<In>,
     pub tx_action_monitor: broadcast::Sender<Arc<protocol::ActEvent<In>>>,
 }

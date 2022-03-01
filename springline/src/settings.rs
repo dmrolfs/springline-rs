@@ -20,7 +20,7 @@ mod kubernetes_settings;
 mod plan_settings;
 mod sensor_settings;
 
-pub use action_settings::{ActionSettings, KubernetesApiConstraints, KubernetesDeployResource, ScaleContext};
+pub use action_settings::{ActionSettings, KubernetesApiConstraints, KubernetesDeployResource, TaskmanagerContext};
 pub use engine_settings::EngineSettings;
 pub use flink_settings::FlinkSettings;
 pub use governance_settings::{GovernancePolicySettings, GovernanceRuleSettings, GovernanceSettings};
@@ -325,7 +325,7 @@ mod tests {
                 },
             },
             action: ActionSettings {
-                taskmanager: ScaleContext {
+                taskmanager: TaskmanagerContext {
                     label_selector: "app=flink,component=taskmanager".to_string(),
                     deploy_resource: KubernetesDeployResource::StatefulSet { name: "dr-springline-tm".to_string() },
                     kubernetes_api_constraints: KubernetesApiConstraints {
@@ -334,6 +334,7 @@ mod tests {
                         action_poll_interval: Duration::from_secs(10),
                     },
                 },
+                savepoint_dir: Some("s3://path/to/savepoints".to_string()),
             },
             context_stub: ContextStubSettings {
                 all_sinks_healthy: true,
@@ -469,7 +470,7 @@ mod tests {
             },
         },
         action: ActionSettings {
-            taskmanager: ScaleContext {
+            taskmanager: TaskmanagerContext {
                 label_selector: "app=flink,component=taskmanager".to_string(),
                 deploy_resource: KubernetesDeployResource::StatefulSet { name: "dr-springline-tm".to_string() },
                 kubernetes_api_constraints: KubernetesApiConstraints {
@@ -478,6 +479,7 @@ mod tests {
                     action_poll_interval: Duration::from_secs(5),
                 },
             },
+            savepoint_dir: Some("s3://path/to/savepoints".to_string()),
         },
         context_stub: ContextStubSettings {
             all_sinks_healthy: true,
@@ -561,7 +563,7 @@ mod tests {
                         ..SETTINGS.plan.clone()
                     },
                     action: ActionSettings {
-                        taskmanager: ScaleContext {
+                        taskmanager: TaskmanagerContext {
                             kubernetes_api_constraints: KubernetesApiConstraints {
                                 api_timeout: Duration::from_secs(290),
                                 action_poll_interval: Duration::from_secs(10),
@@ -569,6 +571,7 @@ mod tests {
                             },
                             ..SETTINGS.action.taskmanager.clone()
                         },
+                        savepoint_dir: None,
                         ..SETTINGS.action.clone()
                     },
                     ..SETTINGS.clone()
@@ -646,7 +649,7 @@ mod tests {
                     ..SETTINGS.decision.clone()
                 },
                 action: ActionSettings {
-                    taskmanager: ScaleContext {
+                    taskmanager: TaskmanagerContext {
                         kubernetes_api_constraints: KubernetesApiConstraints {
                             api_timeout: Duration::from_secs(290),
                             action_poll_interval: Duration::from_secs(5),
@@ -654,6 +657,7 @@ mod tests {
                         },
                         ..SETTINGS.action.taskmanager.clone()
                     },
+                    savepoint_dir: None,
                     ..SETTINGS.action.clone()
                 },
                 ..SETTINGS.clone()
@@ -738,7 +742,7 @@ mod tests {
                         ..SETTINGS.plan.clone()
                     },
                     action: ActionSettings {
-                        taskmanager: ScaleContext {
+                        taskmanager: TaskmanagerContext {
                             kubernetes_api_constraints: KubernetesApiConstraints {
                                 api_timeout: Duration::from_secs(290),
                                 action_poll_interval: Duration::from_secs(10),
@@ -746,6 +750,7 @@ mod tests {
                             },
                             ..SETTINGS.action.taskmanager.clone()
                         },
+                        savepoint_dir: None,
                         ..SETTINGS.action.clone()
                     },
                     ..SETTINGS.clone()
