@@ -12,6 +12,7 @@
 extern crate enum_display_derive;
 
 pub mod engine;
+pub mod flink;
 pub mod kubernetes;
 pub mod metrics;
 pub mod phases;

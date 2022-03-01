@@ -1,16 +1,18 @@
 (
     // set engine.machine_id and engine.node_id via environment variable
     http: ( host: "0.0.0.0", port: 8000, ),
+    flink: (
+        job_manager_host: "dr-flink-jm-0",
+        headers: [("accept", "*.json")],
+    ),
     kubernetes: ( client_config: "infer", ),
     sensor: (
         flink: (
-            job_manager_host: "dr-flink-jm-0",
             metrics_initial_delay_secs: 300,
             metric_orders: [
                 ("TaskManagers", "Status.JVM.Memory.NonHeap.Committed", "max", "cluster.task_nonheap_memory_committed", "Float"),
                 ("Jobs", "uptime", "min", "health.job_uptime_millis", "Integer"),
             ],
-            headers: [("accept", "*.json")],
         ),
         sensors: {
             "foo": ( type: "csv", path: "../resources/bar.toml", ),
@@ -82,7 +84,15 @@
         ),
     ),
     action: (
-        k8s_workload_resource: "statefulset/dr-springline-tm",
+        taskmanagers: (
+            label_selector: "app=flink,component=taskmanager",
+            deploy_resource: "statefulset/dr-springline-tm",
+            kubernetes_api_constraints: (
+                api_timeout_secs: 290,
+                action_timeout_secs: 600,
+                action_poll_interval_secs: 10,
+            ),
+        ),
     ),
     context_stub: (
         all_sinks_healthy: true,

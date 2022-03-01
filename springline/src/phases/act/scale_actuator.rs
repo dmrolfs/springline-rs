@@ -1,12 +1,14 @@
 use std::error::Error;
 use std::fmt;
 use std::sync::Arc;
+use std::time::Duration;
 
-use super::protocol;
+use super::{action, protocol};
+use crate::phases::act::action::ScaleAction;
 use crate::phases::act::{ActError, ActEvent};
 use crate::phases::governance::GovernanceOutcome;
 use crate::phases::MetricCatalog;
-use crate::settings::{ActionSettings, KubernetesWorkloadResource};
+use crate::settings::{ActionSettings, KubernetesDeployResource, ScaleContext};
 use async_trait::async_trait;
 use cast_trait_object::dyn_upcast;
 use k8s_openapi::api::apps::v1::StatefulSet;
@@ -50,20 +52,26 @@ impl ScaleActionPlan for GovernanceOutcome {
 // #[derive(Debug)]
 pub struct ScaleActuator<In> {
     kube: kube::Client,
-    workload_resource: KubernetesWorkloadResource,
+    action: Box<dyn ScaleAction<In>>,
+    context: ScaleContext,
     inlet: Inlet<In>,
     pub tx_action_monitor: broadcast::Sender<Arc<protocol::ActEvent<In>>>,
 }
 
-impl<In> ScaleActuator<In> {
+impl<In> ScaleActuator<In>
+where
+    In: AppData + ScaleActionPlan,
+{
     #[tracing::instrument(level = "info", skip(kube))]
-    pub fn new(kube: kube::Client, exec_settings: &ActionSettings) -> Self {
-        let workload_resource = exec_settings.k8s_workload_resource.clone();
+    pub fn new(kube: kube::Client, settings: &ActionSettings) -> Self {
+        let context = settings.taskmanagers.clone();
         let (tx_action_monitor, _) = broadcast::channel(num_cpus::get() * 2);
+        let action = action::make_action(&kube, settings);
 
         Self {
             kube,
-            workload_resource,
+            action,
+            context,
             inlet: Inlet::new(STAGE_NAME, PORT_DATA),
             tx_action_monitor,
         }
@@ -73,7 +81,8 @@ impl<In> ScaleActuator<In> {
 impl<In> fmt::Debug for ScaleActuator<In> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ScaleActuator")
-            .field("workload_resource", &self.workload_resource)
+            .field("action", &self.action)
+            .field("context", &self.context)
             .field("inlet", &self.inlet)
             .finish()
     }
@@ -138,20 +147,18 @@ where
 
     #[inline]
     async fn do_run(&mut self) -> Result<(), ActError> {
-        let workload_resource = &self.workload_resource;
+        // let workload_resource = &self.workload_resource;
         let mut inlet = self.inlet.clone();
-        let stateful_set: kube::Api<StatefulSet> = kube::Api::default_namespaced(self.kube.clone());
+        // let stateful_set: kube::Api<StatefulSet> = kube::Api::default_namespaced(self.kube.clone());
 
         while let Some(plan) = inlet.recv().await {
             let _timer = proctor::graph::stage::start_stage_eval_time(STAGE_NAME);
-
-            match Self::patch_replicas_for(&plan, &stateful_set, workload_resource).await {
-                Ok(_) => {
-                    tracing::warn!(scale_plan=?plan, "EXECUTE SCALE PLAN: task manager replicas patched!");
-                    self.notify_action_succeeded(plan)
+            match self.action.execute(&plan).await {
+                Ok(duration) => {
+                    self.notify_action_succeeded(plan, duration);
                 },
                 Err(err) => {
-                    tracing::error!(error=?err, ?plan, "failed to patch replicas for plan");
+                    tracing::error!(error=?err, ?plan, "failure in scale action - dropping.");
                     self.notify_action_failed(plan, err);
                 },
             }
@@ -161,7 +168,7 @@ where
     }
 
     #[tracing::instrument(level = "info", skip(self))]
-    fn notify_action_succeeded(&self, plan: In) {
+    fn notify_action_succeeded(&self, plan: In, duration: Duration) {
         let correlation = plan.correlation();
         let recv_timestamp = plan.recv_timestamp();
         match self.tx_action_monitor.send(Arc::new(ActEvent::PlanExecuted(plan))) {
@@ -197,7 +204,7 @@ where
 
     #[tracing::instrument(level = "info", skip(stateful_set))]
     async fn patch_replicas_for(
-        plan: &In, stateful_set: &kube::Api<StatefulSet>, workload_resource: &KubernetesWorkloadResource,
+        plan: &In, stateful_set: &kube::Api<StatefulSet>, workload_resource: &KubernetesDeployResource,
     ) -> Result<(), ActError> {
         fn convert_kube_error(error: kube::Error) -> ActError {
             match error {

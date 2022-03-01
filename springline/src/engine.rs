@@ -16,6 +16,7 @@ use std::fmt;
 use tokio::task::JoinHandle;
 
 use crate::engine::service::{EngineServiceApi, Service};
+use crate::flink::FlinkContext;
 use crate::phases::act::ActMonitor;
 use crate::phases::governance::{self, GovernanceOutcome};
 use crate::phases::{act, decision, eligibility, plan, sense};
@@ -119,7 +120,7 @@ impl AutoscaleEngine<Building> {
     }
 
     #[tracing::instrument(level = "info", skip(self, settings))]
-    pub async fn finish(self, settings: &Settings) -> Result<AutoscaleEngine<Ready>> {
+    pub async fn finish(self, flink: FlinkContext, settings: &Settings) -> Result<AutoscaleEngine<Ready>> {
         let machine_node = MachineNode::new(settings.engine.machine_id, settings.engine.node_id)?;
 
         if let Some(registry) = self.inner.metrics_registry {
@@ -127,7 +128,7 @@ impl AutoscaleEngine<Building> {
         }
 
         let (mut sense_builder, tx_stop_flink_sensor) =
-            sense::make_sense_phase("data", &settings.sensor, self.inner.sensors, machine_node).await?;
+            sense::make_sense_phase("data", flink, &settings.sensor, self.inner.sensors, machine_node).await?;
         let (eligibility_phase, eligibility_channel) =
             eligibility::make_eligibility_phase(&settings.eligibility, &mut sense_builder).await?;
         let rx_eligibility_monitor = eligibility_phase.rx_monitor();

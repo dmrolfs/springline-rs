@@ -2,8 +2,18 @@
 http:
   host: 0.0.0.0
   port: 8000
+
+flink:
+  job_manager_uri_scheme: http
+  job_manager_host: host.springline
+  job_manager_port: 8081
+  max_retries: 3
+  pool_idle_timeout_secs: 60
+  pool_max_idle_per_host: 5
+
 kubernetes:
   client_config: infer
+
 sensor:
   # The `flink` sensor is more complicated that the modular sensors that can be specified via the
   # `sensor` configuration. The `flink` sensor will query the job manager's REST API for the Job
@@ -12,15 +22,9 @@ sensor:
   # of metrics that are queried for, but the user can specify additional metrics to query for via
   # the `metric_orders` configuration.
   flink:
-    job_manager_uri_scheme: http
-    job_manager_host: host.springline
-    job_manager_port: 8081
     metrics_initial_delay_secs: 0
     metrics_interval_secs: 15
     metric_orders: []
-    max_retries: 3
-    pool_idle_timeout_secs: 60
-    pool_max_idle_per_host: 5
 
   # Sensors may be specified and loaded from this block. Currently, two form are supported:
   # 1. `csv` Sensors loaded at startup for the given `path` file.
@@ -42,6 +46,7 @@ eligibility:
     basis: eligibility_basis
     cooling_secs: 900
     stable_secs: 900
+
 decision:
   policies:
     - source: file
@@ -58,6 +63,7 @@ decision:
     min_healthy_lag: 0.0
     max_healthy_cpu_load: 0.7
     max_healthy_network_io_utilization: 0.6
+
 plan:
   performance_repository:
     storage: memory
@@ -76,6 +82,7 @@ plan:
     std_deviation_threshold: 5.0
     influence: 0.75
     length_threshold: 3
+
 governance:
   policy:
     policies:
@@ -88,8 +95,34 @@ governance:
     min_scaling_step: 2
     max_scaling_step: 4
     custom: {}
+
 action:
-  k8s_workload_resource: statefulset/dr-springline-tm
+  taskmanagers:
+    # A selector to identify taskmanagers the list of returned objects by the scaling target; e.g.,
+    # "app=flink,component=taskmanager"
+    label_selector: "app=flink,component=taskmanager"
+
+    # Resource name of the deployment resource used to deploy taskmanagers; e.g. "statefulset/my-taskmanager".
+    deploy_resource: statefulset/dr-springline-tm
+
+    kubernetes_api_constraints:
+      # Timeout for the kubernetes list/watch call.
+      #
+      # This limits the duration of the call, regardless of any activity or inactivity.
+      # If unset for a call, the default is 290s.
+      # We limit this to 295s due to [inherent watch limitations](https://github.com/kubernetes/kubernetes/issues/6513).
+      api_timeout_secs: 290
+
+      # Timeout for confirmation of scaling actions. Until this timeout expires, springline will poll
+      # the kubernetes API to check if the scaling action has been satisfied.
+      action_timeout_secs: 600
+
+      # Interval to query kubernetes API for the status of the scaling action.
+      action_poll_interval_secs: 10
+
+# Properties for the springline config sensor to inject values that are known at deployment time.
+# Property names and types should directly match corresponding subscription requirements as
+# submission.
 context_stub:
   all_sinks_healthy: true
   cluster_is_deploying: false

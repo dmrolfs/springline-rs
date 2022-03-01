@@ -25,6 +25,7 @@ fn main() -> Result<()> {
 
     let options = CliOptions::parse();
     let settings = Settings::load(&options)?;
+    let flink = springline::flink::FlinkContext::from_settings(&settings.flink)?;
 
     start_pipeline(async move {
         let kube = springline::kubernetes::make_client(&settings.kubernetes).await?;
@@ -40,7 +41,7 @@ fn main() -> Result<()> {
             .with_metrics_registry(&METRICS_REGISTRY)
             .with_action_stage(Box::new(patch_replicas))
             .with_action_monitor(rx_action_monitor)
-            .finish(&settings)
+            .finish(flink, &settings)
             .await?
             .run();
 

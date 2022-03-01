@@ -1,6 +1,7 @@
 use prometheus::Registry;
 
 use crate::engine::monitor;
+use crate::flink;
 use crate::phases::{act, decision, eligibility, governance, metric_catalog, plan, sense};
 use crate::Result;
 
@@ -53,9 +54,10 @@ pub fn register_metrics(registry: &Registry) -> Result<()> {
         metric_catalog::METRIC_CATALOG_CLUSTER_TASK_NETWORK_OUTPUT_POOL_USAGE.clone(),
     ))?;
 
+    registry.register(Box::new(flink::FLINK_ERRORS.clone()))?;
+    registry.register(Box::new(flink::FLINK_ACTIVE_JOBS_TIME.clone()))?;
+
     registry.register(Box::new(sense::flink::FLINK_SENSOR_TIME.clone()))?;
-    registry.register(Box::new(sense::flink::FLINK_SENSOR_ERRORS.clone()))?;
-    registry.register(Box::new(sense::flink::FLINK_ACTIVE_JOBS_SENSOR_TIME.clone()))?;
     registry.register(Box::new(sense::flink::FLINK_QUERY_JOB_DETAIL_TIME.clone()))?;
     registry.register(Box::new(sense::flink::FLINK_VERTEX_SENSOR_TIME.clone()))?;
     registry.register(Box::new(sense::flink::FLINK_VERTEX_SENSOR_METRIC_PICKLIST_TIME.clone()))?;

@@ -14,17 +14,19 @@ use crate::phases::eligibility::EligibilityTemplateData;
 
 mod action_settings;
 mod engine_settings;
+mod flink_settings;
 mod governance_settings;
 mod kubernetes_settings;
 mod plan_settings;
 mod sensor_settings;
 
-pub use action_settings::{ActionSettings, KubernetesWorkloadResource};
+pub use action_settings::{ActionSettings, KubernetesApiConstraints, KubernetesDeployResource, ScaleContext};
 pub use engine_settings::EngineSettings;
+pub use flink_settings::FlinkSettings;
 pub use governance_settings::{GovernancePolicySettings, GovernanceRuleSettings, GovernanceSettings};
 pub use kubernetes_settings::{KubernetesSettings, LoadKubeConfig};
 pub use plan_settings::PlanSettings;
-pub use sensor_settings::{FlinkSettings, SensorSettings};
+pub use sensor_settings::{FlinkSensorSettings, SensorSettings};
 
 pub type EligibilitySettings = PolicySettings<EligibilityTemplateData>;
 pub type DecisionSettings = PolicySettings<DecisionTemplateData>;
@@ -33,6 +35,8 @@ pub type DecisionSettings = PolicySettings<DecisionTemplateData>;
 #[cfg_attr(test, derive(PartialEq))]
 pub struct Settings {
     pub http: HttpServerSettings,
+    #[serde(default)]
+    pub flink: FlinkSettings,
     #[serde(default)]
     pub kubernetes: KubernetesSettings,
     #[serde(default)]
@@ -153,6 +157,7 @@ mod tests {
     use super::*;
     use crate::phases::plan::{PerformanceRepositorySettings, PerformanceRepositoryType, SpikeSettings};
     use crate::phases::sense::flink::{Aggregation, FlinkScope, MetricOrder};
+    use crate::settings::sensor_settings::FlinkSensorSettings;
 
     static SERIAL_TEST: Lazy<Mutex<()>> = Lazy::new(|| Default::default());
 
@@ -222,13 +227,19 @@ mod tests {
 
         let expected = Settings {
             http: HttpServerSettings { host: "0.0.0.0".to_string(), port: 8000 },
+            flink: FlinkSettings {
+                job_manager_uri_scheme: "http".to_string(),
+                job_manager_host: "dr-flink-jm-0".to_string(),
+                job_manager_port: 8081,
+                headers: vec![(reqwest::header::ACCEPT.to_string(), "*.json".to_string())],
+                max_retries: 3,
+                pool_idle_timeout: None,
+                pool_max_idle_per_host: None,
+            },
             kubernetes: KubernetesSettings::default(),
             engine: Default::default(),
             sensor: SensorSettings {
-                flink: FlinkSettings {
-                    job_manager_uri_scheme: "http".to_string(),
-                    job_manager_host: "dr-flink-jm-0".to_string(),
-                    job_manager_port: 8081,
+                flink: FlinkSensorSettings {
                     metrics_initial_delay: Duration::from_secs(300),
                     metrics_interval: Duration::from_secs(15),
                     metric_orders: vec![
@@ -247,10 +258,6 @@ mod tests {
                             telemetry_type: TelemetryType::Integer,
                         },
                     ],
-                    headers: vec![(reqwest::header::ACCEPT.to_string(), "*.json".to_string())],
-                    max_retries: 3,
-                    pool_idle_timeout: None,
-                    pool_max_idle_per_host: None,
                 },
                 sensors: maplit::hashmap! {
                     "foo".to_string() => SensorSetting::Csv { path: PathBuf::from("../resources/bar.toml"), },
@@ -318,7 +325,15 @@ mod tests {
                 },
             },
             action: ActionSettings {
-                k8s_workload_resource: KubernetesWorkloadResource::StatefulSet { name: "dr-springline-tm".to_string() },
+                taskmanagers: ScaleContext {
+                    label_selector: "app=flink,component=taskmanager".to_string(),
+                    deploy_resource: KubernetesDeployResource::StatefulSet { name: "dr-springline-tm".to_string() },
+                    kubernetes_api_constraints: KubernetesApiConstraints {
+                        api_timeout: Duration::from_secs(290),
+                        action_timeout: Duration::from_secs(600),
+                        action_poll_interval: Duration::from_secs(10),
+                    },
+                },
             },
             context_stub: ContextStubSettings {
                 all_sinks_healthy: true,
@@ -368,13 +383,19 @@ mod tests {
 
     static SETTINGS: Lazy<Settings> = Lazy::new(|| Settings {
         http: HttpServerSettings { host: "0.0.0.0".to_string(), port: 8000 },
+        flink: FlinkSettings {
+            job_manager_uri_scheme: "https".to_string(),
+            job_manager_host: "localhost".to_string(),
+            job_manager_port: 8081,
+            headers: vec![(reqwest::header::ACCEPT.to_string(), "*.json".to_string())],
+            max_retries: 3,
+            pool_idle_timeout: None,
+            pool_max_idle_per_host: None,
+        },
         kubernetes: KubernetesSettings::default(),
         engine: EngineSettings { machine_id: 7, node_id: 3 },
         sensor: SensorSettings {
-            flink: FlinkSettings {
-                job_manager_uri_scheme: "https".to_string(),
-                job_manager_host: "localhost".to_string(),
-                job_manager_port: 8081,
+            flink: FlinkSensorSettings {
                 metrics_initial_delay: Duration::from_secs(300),
                 metrics_interval: Duration::from_secs(15),
                 metric_orders: vec![MetricOrder {
@@ -384,10 +405,6 @@ mod tests {
                     telemetry_path: "flow.input_records_lag_max".to_string(),
                     telemetry_type: TelemetryType::Integer,
                 }],
-                headers: vec![(reqwest::header::ACCEPT.to_string(), "*.json".to_string())],
-                max_retries: 3,
-                pool_idle_timeout: None,
-                pool_max_idle_per_host: None,
             },
             sensors: maplit::hashmap! {
                 "foo".to_string() => SensorSetting::Csv { path: PathBuf::from("./resources/bar.toml"),},
@@ -452,7 +469,15 @@ mod tests {
             },
         },
         action: ActionSettings {
-            k8s_workload_resource: KubernetesWorkloadResource::StatefulSet { name: "dr-springline-tm".to_string() },
+            taskmanagers: ScaleContext {
+                label_selector: "app=flink,component=taskmanager".to_string(),
+                deploy_resource: KubernetesDeployResource::StatefulSet { name: "dr-springline-tm".to_string() },
+                kubernetes_api_constraints: KubernetesApiConstraints {
+                    api_timeout: Duration::from_secs(295),
+                    action_timeout: Duration::from_secs(600),
+                    action_poll_interval: Duration::from_secs(5),
+                },
+            },
         },
         context_stub: ContextStubSettings {
             all_sinks_healthy: true,
@@ -497,15 +522,18 @@ mod tests {
 
                 let expected = Settings {
                     engine: EngineSettings { machine_id: 17, node_id: 13 },
+                    flink: FlinkSettings {
+                        job_manager_uri_scheme: "http".to_string(),
+                        job_manager_host: "host.springline".to_string(),
+                        pool_idle_timeout: Some(Duration::from_secs(60)),
+                        pool_max_idle_per_host: Some(5),
+                        headers: Vec::default(),
+                        ..SETTINGS.flink.clone()
+                    },
                     sensor: SensorSettings {
-                        flink: FlinkSettings {
-                            job_manager_uri_scheme: "http".to_string(),
-                            job_manager_host: "host.springline".to_string(),
+                        flink: FlinkSensorSettings {
                             metrics_initial_delay: Duration::from_secs(0),
-                            pool_idle_timeout: Some(Duration::from_secs(60)),
-                            pool_max_idle_per_host: Some(5),
                             metric_orders: Vec::default(),
-                            headers: Vec::default(),
                             ..SETTINGS.sensor.flink.clone()
                         },
                         sensors: HashMap::default(),
@@ -531,6 +559,17 @@ mod tests {
                             storage_path: None,
                         },
                         ..SETTINGS.plan.clone()
+                    },
+                    action: ActionSettings {
+                        taskmanagers: ScaleContext {
+                            kubernetes_api_constraints: KubernetesApiConstraints {
+                                api_timeout: Duration::from_secs(290),
+                                action_poll_interval: Duration::from_secs(10),
+                                ..SETTINGS.action.taskmanagers.kubernetes_api_constraints.clone()
+                            },
+                            ..SETTINGS.action.taskmanagers.clone()
+                        },
+                        ..SETTINGS.action.clone()
                     },
                     ..SETTINGS.clone()
                 };
@@ -572,17 +611,19 @@ mod tests {
                     host: "localhost".to_string(),
                     ..SETTINGS.http.clone()
                 },
+                flink: FlinkSettings {
+                    job_manager_uri_scheme: "http".to_string(),
+                    job_manager_host: "host.springline".to_string(),
+                    headers: Vec::default(),
+                    pool_idle_timeout: Some(Duration::from_secs(60)),
+                    pool_max_idle_per_host: Some(5),
+                    ..SETTINGS.flink.clone()
+                },
                 engine: EngineSettings { machine_id: 1, node_id: 1 },
                 sensor: SensorSettings {
-                    flink: FlinkSettings {
-                        job_manager_uri_scheme: "http".to_string(),
-                        job_manager_host: "host.springline".to_string(),
+                    flink: FlinkSensorSettings {
                         metrics_initial_delay: Duration::from_secs(10),
-                        headers: Vec::default(),
                         metric_orders: Vec::default(),
-                        max_retries: 0,
-                        pool_idle_timeout: Some(Duration::from_secs(60)),
-                        pool_max_idle_per_host: Some(5),
                         ..SETTINGS.sensor.flink.clone()
                     },
                     sensors: HashMap::default(),
@@ -603,6 +644,17 @@ mod tests {
                         ..SETTINGS.decision.template_data.clone().unwrap()
                     }),
                     ..SETTINGS.decision.clone()
+                },
+                action: ActionSettings {
+                    taskmanagers: ScaleContext {
+                        kubernetes_api_constraints: KubernetesApiConstraints {
+                            api_timeout: Duration::from_secs(290),
+                            action_poll_interval: Duration::from_secs(5),
+                            ..SETTINGS.action.taskmanagers.kubernetes_api_constraints.clone()
+                        },
+                        ..SETTINGS.action.taskmanagers.clone()
+                    },
+                    ..SETTINGS.action.clone()
                 },
                 ..SETTINGS.clone()
             };
@@ -646,6 +698,14 @@ mod tests {
                         host: "localhost".to_string(),
                         ..SETTINGS.http.clone()
                     },
+                    flink: FlinkSettings {
+                        job_manager_uri_scheme: "http".to_string(),
+                        job_manager_host: "host.lima.internal".to_string(),
+                        pool_idle_timeout: Some(Duration::from_secs(60)),
+                        pool_max_idle_per_host: Some(5),
+                        headers: Vec::default(),
+                        ..SETTINGS.flink.clone()
+                    },
                     eligibility: EligibilitySettings {
                         template_data: Some(EligibilityTemplateData {
                             cooling_secs: Some(60),
@@ -654,13 +714,8 @@ mod tests {
                         ..SETTINGS.eligibility.clone()
                     },
                     sensor: SensorSettings {
-                        flink: FlinkSettings {
-                            job_manager_uri_scheme: "http".to_string(),
-                            job_manager_host: "host.lima.internal".to_string(),
+                        flink: FlinkSensorSettings {
                             metrics_initial_delay: Duration::from_secs(0),
-                            pool_idle_timeout: Some(Duration::from_secs(60)),
-                            pool_max_idle_per_host: Some(5),
-                            headers: Vec::default(),
                             metric_orders: Vec::default(),
                             ..SETTINGS.sensor.flink.clone()
                         },
@@ -681,6 +736,17 @@ mod tests {
                             storage_path: None,
                         },
                         ..SETTINGS.plan.clone()
+                    },
+                    action: ActionSettings {
+                        taskmanagers: ScaleContext {
+                            kubernetes_api_constraints: KubernetesApiConstraints {
+                                api_timeout: Duration::from_secs(290),
+                                action_poll_interval: Duration::from_secs(10),
+                                ..SETTINGS.action.taskmanagers.kubernetes_api_constraints.clone()
+                            },
+                            ..SETTINGS.action.taskmanagers.clone()
+                        },
+                        ..SETTINGS.action.clone()
                     },
                     ..SETTINGS.clone()
                 };

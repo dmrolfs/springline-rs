@@ -4,16 +4,22 @@ use proctor::error::MetricLabel;
 use proctor::graph::stage::{self, SinkStage};
 use proctor::SharedString;
 use prometheus::{Histogram, HistogramOpts, IntCounterVec, Opts};
+use std::time::Duration;
 use thiserror::Error;
 
 use crate::phases::governance::GovernanceOutcome;
 
+mod action;
+mod kubernetes;
 mod scale_actuator;
 
 pub use scale_actuator::ScaleActuator;
 
 #[derive(Debug, Error)]
 pub enum ActError {
+    #[error("Action timed out after {0:?}: {1}")]
+    Timeout(Duration, String),
+
     #[error("failure in kubernetes client: {0}")]
     Kube(#[from] kube::Error),
 
@@ -34,6 +40,7 @@ impl MetricLabel for ActError {
 
     fn next(&self) -> Either<SharedString, Box<&dyn MetricLabel>> {
         match self {
+            Self::Timeout(_, _) => Left("timeout".into()),
             Self::Kube(_) => Left("kubernetes".into()),
             Self::KubeApi(e) => Left(format!("kubernetes::{}", e.reason).into()),
             Self::Port(e) => Right(Box::new(e)),

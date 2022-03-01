@@ -1,19 +1,46 @@
 use std::collections::HashMap;
+use std::time::Duration;
 
-use proctor::error::IncompatibleSensorSettings;
 use proctor::phases::sense::SensorSetting;
 use serde::{Deserialize, Serialize};
+use serde_with::serde_as;
 
-mod flink_settings;
-
-pub use flink_settings::FlinkSettings;
+use crate::phases::sense::flink::MetricOrder;
+pub use crate::settings::flink_settings::FlinkSettings;
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 #[serde(default)]
 #[cfg_attr(test, derive(PartialEq))]
 pub struct SensorSettings {
-    pub flink: FlinkSettings,
+    pub flink: FlinkSensorSettings,
     pub sensors: HashMap<String, SensorSetting>,
+}
+
+#[serde_as]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+#[cfg_attr(test, derive(PartialEq))]
+pub struct FlinkSensorSettings {
+    #[serde(rename = "metrics_initial_delay_secs")]
+    #[serde_as(as = "serde_with::DurationSeconds<u64>")]
+    pub metrics_initial_delay: Duration,
+
+    #[serde(rename = "metrics_interval_secs")]
+    #[serde_as(as = "serde_with::DurationSeconds<u64>")]
+    pub metrics_interval: Duration,
+
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub metric_orders: Vec<MetricOrder>,
+}
+
+impl Default for FlinkSensorSettings {
+    fn default() -> Self {
+        Self {
+            metrics_initial_delay: Duration::from_secs(2 * 60),
+            metrics_interval: Duration::from_secs(15),
+            metric_orders: Vec::default(),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -29,13 +56,14 @@ mod tests {
 
     use super::*;
     use crate::phases::sense::flink::{Aggregation, FlinkScope, MetricOrder};
+    use claim::*;
+    use pretty_assertions::assert_eq;
 
     #[test]
     fn test_serde_sensor_settings_1() {
         let settings_csv = SensorSettings {
             // only doing one pair at a time until *convenient* way to pin order and test is determined
-            flink: FlinkSettings {
-                job_manager_host: "dr-flink-jm-0".to_string(),
+            flink: FlinkSensorSettings {
                 metric_orders: vec![
                     MetricOrder {
                         scope: FlinkScope::Jobs,
@@ -59,7 +87,7 @@ mod tests {
                         telemetry_type: TelemetryType::Float,
                     },
                 ],
-                ..FlinkSettings::default()
+                ..FlinkSensorSettings::default()
             },
             sensors: maplit::hashmap! {
                 "foo".to_string() => SensorSetting::Csv { path: PathBuf::from("./resources/bar.toml"),},
@@ -71,13 +99,7 @@ mod tests {
             &vec![
                 Token::Struct { name: "SensorSettings", len: 2 },
                 Token::Str("flink"),
-                Token::Struct { name: "FlinkSettings", len: 7 },
-                Token::Str("job_manager_uri_scheme"),
-                Token::Str("http"),
-                Token::Str("job_manager_host"),
-                Token::Str("dr-flink-jm-0"),
-                Token::Str("job_manager_port"),
-                Token::U16(8081),
+                Token::Struct { name: "FlinkSensorSettings", len: 3 },
                 Token::Str("metrics_initial_delay_secs"),
                 Token::U64(120),
                 Token::Str("metrics_interval_secs"),
@@ -106,8 +128,6 @@ mod tests {
                 Token::UnitVariant { name: "TelemetryType", variant: "Float" },
                 Token::TupleStructEnd,
                 Token::SeqEnd,
-                Token::Str("max_retries"),
-                Token::U32(3),
                 Token::StructEnd,
                 Token::Str("sensors"),
                 Token::Map { len: Some(1) },
@@ -127,10 +147,7 @@ mod tests {
     #[test]
     fn test_serde_sensor_settings_2() {
         let settings_rest = SensorSettings {
-            flink: FlinkSettings {
-                job_manager_uri_scheme: "http".to_string(),
-                job_manager_host: "dr-flink-jm-0".to_string(),
-                job_manager_port: 8081,
+            flink: FlinkSensorSettings {
                 metrics_initial_delay: Duration::from_secs(300),
                 metrics_interval: Duration::from_secs(15),
                 metric_orders: vec![
@@ -149,10 +166,6 @@ mod tests {
                         telemetry_type: TelemetryType::Integer,
                     },
                 ],
-                headers: vec![(reqwest::header::AUTHORIZATION.to_string(), "foobar".to_string())],
-                max_retries: 5,
-                pool_idle_timeout: None,
-                pool_max_idle_per_host: None,
             },
             // only doing one pair at a time until *convenient* way to pin order and test is determined
             sensors: maplit::hashmap! {
@@ -174,13 +187,7 @@ mod tests {
             &vec![
                 Token::Struct { name: "SensorSettings", len: 2 },
                 Token::Str("flink"),
-                Token::Struct { name: "FlinkSettings", len: 8 },
-                Token::Str("job_manager_uri_scheme"),
-                Token::Str("http"),
-                Token::Str("job_manager_host"),
-                Token::Str("dr-flink-jm-0"),
-                Token::Str("job_manager_port"),
-                Token::U16(8081),
+                Token::Struct { name: "FlinkSensorSettings", len: 3 },
                 Token::Str("metrics_initial_delay_secs"),
                 Token::U64(300),
                 Token::Str("metrics_interval_secs"),
@@ -202,15 +209,6 @@ mod tests {
                 Token::UnitVariant { name: "TelemetryType", variant: "Integer" },
                 Token::TupleStructEnd,
                 Token::SeqEnd,
-                Token::Str("headers"),
-                Token::Seq { len: Some(1) },
-                Token::Tuple { len: 2 },
-                Token::Str("authorization"),
-                Token::Str("foobar"),
-                Token::TupleEnd,
-                Token::SeqEnd,
-                Token::Str("max_retries"),
-                Token::U32(5),
                 Token::StructEnd,
                 Token::Str("sensors"),
                 Token::Map { len: Some(1) },
@@ -242,5 +240,45 @@ mod tests {
                 Token::StructEnd,
             ],
         );
+    }
+
+    #[test]
+    fn test_flink_metric_order_serde() {
+        once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
+        let main_span = tracing::debug_span!("test_flink_metric_order_serde");
+        let _main_span_guard = main_span.enter();
+
+        let metric_orders = vec![
+            MetricOrder {
+                scope: FlinkScope::Jobs,
+                metric: "uptime".to_string(),
+                agg: Aggregation::Max,
+                telemetry_path: "health.job_uptime_millis".to_string(),
+                telemetry_type: TelemetryType::Integer,
+            },
+            MetricOrder {
+                scope: FlinkScope::Kafka,
+                metric: "records-lag-max".to_string(),
+                agg: Aggregation::Value,
+                telemetry_path: "flow.input_records_lag_max".to_string(),
+                telemetry_type: TelemetryType::Integer,
+            },
+            MetricOrder {
+                scope: FlinkScope::TaskManagers,
+                metric: "Status.JVM.Memory.Heap.Committed".to_string(),
+                agg: Aggregation::Sum,
+                telemetry_path: "cluster.task_heap_memory_committed".to_string(),
+                telemetry_type: TelemetryType::Float,
+            },
+        ];
+
+        let actual = assert_ok!(ron::to_string(&metric_orders));
+        assert_eq!(
+            actual,
+            r##"[(Jobs,"uptime",max,"health.job_uptime_millis",Integer),(Kafka,"records-lag-max",value,"flow.input_records_lag_max",Integer),(TaskManagers,"Status.JVM.Memory.Heap.Committed",sum,"cluster.task_heap_memory_committed",Float)]"##
+        );
+
+        let hydrated: Vec<MetricOrder> = assert_ok!(ron::from_str(actual.as_str()));
+        assert_eq!(hydrated, metric_orders);
     }
 }

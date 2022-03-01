@@ -1,5 +1,6 @@
 use super::{FlinkScope, Unpack};
-use crate::phases::sense::flink::TaskContext;
+use crate::flink;
+use crate::phases::sense::flink::FlinkContext;
 use crate::phases::MC_CLUSTER__NR_TASK_MANAGERS;
 use async_trait::async_trait;
 use cast_trait_object::dyn_upcast;
@@ -21,7 +22,7 @@ use tracing::Instrument;
 /// I'll only use wrt Telemetry.
 #[derive(Debug)]
 pub struct TaskmanagerAdminSensor<Out> {
-    context: Arc<TaskContext>,
+    context: Arc<FlinkContext>,
     trigger: Inlet<()>,
     outlet: Outlet<Out>,
 }
@@ -29,7 +30,7 @@ pub struct TaskmanagerAdminSensor<Out> {
 const NAME: &str = "taskmanager_admin_sensor";
 
 impl<Out> TaskmanagerAdminSensor<Out> {
-    pub fn new(context: Arc<TaskContext>) -> Self {
+    pub fn new(context: Arc<FlinkContext>) -> Self {
         let trigger = Inlet::new(NAME, "trigger");
         let outlet = Outlet::new(NAME, "outlet");
         Self { context, trigger, outlet }
@@ -119,7 +120,7 @@ where
                             error.into()
                         })
                         .and_then(|response| {
-                            super::log_response("taskmanager admin response", &response);
+                            flink::log_response("taskmanager admin response", &response);
                             response.text().map_err(|err| err.into())
                         })
                         .instrument(tracing::info_span!("Flink taskmanager REST API", scope=%SCOPE))
@@ -181,18 +182,18 @@ mod tests {
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
-    fn context_for(mock_server: &MockServer) -> anyhow::Result<TaskContext> {
+    fn context_for(mock_server: &MockServer) -> anyhow::Result<FlinkContext> {
         let client = reqwest::Client::builder().default_headers(HeaderMap::default()).build()?;
         let retry_policy = ExponentialBackoff::builder().build_with_max_retries(2);
         let client = ClientBuilder::new(client)
             .with(RetryTransientMiddleware::new_with_policy(retry_policy))
             .build();
         let url = format!("{}/", &mock_server.uri());
-        Ok(TaskContext { client, base_url: Url::parse(url.as_str())? })
+        FlinkContext::new(client, Url::parse(url.as_str())?).map_err((|err| err.into()))
     }
 
     async fn test_stage_for(
-        context: TaskContext,
+        context: FlinkContext,
     ) -> (tokio::task::JoinHandle<()>, mpsc::Sender<()>, mpsc::Receiver<Telemetry>) {
         let mut stage = TaskmanagerAdminSensor::new(Arc::new(context));
         let (tx_trigger, rx_trigger) = mpsc::channel(1);

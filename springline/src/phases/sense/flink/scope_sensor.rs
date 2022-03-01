@@ -1,6 +1,6 @@
 use super::FlinkScope;
 use super::{api_model, Aggregation, MetricOrder, Unpack};
-use crate::phases::sense::flink::TaskContext;
+use crate::flink::{self, FlinkContext};
 use async_trait::async_trait;
 use cast_trait_object::dyn_upcast;
 use futures_util::TryFutureExt;
@@ -23,14 +23,14 @@ use url::Url;
 #[derive(Debug)]
 pub struct ScopeSensor<Out> {
     scope: FlinkScope,
-    context: Arc<TaskContext>,
+    context: Arc<FlinkContext>,
     orders: Arc<Vec<MetricOrder>>,
     trigger: Inlet<()>,
     outlet: Outlet<Out>,
 }
 
 impl<Out> ScopeSensor<Out> {
-    pub fn new(scope: FlinkScope, orders: Arc<Vec<MetricOrder>>, context: Arc<TaskContext>) -> Self {
+    pub fn new(scope: FlinkScope, orders: Arc<Vec<MetricOrder>>, context: Arc<FlinkContext>) -> Self {
         let name: SharedString = format!("{scope}Sensor").to_snake_case().into();
         let trigger = Inlet::new(name.clone(), "trigger");
         let outlet = Outlet::new(name, "outlet");
@@ -143,7 +143,7 @@ where
                             error.into()
                         })
                         .and_then(|response| {
-                            super::log_response(format!("{} scope response", scope_rep.clone()).as_str(), &response);
+                            flink::log_response(format!("{} scope response", scope_rep.clone()).as_str(), &response);
                             response.text().map_err(|err| err.into())
                         })
                         .instrument(tracing::info_span!("Flink scope metrics REST API", scope=%self.scope))
@@ -225,18 +225,19 @@ mod tests {
         }
     }
 
-    fn context_for(mock_server: &MockServer) -> anyhow::Result<TaskContext> {
+    fn context_for(mock_server: &MockServer) -> anyhow::Result<FlinkContext> {
         let client = reqwest::Client::builder().default_headers(HeaderMap::default()).build()?;
         let retry_policy = ExponentialBackoff::builder().build_with_max_retries(2);
         let client = ClientBuilder::new(client)
             .with(RetryTransientMiddleware::new_with_policy(retry_policy))
             .build();
         let url = format!("{}/", &mock_server.uri());
-        Ok(TaskContext { client, base_url: Url::parse(url.as_str())? })
+        let context = FlinkContext::new(client, Url::parse(url.as_str())?)?;
+        Ok(context)
     }
 
     async fn test_stage_for(
-        scope: FlinkScope, orders: &Vec<MetricOrder>, context: TaskContext,
+        scope: FlinkScope, orders: &Vec<MetricOrder>, context: FlinkContext,
     ) -> (tokio::task::JoinHandle<()>, mpsc::Sender<()>, mpsc::Receiver<Telemetry>) {
         let mut stage = ScopeSensor::new(scope, Arc::new(orders.clone()), Arc::new(context));
         let (tx_trigger, rx_trigger) = mpsc::channel(1);

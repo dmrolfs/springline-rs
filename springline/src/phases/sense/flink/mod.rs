@@ -1,18 +1,19 @@
+use crate::flink::{self, FlinkContext};
+use crate::phases::sense::flink::scope_sensor::ScopeSensor;
+use crate::phases::sense::flink::taskmanager_admin_sensor::TaskmanagerAdminSensor;
+use crate::phases::sense::flink::vertex_sensor::VertexSensor;
+use crate::phases::MC_FLOW__RECORDS_IN_PER_SEC;
+use crate::settings::FlinkSensorSettings;
 use cast_trait_object::DynCastExt;
 use once_cell::sync::Lazy;
 use proctor::elements::telemetry::{self, Telemetry, TelemetryValue};
-use proctor::error::{MetricLabel, SenseError, TelemetryError};
+use proctor::error::{SenseError, TelemetryError};
 use proctor::graph::stage::{self, SourceStage, ThroughStage};
 use proctor::graph::{Connect, Graph, SinkShape, SourceShape, UniformFanInShape, UniformFanOutShape};
 use proctor::SharedString;
-use prometheus::{HistogramOpts, HistogramTimer, HistogramVec, IntCounterVec, Opts};
-use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
-use reqwest_retry::policies::ExponentialBackoff;
-use reqwest_retry::RetryTransientMiddleware;
+use prometheus::{HistogramOpts, HistogramTimer, HistogramVec};
 use std::collections::{HashMap, HashSet};
-use std::fmt;
 use std::sync::Arc;
-use url::Url;
 
 mod api_model;
 mod metric_order;
@@ -20,21 +21,11 @@ mod scope_sensor;
 mod taskmanager_admin_sensor;
 mod vertex_sensor;
 
-// #[allow(dead_code)]
-// mod generators;
-
-use crate::phases::MC_FLOW__RECORDS_IN_PER_SEC;
-pub use vertex_sensor::{
-    FLINK_ACTIVE_JOBS_SENSOR_TIME, FLINK_QUERY_JOB_DETAIL_TIME, FLINK_VERTEX_SENSOR_AVAIL_TELEMETRY_TIME,
-    FLINK_VERTEX_SENSOR_METRIC_PICKLIST_TIME, FLINK_VERTEX_SENSOR_TIME,
-};
-// pub use generators::make_flink_metrics_source;
-use crate::phases::sense::flink::scope_sensor::ScopeSensor;
-use crate::phases::sense::flink::taskmanager_admin_sensor::TaskmanagerAdminSensor;
-use crate::phases::sense::flink::vertex_sensor::VertexSensor;
-use crate::settings::FlinkSettings;
-pub use api_model::{JobId, JobState, TaskState, VertexId, JOB_STATES, TASK_STATES};
 pub use metric_order::{Aggregation, FlinkScope, MetricOrder};
+pub use vertex_sensor::{
+    FLINK_QUERY_JOB_DETAIL_TIME, FLINK_VERTEX_SENSOR_AVAIL_TELEMETRY_TIME, FLINK_VERTEX_SENSOR_METRIC_PICKLIST_TIME,
+    FLINK_VERTEX_SENSOR_TIME,
+};
 
 // note: `cluster.nr_task_managers` is a standard metric pulled from Flink's admin API. The order
 // mechanism may need to be expanded to consider further meta information outside of Flink Metrics
@@ -127,12 +118,12 @@ pub static STD_METRIC_ORDERS: Lazy<Vec<MetricOrder>> = Lazy::new(|| {
 
 #[tracing::instrument(level="info", skip(name, scheduler, settings), fields(sensor=%name))]
 pub async fn make_sensor(
-    name: &str, scheduler: Box<dyn SourceStage<()>>, settings: &FlinkSettings,
+    name: &str, context: FlinkContext, scheduler: Box<dyn SourceStage<()>>, settings: &FlinkSensorSettings,
 ) -> Result<Box<dyn SourceStage<Telemetry>>, SenseError> {
     let name: SharedString = format!("{}_flink_sensor", name).into();
 
     let orders = Arc::new(MetricOrder::extend_standard_with_settings(settings));
-    let context = Arc::new(TaskContext::new(settings)?);
+    let context = Arc::new(context);
 
     let jobs_scope_sensor = ScopeSensor::new(FlinkScope::Jobs, orders.clone(), context.clone());
     let tm_scope_sensor = ScopeSensor::new(FlinkScope::TaskManagers, orders.clone(), context.clone());
@@ -183,47 +174,6 @@ pub async fn make_sensor(
 //     )
 // }
 
-#[derive(Clone)]
-pub struct TaskContext {
-    pub client: ClientWithMiddleware,
-    pub base_url: Url,
-}
-
-impl fmt::Debug for TaskContext {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("TaskContext").field("base_url", &self.base_url).finish()
-    }
-}
-
-impl TaskContext {
-    pub fn new(settings: &FlinkSettings) -> Result<Self, SenseError> {
-        let client = Self::do_make_http_client(settings)?;
-        let base_url = settings.base_url()?;
-        Ok(Self { client, base_url })
-    }
-
-    fn do_make_http_client(settings: &FlinkSettings) -> Result<ClientWithMiddleware, SenseError> {
-        let headers = settings.header_map()?;
-
-        let client_builder = reqwest::Client::builder()
-            .pool_idle_timeout(settings.pool_idle_timeout)
-            .default_headers(headers);
-
-        let client_builder = if let Some(pool_max_idle_per_host) = settings.pool_max_idle_per_host {
-            client_builder.pool_max_idle_per_host(pool_max_idle_per_host)
-        } else {
-            client_builder
-        };
-
-        let client = client_builder.build()?;
-
-        let retry_policy = ExponentialBackoff::builder().build_with_max_retries(settings.max_retries);
-        Ok(ClientBuilder::new(client)
-            .with(RetryTransientMiddleware::new_with_policy(retry_policy))
-            .build())
-    }
-}
-
 // This type is also only needed to circumvent the issue cast_trait_object places on forcing the generic Out type.
 // Since Telemetry is only used for this stage, The generic variation is dead.
 pub trait Unpack: Default + Sized {
@@ -248,26 +198,11 @@ pub(crate) static FLINK_SENSOR_TIME: Lazy<HistogramVec> = Lazy::new(|| {
     .expect("failed creating flink_sensor_time metric")
 });
 
-pub(crate) static FLINK_SENSOR_ERRORS: Lazy<IntCounterVec> = Lazy::new(|| {
-    IntCounterVec::new(
-        Opts::new("flink_sensor_errors", "Number of errors collecting Flink telemetry"),
-        &["flink_scope", "error_type"],
-    )
-    .expect("failed creating flink_sensor_errors metric")
-});
-
 #[inline]
 pub(crate) fn start_flink_sensor_timer(scope: &FlinkScope) -> HistogramTimer {
     FLINK_SENSOR_TIME
         .with_label_values(&[scope.to_string().as_str()])
         .start_timer()
-}
-
-#[inline]
-pub(crate) fn track_flink_sensor_errors(scope: &FlinkScope, error: &SenseError) {
-    FLINK_SENSOR_ERRORS
-        .with_label_values(&[scope.to_string().as_str(), error.label().as_ref()])
-        .inc()
 }
 
 const JOB_SCOPE: &str = "Jobs";
@@ -283,7 +218,7 @@ where
         Err(err) => {
             let error = err.into();
             tracing::error!(%scope, ?error, "failed to collect telemetry from Flink {} sensor", scope);
-            track_flink_sensor_errors(&scope, &error);
+            flink::track_flink_errors(scope.as_ref(), &error);
             Err(error)
         },
     }
@@ -346,17 +281,4 @@ fn consolidate_active_job_telemetry_for_order(
         .into();
 
     Ok(telemetry)
-}
-
-#[allow(clippy::cognitive_complexity)]
-fn log_response(label: &str, response: &reqwest::Response) {
-    const PREAMBLE: &str = "flink telemetry response received";
-    let status = response.status();
-    if status.is_success() || status.is_informational() {
-        tracing::info!(?response, "{PREAMBLE}:{label}");
-    } else if status.is_client_error() {
-        tracing::error!(?response, "{PREAMBLE}:{label}");
-    } else {
-        tracing::warn!(?response, "{PREAMBLE}:{label}");
-    }
 }

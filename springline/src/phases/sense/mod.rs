@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use crate::flink::FlinkContext;
 use pretty_snowflake::MachineNode;
 use proctor::elements::Telemetry;
 use proctor::graph::stage::tick::{Tick, TickApi};
@@ -15,8 +16,8 @@ pub mod flink;
 
 #[tracing::instrument(level = "info", skip(name, settings, auxiliary_sensors))]
 pub async fn make_sense_phase(
-    name: &str, settings: &SensorSettings, auxiliary_sensors: Vec<Box<dyn SourceStage<Telemetry>>>,
-    machine_node: MachineNode,
+    name: &str, context: FlinkContext, settings: &SensorSettings,
+    auxiliary_sensors: Vec<Box<dyn SourceStage<Telemetry>>>, machine_node: MachineNode,
 ) -> Result<(SenseBuilder<MetricCatalog>, TickApi)> {
     let mut sensors = do_make_modular_sensors(&settings.sensors, auxiliary_sensors).await?;
 
@@ -28,7 +29,7 @@ pub async fn make_sense_phase(
     );
     let tx_scheduler_api = scheduler.tx_api();
 
-    let flink_sensor = flink::make_sensor("springline", Box::new(scheduler), &settings.flink).await?;
+    let flink_sensor = flink::make_sensor("springline", context, Box::new(scheduler), &settings.flink).await?;
     sensors.push(flink_sensor);
 
     Ok((

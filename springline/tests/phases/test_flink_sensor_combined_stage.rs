@@ -7,11 +7,10 @@ use proctor::graph::stage::{self, ActorSourceApi, ActorSourceCmd, WithApi};
 use proctor::graph::{Connect, Graph, SinkShape};
 use proctor::Ack;
 use serde_json::json;
-use springline::phases::sense::flink::{
-    make_sensor, JobId, JobState, TaskState, VertexId, JOB_STATES, STD_METRIC_ORDERS, TASK_STATES,
-};
+use springline::flink::{FlinkContext, JobId, JobState, TaskState, VertexId, JOB_STATES, TASK_STATES};
+use springline::phases::sense::flink::{make_sensor, STD_METRIC_ORDERS};
 use springline::phases::{MC_CLUSTER__NR_ACTIVE_JOBS, MC_CLUSTER__NR_TASK_MANAGERS, MC_FLOW__RECORDS_IN_PER_SEC};
-use springline::settings::FlinkSettings;
+use springline::settings::{FlinkSensorSettings, FlinkSettings};
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::time::Duration;
@@ -85,20 +84,24 @@ async fn test_flink_sensor_merge_combine_stage() -> anyhow::Result<()> {
     let job_manager_host = assert_some!(mock_uri.host());
     let job_manager_port = assert_some!(mock_uri.port());
 
-    let settings = FlinkSettings {
+    let context = FlinkContext::from_settings(&FlinkSettings {
         job_manager_uri_scheme: "http".to_string(),
         job_manager_host: job_manager_host.to_string(), //"localhost".to_string(),
         job_manager_port,                               //: 8081,
+        ..FlinkSettings::default()
+    })?;
+
+    let settings = FlinkSensorSettings {
         metrics_initial_delay: Duration::ZERO,
         metrics_interval: Duration::from_secs(120),
         metric_orders: STD_METRIC_ORDERS.clone(),
-        ..FlinkSettings::default()
+        ..FlinkSensorSettings::default()
     };
 
     let scheduler = stage::ActorSource::new("trigger");
     let tx_scheduler_api = scheduler.tx_api();
 
-    let flink_sensor = make_sensor("test_flink", Box::new(scheduler), &settings).await?;
+    let flink_sensor = make_sensor("test_flink", context, Box::new(scheduler), &settings).await?;
 
     let mut sink = stage::Fold::new("sink", Telemetry::default(), |mut acc, item| {
         tracing::info!(?item, ?acc, "PUSHING ITEM INTO ACC...");

@@ -1,7 +1,8 @@
 use super::FlinkScope;
 use super::{api_model, Aggregation, MetricOrder, Unpack};
-use crate::phases::sense::flink::api_model::{FlinkMetricResponse, JobDetail, JobId, JobSummary, VertexId};
-use crate::phases::sense::flink::{OrdersByMetric, TaskContext, JOB_SCOPE, TASK_SCOPE};
+use crate::flink::{self, JobDetail, JobId, JobSummary, VertexId};
+use crate::phases::sense::flink::api_model::FlinkMetricResponse;
+use crate::phases::sense::flink::{FlinkContext, OrdersByMetric, JOB_SCOPE, TASK_SCOPE};
 use crate::phases::MC_CLUSTER__NR_ACTIVE_JOBS;
 use async_trait::async_trait;
 use cast_trait_object::dyn_upcast;
@@ -29,7 +30,7 @@ use url::Url;
 #[derive(Debug)]
 pub struct VertexSensor<Out> {
     scopes: Vec<FlinkScope>,
-    context: Arc<TaskContext>,
+    context: Arc<FlinkContext>,
     orders: Arc<Vec<MetricOrder>>,
     trigger: Inlet<()>,
     outlet: Outlet<Out>,
@@ -39,7 +40,7 @@ pub struct VertexSensor<Out> {
 const NAME: &str = "vertex_sensor";
 
 impl<Out> VertexSensor<Out> {
-    pub fn new(orders: Arc<Vec<MetricOrder>>, context: Arc<TaskContext>) -> Result<Self, SenseError> {
+    pub fn new(orders: Arc<Vec<MetricOrder>>, context: Arc<FlinkContext>) -> Result<Self, SenseError> {
         let scopes = vec![FlinkScope::Task, FlinkScope::Kafka, FlinkScope::Kinesis];
         let trigger = Inlet::new(NAME, "trigger");
         let outlet = Outlet::new(NAME, "outlet");
@@ -136,6 +137,7 @@ where
                     let flink_span = tracing::info_span!("query Flink REST APIs");
 
                     let out: Result<Out, SenseError> = self
+                        .context
                         .query_active_jobs()
                         .and_then(|active_jobs| async {
                             let nr_active_jobs = active_jobs.len();
@@ -205,56 +207,6 @@ where
     }
 
     #[tracing::instrument(level = "info", skip(self))]
-    async fn query_active_jobs(&self) -> Result<Vec<JobSummary>, SenseError> {
-        let _timer = start_flink_active_jobs_sensor_timer();
-        let span = tracing::info_span!("query Flink active jobs");
-
-        let result: Result<Vec<JobSummary>, SenseError> = self
-            .context
-            .client
-            .request(Method::GET, self.jobs_endpoint.clone())
-            .send()
-            .map_err(|error| {
-                tracing::error!(?error, "failed Flink API job_summary response");
-                error.into()
-            })
-            .and_then(|response| {
-                super::log_response("active jobs", &response);
-                response.text().map_err(|err| err.into())
-            })
-            .instrument(span)
-            .await
-            // .map_err(|err: reqwest_middleware::Error| err.into())
-            .and_then(|body| {
-                let result = serde_json::from_str(body.as_str()).map_err(|err| err.into());
-                tracing::info!(%body, ?result, "Flink job summary response body");
-                result
-            })
-            .and_then(|jobs_json_value: serde_json::Value| {
-                let result = jobs_json_value
-                    .get("jobs")
-                    .cloned()
-                    .map(|json| serde_json::from_value::<Vec<JobSummary>>(json).map_err(|err| err.into()))
-                    .unwrap_or_else(|| Ok(Vec::default()));
-                tracing::info!(?result, "Flink job summary response json parsing");
-                result
-            })
-            .map(|jobs: Vec<JobSummary>| {
-                jobs.into_iter()
-                    .filter(|job_summary| {
-                        let is_job_active = job_summary.status.is_active();
-                        if !is_job_active {
-                            tracing::info!(?job_summary, "filtering out job detail since");
-                        }
-                        is_job_active
-                    })
-                    .collect()
-            });
-
-        super::identity_or_track_error(FlinkScope::Jobs, result)
-    }
-
-    #[tracing::instrument(level = "info", skip(self))]
     async fn query_job_details(&self, job_id: &JobId) -> Result<JobDetail, SenseError> {
         let mut url = self.jobs_endpoint.clone();
         url.path_segments_mut()
@@ -274,7 +226,7 @@ where
                 error.into()
             })
             .and_then(|response| {
-                super::log_response("job detail", &response);
+                flink::log_response("job detail", &response);
                 response.text().map_err(|err| err.into())
             })
             .instrument(span)
@@ -332,7 +284,7 @@ where
                 error.into()
             })
             .and_then(|response| {
-                super::log_response("vertex metric picklet", &response);
+                flink::log_response("vertex metric picklet", &response);
                 response.json::<FlinkMetricResponse>().map_err(|err| err.into())
             })
             .instrument(span)
@@ -382,7 +334,7 @@ where
                     error.into()
                 })
                 .and_then(|response| {
-                    super::log_response("job_vertex available telemetry", &response);
+                    flink::log_response("job_vertex available telemetry", &response);
                     response.text().map_err(|err| err.into())
                 })
                 .instrument(span)
@@ -424,23 +376,6 @@ where
         self.outlet.close().await;
         Ok(())
     }
-}
-
-pub static FLINK_ACTIVE_JOBS_SENSOR_TIME: Lazy<HistogramVec> = Lazy::new(|| {
-    HistogramVec::new(
-        HistogramOpts::new(
-            "flink_active_jobs_sensor_time",
-            "Time spent collecting active jobs from Flink in seconds",
-        )
-        .buckets(vec![0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 1.0, 2.5, 5.0, 7.5, 10.0]),
-        &["flink_scope"],
-    )
-    .expect("failed creating flink_active_jobs_sensor_time metric")
-});
-
-#[inline]
-fn start_flink_active_jobs_sensor_timer() -> HistogramTimer {
-    FLINK_ACTIVE_JOBS_SENSOR_TIME.with_label_values(&[JOB_SCOPE]).start_timer()
 }
 
 pub static FLINK_QUERY_JOB_DETAIL_TIME: Lazy<HistogramVec> = Lazy::new(|| {
@@ -518,8 +453,8 @@ fn start_flink_vertex_sensor_avail_telemetry_timer() -> HistogramTimer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::flink::{JobState, TaskState, VertexDetail};
     use crate::phases::sense::flink;
-    use crate::phases::sense::flink::api_model::{JobState, TaskState, VertexDetail};
     use crate::phases::sense::flink::STD_METRIC_ORDERS;
     use claim::*;
     use pretty_assertions::assert_eq;
@@ -565,7 +500,7 @@ mod tests {
         }
     }
 
-    fn context_for(mock_server: &MockServer) -> anyhow::Result<TaskContext> {
+    fn context_for(mock_server: &MockServer) -> anyhow::Result<FlinkContext> {
         let client = reqwest::Client::builder().default_headers(HeaderMap::default()).build()?;
         let retry_policy = ExponentialBackoff::builder().build_with_max_retries(2);
         let client = ClientBuilder::new(client)
@@ -573,11 +508,11 @@ mod tests {
             .build();
         let url = format!("{}/", &mock_server.uri());
         // let url = "http://localhost:8081/".to_string();
-        Ok(TaskContext { client, base_url: Url::parse(url.as_str())? })
+        FlinkContext::new(client, Url::parse(url.as_str())?).map_err(|err| err.into())
     }
 
     async fn test_stage_for(
-        orders: &Vec<MetricOrder>, context: TaskContext,
+        orders: &Vec<MetricOrder>, context: FlinkContext,
     ) -> (VertexSensor<Telemetry>, mpsc::Sender<()>, mpsc::Receiver<Telemetry>) {
         let mut stage = assert_ok!(VertexSensor::new(Arc::new(orders.clone()), Arc::new(context)));
         let (tx_trigger, rx_trigger) = mpsc::channel(1);
@@ -585,57 +520,6 @@ mod tests {
         stage.trigger.attach("trigger".into(), rx_trigger).await;
         stage.outlet.attach("out".into(), tx_out).await;
         (stage, tx_trigger, rx_out)
-    }
-
-    #[test]
-    fn test_query_active_jobs() {
-        once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
-        let main_span = tracing::info_span!("test_query_active_jobs");
-        let _ = main_span.enter();
-
-        block_on(async {
-            let mock_server = MockServer::start().await;
-
-            let b = json!({
-                "jobs": [
-                    {
-                        "id": "0771e8332dc401d254a140a707169a48",
-                        "status": "RUNNING"
-                    },
-                    {
-                        "id": "5226h8332dc401d254a140a707114f93",
-                        "status": "CREATED"
-                    }
-                ]
-            });
-
-            let response = ResponseTemplate::new(200).set_body_json(b);
-
-            Mock::given(method("GET"))
-                .and(path("/jobs"))
-                .respond_with(response)
-                .expect(1)
-                .mount(&mock_server)
-                .await;
-
-            let context = assert_ok!(context_for(&mock_server));
-            let (stage, _, _) = test_stage_for(&STD_METRIC_ORDERS, context).await;
-
-            let actual = assert_ok!(stage.query_active_jobs().await);
-            assert_eq!(
-                actual,
-                vec![
-                    JobSummary {
-                        id: JobId::new("0771e8332dc401d254a140a707169a48"),
-                        status: JobState::Running,
-                    },
-                    JobSummary {
-                        id: JobId::new("5226h8332dc401d254a140a707114f93"),
-                        status: JobState::Created,
-                    },
-                ]
-            )
-        })
     }
 
     fn make_job_detail_body_and_expectation() -> (serde_json::Value, JobDetail) {

@@ -2,8 +2,9 @@ use std::collections::HashMap;
 use std::fmt::{self, Display};
 
 use crate::phases::sense::flink::STD_METRIC_ORDERS;
-use crate::settings::FlinkSettings;
+use crate::settings::FlinkSensorSettings;
 use itertools::Itertools;
+use once_cell::sync::Lazy;
 use proctor::elements::telemetry::combine::{self, TelemetryCombinator};
 use proctor::elements::TelemetryType;
 use serde::de::{self, Deserializer, MapAccess, SeqAccess, Visitor};
@@ -20,7 +21,7 @@ pub struct MetricOrder {
 }
 
 impl MetricOrder {
-    pub fn extend_standard_with_settings(settings: &FlinkSettings) -> Vec<Self> {
+    pub fn extend_standard_with_settings(settings: &FlinkSensorSettings) -> Vec<Self> {
         let mut orders = STD_METRIC_ORDERS.clone();
         orders.extend(settings.metric_orders.clone());
         orders
@@ -163,6 +164,26 @@ pub enum FlinkScope {
     Kafka,
     Kinesis,
     Other,
+}
+
+static FLINK_SCOPE_JOBS: Lazy<String> = Lazy::new(|| FlinkScope::Jobs.to_string());
+static FLINK_SCOPE_TASK: Lazy<String> = Lazy::new(|| FlinkScope::Task.to_string());
+static FLINK_SCOPE_TASKMANAGERS: Lazy<String> = Lazy::new(|| FlinkScope::TaskManagers.to_string());
+static FLINK_SCOPE_KAFKA: Lazy<String> = Lazy::new(|| FlinkScope::Kafka.to_string());
+static FLINK_SCOPE_KINESIS: Lazy<String> = Lazy::new(|| FlinkScope::Kinesis.to_string());
+static FLINK_SCOPE_OTHER: Lazy<String> = Lazy::new(|| FlinkScope::Other.to_string());
+
+impl AsRef<str> for FlinkScope {
+    fn as_ref(&self) -> &str {
+        match self {
+            Self::Jobs => FLINK_SCOPE_JOBS.as_ref(),
+            Self::Task => FLINK_SCOPE_TASK.as_ref(),
+            Self::TaskManagers => FLINK_SCOPE_TASKMANAGERS.as_ref(),
+            Self::Kafka => FLINK_SCOPE_KAFKA.as_ref(),
+            Self::Kinesis => FLINK_SCOPE_KINESIS.as_ref(),
+            Self::Other => FLINK_SCOPE_OTHER.as_ref(),
+        }
+    }
 }
 
 #[derive(Debug, Display, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]

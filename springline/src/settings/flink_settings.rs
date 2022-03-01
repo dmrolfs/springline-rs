@@ -6,8 +6,7 @@ use serde::{Deserialize, Serialize};
 use serde_with::{serde_as, DurationSeconds};
 use url::Url;
 
-use super::IncompatibleSensorSettings;
-use crate::phases::sense::flink::MetricOrder;
+use proctor::error::IncompatibleSensorSettings;
 
 #[serde_as]
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -22,17 +21,6 @@ pub struct FlinkSettings {
 
     #[serde(default = "FlinkSettings::default_job_manager_port")]
     pub job_manager_port: u16,
-
-    #[serde(rename = "metrics_initial_delay_secs")]
-    #[serde_as(as = "DurationSeconds<u64>")]
-    pub metrics_initial_delay: Duration,
-
-    #[serde(rename = "metrics_interval_secs")]
-    #[serde_as(as = "DurationSeconds<u64>")]
-    pub metrics_interval: Duration,
-
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub metric_orders: Vec<MetricOrder>,
 
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub headers: Vec<(String, String)>,
@@ -54,9 +42,6 @@ impl Default for FlinkSettings {
             job_manager_uri_scheme: Self::DEFAULT_JOB_MANAGER_SCHEME.to_string(),
             job_manager_host: Self::DEFAULT_JOB_MANAGER_HOST.to_string(),
             job_manager_port: Self::DEFAULT_JOB_MANAGER_PORT,
-            metrics_initial_delay: Duration::from_secs(2 * 60),
-            metrics_interval: Duration::from_secs(15),
-            metric_orders: Vec::default(),
             headers: Vec::default(),
             max_retries: Self::DEFAULT_MAX_RETRIES,
             pool_idle_timeout: None,
@@ -131,6 +116,8 @@ mod tests {
     use claim::*;
     use pretty_assertions::assert_eq;
     use proctor::elements::telemetry::TelemetryType;
+    use reqwest::header::{AUTHORIZATION, CONTENT_LENGTH};
+    use serde_test::{assert_tokens, Token};
 
     use super::*;
     use crate::phases::sense::flink::{Aggregation, FlinkScope};
@@ -148,42 +135,38 @@ mod tests {
     }
 
     #[test]
-    fn test_flink_metric_order_serde() {
-        once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
-        let main_span = tracing::debug_span!("test_flink_metric_order_serde");
-        let _main_span_guard = main_span.enter();
+    fn test_serde_sensor_settings_2() {
+        let settings_rest = FlinkSettings {
+            job_manager_uri_scheme: "http".to_string(),
+            job_manager_host: "dr-flink-jm-0".to_string(),
+            job_manager_port: 8081,
+            headers: vec![(reqwest::header::AUTHORIZATION.to_string(), "foobar".to_string())],
+            max_retries: 5,
+            pool_idle_timeout: None,
+            pool_max_idle_per_host: None,
+        };
 
-        let metric_orders = vec![
-            MetricOrder {
-                scope: FlinkScope::Jobs,
-                metric: "uptime".to_string(),
-                agg: Aggregation::Max,
-                telemetry_path: "health.job_uptime_millis".to_string(),
-                telemetry_type: TelemetryType::Integer,
-            },
-            MetricOrder {
-                scope: FlinkScope::Kafka,
-                metric: "records-lag-max".to_string(),
-                agg: Aggregation::Value,
-                telemetry_path: "flow.input_records_lag_max".to_string(),
-                telemetry_type: TelemetryType::Integer,
-            },
-            MetricOrder {
-                scope: FlinkScope::TaskManagers,
-                metric: "Status.JVM.Memory.Heap.Committed".to_string(),
-                agg: Aggregation::Sum,
-                telemetry_path: "cluster.task_heap_memory_committed".to_string(),
-                telemetry_type: TelemetryType::Float,
-            },
-        ];
-
-        let actual = assert_ok!(ron::to_string(&metric_orders));
-        assert_eq!(
-            actual,
-            r##"[(Jobs,"uptime",max,"health.job_uptime_millis",Integer),(Kafka,"records-lag-max",value,"flow.input_records_lag_max",Integer),(TaskManagers,"Status.JVM.Memory.Heap.Committed",sum,"cluster.task_heap_memory_committed",Float)]"##
+        assert_tokens(
+            &settings_rest,
+            &vec![
+                Token::Struct { name: "FlinkSettings", len: 5 },
+                Token::Str("job_manager_uri_scheme"),
+                Token::Str("http"),
+                Token::Str("job_manager_host"),
+                Token::Str("dr-flink-jm-0"),
+                Token::Str("job_manager_port"),
+                Token::U16(8081),
+                Token::Str("headers"),
+                Token::Seq { len: Some(1) },
+                Token::Tuple { len: 2 },
+                Token::Str("authorization"),
+                Token::Str("foobar"),
+                Token::TupleEnd,
+                Token::SeqEnd,
+                Token::Str("max_retries"),
+                Token::U32(5),
+                Token::StructEnd,
+            ],
         );
-
-        let hydrated: Vec<MetricOrder> = assert_ok!(ron::from_str(actual.as_str()));
-        assert_eq!(hydrated, metric_orders);
     }
 }
