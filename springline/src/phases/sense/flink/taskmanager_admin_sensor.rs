@@ -1,6 +1,6 @@
 use super::{FlinkScope, Unpack};
 use crate::flink;
-use crate::phases::sense::flink::FlinkContext;
+use crate::phases::sense::flink::{CorrelationGenerator, FlinkContext};
 use crate::phases::MC_CLUSTER__NR_TASK_MANAGERS;
 use async_trait::async_trait;
 use cast_trait_object::dyn_upcast;
@@ -22,6 +22,7 @@ use tracing::Instrument;
 #[derive(Debug)]
 pub struct TaskmanagerAdminSensor<Out> {
     context: FlinkContext,
+    correlation_gen: CorrelationGenerator,
     trigger: Inlet<()>,
     outlet: Outlet<Out>,
 }
@@ -29,10 +30,10 @@ pub struct TaskmanagerAdminSensor<Out> {
 const NAME: &str = "taskmanager_admin_sensor";
 
 impl<Out> TaskmanagerAdminSensor<Out> {
-    pub fn new(context: FlinkContext) -> Self {
+    pub fn new(context: FlinkContext, correlation_gen: CorrelationGenerator) -> Self {
         let trigger = Inlet::new(NAME, "trigger");
         let outlet = Outlet::new(NAME, "outlet");
-        Self { context, trigger, outlet }
+        Self { context, correlation_gen, trigger, outlet }
     }
 }
 
@@ -102,7 +103,8 @@ where
         while self.trigger.recv().await.is_some() {
             let _stage_timer = stage::start_stage_eval_time(name.as_ref());
 
-            let span = tracing::info_span!("collect Flink taskmanager admin telemetry");
+            let correlation = self.correlation_gen.next_id();
+            let span = tracing::info_span!("collect Flink taskmanager admin telemetry", %correlation);
             let send_telemetry = self
                 .outlet
                 .reserve_send::<_, SenseError>(async {
@@ -188,13 +190,13 @@ mod tests {
             .with(RetryTransientMiddleware::new_with_policy(retry_policy))
             .build();
         let url = format!("{}/", &mock_server.uri());
-        FlinkContext::new(client, Url::parse(url.as_str())?).map_err(|err| err.into())
+        FlinkContext::new("test_flink", client, Url::parse(url.as_str())?).map_err(|err| err.into())
     }
 
     async fn test_stage_for(
         context: FlinkContext,
     ) -> (tokio::task::JoinHandle<()>, mpsc::Sender<()>, mpsc::Receiver<Telemetry>) {
-        let mut stage = TaskmanagerAdminSensor::new(context);
+        let mut stage = TaskmanagerAdminSensor::new(context, CorrelationGenerator::default());
         let (tx_trigger, rx_trigger) = mpsc::channel(1);
         let (tx_out, rx_out) = mpsc::channel(8);
         stage.trigger.attach("trigger".into(), rx_trigger).await;

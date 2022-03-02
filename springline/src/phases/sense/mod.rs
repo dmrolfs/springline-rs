@@ -8,6 +8,7 @@ use proctor::graph::stage::{SourceStage, WithApi};
 use proctor::phases::sense::builder::SenseBuilder;
 use proctor::phases::sense::{Sense, SensorSetting, TelemetrySensor};
 
+use crate::phases::sense::flink::FlinkSensorSpecification;
 use crate::phases::MetricCatalog;
 use crate::settings::SensorSettings;
 use crate::Result;
@@ -29,7 +30,14 @@ pub async fn make_sense_phase(
     );
     let tx_scheduler_api = scheduler.tx_api();
 
-    let flink_sensor = flink::make_sensor("springline", context, Box::new(scheduler), &settings.flink).await?;
+    let flink_sensor = flink::make_sensor(FlinkSensorSpecification {
+        name: "springline",
+        context,
+        scheduler: Box::new(scheduler),
+        settings: &settings.flink,
+        machine_node,
+    })
+    .await?;
     sensors.push(flink_sensor);
 
     Ok((

@@ -2,15 +2,16 @@ use crate::flink::{self, FlinkContext};
 use crate::phases::sense::flink::scope_sensor::ScopeSensor;
 use crate::phases::sense::flink::taskmanager_admin_sensor::TaskmanagerAdminSensor;
 use crate::phases::sense::flink::vertex_sensor::VertexSensor;
-use crate::phases::MC_FLOW__RECORDS_IN_PER_SEC;
+use crate::phases::{MetricCatalog, MC_FLOW__RECORDS_IN_PER_SEC};
 use crate::settings::FlinkSensorSettings;
 use cast_trait_object::DynCastExt;
 use once_cell::sync::Lazy;
+use pretty_snowflake::{AlphabetCodec, IdPrettifier, MachineNode};
 use proctor::elements::telemetry::{self, Telemetry, TelemetryValue};
 use proctor::error::{SenseError, TelemetryError};
 use proctor::graph::stage::{self, SourceStage, ThroughStage};
 use proctor::graph::{Connect, Graph, SinkShape, SourceShape, UniformFanInShape, UniformFanOutShape};
-use proctor::SharedString;
+use proctor::{ProctorIdGenerator, SharedString};
 use prometheus::{HistogramOpts, HistogramTimer, HistogramVec};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -116,18 +117,43 @@ pub static STD_METRIC_ORDERS: Lazy<Vec<MetricOrder>> = Lazy::new(|| {
     .collect()
 });
 
-#[tracing::instrument(level="info", skip(name, scheduler, settings), fields(sensor=%name))]
-pub async fn make_sensor(
-    name: &str, context: FlinkContext, scheduler: Box<dyn SourceStage<()>>, settings: &FlinkSensorSettings,
-) -> Result<Box<dyn SourceStage<Telemetry>>, SenseError> {
-    let name: SharedString = format!("{}_flink_sensor", name).into();
+#[derive(Debug)]
+pub struct FlinkSensorSpecification<'a> {
+    pub name: &'a str,
+    pub context: FlinkContext,
+    pub scheduler: Box<dyn SourceStage<()>>,
+    pub settings: &'a FlinkSensorSettings,
+    pub machine_node: MachineNode,
+}
 
-    let orders = Arc::new(MetricOrder::extend_standard_with_settings(settings));
+type CorrelationGenerator = ProctorIdGenerator<MetricCatalog>;
 
-    let jobs_scope_sensor = ScopeSensor::new(FlinkScope::Jobs, orders.clone(), context.clone());
-    let tm_scope_sensor = ScopeSensor::new(FlinkScope::TaskManagers, orders.clone(), context.clone());
-    let tm_admin_sensor = TaskmanagerAdminSensor::new(context.clone());
-    let vertex_sensor = VertexSensor::new(orders.clone(), context.clone())?;
+#[tracing::instrument(level = "info")]
+pub async fn make_sensor(spec: FlinkSensorSpecification<'_>) -> Result<Box<dyn SourceStage<Telemetry>>, SenseError> {
+    // pub async fn make_sensor(spec: FlinkSensorSpecification)
+    //     name: &str,
+    //     context: FlinkContext, scheduler: Box<dyn SourceStage<()>>, settings: &FlinkSensorSettings, machine_node: MachineNode,
+    // ) -> Result<Box<dyn SourceStage<Telemetry>>, SenseError> {
+    let name: SharedString = format!("{}_flink_sensor", spec.name).into();
+
+    let orders = Arc::new(MetricOrder::extend_standard_with_settings(spec.settings));
+
+    let correlation_gen =
+        CorrelationGenerator::distributed(spec.machine_node, IdPrettifier::<AlphabetCodec>::default());
+    let jobs_scope_sensor = ScopeSensor::new(
+        FlinkScope::Jobs,
+        orders.clone(),
+        spec.context.clone(),
+        correlation_gen.clone(),
+    );
+    let tm_scope_sensor = ScopeSensor::new(
+        FlinkScope::TaskManagers,
+        orders.clone(),
+        spec.context.clone(),
+        correlation_gen.clone(),
+    );
+    let tm_admin_sensor = TaskmanagerAdminSensor::new(spec.context.clone(), correlation_gen.clone());
+    let vertex_sensor = VertexSensor::new(orders.clone(), spec.context.clone(), correlation_gen)?;
     let flink_sensors: Vec<Box<dyn ThroughStage<(), Telemetry>>> = vec![
         Box::new(jobs_scope_sensor),
         Box::new(tm_scope_sensor),
@@ -140,7 +166,7 @@ pub async fn make_sensor(
     let merge_combine = stage::MergeCombine::new(name.clone(), flink_sensors.len());
     let composite_outlet = merge_combine.outlet();
 
-    (scheduler.outlet(), broadcast.inlet()).connect().await;
+    (spec.scheduler.outlet(), broadcast.inlet()).connect().await;
 
     let broadcast_outlets = broadcast.outlets();
     let merge_inlets = merge_combine.inlets();
@@ -151,7 +177,7 @@ pub async fn make_sensor(
     }
 
     let mut composite_graph = Graph::default();
-    composite_graph.push_back(scheduler.dyn_upcast()).await;
+    composite_graph.push_back(spec.scheduler.dyn_upcast()).await;
     composite_graph.push_back(Box::new(broadcast)).await;
     for sensor in flink_sensors {
         composite_graph.push_back(sensor.dyn_upcast()).await;

@@ -6,13 +6,17 @@ use serde::{Deserialize, Serialize};
 use serde_with::{serde_as, DurationSeconds};
 use url::Url;
 
-use proctor::error::IncompatibleSensorSettings;
+use crate::flink::FlinkError;
+use proctor::error::UrlError;
 
 #[serde_as]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 #[cfg_attr(test, derive(PartialEq))]
 pub struct FlinkSettings {
+    #[serde(default = "FlinkSettings::default_label")]
+    pub label: String,
+
     #[serde(default = "FlinkSettings::default_job_manager_scheme")]
     pub job_manager_uri_scheme: String,
 
@@ -39,6 +43,7 @@ pub struct FlinkSettings {
 impl Default for FlinkSettings {
     fn default() -> Self {
         Self {
+            label: Self::default_label(),
             job_manager_uri_scheme: Self::DEFAULT_JOB_MANAGER_SCHEME.to_string(),
             job_manager_host: Self::DEFAULT_JOB_MANAGER_HOST.to_string(),
             job_manager_port: Self::DEFAULT_JOB_MANAGER_PORT,
@@ -51,10 +56,15 @@ impl Default for FlinkSettings {
 }
 
 impl FlinkSettings {
+    const DEFAULT_LABEL: &'static str = "unspecified_flink";
     const DEFAULT_JOB_MANAGER_HOST: &'static str = "localhost";
     const DEFAULT_JOB_MANAGER_PORT: u16 = 8081;
     const DEFAULT_JOB_MANAGER_SCHEME: &'static str = "http";
     const DEFAULT_MAX_RETRIES: u32 = 3;
+
+    pub fn default_label() -> String {
+        Self::DEFAULT_LABEL.to_string()
+    }
 
     pub fn default_job_manager_scheme() -> String {
         Self::DEFAULT_JOB_MANAGER_SCHEME.to_string()
@@ -82,19 +92,21 @@ impl FlinkSettings {
         Url::parse(rep.as_str())
     }
 
-    pub fn header_map(&self) -> Result<HeaderMap, IncompatibleSensorSettings> {
+    pub fn header_map(&self) -> Result<HeaderMap, FlinkError> {
         let mut result = HeaderMap::with_capacity(self.headers.len());
 
         for (k, v) in self.headers.iter() {
-            let name = HeaderName::from_str(k.as_str())?;
-            let value = HeaderValue::from_str(v.as_str())?;
+            let name =
+                HeaderName::from_str(k.as_str()).map_err(|err| FlinkError::InvalidRequestHeaderDetail(err.into()))?;
+            let value =
+                HeaderValue::from_str(v.as_str()).map_err(|err| FlinkError::InvalidRequestHeaderDetail(err.into()))?;
             result.insert(name, value);
         }
 
         Ok(result)
     }
 
-    pub fn base_url(&self) -> Result<Url, IncompatibleSensorSettings> {
+    pub fn base_url(&self) -> Result<Url, UrlError> {
         let url = Url::parse(
             format!(
                 "{}://{}:{}/",
@@ -104,7 +116,7 @@ impl FlinkSettings {
         )?;
 
         if url.cannot_be_a_base() {
-            return Err(IncompatibleSensorSettings::UrlCannotBeBase(url));
+            return Err(UrlError::UrlCannotBeBase(url));
         }
 
         Ok(url)
@@ -134,6 +146,7 @@ mod tests {
     #[test]
     fn test_serde_sensor_settings_2() {
         let settings_rest = FlinkSettings {
+            label: "test_flink".to_string(),
             job_manager_uri_scheme: "http".to_string(),
             job_manager_host: "dr-flink-jm-0".to_string(),
             job_manager_port: 8081,
@@ -146,7 +159,9 @@ mod tests {
         assert_tokens(
             &settings_rest,
             &vec![
-                Token::Struct { name: "FlinkSettings", len: 5 },
+                Token::Struct { name: "FlinkSettings", len: 6 },
+                Token::Str("label"),
+                Token::Str("test_flink"),
                 Token::Str("job_manager_uri_scheme"),
                 Token::Str("http"),
                 Token::Str("job_manager_host"),

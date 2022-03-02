@@ -3,6 +3,7 @@ engine:
   node_id: 3
 
 flink:
+  label: dr-springline-demo
   job_manager_host: host.lima.internal
 
 http:

@@ -26,6 +26,9 @@ pub enum ActError {
     #[error("failure in kubernetes api:{0}")]
     KubeApi(#[from] kube::error::ErrorResponse),
 
+    #[error("failure while calling Flink API: {0}")]
+    Flink(#[from] crate::flink::FlinkError),
+
     #[error("failure occurred in the PatchReplicas inlet port: {0}")]
     Port(#[from] proctor::error::PortError),
 
@@ -43,6 +46,7 @@ impl MetricLabel for ActError {
             Self::Timeout(_, _) => Left("timeout".into()),
             Self::Kube(_) => Left("kubernetes".into()),
             Self::KubeApi(e) => Left(format!("kubernetes::{}", e.reason).into()),
+            Self::Flink(e) => Right(Box::new(e)),
             Self::Port(e) => Right(Box::new(e)),
             Self::Stage(_) => Left("stage".into()),
         }

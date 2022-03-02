@@ -228,6 +228,7 @@ mod tests {
         let expected = Settings {
             http: HttpServerSettings { host: "0.0.0.0".to_string(), port: 8000 },
             flink: FlinkSettings {
+                label: "ron_flink".to_string(),
                 job_manager_uri_scheme: "http".to_string(),
                 job_manager_host: "dr-flink-jm-0".to_string(),
                 job_manager_port: 8081,
@@ -385,6 +386,7 @@ mod tests {
     static SETTINGS: Lazy<Settings> = Lazy::new(|| Settings {
         http: HttpServerSettings { host: "0.0.0.0".to_string(), port: 8000 },
         flink: FlinkSettings {
+            label: "dr-springline-demo".to_string(),
             job_manager_uri_scheme: "https".to_string(),
             job_manager_host: "localhost".to_string(),
             job_manager_port: 8081,
@@ -525,6 +527,7 @@ mod tests {
                 let expected = Settings {
                     engine: EngineSettings { machine_id: 17, node_id: 13 },
                     flink: FlinkSettings {
+                        label: "unspecified_flink".to_string(),
                         job_manager_uri_scheme: "http".to_string(),
                         job_manager_host: "host.springline".to_string(),
                         pool_idle_timeout: Some(Duration::from_secs(60)),
@@ -615,9 +618,11 @@ mod tests {
                     ..SETTINGS.http.clone()
                 },
                 flink: FlinkSettings {
+                    label: "local_flink".to_string(),
                     job_manager_uri_scheme: "http".to_string(),
-                    job_manager_host: "host.springline".to_string(),
+                    job_manager_host: "localhost".to_string(),
                     headers: Vec::default(),
+                    max_retries: 0,
                     pool_idle_timeout: Some(Duration::from_secs(60)),
                     pool_max_idle_per_host: Some(5),
                     ..SETTINGS.flink.clone()

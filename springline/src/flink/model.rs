@@ -1,10 +1,11 @@
+use super::FlinkError;
 use std::collections::HashMap;
 use std::fmt::{self, Display};
 use std::hash::Hash;
 use std::marker::PhantomData;
 use std::time::Duration;
 
-use proctor::elements::{TelemetryValue, Timestamp};
+use proctor::elements::{TelemetryType, TelemetryValue, Timestamp};
 use serde::{de, Deserialize, Deserializer, Serialize};
 use serde_with::serde_as;
 
@@ -122,6 +123,26 @@ impl From<JobId> for String {
 impl From<&str> for JobId {
     fn from(rep: &str) -> Self {
         Self(rep.to_string())
+    }
+}
+
+// impl From<TelemetryValue> for JobId {
+//     fn from(value: TelemetryValue) -> Self {
+//         match value {
+//             TelemetryValue::Text(s) => Self(s),
+//             _ => panic!("JobId::from(TelemetryValue) called with non-string value"),
+//         }
+//     }
+// }
+
+impl TryFrom<TelemetryValue> for JobId {
+    type Error = FlinkError;
+
+    fn try_from(value: TelemetryValue) -> Result<Self, Self::Error> {
+        match value {
+            TelemetryValue::Text(s) => Ok(Self(s)),
+            val => Err(FlinkError::ExpectedTelemetryType(TelemetryType::Text, val)),
+        }
     }
 }
 

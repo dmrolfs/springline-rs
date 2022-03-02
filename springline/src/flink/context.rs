@@ -1,8 +1,11 @@
+use crate::flink::error::FlinkError;
 use crate::flink::{self, model::JobSummary};
+use crate::phases::MetricCatalog;
 use crate::settings::FlinkSettings;
 use futures_util::TryFutureExt;
 use http::Method;
-use proctor::error::SenseError;
+use pretty_snowflake::Id;
+use proctor::error::UrlError;
 use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
 use reqwest_retry::policies::ExponentialBackoff;
 use reqwest_retry::RetryTransientMiddleware;
@@ -17,20 +20,31 @@ pub struct FlinkContext {
 }
 
 impl FlinkContext {
-    pub fn new(client: ClientWithMiddleware, base_url: Url) -> Result<Self, SenseError> {
+    pub fn new(label: impl Into<String>, client: ClientWithMiddleware, base_url: Url) -> Result<Self, FlinkError> {
         let mut jobs_endpoint = base_url.clone();
         jobs_endpoint
             .path_segments_mut()
-            .map_err(|_| SenseError::NotABaseUrl(base_url.clone()))?
+            .map_err(|_| UrlError::UrlCannotBeBase(base_url.clone()))?
             .push("jobs");
 
-        Ok(Self { inner: Arc::new(FlinkContextRef { client, base_url, jobs_endpoint }), })
+        Ok(Self {
+            inner: Arc::new(FlinkContextRef {
+                label: label.into(),
+                client,
+                base_url,
+                jobs_endpoint,
+            }),
+        })
     }
 
-    pub fn from_settings(settings: &FlinkSettings) -> Result<Self, SenseError> {
+    pub fn from_settings(settings: &FlinkSettings) -> Result<Self, FlinkError> {
         let client = make_http_client(settings)?;
         let base_url = settings.base_url()?;
-        Self::new(client, base_url)
+        Self::new(settings.label.as_str(), client, base_url)
+    }
+
+    pub fn label(&self) -> &str {
+        self.inner.label.as_str()
     }
 
     pub fn client(&self) -> &ClientWithMiddleware {
@@ -41,13 +55,17 @@ impl FlinkContext {
         self.inner.base_url.clone()
     }
 
+    pub fn jobs_endpoint(&self) -> Url {
+        self.inner.jobs_endpoint.clone()
+    }
+
     #[tracing::instrument(level = "info", skip(self))]
-    pub async fn query_active_jobs(&self) -> Result<Vec<JobSummary>, SenseError> {
-        self.inner.query_active_jobs().await
+    pub async fn query_active_jobs(&self, correlation: Id<MetricCatalog>) -> Result<Vec<JobSummary>, FlinkError> {
+        self.inner.query_active_jobs(correlation).await
     }
 }
 
-fn make_http_client(settings: &FlinkSettings) -> Result<ClientWithMiddleware, SenseError> {
+fn make_http_client(settings: &FlinkSettings) -> Result<ClientWithMiddleware, FlinkError> {
     let headers = settings.header_map()?;
 
     let client_builder = reqwest::Client::builder()
@@ -69,6 +87,8 @@ fn make_http_client(settings: &FlinkSettings) -> Result<ClientWithMiddleware, Se
 }
 
 struct FlinkContextRef {
+    /// Label identifying the Flink cluster, possibly populated from the "release" pod label.
+    pub label: String,
     pub client: ClientWithMiddleware,
     pub base_url: Url,
     pub jobs_endpoint: Url,
@@ -84,11 +104,11 @@ impl fmt::Debug for FlinkContextRef {
 }
 
 impl FlinkContextRef {
-    pub async fn query_active_jobs(&self) -> Result<Vec<JobSummary>, SenseError> {
+    pub async fn query_active_jobs(&self, correlation: Id<MetricCatalog>) -> Result<Vec<JobSummary>, FlinkError> {
         let _timer = flink::start_flink_active_jobs_timer();
-        let span = tracing::info_span!("query Flink active jobs");
+        let span = tracing::info_span!("query Flink active jobs", %correlation);
 
-        let result: Result<Vec<JobSummary>, SenseError> = self
+        let result: Result<Vec<JobSummary>, FlinkError> = self
             .client
             .request(Method::GET, self.jobs_endpoint.clone())
             .send()
@@ -102,7 +122,6 @@ impl FlinkContextRef {
             })
             .instrument(span)
             .await
-            // .map_err(|err: reqwest_middleware::Error| err.into())
             .and_then(|body| {
                 let result = serde_json::from_str(body.as_str()).map_err(|err| err.into());
                 tracing::info!(%body, ?result, "Flink job summary response body");
@@ -140,7 +159,6 @@ impl FlinkContextRef {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -165,7 +183,7 @@ mod tests {
             .build();
         let url = format!("{}/", &mock_server.uri());
         // let url = "http://localhost:8081/".to_string();
-        let context = FlinkContext::new(client, Url::parse(url.as_str())?)?;
+        let context = FlinkContext::new("test_flink", client, Url::parse(url.as_str())?)?;
         Ok(context)
     }
 
@@ -174,6 +192,8 @@ mod tests {
         once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
         let main_span = tracing::info_span!("test_query_active_jobs");
         let _ = main_span.enter();
+
+        let correlation = Id::direct("test_query_active_jobs", 17, "ABC");
 
         block_on(async {
             let mock_server = MockServer::start().await;
@@ -202,7 +222,7 @@ mod tests {
 
             let context = assert_ok!(context_for(&mock_server));
 
-            let actual = assert_ok!(context.query_active_jobs().await);
+            let actual = assert_ok!(context.query_active_jobs(correlation).await);
             assert_eq!(
                 actual,
                 vec![

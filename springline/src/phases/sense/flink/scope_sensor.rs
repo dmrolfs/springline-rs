@@ -1,6 +1,7 @@
 use super::FlinkScope;
 use super::{api_model, Aggregation, MetricOrder, Unpack};
 use crate::flink::{self, FlinkContext};
+use crate::phases::sense::flink::CorrelationGenerator;
 use async_trait::async_trait;
 use cast_trait_object::dyn_upcast;
 use futures_util::TryFutureExt;
@@ -25,16 +26,26 @@ pub struct ScopeSensor<Out> {
     scope: FlinkScope,
     context: FlinkContext,
     orders: Arc<Vec<MetricOrder>>,
+    correlation_gen: CorrelationGenerator,
     trigger: Inlet<()>,
     outlet: Outlet<Out>,
 }
 
 impl<Out> ScopeSensor<Out> {
-    pub fn new(scope: FlinkScope, orders: Arc<Vec<MetricOrder>>, context: FlinkContext) -> Self {
+    pub fn new(
+        scope: FlinkScope, orders: Arc<Vec<MetricOrder>>, context: FlinkContext, correlation_gen: CorrelationGenerator,
+    ) -> Self {
         let name: SharedString = format!("{scope}Sensor").to_snake_case().into();
         let trigger = Inlet::new(name.clone(), "trigger");
         let outlet = Outlet::new(name, "outlet");
-        Self { scope, context, orders, trigger, outlet }
+        Self {
+            scope,
+            context,
+            orders,
+            correlation_gen,
+            trigger,
+            outlet,
+        }
     }
 }
 
@@ -126,7 +137,8 @@ where
         while self.trigger.recv().await.is_some() {
             let _stage_timer = stage::start_stage_eval_time(name.as_ref());
 
-            let span = tracing::info_span!("collect Flink scope sensor telemetry", scope=%self.scope);
+            let correlation = self.correlation_gen.next_id();
+            let span = tracing::info_span!("collect Flink scope sensor telemetry", scope=%self.scope, %correlation);
             let send_telemetry: Result<(), SenseError> = self
                 .outlet
                 .reserve_send::<_, SenseError>(async {
@@ -232,14 +244,19 @@ mod tests {
             .with(RetryTransientMiddleware::new_with_policy(retry_policy))
             .build();
         let url = format!("{}/", &mock_server.uri());
-        let context = FlinkContext::new(client, Url::parse(url.as_str())?)?;
+        let context = FlinkContext::new("test_flink", client, Url::parse(url.as_str())?)?;
         Ok(context)
     }
 
     async fn test_stage_for(
         scope: FlinkScope, orders: &Vec<MetricOrder>, context: FlinkContext,
     ) -> (tokio::task::JoinHandle<()>, mpsc::Sender<()>, mpsc::Receiver<Telemetry>) {
-        let mut stage = ScopeSensor::new(scope, Arc::new(orders.clone()), context);
+        let mut stage = ScopeSensor::new(
+            scope,
+            Arc::new(orders.clone()),
+            context,
+            CorrelationGenerator::default(),
+        );
         let (tx_trigger, rx_trigger) = mpsc::channel(1);
         let (tx_out, rx_out) = mpsc::channel(8);
         stage.trigger.attach("trigger".into(), rx_trigger).await;

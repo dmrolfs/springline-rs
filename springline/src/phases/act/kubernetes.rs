@@ -23,13 +23,13 @@ pub fn convert_kube_error(error: kube::Error) -> ActError {
 }
 
 #[derive(Debug, Clone)]
-pub struct TaskmanagersContext {
+pub struct TaskmanagerContext {
     pub deploy: DeployApi,
     pub pods: Api<Pod>,
     pub params: ListParams,
 }
 
-impl TaskmanagersContext {
+impl TaskmanagerContext {
     pub async fn list_pods(&self) -> Result<Vec<Pod>, ActError> {
         let pods = self.pods.list(&self.params).await?;
         Ok(pods.items)
