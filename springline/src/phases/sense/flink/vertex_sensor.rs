@@ -144,7 +144,7 @@ where
 
                     let out: Result<Out, SenseError> = self
                         .context
-                        .query_active_jobs(correlation.clone())
+                        .query_active_jobs(&correlation)
                         .map_err(|err| SenseError::Api("query_active_jobs".to_string(), err.into()))
                         .and_then(|active_jobs| async {
                             let nr_active_jobs = active_jobs.len();
@@ -156,7 +156,7 @@ where
                                         job,
                                         metric_telemetry.clone(),
                                         &metric_orders,
-                                        correlation.clone(),
+                                        &correlation,
                                     )
                                     .await
                                 }))
@@ -206,12 +206,12 @@ where
     #[tracing::instrument(level = "info", skip(self, metric_telemetry, metric_orders))]
     async fn gather_vertex_telemetry(
         &self, job: JobSummary, metric_telemetry: Arc<Mutex<HashMap<String, Vec<TelemetryValue>>>>,
-        metric_orders: &OrdersByMetric, correlation: Id<MetricCatalog>,
+        metric_orders: &OrdersByMetric, correlation: &Id<MetricCatalog>,
     ) {
         if let Ok(detail) = self.query_job_details(&job.id).await {
             for vertex in detail.vertices.into_iter().filter(|v| v.status.is_active()) {
                 if let Ok(vertex_telemetry) = self
-                    .query_vertex_telemetry(&job.id, &vertex.id, metric_orders, correlation.clone())
+                    .query_vertex_telemetry(&job.id, &vertex.id, metric_orders, correlation)
                     .await
                 {
                     let mut groups = metric_telemetry.lock().await;
@@ -258,7 +258,7 @@ where
 
     #[tracing::instrument(level = "info", skip(self, metric_orders))]
     async fn query_vertex_telemetry(
-        &self, job_id: &JobId, vertex_id: &VertexId, metric_orders: &OrdersByMetric, correlation: Id<MetricCatalog>,
+        &self, job_id: &JobId, vertex_id: &VertexId, metric_orders: &OrdersByMetric, correlation: &Id<MetricCatalog>,
     ) -> Result<Telemetry, SenseError> {
         let mut url = self.context.jobs_endpoint();
         url.path_segments_mut()
@@ -272,7 +272,7 @@ where
         let _timer = start_flink_vertex_sensor_timer();
         let span = tracing::info_span!("query Flink vertex telemetry", %correlation);
 
-        self.do_query_vertex_metric_picklist(url.clone(), metric_orders, correlation.clone())
+        self.do_query_vertex_metric_picklist(url.clone(), metric_orders, correlation)
             .and_then(|picklist| {
                 //todo used???: let vertex_agg_span = Self::agg_span_for(&picklist, metric_orders);
                 //todo used???: tracing::info!(?picklist, &vertex_agg_span, "available vertex metrics identified for order");
@@ -284,7 +284,7 @@ where
 
     #[tracing::instrument(level = "info", skip(self, vertex_metrics_url, metric_orders))]
     async fn do_query_vertex_metric_picklist(
-        &self, vertex_metrics_url: Url, metric_orders: &OrdersByMetric, correlation: Id<MetricCatalog>,
+        &self, vertex_metrics_url: Url, metric_orders: &OrdersByMetric, correlation: &Id<MetricCatalog>,
     ) -> Result<Vec<String>, SenseError> {
         let _timer = start_flink_vertex_sensor_metric_picklist_time();
         let span = tracing::info_span!("query Flink vertex metric picklist", %correlation);
@@ -317,7 +317,7 @@ where
     #[tracing::instrument(level = "info", skip(self, picklist, metric_orders, vertex_metrics_url))]
     async fn do_query_vertex_available_telemetry(
         &self, picklist: Vec<String>, metric_orders: &OrdersByMetric, mut vertex_metrics_url: Url,
-        correlation: Id<MetricCatalog>,
+        correlation: &Id<MetricCatalog>,
     ) -> Result<Telemetry, SenseError> {
         let agg_span = Self::agg_span_for(&picklist, metric_orders);
         tracing::info!(
@@ -965,7 +965,7 @@ mod tests {
                         &job_id,
                         &vertex_id,
                         &metric_orders,
-                        Id::direct("test_query_vertex_telemetry", 23, "CBA")
+                        &Id::direct("test_query_vertex_telemetry", 23, "CBA")
                     )
                     .await
             );

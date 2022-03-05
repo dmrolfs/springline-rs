@@ -60,7 +60,7 @@ impl FlinkContext {
     }
 
     #[tracing::instrument(level = "info", skip(self))]
-    pub async fn query_active_jobs(&self, correlation: Id<MetricCatalog>) -> Result<Vec<JobSummary>, FlinkError> {
+    pub async fn query_active_jobs(&self, correlation: &Id<MetricCatalog>) -> Result<Vec<JobSummary>, FlinkError> {
         self.inner.query_active_jobs(correlation).await
     }
 }
@@ -104,7 +104,7 @@ impl fmt::Debug for FlinkContextRef {
 }
 
 impl FlinkContextRef {
-    pub async fn query_active_jobs(&self, correlation: Id<MetricCatalog>) -> Result<Vec<JobSummary>, FlinkError> {
+    pub async fn query_active_jobs(&self, correlation: &Id<MetricCatalog>) -> Result<Vec<JobSummary>, FlinkError> {
         let _timer = flink::start_flink_active_jobs_timer();
         let span = tracing::info_span!("query Flink active jobs", %correlation);
 
@@ -222,7 +222,7 @@ mod tests {
 
             let context = assert_ok!(context_for(&mock_server));
 
-            let actual = assert_ok!(context.query_active_jobs(correlation).await);
+            let actual = assert_ok!(context.query_active_jobs(&correlation).await);
             assert_eq!(
                 actual,
                 vec![

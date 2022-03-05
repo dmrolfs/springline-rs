@@ -4,14 +4,19 @@ use serde_with::serde_as;
 use std::fmt;
 use std::time::Duration;
 
+#[serde_as]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(test, derive(PartialEq))]
 pub struct ActionSettings {
+    /// Timeout for confirmation of scaling actions. Until this timeout expires, springline will poll
+    /// the kubernetes API to check if the scaling action has been satisfied.
+    #[serde(default, rename = "action_timeout_secs")]
+    #[serde_as(as = "serde_with::DurationSeconds<u64>")]
+    pub action_timeout: Duration,
+
     pub taskmanager: TaskmanagerContext,
-    /// Optional directory for the triggered savepoint. If not set, the default will the savepoint
-    /// directory configured with Flink.
-    #[serde(default)]
-    pub savepoint_dir: Option<String>,
+
+    pub flink: FlinkActionSettings,
 }
 
 #[serde_as]
@@ -25,7 +30,56 @@ pub struct TaskmanagerContext {
     pub deploy_resource: KubernetesDeployResource,
 
     /// Constraints used when using the kubernetes API to scale the taskmanagers.
-    pub kubernetes_api_constraints: KubernetesApiConstraints,
+    pub kubernetes_api: KubernetesApiConstraints,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FlinkActionSettings {
+    pub savepoint: SavepointSettings,
+}
+
+#[serde_as]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SavepointSettings {
+    /// Optional directory for the triggered savepoint. If not set, the default will the savepoint
+    /// directory configured with Flink.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub directory: Option<String>,
+
+    /// Time allowed for a savepoint to complete. Defaults to 10 minutes.
+    #[serde(
+        default = "SavepointSettings::default_operation_timeout",
+        rename = "operation_timeout_secs"
+    )]
+    #[serde_as(as = "serde_with::DurationSeconds<u64>")]
+    pub operation_timeout: Duration,
+
+    /// Interval in which Flink savepoint status is polled. Defaults to 10 seconds.
+    #[serde(
+        default = "SavepointSettings::default_savepoint_polling_interval",
+        rename = "polling_interval_secs"
+    )]
+    #[serde_as(as = "serde_with::DurationSeconds<u64>")]
+    pub polling_interval: Duration,
+}
+
+impl Default for SavepointSettings {
+    fn default() -> Self {
+        Self {
+            directory: None,
+            operation_timeout: Self::default_operation_timeout(),
+            polling_interval: Self::default_savepoint_polling_interval(),
+        }
+    }
+}
+
+impl SavepointSettings {
+    pub const fn default_operation_timeout() -> Duration {
+        Duration::from_secs(10 * 60)
+    }
+    pub const fn default_savepoint_polling_interval() -> Duration {
+        Duration::from_secs(10)
+    }
 }
 
 #[serde_as]
@@ -43,16 +97,10 @@ pub struct KubernetesApiConstraints {
     #[serde_as(as = "serde_with::DurationSeconds<u64>")]
     pub api_timeout: Duration,
 
-    /// Timeout for confirmation of scaling actions. Until this timeout expires, springline will poll
-    /// the kubernetes API to check if the scaling action has been satisfied.
-    #[serde(default, rename = "action_timeout_secs")]
-    #[serde_as(as = "serde_with::DurationSeconds<u64>")]
-    pub action_timeout: Duration,
-
     /// Interval to query kubernetes API for the status of the scaling action.
     #[serde_as(as = "serde_with::DurationSeconds<u64>")]
-    #[serde(default, rename = "action_poll_interval_secs")]
-    pub action_poll_interval: Duration,
+    #[serde(default, rename = "polling_interval_secs")]
+    pub polling_interval: Duration,
 }
 
 impl KubernetesApiConstraints {
@@ -61,7 +109,7 @@ impl KubernetesApiConstraints {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum KubernetesDeployResource {
     StatefulSet { name: String },
 }
@@ -141,41 +189,56 @@ mod tests {
     #[test]
     fn test_serde_action_settings_tokens() {
         let settings = ActionSettings {
+            action_timeout: Duration::from_secs(700),
             taskmanager: TaskmanagerContext {
                 label_selector: "app=flink,component=taskmanager".to_string(),
                 deploy_resource: KubernetesDeployResource::StatefulSet { name: "springline".to_string() },
-                kubernetes_api_constraints: KubernetesApiConstraints {
+                kubernetes_api: KubernetesApiConstraints {
                     api_timeout: Duration::from_secs(285),
-                    action_timeout: Duration::from_secs(700),
-                    action_poll_interval: Duration::from_secs(10),
+                    polling_interval: Duration::from_secs(10),
                 },
             },
-            savepoint_dir: Some("s3a://flink-98dnkj/foo-bar/savepoints".to_string()),
+            flink: FlinkActionSettings {
+                savepoint: SavepointSettings {
+                    directory: Some("s3a://flink-98dnkj/foo-bar/savepoints".to_string()),
+                    ..SavepointSettings::default()
+                },
+            },
         };
 
         assert_tokens(
             &settings,
             &vec![
-                Token::Struct { name: "ActionSettings", len: 2 },
+                Token::Struct { name: "ActionSettings", len: 3 },
+                Token::Str("action_timeout_secs"),
+                Token::U64(700),
                 Token::Str("taskmanager"),
                 Token::Struct { name: "TaskmanagerContext", len: 3 },
                 Token::Str("label_selector"),
                 Token::Str("app=flink,component=taskmanager"),
                 Token::Str("deploy_resource"),
                 Token::Str("statefulset/springline"),
-                Token::Str("kubernetes_api_constraints"),
-                Token::Struct { name: "KubernetesApiConstraints", len: 3 },
+                Token::Str("kubernetes_api"),
+                Token::Struct { name: "KubernetesApiConstraints", len: 2 },
                 Token::Str("api_timeout_secs"),
                 Token::U64(285),
-                Token::Str("action_timeout_secs"),
-                Token::U64(700),
-                Token::Str("action_poll_interval_secs"),
+                Token::Str("polling_interval_secs"),
                 Token::U64(10),
                 Token::StructEnd,
                 Token::StructEnd,
-                Token::Str("savepoint_dir"),
+                Token::Str("flink"),
+                Token::Struct { name: "FlinkActionSettings", len: 1 },
+                Token::Str("savepoint"),
+                Token::Struct { name: "SavepointSettings", len: 3 },
+                Token::Str("directory"),
                 Token::Some,
                 Token::Str("s3a://flink-98dnkj/foo-bar/savepoints"),
+                Token::Str("operation_timeout_secs"),
+                Token::U64(600),
+                Token::Str("polling_interval_secs"),
+                Token::U64(10),
+                Token::StructEnd,
+                Token::StructEnd,
                 Token::StructEnd,
             ],
         );
@@ -184,23 +247,28 @@ mod tests {
     #[test]
     fn test_serde_action_settings() {
         let settings = ActionSettings {
+            action_timeout: Duration::from_secs(777),
             taskmanager: TaskmanagerContext {
                 label_selector: "app=flink,component=taskmanager".to_string(),
                 deploy_resource: KubernetesDeployResource::StatefulSet { name: "springline".to_string() },
-                kubernetes_api_constraints: KubernetesApiConstraints {
+                kubernetes_api: KubernetesApiConstraints {
                     api_timeout: Duration::from_secs(275),
-                    action_timeout: Duration::from_secs(777),
-                    action_poll_interval: Duration::from_secs(7),
+                    polling_interval: Duration::from_secs(7),
                 },
             },
-            savepoint_dir: Some("/service_namespace_port/v1/jobs/flink_job_id/savepoints".to_string()),
+            flink: FlinkActionSettings {
+                savepoint: SavepointSettings {
+                    directory: Some("/service_namespace_port/v1/jobs/flink_job_id/savepoints".to_string()),
+                    ..SavepointSettings::default()
+                },
+            },
         };
 
         let json = assert_ok!(serde_json::to_string(&settings));
         assert_eq!(
             json,
             format!(
-                r##"{{"taskmanager":{{"label_selector":"app=flink,component=taskmanager","deploy_resource":{},"kubernetes_api_constraints":{{"api_timeout_secs":275,"action_timeout_secs":777,"action_poll_interval_secs":7}}}},"savepoint_dir":"/service_namespace_port/v1/jobs/flink_job_id/savepoints"}}"##,
+                r##"{{"action_timeout_secs":777,"taskmanager":{{"label_selector":"app=flink,component=taskmanager","deploy_resource":{},"kubernetes_api":{{"api_timeout_secs":275,"polling_interval_secs":7}}}},"flink":{{"savepoint":{{"directory":"/service_namespace_port/v1/jobs/flink_job_id/savepoints","operation_timeout_secs":600,"polling_interval_secs":10}}}}}}"##,
                 EXPECTED_REP
             )
         );
@@ -209,7 +277,7 @@ mod tests {
         assert_eq!(
             ron,
             format!(
-                r##"(taskmanager:(label_selector:"app=flink,component=taskmanager",deploy_resource:{},kubernetes_api_constraints:(api_timeout_secs:275,action_timeout_secs:777,action_poll_interval_secs:7)),savepoint_dir:Some("/service_namespace_port/v1/jobs/flink_job_id/savepoints"))"##,
+                r##"(action_timeout_secs:777,taskmanager:(label_selector:"app=flink,component=taskmanager",deploy_resource:{},kubernetes_api:(api_timeout_secs:275,polling_interval_secs:7)),flink:(savepoint:(directory:Some("/service_namespace_port/v1/jobs/flink_job_id/savepoints"),operation_timeout_secs:600,polling_interval_secs:10)))"##,
                 EXPECTED_REP
             )
         );

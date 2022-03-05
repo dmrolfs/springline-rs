@@ -85,16 +85,16 @@
         ),
     ),
     action: (
+        action_timeout_secs: 600,
         taskmanager: (
             label_selector: "app=flink,component=taskmanager",
             deploy_resource: "statefulset/dr-springline-tm",
-            kubernetes_api_constraints: (
+            kubernetes_api: (
                 api_timeout_secs: 290,
-                action_timeout_secs: 600,
-                action_poll_interval_secs: 10,
+                polling_interval_secs: 10,
             ),
         ),
-        savepoint_dir: "s3://path/to/savepoints",
+        flink: ( savepoint: ( directory: "s3://path/to/savepoints", ), ),
 ),
 context_stub: (
         all_sinks_healthy: true,

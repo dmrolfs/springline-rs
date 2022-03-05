@@ -1,4 +1,5 @@
 use super::FlinkError;
+use either::Either;
 use std::collections::HashMap;
 use std::fmt::{self, Display};
 use std::hash::Hash;
@@ -305,6 +306,59 @@ where
     }
 
     deserializer.deserialize_map(KeyTimestampsVisitor::new())
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SavepointStatus {
+    pub status: OperationStatus,
+    pub operation: Either<SavepointLocation, FailureReason>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OperationStatus {
+    InProgress,
+    Completed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SavepointLocation(String);
+
+impl From<String> for SavepointLocation {
+    fn from(s: String) -> Self {
+        Self(s)
+    }
+}
+
+impl fmt::Display for SavepointLocation {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+impl AsRef<str> for SavepointLocation {
+    fn as_ref(&self) -> &str {
+        self.0.as_str()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FailureReason(String);
+
+impl fmt::Display for FailureReason {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl From<String> for FailureReason {
+    fn from(s: String) -> Self {
+        Self(s)
+    }
+}
+
+impl AsRef<str> for FailureReason {
+    fn as_ref(&self) -> &str {
+        self.0.as_str()
+    }
 }
 
 #[cfg(test)]

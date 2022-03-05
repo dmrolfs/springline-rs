@@ -1,3 +1,4 @@
+use crate::flink::{JobId, SavepointStatus};
 use either::{Either, Left, Right};
 use proctor::elements::{TelemetryType, TelemetryValue};
 use proctor::error::MetricLabel;
@@ -24,8 +25,14 @@ pub enum FlinkError {
     #[error("expected telemetry type: {0} but was {1}")]
     ExpectedTelemetryType(TelemetryType, TelemetryValue),
 
-    #[error("unexpected value: {1} expected: {0}")]
-    UnexpectedValue(String, String),
+    #[error("unexpected value: {given} but expected: {expected}")]
+    UnexpectedValue { expected: String, given: String },
+
+    #[error("Flink left unexpected savepoint condition for job {0}: {1:?}")]
+    UnexpectedSavepointStatus(JobId, SavepointStatus),
+
+    #[error("Flink API operation {0} failed to complete within timeout of {1:?}")]
+    Timeout(String, std::time::Duration),
 }
 
 impl MetricLabel for FlinkError {
@@ -41,7 +48,9 @@ impl MetricLabel for FlinkError {
             Self::InvalidRequestHeaderDetail(_) => Left("http::header".into()),
             Self::Json(_) => Left("http::json".into()),
             Self::ExpectedTelemetryType(_, _) => Left("telemetry".into()),
-            Self::UnexpectedValue(_, _) => Left("http::unexpected".into()),
+            Self::UnexpectedValue { .. } => Left("http::unexpected".into()),
+            Self::UnexpectedSavepointStatus(_, _) => Left("savepoint".into()),
+            Self::Timeout(_, _) => Left("http::timeout".into()),
         }
     }
 }

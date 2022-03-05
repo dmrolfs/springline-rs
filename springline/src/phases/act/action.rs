@@ -12,7 +12,7 @@ use std::fmt::Debug;
 use std::time::Duration;
 
 mod patch_replicas;
-mod savepoint;
+pub mod savepoint;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ActionSession<P> {

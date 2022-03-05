@@ -31,6 +31,11 @@ plan:
     storage_path: "./tmp"
 
 action:
+  action_timeout_secs: 60
   taskmanager:
-    kubernetes_api_constraints:
-      action_poll_interval_secs: 5
+    kubernetes_api:
+      polling_interval_secs: 5
+  flink:
+    savepoint:
+      polling_interval_secs: 1
+      directory: "s3a://my/flink/savepoints"

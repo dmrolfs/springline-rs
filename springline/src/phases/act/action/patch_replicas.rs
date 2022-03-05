@@ -26,7 +26,7 @@ impl<P> PatchReplicas<P> {
     pub fn new(scale_target: &settings::TaskmanagerContext, kube: &Client) -> Self {
         let label_selector = scale_target.label_selector.clone();
         let deploy_resource = scale_target.deploy_resource.clone();
-        let api_constraints = scale_target.kubernetes_api_constraints;
+        let api_constraints = scale_target.kubernetes_api;
         let taskmanagers = kubernetes::TaskmanagerContext {
             deploy: DeployApi::from_kubernetes_resource(&scale_target.deploy_resource, kube),
             pods: Api::default_namespaced(kube.clone()),
@@ -94,7 +94,7 @@ where
         let mut action_satisfied = false;
         let mut pods_by_status = None;
         //TODO: convert to kube::runtime watcher - see pod watch example.
-        while Instant::now().duration_since(start) < self.api_constraints.action_timeout {
+        while Instant::now().duration_since(start) < self.api_constraints.api_timeout {
             let taskmanagers = self.taskmanagers.list_pods().await?;
             pods_by_status = Some(Self::group_pods_by_status(taskmanagers));
             let running = pods_by_status
@@ -107,7 +107,7 @@ where
                 break;
             }
 
-            tokio::time::sleep(self.api_constraints.action_poll_interval).await;
+            tokio::time::sleep(self.api_constraints.polling_interval).await;
         }
 
         if !action_satisfied {
@@ -118,7 +118,7 @@ where
                 .collect();
 
             return Err(ActError::Timeout(
-                self.api_constraints.action_timeout,
+                self.api_constraints.api_timeout,
                 format!(
                     "Timed out waiting for patch replicas to complete: nr_target={} :: status_counts={:?}",
                     target_nr_task_managers, status_counts,

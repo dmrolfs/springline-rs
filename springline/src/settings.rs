@@ -20,7 +20,9 @@ mod kubernetes_settings;
 mod plan_settings;
 mod sensor_settings;
 
-pub use action_settings::{ActionSettings, KubernetesApiConstraints, KubernetesDeployResource, TaskmanagerContext};
+pub use action_settings::{
+    ActionSettings, FlinkActionSettings, KubernetesApiConstraints, KubernetesDeployResource, TaskmanagerContext,
+};
 pub use engine_settings::EngineSettings;
 pub use flink_settings::FlinkSettings;
 pub use governance_settings::{GovernancePolicySettings, GovernanceRuleSettings, GovernanceSettings};
@@ -157,6 +159,7 @@ mod tests {
     use super::*;
     use crate::phases::plan::{PerformanceRepositorySettings, PerformanceRepositoryType, SpikeSettings};
     use crate::phases::sense::flink::{Aggregation, FlinkScope, MetricOrder};
+    use crate::settings::action_settings::SavepointSettings;
     use crate::settings::sensor_settings::FlinkSensorSettings;
 
     static SERIAL_TEST: Lazy<Mutex<()>> = Lazy::new(|| Default::default());
@@ -326,16 +329,21 @@ mod tests {
                 },
             },
             action: ActionSettings {
+                action_timeout: Duration::from_secs(600),
                 taskmanager: TaskmanagerContext {
                     label_selector: "app=flink,component=taskmanager".to_string(),
                     deploy_resource: KubernetesDeployResource::StatefulSet { name: "dr-springline-tm".to_string() },
-                    kubernetes_api_constraints: KubernetesApiConstraints {
+                    kubernetes_api: KubernetesApiConstraints {
                         api_timeout: Duration::from_secs(290),
-                        action_timeout: Duration::from_secs(600),
-                        action_poll_interval: Duration::from_secs(10),
+                        polling_interval: Duration::from_secs(10),
                     },
                 },
-                savepoint_dir: Some("s3://path/to/savepoints".to_string()),
+                flink: FlinkActionSettings {
+                    savepoint: SavepointSettings {
+                        directory: Some("s3://path/to/savepoints".to_string()),
+                        ..SavepointSettings::default()
+                    },
+                },
             },
             context_stub: ContextStubSettings {
                 all_sinks_healthy: true,
@@ -472,16 +480,21 @@ mod tests {
             },
         },
         action: ActionSettings {
+            action_timeout: Duration::from_secs(600),
             taskmanager: TaskmanagerContext {
                 label_selector: "app=flink,component=taskmanager".to_string(),
                 deploy_resource: KubernetesDeployResource::StatefulSet { name: "dr-springline-tm".to_string() },
-                kubernetes_api_constraints: KubernetesApiConstraints {
+                kubernetes_api: KubernetesApiConstraints {
                     api_timeout: Duration::from_secs(295),
-                    action_timeout: Duration::from_secs(600),
-                    action_poll_interval: Duration::from_secs(5),
+                    polling_interval: Duration::from_secs(5),
                 },
             },
-            savepoint_dir: Some("s3://path/to/savepoints".to_string()),
+            flink: FlinkActionSettings {
+                savepoint: SavepointSettings {
+                    directory: Some("s3://path/to/savepoints".to_string()),
+                    ..SavepointSettings::default()
+                },
+            },
         },
         context_stub: ContextStubSettings {
             all_sinks_healthy: true,
@@ -567,14 +580,20 @@ mod tests {
                     },
                     action: ActionSettings {
                         taskmanager: TaskmanagerContext {
-                            kubernetes_api_constraints: KubernetesApiConstraints {
+                            kubernetes_api: KubernetesApiConstraints {
                                 api_timeout: Duration::from_secs(290),
-                                action_poll_interval: Duration::from_secs(10),
-                                ..SETTINGS.action.taskmanager.kubernetes_api_constraints.clone()
+                                polling_interval: Duration::from_secs(10),
+                                ..SETTINGS.action.taskmanager.kubernetes_api.clone()
                             },
                             ..SETTINGS.action.taskmanager.clone()
                         },
-                        savepoint_dir: None,
+                        flink: FlinkActionSettings {
+                            savepoint: SavepointSettings {
+                                directory: None,
+                                ..SETTINGS.action.flink.savepoint.clone()
+                            },
+                            ..SETTINGS.action.flink.clone()
+                        },
                         ..SETTINGS.action.clone()
                     },
                     ..SETTINGS.clone()
@@ -654,15 +673,23 @@ mod tests {
                     ..SETTINGS.decision.clone()
                 },
                 action: ActionSettings {
+                    action_timeout: Duration::from_secs(60),
                     taskmanager: TaskmanagerContext {
-                        kubernetes_api_constraints: KubernetesApiConstraints {
+                        kubernetes_api: KubernetesApiConstraints {
                             api_timeout: Duration::from_secs(290),
-                            action_poll_interval: Duration::from_secs(5),
-                            ..SETTINGS.action.taskmanager.kubernetes_api_constraints.clone()
+                            polling_interval: Duration::from_secs(5),
+                            ..SETTINGS.action.taskmanager.kubernetes_api.clone()
                         },
                         ..SETTINGS.action.taskmanager.clone()
                     },
-                    savepoint_dir: None,
+                    flink: FlinkActionSettings {
+                        savepoint: SavepointSettings {
+                            directory: Some("s3a://my/flink/savepoints".into()),
+                            polling_interval: Duration::from_secs(1),
+                            ..SETTINGS.action.flink.savepoint.clone()
+                        },
+                        ..SETTINGS.action.flink.clone()
+                    },
                     ..SETTINGS.action.clone()
                 },
                 ..SETTINGS.clone()
@@ -748,14 +775,20 @@ mod tests {
                     },
                     action: ActionSettings {
                         taskmanager: TaskmanagerContext {
-                            kubernetes_api_constraints: KubernetesApiConstraints {
+                            kubernetes_api: KubernetesApiConstraints {
                                 api_timeout: Duration::from_secs(290),
-                                action_poll_interval: Duration::from_secs(10),
-                                ..SETTINGS.action.taskmanager.kubernetes_api_constraints.clone()
+                                polling_interval: Duration::from_secs(10),
+                                ..SETTINGS.action.taskmanager.kubernetes_api.clone()
                             },
                             ..SETTINGS.action.taskmanager.clone()
                         },
-                        savepoint_dir: None,
+                        flink: FlinkActionSettings {
+                            savepoint: SavepointSettings {
+                                directory: None,
+                                ..SETTINGS.action.flink.savepoint.clone()
+                            },
+                            ..SETTINGS.action.flink.clone()
+                        },
                         ..SETTINGS.action.clone()
                     },
                     ..SETTINGS.clone()
