@@ -1,12 +1,11 @@
 use crate::flink;
-use crate::flink::{FailureReason, FlinkContext, FlinkError, JobId, OperationStatus, SavepointStatus};
+use crate::flink::{FlinkContext, FlinkError, JobId, JobSavepointReport, OperationStatus, SavepointStatus};
 use crate::phases::act::action::{ActionSession, ScaleAction};
 use crate::phases::act::scale_actuator::ScaleActionPlan;
 use crate::phases::act::ActError;
 use crate::phases::MetricCatalog;
 use crate::settings::FlinkActionSettings;
 use async_trait::async_trait;
-use either::Either;
 use futures_util::{FutureExt, TryFutureExt};
 use http::Method;
 use once_cell::sync::Lazy;
@@ -65,10 +64,12 @@ where
             .map_err(|err| (err.into(), session.clone()))
             .map(|jobs| jobs.into_iter().map(|j| j.id).collect())?;
 
-        let job_triggers = self
-            .trigger_savepoints_for(active_jobs, &correlation)
+        let job_triggers: Vec<(JobId, trigger::TriggerId)> = self
+            .trigger_savepoints_for(&active_jobs, &correlation)
             .await
             .map_err(|err| (err, session.clone()))?;
+
+        session = session.with_data("active_jobs", active_jobs);
 
         let tasks = job_triggers
             .into_iter()
@@ -78,48 +79,15 @@ where
             })
             .collect::<Vec<_>>();
 
-        let stopped: Vec<(JobId, SavepointStatus)> = Self::block_for_all_savepoints(tasks, &correlation)
+        let savepoint_report = Self::block_for_all_savepoints(tasks, &correlation)
             .await
             .map_err(|err| (err, session.clone()))?;
 
-        // let mut errors = Vec::new();
-        // let mut stopped = Vec::with_capacity(tasks.len());
-        // for (job, savepoint_info) in futures::future::join_all(tasks).await {
-        //     match savepoint_info {
-        //         Ok(info) => stopped.push((job, info)),
-        //         Err(err) => errors.push((job, err)),
-        //     }
-        // }
-        //
-        // if !errors.is_empty() {
-        //     let failed_jobs = errors.iter().map(|(job, _)| job).cloned().collect();
-        //     tracing::error!(
-        //         nr_savepoint_errors=%errors.len(), %correlation, error=?errors.first().unwrap(),
-        //         "failed to complete savepoints - cannot scale Flink server"
-        //     );
-        //     let source = errors.remove(0).1;
-        //     return Err((ActError::Savepoint { source, job_ids: failed_jobs, }, session ))
-        // }
-
-        // --- block for completion
-        // WORK HERE
-        // let task = |job_id, trigger_id| async {
-        //     loop {
-        //         self.check_savepoint(job_id)
-        //     }
-        // };
-
-        // let tasks = triggers
-        //     .into_iter()
-        //     .map(|(job, trigger_id)| {
-        //         self.flink
-        //             .wait_for_savepoint_completion(job, trigger_id, &correlation)
-        //             .map_err(|err| (err.into(), session.clone()))
-        //     })
-        //     .collect::<Vec<_>>();
-
-        // session = session.with_data("active_jobs", active_jobs.into());
-        todo!()
+        let savepoint_duration = Duration::from_secs_f64(timer.stop_and_record());
+        session = session
+                .with_data("savepoint_report", savepoint_report)
+                .with_duration("savepoint", savepoint_duration);
+        Ok(session)
     }
 }
 
@@ -130,17 +98,18 @@ where
     P: AppData + ScaleActionPlan,
 {
     async fn trigger_savepoints_for(
-        &self, jobs: Vec<JobId>, correlation: &CorrelationId,
-    ) -> Result<Vec<(JobId, TriggerId)>, ActError> {
+        &self, jobs: &[JobId], correlation: &CorrelationId,
+    ) -> Result<Vec<(JobId, trigger::TriggerId)>, ActError> {
         let mut job_triggers = Vec::with_capacity(jobs.len());
         let mut trigger_failures = Vec::new();
-        for job in jobs {
+        for job in jobs.into_iter().cloned() {
             let trigger_result = self.trigger_savepoint(&job, true, correlation).await;
             match trigger_result {
                 Ok(trigger_id) => job_triggers.push((job, trigger_id)),
                 Err(err) => trigger_failures.push((job, err)),
             }
         }
+
         if !trigger_failures.is_empty() {
             let (first_job, source) = trigger_failures.remove(0);
             let mut job_ids = Vec::with_capacity(trigger_failures.len());
@@ -155,7 +124,7 @@ where
     #[tracing::instrument(level = "info", skip(self))]
     async fn trigger_savepoint(
         &self, job_id: &JobId, cancel_job: bool, correlation: &CorrelationId,
-    ) -> Result<TriggerId, FlinkError> {
+    ) -> Result<trigger::TriggerId, FlinkError> {
         let url = self.trigger_endpoint_url_for(job_id)?;
         let span = tracing::info_span!("trigger_savepoint", %url, %correlation);
 
@@ -164,7 +133,7 @@ where
             ..trigger::SavepointRequestBody::default()
         };
 
-        let trigger_id: Result<TriggerId, FlinkError> = self
+        let trigger_id: Result<trigger::TriggerId, FlinkError> = self
             .flink
             .client()
             .request(Method::POST, url)
@@ -209,11 +178,11 @@ where
 
     #[tracing::instrument(level = "info", skip(self))]
     async fn wait_on_savepoint(
-        &self, job: JobId, trigger: TriggerId, correlation: &CorrelationId,
+        &self, job: JobId, trigger: trigger::TriggerId, correlation: &CorrelationId,
     ) -> Result<SavepointStatus, FlinkError> {
         let task = async {
             let mut result = None;
-            loop {
+            while result.is_none() {
                 match self.check_savepoint(&job, &trigger, correlation).await {
                     Ok(savepoint) if savepoint.status == OperationStatus::Completed => {
                         result = Some(savepoint);
@@ -232,15 +201,7 @@ where
                 tokio::time::sleep(self.savepoint_timeout).await;
             }
 
-            result.unwrap_or_else(|| {
-                SavepointStatus {
-                    status: OperationStatus::InProgress,
-                    operation: Either::Right(FailureReason::from(format!(
-                        "savepoint operation [{trigger}] for {job} failed to complete before timeout of {:?} [correlation={correlation}]",
-                        self.savepoint_timeout
-                    ))),
-                }
-            })
+            result.expect("savepoint status should have been populated")
         };
 
         tokio::time::timeout(self.savepoint_timeout, task)
@@ -255,7 +216,7 @@ where
 
     #[tracing::instrument(level = "info", skip(self))]
     async fn check_savepoint(
-        &self, job_id: &JobId, trigger_id: &TriggerId, correlation: &CorrelationId,
+        &self, job_id: &JobId, trigger_id: &trigger::TriggerId, correlation: &CorrelationId,
     ) -> Result<SavepointStatus, FlinkError> {
         let url = self.info_endpoint_url_for(job_id, trigger_id)?;
         let span = tracing::info_span!("check_savepoint", %job_id, %trigger_id, %url, %correlation);
@@ -292,7 +253,7 @@ where
         }
     }
 
-    fn info_endpoint_url_for(&self, job_id: &JobId, trigger_id: &TriggerId) -> Result<Url, UrlError> {
+    fn info_endpoint_url_for(&self, job_id: &JobId, trigger_id: &trigger::TriggerId) -> Result<Url, UrlError> {
         let mut endpoint_url = self.flink.jobs_endpoint();
         endpoint_url
             .path_segments_mut()
@@ -306,12 +267,13 @@ where
     #[tracing::instrument(level = "info", skip(tasks))]
     async fn block_for_all_savepoints<F>(
         tasks: Vec<F>, correlation: &CorrelationId,
-    ) -> Result<Vec<(JobId, SavepointStatus)>, ActError>
+    ) -> Result<JobSavepointReport, ActError>
     where
         F: Future<Output = (JobId, Result<SavepointStatus, FlinkError>)> + Send,
     {
         let mut errors = Vec::new();
-        let mut infos = Vec::with_capacity(tasks.len());
+        let mut completed = Vec::with_capacity(tasks.len());
+        let mut failed = Vec::new();
         for (job, savepoint) in futures::future::join_all(tasks).await {
             match savepoint {
                 Err(err) => errors.push((job, err)),
@@ -322,10 +284,10 @@ where
                 },
                 Ok(s) if s.operation.is_right() => {
                     tracing::error!(%job, savepoint=?s, "savepoint task completed but failed: {}", s.operation.as_ref().right().unwrap());
-                    let error = FlinkError::UnexpectedSavepointStatus(job.clone(), s);
-                    errors.push((job, error));
+                    // let error = FlinkError::UnexpectedSavepointStatus(job.clone(), s);
+                    failed.push((job, s));
                 },
-                Ok(s) => infos.push((job, s)),
+                Ok(s) => completed.push((job, s)),
             }
         }
 
@@ -339,11 +301,10 @@ where
             return Err(ActError::Savepoint { source, job_ids: failed_jobs });
         }
 
-        Ok(infos)
+        let report = JobSavepointReport::new(completed, failed);
+        Ok(report)
     }
 }
-
-type TriggerId = String;
 
 #[inline]
 fn start_flink_job_savepoint_with_cancel_timer(context: &FlinkContext) -> HistogramTimer {
@@ -369,6 +330,8 @@ mod trigger {
     use serde::{Deserialize, Serialize};
     use serde_with::serde_as;
     use std::fmt;
+
+    pub type TriggerId = String;
 
     #[serde_as]
     #[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
@@ -469,18 +432,6 @@ mod query {
         pub location: Option<String>,
         pub failure_reason: Option<String>,
     }
-
-    // impl From<SavepointOperation> for Either<SavepointLocation, FailureReason> {
-    //     fn from(that: SavepointOperation) -> Self {
-    //         if let Some(reason) = that.failure_reason {
-    //             Either::Right(FailureReason::from(reason))
-    //         } else if let Some(location) = that.location {
-    //             Either::Left(SavepointLocation::from(location))
-    //         } else {
-    //             panic!("SavepointOperation must have either location or failure_reason")
-    //         }
-    //     }
-    // }
 
     impl TryFrom<SavepointOperation> for Either<SavepointLocation, FailureReason> {
         type Error = ActError;

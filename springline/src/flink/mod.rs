@@ -4,7 +4,7 @@ mod model;
 
 pub use context::FlinkContext;
 pub use error::FlinkError;
-pub use model::{FailureReason, OperationStatus, SavepointLocation, SavepointStatus};
+pub use model::{JobSavepointReport, FailureReason, OperationStatus, SavepointLocation, SavepointStatus};
 pub use model::{JobDetail, JobId, JobState, JobSummary, TaskState, VertexDetail, VertexId};
 pub use model::{JOB_STATES, TASK_STATES};
 
