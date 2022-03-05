@@ -1,14 +1,13 @@
 use std::error::Error;
 use std::fmt;
 use std::sync::Arc;
-use std::time::Duration;
 
 use super::{action, protocol};
-use crate::phases::act::action::ScaleAction;
+use crate::phases::act::action::{ActionSession, ScaleAction};
 use crate::phases::act::{ActError, ActEvent};
 use crate::phases::governance::GovernanceOutcome;
 use crate::phases::MetricCatalog;
-use crate::settings::{ActionSettings, KubernetesDeployResource, ScaleContext};
+use crate::settings::{ActionSettings, KubernetesDeployResource, TaskmanagerContext};
 use async_trait::async_trait;
 use cast_trait_object::dyn_upcast;
 use k8s_openapi::api::apps::v1::StatefulSet;
@@ -53,7 +52,7 @@ impl ScaleActionPlan for GovernanceOutcome {
 pub struct ScaleActuator<In> {
     kube: kube::Client,
     action: Box<dyn ScaleAction<In>>,
-    context: ScaleContext,
+    context: TaskmanagerContext,
     inlet: Inlet<In>,
     pub tx_action_monitor: broadcast::Sender<Arc<protocol::ActEvent<In>>>,
 }
@@ -64,7 +63,7 @@ where
 {
     #[tracing::instrument(level = "info", skip(kube))]
     pub fn new(kube: kube::Client, settings: &ActionSettings) -> Self {
-        let context = settings.taskmanagers.clone();
+        let context = settings.taskmanager.clone();
         let (tx_action_monitor, _) = broadcast::channel(num_cpus::get() * 2);
         let action = action::make_action(&kube, settings);
 
@@ -153,13 +152,14 @@ where
 
         while let Some(plan) = inlet.recv().await {
             let _timer = proctor::graph::stage::start_stage_eval_time(STAGE_NAME);
-            match self.action.execute(&plan).await {
-                Ok(duration) => {
-                    self.notify_action_succeeded(plan, duration);
+            let session = ActionSession::new(plan);
+            match self.action.execute(session).await {
+                Ok(ctx) => {
+                    self.notify_action_succeeded(ctx);
                 },
-                Err(err) => {
-                    tracing::error!(error=?err, ?plan, "failure in scale action - dropping.");
-                    self.notify_action_failed(plan, err);
+                Err((err, ctx)) => {
+                    tracing::error!(error=?err, context=?ctx, "failure in scale action - dropping.");
+                    self.notify_action_failed(ctx, err);
                 },
             }
         }
@@ -168,10 +168,10 @@ where
     }
 
     #[tracing::instrument(level = "info", skip(self))]
-    fn notify_action_succeeded(&self, plan: In, duration: Duration) {
-        let correlation = plan.correlation();
-        let recv_timestamp = plan.recv_timestamp();
-        match self.tx_action_monitor.send(Arc::new(ActEvent::PlanExecuted(plan))) {
+    fn notify_action_succeeded(&self, session: ActionSession<In>) {
+        let correlation = session.correlation();
+        let recv_timestamp = session.plan.recv_timestamp();
+        match self.tx_action_monitor.send(Arc::new(ActEvent::PlanExecuted(session.plan))) {
             Ok(recipients) => {
                 tracing::info!(?correlation, %recv_timestamp, "published PlanExecuted to {} recipients", recipients);
             },
@@ -182,15 +182,15 @@ where
     }
 
     #[tracing::instrument(level = "info", skip(self, error))]
-    fn notify_action_failed<E>(&self, plan: In, error: E)
+    fn notify_action_failed<E>(&self, session: ActionSession<In>, error: E)
     where
         E: Error + MetricLabel,
     {
-        let correlation = plan.correlation();
-        let recv_timestamp = plan.recv_timestamp();
+        let correlation = session.correlation();
+        let recv_timestamp = session.plan.recv_timestamp();
         let label = error.label();
         match self.tx_action_monitor.send(Arc::new(ActEvent::PlanFailed {
-            plan,
+            plan: session.plan,
             error_metric_label: label.into(),
         })) {
             Ok(recipients) => {

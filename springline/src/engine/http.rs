@@ -5,7 +5,7 @@ use axum::error_handling::HandleErrorLayer;
 use axum::extract::{Extension, Path};
 use axum::http::{Method, StatusCode, Uri};
 use axum::routing::get;
-use axum::{AddExtensionLayer, BoxError, Json, Router};
+use axum::{BoxError, Json, Router};
 use proctor::phases::sense::ClearinghouseSnapshot;
 use settings_loader::common::http::HttpServerSettings;
 use tokio::task::JoinHandle;
@@ -30,7 +30,7 @@ pub fn run_http_server<'s>(
         .timeout(Duration::from_secs(10))
         // .layer(tower::limit::RateLimitLayer::new(10, Duration::from_millis(100))) // arbitrary limit
         .layer(TraceLayer::new_for_http())
-        .layer(AddExtensionLayer::new(shared_state))
+        .layer(Extension(shared_state))
         .into_inner();
 
     let app = Router::new()

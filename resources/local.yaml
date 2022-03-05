@@ -5,13 +5,16 @@ engine:
 http:
   host: localhost
 
+flink:
+  label: local_flink
+  job_manager_host: localhost
+  max_retries: 0
+  pool_idle_timeout_secs: 60
+  pool_max_idle_per_host: 5
+
 sensor:
   flink:
-    job_manager_host: localhost
     metrics_initial_delay_secs: 10
-    max_retries: 0
-    pool_idle_timeout_secs: 60
-    pool_max_idle_per_host: 5
 
 eligibility:
   template_data:
@@ -28,6 +31,11 @@ plan:
     storage_path: "./tmp"
 
 action:
-  taskmanagers:
-    kubernetes_api_constraints:
-      action_poll_interval_secs: 5
+  action_timeout_secs: 60
+  taskmanager:
+    kubernetes_api:
+      polling_interval_secs: 5
+  flink:
+    savepoint:
+      polling_interval_secs: 1
+      directory: "s3a://my/flink/savepoints"

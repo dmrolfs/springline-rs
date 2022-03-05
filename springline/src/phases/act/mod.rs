@@ -4,6 +4,7 @@ use proctor::error::MetricLabel;
 use proctor::graph::stage::{self, SinkStage};
 use proctor::SharedString;
 use prometheus::{Histogram, HistogramOpts, IntCounterVec, Opts};
+pub use protocol::{ActEvent, ActMonitor};
 use std::time::Duration;
 use thiserror::Error;
 
@@ -26,6 +27,16 @@ pub enum ActError {
     #[error("failure in kubernetes api:{0}")]
     KubeApi(#[from] kube::error::ErrorResponse),
 
+    #[error("failure while calling Flink API: {0}")]
+    Flink(#[from] crate::flink::FlinkError),
+
+    #[error("failure taking Flink savepoints for jobs:{job_ids:?}: {source}")]
+    Savepoint {
+        #[source]
+        source: crate::flink::FlinkError,
+        job_ids: Vec<crate::flink::JobId>,
+    },
+
     #[error("failure occurred in the PatchReplicas inlet port: {0}")]
     Port(#[from] proctor::error::PortError),
 
@@ -43,6 +54,8 @@ impl MetricLabel for ActError {
             Self::Timeout(_, _) => Left("timeout".into()),
             Self::Kube(_) => Left("kubernetes".into()),
             Self::KubeApi(e) => Left(format!("kubernetes::{}", e.reason).into()),
+            Self::Flink(e) => Right(Box::new(e)),
+            Self::Savepoint { .. } => Left("savepoint".into()),
             Self::Port(e) => Right(Box::new(e)),
             Self::Stage(_) => Left("stage".into()),
         }
@@ -61,8 +74,6 @@ mod protocol {
         PlanFailed { plan: T, error_metric_label: String },
     }
 }
-
-pub use protocol::{ActEvent, ActMonitor};
 
 pub(crate) static ACT_SCALE_ACTION_COUNT: Lazy<IntCounterVec> = Lazy::new(|| {
     IntCounterVec::new(

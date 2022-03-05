@@ -609,16 +609,29 @@ async fn test_flink_planning_context_change() {
             },
         )
     }) {
-        tracing::error!(error=?err, "common lower boundary failed - trying higher..");
-        assert_eq!(
-            actual[0],
-            ScalePlan {
-                recv_timestamp: penultimate_timestamp,
-                correlation_id: CORRELATION_ID.clone(),
-                target_nr_task_managers: 9,
-                current_nr_task_managers: 2,
-            },
-        )
+        tracing::error!(error=?err, "common boundary failed - trying higher..");
+        if let Err(err) = std::panic::catch_unwind(|| {
+            assert_eq!(
+                actual[0],
+                ScalePlan {
+                    recv_timestamp: penultimate_timestamp,
+                    correlation_id: CORRELATION_ID.clone(),
+                    target_nr_task_managers: 9,
+                    current_nr_task_managers: 2,
+                },
+            )
+        }) {
+            tracing::error!(error=?err, "common and high boundaries failed - trying lower..");
+            assert_eq!(
+                actual[0],
+                ScalePlan {
+                    recv_timestamp: penultimate_timestamp,
+                    correlation_id: CORRELATION_ID.clone(),
+                    target_nr_task_managers: 7,
+                    current_nr_task_managers: 2,
+                },
+            )
+        }
     }
 
     assert_gt!(

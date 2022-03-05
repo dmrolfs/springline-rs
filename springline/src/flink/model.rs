@@ -1,10 +1,13 @@
+use super::FlinkError;
+use either::Either;
 use std::collections::HashMap;
 use std::fmt::{self, Display};
 use std::hash::Hash;
 use std::marker::PhantomData;
 use std::time::Duration;
 
-use proctor::elements::{TelemetryValue, Timestamp};
+use proctor::elements::{TelemetryType, TelemetryValue, Timestamp};
+use proctor::elements::telemetry::{TableType, TableValue};
 use serde::{de, Deserialize, Deserializer, Serialize};
 use serde_with::serde_as;
 
@@ -122,6 +125,23 @@ impl From<JobId> for String {
 impl From<&str> for JobId {
     fn from(rep: &str) -> Self {
         Self(rep.to_string())
+    }
+}
+
+impl From<JobId> for TelemetryValue {
+    fn from(job_id: JobId) -> Self {
+        Self::Text(job_id.0)
+    }
+}
+
+impl TryFrom<TelemetryValue> for JobId {
+    type Error = FlinkError;
+
+    fn try_from(value: TelemetryValue) -> Result<Self, Self::Error> {
+        match value {
+            TelemetryValue::Text(s) => Ok(Self(s)),
+            val => Err(FlinkError::ExpectedTelemetryType(TelemetryType::Text, val)),
+        }
     }
 }
 
@@ -284,6 +304,117 @@ where
     }
 
     deserializer.deserialize_map(KeyTimestampsVisitor::new())
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct JobSavepointReport {
+    completed: HashMap<JobId, SavepointLocation>,
+    failed: HashMap<JobId, FailureReason>,
+}
+
+impl JobSavepointReport {
+    pub fn new(
+        completed_statuses: Vec<(JobId, SavepointStatus)>,
+        failed_statuses: Vec<(JobId, SavepointStatus)>
+    ) -> Self {
+        let completed = completed_statuses
+            .into_iter()
+            .map(|(job, status)| {
+                let location = status.operation.left().expect("successful savepoint location is not populated.");
+                (job, location)
+            })
+            .collect();
+
+        let failed = failed_statuses
+            .into_iter()
+            .map(|(job, status)| {
+                let failure = status.operation.right().expect("failed savepoint failure reason is not populated.");
+                (job, failure)
+            })
+            .collect();
+
+        Self { completed, failed }
+    }
+}
+
+impl From<JobSavepointReport> for TelemetryValue {
+    fn from(report: JobSavepointReport) -> Self {
+        let mut telemetry = TableValue::new();
+
+        let completed: TableType = report.completed.into_iter().map(|(job, location)| (job.into(), location.into())).collect();
+        telemetry.insert("completed".to_string(), completed.into());
+
+        let failed: TableType = report.failed.into_iter().map(|(job, failure)| (job.into(), failure.into())).collect();
+        telemetry.insert("failed".to_string(), failed.into());
+
+        Self::Table(telemetry)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SavepointStatus {
+    pub status: OperationStatus,
+    pub operation: Either<SavepointLocation, FailureReason>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OperationStatus {
+    InProgress,
+    Completed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SavepointLocation(String);
+
+impl fmt::Display for SavepointLocation {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl From<String> for SavepointLocation {
+    fn from(s: String) -> Self {
+        Self(s)
+    }
+}
+
+impl From<SavepointLocation> for TelemetryValue {
+    fn from(location: SavepointLocation) -> Self {
+        Self::Text(location.0)
+    }
+}
+
+impl AsRef<str> for SavepointLocation {
+    fn as_ref(&self) -> &str {
+        self.0.as_str()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FailureReason(String);
+
+impl fmt::Display for FailureReason {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl From<String> for FailureReason {
+    fn from(s: String) -> Self {
+        Self(s)
+    }
+}
+
+impl From<FailureReason> for TelemetryValue {
+    fn from(reason: FailureReason) -> Self {
+        Self::Text(reason.0)
+    }
+}
+
+impl AsRef<str> for FailureReason {
+    fn as_ref(&self) -> &str {
+        self.0.as_str()
+    }
 }
 
 #[cfg(test)]

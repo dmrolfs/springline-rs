@@ -8,7 +8,7 @@ use proctor::graph::{Connect, Graph, SinkShape};
 use proctor::Ack;
 use serde_json::json;
 use springline::flink::{FlinkContext, JobId, JobState, TaskState, VertexId, JOB_STATES, TASK_STATES};
-use springline::phases::sense::flink::{make_sensor, STD_METRIC_ORDERS};
+use springline::phases::sense::flink::{make_sensor, FlinkSensorSpecification, STD_METRIC_ORDERS};
 use springline::phases::{MC_CLUSTER__NR_ACTIVE_JOBS, MC_CLUSTER__NR_TASK_MANAGERS, MC_FLOW__RECORDS_IN_PER_SEC};
 use springline::settings::{FlinkSensorSettings, FlinkSettings};
 use std::borrow::Cow;
@@ -101,7 +101,15 @@ async fn test_flink_sensor_merge_combine_stage() -> anyhow::Result<()> {
     let scheduler = stage::ActorSource::new("trigger");
     let tx_scheduler_api = scheduler.tx_api();
 
-    let flink_sensor = make_sensor("test_flink", context, Box::new(scheduler), &settings).await?;
+    let spec = FlinkSensorSpecification {
+        name: "test_flink",
+        context,
+        scheduler: Box::new(scheduler),
+        settings: &settings,
+        machine_node: pretty_snowflake::MachineNode::default(),
+    };
+
+    let flink_sensor = make_sensor(spec).await?;
 
     let mut sink = stage::Fold::new("sink", Telemetry::default(), |mut acc, item| {
         tracing::info!(?item, ?acc, "PUSHING ITEM INTO ACC...");
