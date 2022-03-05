@@ -1,10 +1,10 @@
 use crate::phases::act::scale_actuator::ScaleActionPlan;
 use crate::phases::act::{ActError, CorrelationId};
-use crate::phases::MetricCatalog;
+
 use crate::settings::ActionSettings;
 use async_trait::async_trait;
 use patch_replicas::PatchReplicas;
-use pretty_snowflake::Id;
+
 use proctor::elements::{Telemetry, TelemetryValue};
 use proctor::AppData;
 use std::collections::HashMap;

@@ -240,16 +240,16 @@ mod tests {
                 Token::StructEnd,
                 Token::StructEnd,
                 Token::Str("flink"),
-                Token::Struct { name: "FlinkActionSettings", len: 1 },
+                Token::Struct { name: "FlinkActionSettings", len: 2 },
+                Token::Str("polling_interval_secs"),
+                Token::U64(1),
                 Token::Str("savepoint"),
-                Token::Struct { name: "SavepointSettings", len: 3 },
+                Token::Struct { name: "SavepointSettings", len: 2 },
                 Token::Str("directory"),
                 Token::Some,
                 Token::Str("s3a://flink-98dnkj/foo-bar/savepoints"),
                 Token::Str("operation_timeout_secs"),
                 Token::U64(600),
-                Token::Str("polling_interval_secs"),
-                Token::U64(10),
                 Token::StructEnd,
                 Token::StructEnd,
                 Token::StructEnd,
@@ -282,7 +282,7 @@ mod tests {
         assert_eq!(
             json,
             format!(
-                r##"{{"action_timeout_secs":777,"taskmanager":{{"label_selector":"app=flink,component=taskmanager","deploy_resource":{},"kubernetes_api":{{"api_timeout_secs":275,"polling_interval_secs":7}}}},"flink":{{"savepoint":{{"directory":"/service_namespace_port/v1/jobs/flink_job_id/savepoints","operation_timeout_secs":600,"polling_interval_secs":10}}}}}}"##,
+                r##"{{"action_timeout_secs":777,"taskmanager":{{"label_selector":"app=flink,component=taskmanager","deploy_resource":{},"kubernetes_api":{{"api_timeout_secs":275,"polling_interval_secs":7}}}},"flink":{{"polling_interval_secs":1,"savepoint":{{"directory":"/service_namespace_port/v1/jobs/flink_job_id/savepoints","operation_timeout_secs":600}}}}}}"##,
                 EXPECTED_REP
             )
         );
@@ -291,7 +291,7 @@ mod tests {
         assert_eq!(
             ron,
             format!(
-                r##"(action_timeout_secs:777,taskmanager:(label_selector:"app=flink,component=taskmanager",deploy_resource:{},kubernetes_api:(api_timeout_secs:275,polling_interval_secs:7)),flink:(savepoint:(directory:Some("/service_namespace_port/v1/jobs/flink_job_id/savepoints"),operation_timeout_secs:600,polling_interval_secs:10)))"##,
+                r##"(action_timeout_secs:777,taskmanager:(label_selector:"app=flink,component=taskmanager",deploy_resource:{},kubernetes_api:(api_timeout_secs:275,polling_interval_secs:7)),flink:(polling_interval_secs:1,savepoint:(directory:Some("/service_namespace_port/v1/jobs/flink_job_id/savepoints"),operation_timeout_secs:600)))"##,
                 EXPECTED_REP
             )
         );

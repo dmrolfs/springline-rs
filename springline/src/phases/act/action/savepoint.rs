@@ -3,13 +3,13 @@ use crate::flink::{FlinkContext, FlinkError, JobId, JobSavepointReport, Operatio
 use crate::phases::act::action::{ActionSession, ScaleAction};
 use crate::phases::act::scale_actuator::ScaleActionPlan;
 use crate::phases::act::{ActError, CorrelationId};
-use crate::phases::MetricCatalog;
+
 use crate::settings::FlinkActionSettings;
 use async_trait::async_trait;
 use futures_util::{FutureExt, TryFutureExt};
 use http::Method;
 use once_cell::sync::Lazy;
-use pretty_snowflake::Id;
+
 use proctor::error::UrlError;
 use proctor::AppData;
 use prometheus::{HistogramOpts, HistogramTimer, HistogramVec};

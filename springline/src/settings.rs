@@ -339,6 +339,7 @@ mod tests {
                     },
                 },
                 flink: FlinkActionSettings {
+                    polling_interval: Duration::from_secs(9),
                     savepoint: SavepointSettings {
                         directory: Some("s3://path/to/savepoints".to_string()),
                         ..SavepointSettings::default()
@@ -590,6 +591,7 @@ mod tests {
                             ..SETTINGS.action.taskmanager.clone()
                         },
                         flink: FlinkActionSettings {
+                            polling_interval: Duration::from_secs(1),
                             savepoint: SavepointSettings {
                                 directory: None,
                                 ..SETTINGS.action.flink.savepoint.clone()
@@ -685,7 +687,7 @@ mod tests {
                         ..SETTINGS.action.taskmanager.clone()
                     },
                     flink: FlinkActionSettings {
-                        polling_interval: Duration::from_secs(1),
+                        polling_interval: Duration::from_secs(3),
                         savepoint: SavepointSettings {
                             directory: Some("s3a://my/flink/savepoints".into()),
                             ..SETTINGS.action.flink.savepoint.clone()
