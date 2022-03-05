@@ -380,7 +380,7 @@ impl From<String> for SavepointLocation {
 
 impl From<SavepointLocation> for TelemetryValue {
     fn from(location: SavepointLocation) -> Self {
-        TelemetryValue::Text(location.0)
+        Self::Text(location.0)
     }
 }
 
@@ -407,7 +407,7 @@ impl From<String> for FailureReason {
 
 impl From<FailureReason> for TelemetryValue {
     fn from(reason: FailureReason) -> Self {
-        TelemetryValue::Text(reason.0)
+        Self::Text(reason.0)
     }
 }
 

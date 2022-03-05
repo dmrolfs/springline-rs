@@ -102,7 +102,7 @@ where
     ) -> Result<Vec<(JobId, trigger::TriggerId)>, ActError> {
         let mut job_triggers = Vec::with_capacity(jobs.len());
         let mut trigger_failures = Vec::new();
-        for job in jobs.into_iter().cloned() {
+        for job in jobs.iter().cloned() {
             let trigger_result = self.trigger_savepoint(&job, true, correlation).await;
             match trigger_result {
                 Ok(trigger_id) => job_triggers.push((job, trigger_id)),
