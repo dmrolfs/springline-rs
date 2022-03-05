@@ -1,5 +1,5 @@
 use crate::phases::act::scale_actuator::ScaleActionPlan;
-use crate::phases::act::ActError;
+use crate::phases::act::{ActError, CorrelationId};
 use crate::phases::MetricCatalog;
 use crate::settings::ActionSettings;
 use async_trait::async_trait;
@@ -12,7 +12,8 @@ use std::fmt::Debug;
 use std::time::Duration;
 
 mod patch_replicas;
-pub mod savepoint;
+mod savepoint;
+mod restart;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ActionSession<P> {
@@ -43,7 +44,7 @@ where
         self
     }
 
-    pub fn correlation(&self) -> Id<MetricCatalog> {
+    pub fn correlation(&self) -> CorrelationId {
         self.plan.correlation()
     }
 }

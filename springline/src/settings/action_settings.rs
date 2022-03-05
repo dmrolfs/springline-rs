@@ -33,9 +33,33 @@ pub struct TaskmanagerContext {
     pub kubernetes_api: KubernetesApiConstraints,
 }
 
+#[serde_as]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FlinkActionSettings {
+    /// Interval in which Flink asynchronous API is polled. Defaults to 1 second.
+    #[serde(
+        default = "FlinkActionSettings::default_polling_interval",
+        rename = "polling_interval_secs"
+    )]
+    #[serde_as(as = "serde_with::DurationSeconds<u64>")]
+    pub polling_interval: Duration,
+
     pub savepoint: SavepointSettings,
+}
+
+impl Default for FlinkActionSettings {
+    fn default() -> Self {
+        Self {
+            polling_interval: Self::default_polling_interval(),
+            savepoint: SavepointSettings::default(),
+        }
+    }
+}
+
+impl FlinkActionSettings {
+    pub const fn default_polling_interval() -> Duration {
+        Duration::from_secs(1)
+    }
 }
 
 #[serde_as]
@@ -53,14 +77,6 @@ pub struct SavepointSettings {
     )]
     #[serde_as(as = "serde_with::DurationSeconds<u64>")]
     pub operation_timeout: Duration,
-
-    /// Interval in which Flink savepoint status is polled. Defaults to 10 seconds.
-    #[serde(
-        default = "SavepointSettings::default_savepoint_polling_interval",
-        rename = "polling_interval_secs"
-    )]
-    #[serde_as(as = "serde_with::DurationSeconds<u64>")]
-    pub polling_interval: Duration,
 }
 
 impl Default for SavepointSettings {
@@ -68,7 +84,6 @@ impl Default for SavepointSettings {
         Self {
             directory: None,
             operation_timeout: Self::default_operation_timeout(),
-            polling_interval: Self::default_savepoint_polling_interval(),
         }
     }
 }
@@ -76,9 +91,6 @@ impl Default for SavepointSettings {
 impl SavepointSettings {
     pub const fn default_operation_timeout() -> Duration {
         Duration::from_secs(10 * 60)
-    }
-    pub const fn default_savepoint_polling_interval() -> Duration {
-        Duration::from_secs(10)
     }
 }
 
@@ -203,6 +215,7 @@ mod tests {
                     directory: Some("s3a://flink-98dnkj/foo-bar/savepoints".to_string()),
                     ..SavepointSettings::default()
                 },
+                ..FlinkActionSettings::default()
             },
         };
 
@@ -261,6 +274,7 @@ mod tests {
                     directory: Some("/service_namespace_port/v1/jobs/flink_job_id/savepoints".to_string()),
                     ..SavepointSettings::default()
                 },
+                ..FlinkActionSettings::default()
             },
         };
 

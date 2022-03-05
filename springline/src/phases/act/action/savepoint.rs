@@ -2,7 +2,7 @@ use crate::flink;
 use crate::flink::{FlinkContext, FlinkError, JobId, JobSavepointReport, OperationStatus, SavepointStatus};
 use crate::phases::act::action::{ActionSession, ScaleAction};
 use crate::phases::act::scale_actuator::ScaleActionPlan;
-use crate::phases::act::ActError;
+use crate::phases::act::{ActError, CorrelationId};
 use crate::phases::MetricCatalog;
 use crate::settings::FlinkActionSettings;
 use async_trait::async_trait;
@@ -18,27 +18,25 @@ use std::time::Duration;
 use tracing::Instrument;
 use url::Url;
 
-type CorrelationId = Id<MetricCatalog>;
-
 #[derive(Debug, Clone)]
 pub struct TriggerSavepoint<P> {
     pub flink: FlinkContext,
-    pub savepoint_timeout: Duration,
     pub polling_interval: Duration,
+    pub savepoint_timeout: Duration,
     pub savepoint_dir: Option<String>,
     marker: std::marker::PhantomData<P>,
 }
 
 impl<P> TriggerSavepoint<P> {
     pub fn from_settings(flink: FlinkContext, settings: &FlinkActionSettings) -> Self {
+        let polling_interval = settings.polling_interval;
         let savepoint_timeout = settings.savepoint.operation_timeout;
-        let polling_interval = settings.savepoint.polling_interval;
         let savepoint_dir = settings.savepoint.directory.clone();
 
         Self {
             flink,
-            savepoint_timeout,
             polling_interval,
+            savepoint_timeout,
             savepoint_dir,
             marker: std::marker::PhantomData,
         }

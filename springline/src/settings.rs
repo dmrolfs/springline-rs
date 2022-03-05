@@ -343,6 +343,7 @@ mod tests {
                         directory: Some("s3://path/to/savepoints".to_string()),
                         ..SavepointSettings::default()
                     },
+                    ..FlinkActionSettings::default()
                 },
             },
             context_stub: ContextStubSettings {
@@ -494,6 +495,7 @@ mod tests {
                     directory: Some("s3://path/to/savepoints".to_string()),
                     ..SavepointSettings::default()
                 },
+                ..FlinkActionSettings::default()
             },
         },
         context_stub: ContextStubSettings {
@@ -683,9 +685,9 @@ mod tests {
                         ..SETTINGS.action.taskmanager.clone()
                     },
                     flink: FlinkActionSettings {
+                        polling_interval: Duration::from_secs(1),
                         savepoint: SavepointSettings {
                             directory: Some("s3a://my/flink/savepoints".into()),
-                            polling_interval: Duration::from_secs(1),
                             ..SETTINGS.action.flink.savepoint.clone()
                         },
                         ..SETTINGS.action.flink.clone()
