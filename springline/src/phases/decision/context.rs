@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 use std::fmt::Debug;
 
+use crate::metrics::UpdateMetrics;
 use oso::PolarClass;
 use pretty_snowflake::{Id, Label};
 use proctor::elements::telemetry::UpdateMetricsFn;
@@ -9,8 +10,6 @@ use proctor::error::DecisionError;
 use proctor::phases::sense::SubscriptionRequirements;
 use proctor::{ProctorContext, SharedString};
 use serde::{Deserialize, Serialize};
-use crate::metrics::UpdateMetrics;
-
 
 #[derive(PolarClass, Label, Debug, Clone, Serialize, Deserialize)]
 pub struct DecisionContext {

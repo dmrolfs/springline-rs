@@ -1,22 +1,26 @@
 use crate::kubernetes;
-use crate::phases::act::{self, ActError};
+use crate::kubernetes::DeployApi;
 use crate::phases::act::action::{ActionSession, ScaleAction};
+use crate::phases::act::kubernetes::TaskmanagerContext;
 use crate::phases::act::scale_actuator::ScaleActionPlan;
+use crate::phases::act::{self, ActError};
 use crate::settings::{self, KubernetesApiConstraints, KubernetesDeployResource};
 use async_trait::async_trait;
 use k8s_openapi::api::core::v1::Pod;
 use kube::api::ListParams;
 use kube::{Api, Client};
+use once_cell::sync::Lazy;
 use proctor::AppData;
+use prometheus::{HistogramOpts, HistogramTimer, HistogramVec};
 use std::collections::HashMap;
+use std::time::Duration;
 use tokio::time::Instant;
-use crate::kubernetes::DeployApi;
-use crate::phases::act::kubernetes::TaskmanagerContext;
 
-const ACTION_LABEL: &str = "patch_replicas";
+pub const ACTION_LABEL: &str = "patch_replicas";
 
 #[derive(Debug, Clone)]
 pub struct PatchReplicas<P> {
+    pub cluster_label: String,
     pub label_selector: String,
     pub deploy_resource: KubernetesDeployResource,
     pub api_constraints: KubernetesApiConstraints,
@@ -25,7 +29,7 @@ pub struct PatchReplicas<P> {
 }
 
 impl<P> PatchReplicas<P> {
-    pub fn new(scale_target: &settings::TaskmanagerContext, kube: &Client) -> Self {
+    pub fn new(cluster_label: &str, scale_target: &settings::TaskmanagerContext, kube: &Client) -> Self {
         let label_selector = scale_target.label_selector.clone();
         let deploy_resource = scale_target.deploy_resource.clone();
         let api_constraints = scale_target.kubernetes_api;
@@ -41,6 +45,7 @@ impl<P> PatchReplicas<P> {
 
         let marker = std::marker::PhantomData;
         Self {
+            cluster_label: cluster_label.to_string(),
             label_selector,
             deploy_resource,
             api_constraints,
@@ -57,10 +62,12 @@ where
 {
     #[tracing::instrument(level = "info", name = "PatchReplicas::execute", skip(self))]
     async fn execute(&mut self, session: ActionSession<P>) -> Result<ActionSession<P>, (ActError, ActionSession<P>)> {
+        let timer = start_flink_taskmanager_patch_replicas_timer(self.cluster_label.as_str());
+
         // async fn execute(&mut self, plan: &P) -> Result<Duration, ActError> {
         let correlation = session.correlation();
         let nr_target_taskmanagers = session.plan.target_replicas();
-        let start = tokio::time::Instant::now();
+
         let original_nr_taskmanager_replicas = self
             .taskmanagers
             .deploy
@@ -68,6 +75,7 @@ where
             .await
             .map_err(|err| (err.into(), session.clone()))?;
         tracing::info!(%nr_target_taskmanagers, ?original_nr_taskmanager_replicas, "patching to scale taskmanager replicas");
+
         let patched_nr_taskmanager_replicas = self
             .taskmanagers
             .deploy
@@ -78,10 +86,13 @@ where
             %nr_target_taskmanagers, ?original_nr_taskmanager_replicas, ?patched_nr_taskmanager_replicas,
             "patched taskmanager replicas"
         );
+
         self.block_until_satisfied(&session.plan)
             .await
             .map_err(|err| (err, session.clone()))?;
-        Ok(session.with_duration(ACTION_LABEL, start.elapsed()))
+
+        let patch_duration = Duration::from_secs_f64(timer.stop_and_record());
+        Ok(session.with_duration(ACTION_LABEL, patch_duration))
     }
 }
 
@@ -148,3 +159,22 @@ where
         result
     }
 }
+
+#[inline]
+fn start_flink_taskmanager_patch_replicas_timer(cluster_label: &str) -> HistogramTimer {
+    FLINK_TASKMANAGER_PATCH_REPLICAS_TIME
+        .with_label_values(&[cluster_label])
+        .start_timer()
+}
+
+pub static FLINK_TASKMANAGER_PATCH_REPLICAS_TIME: Lazy<HistogramVec> = Lazy::new(|| {
+    HistogramVec::new(
+        HistogramOpts::new(
+            "flink_taskmanager_patch_replicas_time_seconds",
+            "Time spent patching taskmanager replicas and confirming they are running",
+        )
+        .buckets(vec![10., 15., 20., 30., 40., 50., 100., 250., 500., 750., 1000.]),
+        &["label"],
+    )
+    .expect("failed creating flink_taskmanager_patch_replicas_time_seconds histogram metric")
+});

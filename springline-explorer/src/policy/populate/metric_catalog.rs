@@ -5,7 +5,7 @@ use once_cell::sync::Lazy;
 use pretty_snowflake::{AlphabetCodec, Id, IdPrettifier, Label, Labeling};
 use proctor::elements::Timestamp;
 use proctor::ProctorIdGenerator;
-use springline::phases::{ClusterMetrics, FlowMetrics, JobHealthMetrics};
+use springline::model::{ClusterMetrics, FlowMetrics, JobHealthMetrics};
 use tailcall::tailcall;
 use trim_margin::MarginTrimmable;
 

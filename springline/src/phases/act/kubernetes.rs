@@ -1,3 +1,5 @@
+use crate::kubernetes::DeployApi;
+use crate::model::CorrelationId;
 use crate::phases::act::ActError;
 use crate::settings::KubernetesDeployResource;
 use k8s_openapi::api::apps::v1::{Deployment, StatefulSet};
@@ -7,8 +9,6 @@ use kube::{Api, Client};
 use pretty_snowflake::Id;
 use serde_json::json;
 use tracing_futures::Instrument;
-use crate::kubernetes::DeployApi;
-use crate::model::CorrelationId;
 
 #[derive(Debug, Clone)]
 pub struct TaskmanagerContext {
@@ -19,8 +19,7 @@ pub struct TaskmanagerContext {
 
 impl TaskmanagerContext {
     pub async fn list_pods(&self) -> Result<Vec<Pod>, ActError> {
-        self
-            .pods
+        self.pods
             .list(&self.params)
             .await
             .map(|pods| pods.items)
@@ -33,8 +32,7 @@ impl TaskmanagerContext {
             ..self.params.clone()
         };
 
-        self
-            .pods
+        self.pods
             .list(&params)
             .await
             .map(|pods| pods.items)

@@ -1,9 +1,9 @@
+use crate::model::{CorrelationId, MetricCatalog};
 use oso::PolarClass;
 use pretty_snowflake::Id;
 use proctor::elements::Timestamp;
 use serde::{Deserialize, Serialize};
 use std::fmt;
-use crate::model::{CorrelationId, MetricCatalog};
 
 use crate::phases::decision::DecisionResult;
 use crate::phases::plan::MINIMAL_CLUSTER_SIZE;

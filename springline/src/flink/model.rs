@@ -6,8 +6,8 @@ use std::hash::Hash;
 use std::marker::PhantomData;
 use std::time::Duration;
 
-use proctor::elements::{TelemetryType, TelemetryValue, Timestamp};
 use proctor::elements::telemetry::{TableType, TableValue};
+use proctor::elements::{TelemetryType, TelemetryValue, Timestamp};
 use serde::{de, Deserialize, Deserializer, Serialize};
 use serde_with::serde_as;
 
@@ -86,6 +86,62 @@ impl TaskState {
     #[allow(dead_code)]
     pub const fn is_active(&self) -> bool {
         !matches!(self, Self::Finished | Self::Failed | Self::Canceled)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct JarId(String);
+
+impl JarId {
+    pub fn new(id: impl Into<String>) -> Self {
+        Self(id.into())
+    }
+}
+
+impl fmt::Display for JarId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl AsRef<str> for JarId {
+    fn as_ref(&self) -> &str {
+        self.0.as_str()
+    }
+}
+
+impl From<String> for JarId {
+    fn from(rep: String) -> Self {
+        Self(rep)
+    }
+}
+
+impl From<JarId> for String {
+    fn from(jid: JarId) -> Self {
+        jid.0
+    }
+}
+
+impl From<&str> for JarId {
+    fn from(rep: &str) -> Self {
+        Self(rep.to_string())
+    }
+}
+
+impl From<JarId> for TelemetryValue {
+    fn from(jar_id: JarId) -> Self {
+        Self::Text(jar_id.0)
+    }
+}
+
+impl TryFrom<TelemetryValue> for JarId {
+    type Error = FlinkError;
+
+    fn try_from(value: TelemetryValue) -> Result<Self, Self::Error> {
+        match value {
+            TelemetryValue::Text(s) => Ok(Self(s)),
+            val => Err(FlinkError::ExpectedTelemetryType(TelemetryType::Text, val)),
+        }
     }
 }
 
@@ -308,19 +364,21 @@ where
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct JobSavepointReport {
-    completed: HashMap<JobId, SavepointLocation>,
-    failed: HashMap<JobId, FailureReason>,
+    pub completed: HashMap<JobId, SavepointLocation>,
+    pub failed: HashMap<JobId, FailureReason>,
 }
 
 impl JobSavepointReport {
     pub fn new(
-        completed_statuses: Vec<(JobId, SavepointStatus)>,
-        failed_statuses: Vec<(JobId, SavepointStatus)>
+        completed_statuses: Vec<(JobId, SavepointStatus)>, failed_statuses: Vec<(JobId, SavepointStatus)>,
     ) -> Self {
         let completed = completed_statuses
             .into_iter()
             .map(|(job, status)| {
-                let location = status.operation.left().expect("successful savepoint location is not populated.");
+                let location = status
+                    .operation
+                    .left()
+                    .expect("successful savepoint location is not populated.");
                 (job, location)
             })
             .collect();
@@ -328,7 +386,10 @@ impl JobSavepointReport {
         let failed = failed_statuses
             .into_iter()
             .map(|(job, status)| {
-                let failure = status.operation.right().expect("failed savepoint failure reason is not populated.");
+                let failure = status
+                    .operation
+                    .right()
+                    .expect("failed savepoint failure reason is not populated.");
                 (job, failure)
             })
             .collect();
@@ -341,10 +402,18 @@ impl From<JobSavepointReport> for TelemetryValue {
     fn from(report: JobSavepointReport) -> Self {
         let mut telemetry = TableValue::new();
 
-        let completed: TableType = report.completed.into_iter().map(|(job, location)| (job.into(), location.into())).collect();
+        let completed: TableType = report
+            .completed
+            .into_iter()
+            .map(|(job, location)| (job.into(), location.into()))
+            .collect();
         telemetry.insert("completed".to_string(), completed.into());
 
-        let failed: TableType = report.failed.into_iter().map(|(job, failure)| (job.into(), failure.into())).collect();
+        let failed: TableType = report
+            .failed
+            .into_iter()
+            .map(|(job, failure)| (job.into(), failure.into()))
+            .collect();
         telemetry.insert("failed".to_string(), failed.into());
 
         Self::Table(telemetry)

@@ -2,13 +2,12 @@ use std::cmp::Ordering;
 use std::convert::TryFrom;
 use std::fmt;
 
+use crate::model::MetricCatalog;
 use ::serde_with::serde_as;
 use approx::{AbsDiffEq, RelativeEq};
 use proctor::elements::{RecordsPerSecond, TelemetryType, TelemetryValue, ToTelemetry};
 use proctor::error::{PlanError, TelemetryError};
 use serde::{Deserialize, Serialize};
-use crate::model::MetricCatalog;
-
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct BenchmarkRange {

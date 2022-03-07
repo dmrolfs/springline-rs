@@ -2,6 +2,7 @@ use std::collections::HashSet;
 use std::fmt::{self, Debug};
 use std::ops::Add;
 
+use crate::metrics::UpdateMetrics;
 use once_cell::sync::Lazy;
 use oso::PolarClass;
 use pretty_snowflake::{Id, Label};
@@ -12,7 +13,6 @@ use proctor::phases::sense::SubscriptionRequirements;
 use proctor::{ProctorIdGenerator, SharedString};
 use prometheus::{Gauge, IntGauge};
 use serde::{Deserialize, Serialize};
-use crate::metrics::UpdateMetrics;
 
 pub type CorrelationId = Id<MetricCatalog>;
 pub type CorrelationGenerator = ProctorIdGenerator<MetricCatalog>;

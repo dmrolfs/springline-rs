@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 use std::fmt::Debug;
 
+use crate::metrics::UpdateMetrics;
 use chrono::{DateTime, Utc};
 use once_cell::sync::Lazy;
 use oso::PolarClass;
@@ -12,8 +13,6 @@ use proctor::phases::sense::SubscriptionRequirements;
 use proctor::{ProctorContext, SharedString};
 use prometheus::IntGauge;
 use serde::{Deserialize, Serialize};
-use crate::metrics::UpdateMetrics;
-
 
 #[derive(PolarClass, Label, Debug, Clone, Serialize, Deserialize)]
 pub struct EligibilityContext {

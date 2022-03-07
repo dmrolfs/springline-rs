@@ -4,8 +4,8 @@ mod model;
 
 pub use context::FlinkContext;
 pub use error::FlinkError;
-pub use model::{JobSavepointReport, FailureReason, OperationStatus, SavepointLocation, SavepointStatus};
-pub use model::{JobDetail, JobId, JobState, JobSummary, TaskState, VertexDetail, VertexId};
+pub use model::{FailureReason, JobSavepointReport, OperationStatus, SavepointLocation, SavepointStatus};
+pub use model::{JarId, JobDetail, JobId, JobState, JobSummary, TaskState, VertexDetail, VertexId};
 pub use model::{JOB_STATES, TASK_STATES};
 
 use once_cell::sync::Lazy;
@@ -25,6 +25,25 @@ pub(crate) fn log_response(label: &str, response: &reqwest::Response) {
     }
 }
 
+const ACTIVE_JOBS: &str = "active_jobs";
+
+pub static FLINK_UPLOADED_JARS_TIME: Lazy<HistogramVec> = Lazy::new(|| {
+    HistogramVec::new(
+        HistogramOpts::new(
+            "flink_uploaded_jars_time",
+            "Time spent querying uploaded jars from Flink in seconds",
+        )
+        .buckets(vec![0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 1.0, 2.5, 5.0, 7.5, 10.0]),
+        &["action"],
+    )
+    .expect("failed creating flink_uploaded_jars_time metric")
+});
+
+#[inline]
+fn start_flink_uploaded_jars_timer(label: &str) -> HistogramTimer {
+    FLINK_UPLOADED_JARS_TIME.with_label_values(&[label]).start_timer()
+}
+
 pub static FLINK_ACTIVE_JOBS_TIME: Lazy<HistogramVec> = Lazy::new(|| {
     HistogramVec::new(
         HistogramOpts::new(
@@ -37,11 +56,9 @@ pub static FLINK_ACTIVE_JOBS_TIME: Lazy<HistogramVec> = Lazy::new(|| {
     .expect("failed creating flink_active_jobs_time metric")
 });
 
-const ACTIVE_JOBS: &str = "active_jobs";
-
 #[inline]
-fn start_flink_active_jobs_timer() -> HistogramTimer {
-    FLINK_ACTIVE_JOBS_TIME.with_label_values(&[ACTIVE_JOBS]).start_timer()
+fn start_flink_active_jobs_timer(label: &str) -> HistogramTimer {
+    FLINK_ACTIVE_JOBS_TIME.with_label_values(&[label]).start_timer()
 }
 
 pub(crate) static FLINK_ERRORS: Lazy<IntCounterVec> = Lazy::new(|| {

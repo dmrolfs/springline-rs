@@ -10,6 +10,7 @@ use futures_util::{FutureExt, TryFutureExt};
 use http::Method;
 use once_cell::sync::Lazy;
 
+use crate::model::CorrelationId;
 use proctor::error::UrlError;
 use proctor::AppData;
 use prometheus::{HistogramOpts, HistogramTimer, HistogramVec};
@@ -17,7 +18,8 @@ use std::future::Future;
 use std::time::Duration;
 use tracing::Instrument;
 use url::Url;
-use crate::model::CorrelationId;
+
+pub const ACTION_LABEL: &str = "trigger_savepoint";
 
 #[derive(Debug, Clone)]
 pub struct TriggerSavepoint<P> {
@@ -68,7 +70,7 @@ where
             .await
             .map_err(|err| (err, session.clone()))?;
 
-        session = session.with_data("active_jobs", active_jobs);
+        session.active_jobs = Some(active_jobs);
 
         let tasks = job_triggers
             .into_iter()
@@ -82,15 +84,10 @@ where
             .await
             .map_err(|err| (err, session.clone()))?;
 
-        let savepoint_duration = Duration::from_secs_f64(timer.stop_and_record());
-        session = session
-                .with_data("savepoint_report", savepoint_report)
-                .with_duration("savepoint", savepoint_duration);
-        Ok(session)
+        session.savepoints = Some(savepoint_report);
+        Ok(session.with_duration(ACTION_LABEL, Duration::from_secs_f64(timer.stop_and_record())))
     }
 }
-
-const TRIGGER_SAVEPOINT: &str = "trigger_savepoint";
 
 impl<P> TriggerSavepoint<P>
 where
@@ -143,7 +140,7 @@ where
                 error.into()
             })
             .and_then(|response| {
-                flink::log_response(TRIGGER_SAVEPOINT, &response);
+                flink::log_response(ACTION_LABEL, &response);
                 response.text().map_err(|err| err.into())
             })
             .instrument(span)
@@ -159,7 +156,7 @@ where
             Ok(tid) => Ok(tid),
             Err(err) => {
                 tracing::error!(error=?err, "failed to trigger savepoint in Flink for job {job_id}");
-                flink::track_flink_errors(TRIGGER_SAVEPOINT, &err);
+                flink::track_flink_errors(ACTION_LABEL, &err);
                 Err(err)
             },
         }
@@ -230,7 +227,7 @@ where
                 error.into()
             })
             .and_then(|response| {
-                flink::log_response(TRIGGER_SAVEPOINT, &response);
+                flink::log_response(ACTION_LABEL, &response);
                 response.text().map_err(|err| err.into())
             })
             .instrument(span)
@@ -246,7 +243,7 @@ where
             Ok(info) => Ok(info),
             Err(err) => {
                 tracing::error!(error=?err, "failed to get Flink savepoint info for job {job_id}");
-                flink::track_flink_errors(TRIGGER_SAVEPOINT, &err);
+                flink::track_flink_errors(ACTION_LABEL, &err);
                 Err(err)
             },
         }

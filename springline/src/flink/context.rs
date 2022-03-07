@@ -1,5 +1,6 @@
 use crate::flink::error::FlinkError;
-use crate::flink::{self, model::JobSummary};
+use crate::flink::{self, model::JobSummary, JarId};
+use crate::model::{CorrelationId, MetricCatalog};
 use crate::settings::FlinkSettings;
 use futures_util::TryFutureExt;
 use http::Method;
@@ -11,7 +12,6 @@ use std::fmt;
 use std::sync::Arc;
 use tracing::Instrument;
 use url::Url;
-use crate::model::CorrelationId;
 
 #[derive(Debug, Clone)]
 pub struct FlinkContext {
@@ -28,7 +28,7 @@ impl FlinkContext {
 
         Ok(Self {
             inner: Arc::new(FlinkContextRef {
-                label: label.into(),
+                cluster_label: label.into(),
                 client,
                 base_url,
                 jobs_endpoint,
@@ -43,7 +43,7 @@ impl FlinkContext {
     }
 
     pub fn label(&self) -> &str {
-        self.inner.label.as_str()
+        self.inner.cluster_label.as_str()
     }
 
     pub fn client(&self) -> &ClientWithMiddleware {
@@ -87,7 +87,7 @@ fn make_http_client(settings: &FlinkSettings) -> Result<ClientWithMiddleware, Fl
 
 struct FlinkContextRef {
     /// Label identifying the Flink cluster, possibly populated from the "release" pod label.
-    pub label: String,
+    pub cluster_label: String,
     pub client: ClientWithMiddleware,
     pub base_url: Url,
     pub jobs_endpoint: Url,
@@ -96,6 +96,7 @@ struct FlinkContextRef {
 impl fmt::Debug for FlinkContextRef {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("FlinkContextRef")
+            .field("cluster_label", &self.cluster_label)
             .field("base_url", &self.base_url)
             .field("jobs_endpoint", &self.jobs_endpoint)
             .finish()
@@ -103,8 +104,17 @@ impl fmt::Debug for FlinkContextRef {
 }
 
 impl FlinkContextRef {
+    #[tracing::instrument(level = "info", skip(self))]
+    async fn query_uploaded_jars(&self, correlation: &CorrelationId) -> Result<Vec<JarId>, FlinkError> {
+        let _timer = flink::start_flink_uploaded_jars_timer(self.cluster_label.as_str());
+        let span = tracing::info_span!("query Flink uploaded jars", %correlation);
+
+        // let result: Result<Vec<>>
+        todo!()
+    }
+
     pub async fn query_active_jobs(&self, correlation: &CorrelationId) -> Result<Vec<JobSummary>, FlinkError> {
-        let _timer = flink::start_flink_active_jobs_timer();
+        let _timer = flink::start_flink_active_jobs_timer(self.cluster_label.as_str());
         let span = tracing::info_span!("query Flink active jobs", %correlation);
 
         let result: Result<Vec<JobSummary>, FlinkError> = self
@@ -158,17 +168,65 @@ impl FlinkContextRef {
     }
 }
 
+mod jars_protocal {
+    use super::JarId;
+    use proctor::elements::Timestamp;
+    use serde::{Deserialize, Serialize};
+    use url::Url;
+
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    pub struct GetJarsResponse {
+        #[serde(
+            serialize_with = "proctor::serde::serialize_to_str",
+            deserialize_with = "proctor::serde::deserialize_from_str"
+        )]
+        pub address: Url,
+        pub files: Vec<JarFileInfo>,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    pub struct JarFileInfo {
+        pub id: JarId,
+
+        pub name: String,
+
+        #[serde(
+            serialize_with = "Timestamp::serialize_as_secs_i64",
+            deserialize_with = "Timestamp::deserialize_secs_i64"
+        )]
+        pub uploaded: Timestamp,
+
+        pub entry: Vec<JarEntry>,
+    }
+
+    impl JarFileInfo {
+        pub const fn timestamp_as_secs(ts: Timestamp) -> i64 {
+            Timestamp::as_secs(&ts)
+        }
+    }
+
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    pub struct JarEntry {
+        pub name: String,
+        pub description: Option<String>,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::flink::context::jars_protocal::JarFileInfo;
     use crate::flink::{JobId, JobState};
     use claim::*;
     use pretty_assertions::assert_eq;
+    use pretty_snowflake::Id;
+    use proctor::elements::Timestamp;
     use reqwest::header::HeaderMap;
     use reqwest_middleware::ClientBuilder;
     use reqwest_retry::policies::ExponentialBackoff;
     use reqwest_retry::RetryTransientMiddleware;
-    use serde_json::json;
+    use serde_json::{json, json_unexpected};
+    use serde_test::{assert_tokens, Token};
     use tokio_test::block_on;
     use url::Url;
     use wiremock::matchers::{method, path};
@@ -236,5 +294,199 @@ mod tests {
                 ]
             )
         })
+    }
+
+    #[test]
+    fn test_jars_response_serde_tokens() {
+        let data = jars_protocal::GetJarsResponse {
+            address: assert_ok!(Url::parse("http://dr-springline:8081")),
+            files: vec![
+                jars_protocal::JarFileInfo {
+                    id: JarId::new("40a90069-0f69-4c89-b4ba-77ec4e728d23_TopSpeedWindowing.jar"),
+                    name: "TopSpeedWindowing.jar".to_string(),
+                    uploaded: Timestamp::from_secs(1646632951534),
+                    entry: vec![jars_protocal::JarEntry {
+                        name: "org.apache.flink.streaming.examples.windowing.TopSpeedWindowing".to_string(),
+                        description: None,
+                    }],
+                },
+                jars_protocal::JarFileInfo {
+                    id: JarId::new("61fad403-bdc9-4d73-8375-15ee714cc692_flink-tutorials-0.0.1-SNAPSHOT.jar"),
+                    name: "flink-tutorials-0.0.1-SNAPSHOT.jar".to_string(),
+                    uploaded: Timestamp::from_secs(1646632920247),
+                    entry: vec![jars_protocal::JarEntry {
+                        name: "org.springframework.boot.loader.JarLauncher".to_string(),
+                        description: None,
+                    }],
+                },
+            ],
+        };
+
+        assert_tokens(
+            &data,
+            &vec![
+                Token::Struct { name: "GetJarsResponse", len: 2 },
+                Token::Str("address"),
+                Token::Str("http://dr-springline:8081/"),
+                Token::Str("files"),
+                Token::Seq { len: Some(2) },
+                Token::Struct { name: "JarFileInfo", len: 4 },
+                Token::Str("id"),
+                Token::NewtypeStruct { name: "JarId" },
+                Token::Str("40a90069-0f69-4c89-b4ba-77ec4e728d23_TopSpeedWindowing.jar"),
+                Token::Str("name"),
+                Token::Str("TopSpeedWindowing.jar"),
+                Token::Str("uploaded"),
+                Token::I64(1646632951534),
+                Token::Str("entry"),
+                Token::Seq { len: Some(1) },
+                Token::Struct { name: "JarEntry", len: 2 },
+                Token::Str("name"),
+                Token::Str("org.apache.flink.streaming.examples.windowing.TopSpeedWindowing"),
+                Token::Str("description"),
+                Token::None,
+                Token::StructEnd,
+                Token::SeqEnd,
+                Token::StructEnd,
+                Token::Struct { name: "JarFileInfo", len: 4 },
+                Token::Str("id"),
+                Token::NewtypeStruct { name: "JarId" },
+                Token::Str("61fad403-bdc9-4d73-8375-15ee714cc692_flink-tutorials-0.0.1-SNAPSHOT.jar"),
+                Token::Str("name"),
+                Token::Str("flink-tutorials-0.0.1-SNAPSHOT.jar"),
+                Token::Str("uploaded"),
+                Token::I64(1646632920247),
+                Token::Str("entry"),
+                Token::Seq { len: Some(1) },
+                Token::Struct { name: "JarEntry", len: 2 },
+                Token::Str("name"),
+                Token::Str("org.springframework.boot.loader.JarLauncher"),
+                Token::Str("description"),
+                Token::None,
+                Token::StructEnd,
+                Token::SeqEnd,
+                Token::StructEnd,
+                Token::SeqEnd,
+                Token::StructEnd,
+            ],
+        )
+    }
+
+    #[test]
+    fn test_jars_response_serde_ser_json() {
+        let data = jars_protocal::GetJarsResponse {
+            address: assert_ok!(Url::parse("http://dr-springline:8081/")),
+            files: vec![
+                jars_protocal::JarFileInfo {
+                    id: JarId::new("40a90069-0f69-4c89-b4ba-77ec4e728d23_TopSpeedWindowing.jar"),
+                    name: "TopSpeedWindowing.jar".to_string(),
+                    uploaded: Timestamp::from_secs(1646632951534),
+                    entry: vec![jars_protocal::JarEntry {
+                        name: "org.apache.flink.streaming.examples.windowing.TopSpeedWindowing".to_string(),
+                        description: None,
+                    }],
+                },
+                jars_protocal::JarFileInfo {
+                    id: JarId::new("61fad403-bdc9-4d73-8375-15ee714cc692_flink-tutorials-0.0.1-SNAPSHOT.jar"),
+                    name: "flink-tutorials-0.0.1-SNAPSHOT.jar".to_string(),
+                    uploaded: Timestamp::from_secs(1646632920247),
+                    entry: vec![jars_protocal::JarEntry {
+                        name: "org.springframework.boot.loader.JarLauncher".to_string(),
+                        description: None,
+                    }],
+                },
+            ],
+        };
+
+        let actual: serde_json::Value = assert_ok!(serde_json::to_value(data));
+
+        let expected = json!({
+            "address": "http://dr-springline:8081/",
+            "files": [
+                {
+                    "id": "40a90069-0f69-4c89-b4ba-77ec4e728d23_TopSpeedWindowing.jar",
+                    "name": "TopSpeedWindowing.jar",
+                    "uploaded": 1646632951534_i64,
+                    "entry": [
+                        {
+                            "name": "org.apache.flink.streaming.examples.windowing.TopSpeedWindowing",
+                            "description": null
+                        }
+                    ]
+                },
+                {
+                    "id": "61fad403-bdc9-4d73-8375-15ee714cc692_flink-tutorials-0.0.1-SNAPSHOT.jar",
+                    "name": "flink-tutorials-0.0.1-SNAPSHOT.jar",
+                    "uploaded": 1646632920247_i64,
+                    "entry": [
+                        {
+                            "name": "org.springframework.boot.loader.JarLauncher",
+                            "description": null
+                        }
+                    ]
+                }
+            ]
+        });
+
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_jars_response_serde_de_json() {
+        let body = json!({
+            "address": "http://dr-springline:8081",
+            "files": [
+                {
+                    "id": "40a90069-0f69-4c89-b4ba-77ec4e728d23_TopSpeedWindowing.jar",
+                    "name": "TopSpeedWindowing.jar",
+                    "uploaded": 1646632951534_i64,
+                    "entry": [
+                        {
+                            "name": "org.apache.flink.streaming.examples.windowing.TopSpeedWindowing",
+                            "description": null
+                        }
+                    ]
+                },
+                {
+                    "id": "61fad403-bdc9-4d73-8375-15ee714cc692_flink-tutorials-0.0.1-SNAPSHOT.jar",
+                    "name": "flink-tutorials-0.0.1-SNAPSHOT.jar",
+                    "uploaded": 1646632920247_i64,
+                    "entry": [
+                        {
+                            "name": "org.springframework.boot.loader.JarLauncher",
+                            "description": null
+                        }
+                    ]
+                }
+            ]
+        });
+
+        let actual: jars_protocal::GetJarsResponse = assert_ok!(serde_json::from_value(body));
+
+        let expected = jars_protocal::GetJarsResponse {
+            address: assert_ok!(Url::parse("http://dr-springline:8081")),
+            files: vec![
+                jars_protocal::JarFileInfo {
+                    id: JarId::new("40a90069-0f69-4c89-b4ba-77ec4e728d23_TopSpeedWindowing.jar"),
+                    name: "TopSpeedWindowing.jar".to_string(),
+                    uploaded: Timestamp::from_secs(1646632951534),
+                    entry: vec![jars_protocal::JarEntry {
+                        name: "org.apache.flink.streaming.examples.windowing.TopSpeedWindowing".to_string(),
+                        description: None,
+                    }],
+                },
+                jars_protocal::JarFileInfo {
+                    id: JarId::new("61fad403-bdc9-4d73-8375-15ee714cc692_flink-tutorials-0.0.1-SNAPSHOT.jar"),
+                    name: "flink-tutorials-0.0.1-SNAPSHOT.jar".to_string(),
+                    uploaded: Timestamp::from_secs(1646632920247),
+                    entry: vec![jars_protocal::JarEntry {
+                        name: "org.springframework.boot.loader.JarLauncher".to_string(),
+                        description: None,
+                    }],
+                },
+            ],
+        };
+
+        assert_eq!(actual, expected);
     }
 }

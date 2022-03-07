@@ -1,3 +1,5 @@
+use crate::model::MetricCatalog;
+use crate::phases::governance::GovernanceOutcome;
 use either::{Either, Left, Right};
 use once_cell::sync::Lazy;
 use proctor::error::MetricLabel;
@@ -8,12 +10,11 @@ pub use protocol::{ActEvent, ActMonitor};
 use std::time::Duration;
 use thiserror::Error;
 
-use crate::phases::governance::GovernanceOutcome;
-
 mod action;
 mod kubernetes;
 mod scale_actuator;
 
+pub use action::{FLINK_JOB_SAVEPOINT_WITH_CANCEL_TIME, FLINK_RESTART_JOB_TIME, FLINK_TASKMANAGER_PATCH_REPLICAS_TIME};
 pub use scale_actuator::ScaleActuator;
 
 #[derive(Debug, Error)]
@@ -26,7 +27,6 @@ pub enum ActError {
 
     // #[error("failure in kubernetes client: {0}")]
     // Kube(#[from] kube::Error),
-
     #[error("failure while calling Flink API: {0}")]
     Flink(#[from] crate::flink::FlinkError),
 

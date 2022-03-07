@@ -18,8 +18,8 @@ pub(crate) use context::{
 };
 pub(crate) use policy::ELIGIBILITY_POLICY_INELIGIBLE_DECISIONS_COUNT;
 
-pub use policy::{EligibilityPolicy, EligibilityTemplateData};
 use crate::model::MetricCatalog;
+pub use policy::{EligibilityPolicy, EligibilityTemplateData};
 
 pub type EligibilityOutcome = MetricCatalog;
 pub type EligibilityApi = proctor::elements::PolicyFilterApi<EligibilityContext, EligibilityTemplateData>;

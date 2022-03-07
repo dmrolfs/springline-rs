@@ -1,11 +1,10 @@
 use crate::settings::{KubernetesSettings, LoadKubeConfig};
 
-
-mod error;
 mod deploy;
+mod error;
 
 pub use deploy::DeployApi;
-pub use error::{KubernetesError, convert_kube_error};
+pub use error::{convert_kube_error, KubernetesError};
 
 //todo: consider representing as enum with Display and AsRef<str>
 pub const RUNNING_STATUS: &str = "Running";

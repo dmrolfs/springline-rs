@@ -1,3 +1,4 @@
+use crate::metrics::UpdateMetrics;
 use crate::phases::plan::ForecastInputs;
 use once_cell::sync::Lazy;
 use pretty_snowflake::{Id, Label};
@@ -11,7 +12,6 @@ use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use std::collections::HashSet;
 use std::time::Duration;
-use crate::metrics::UpdateMetrics;
 
 #[serde_as]
 #[derive(Label, Debug, Clone, Serialize, Deserialize)]

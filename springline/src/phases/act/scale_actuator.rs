@@ -3,6 +3,7 @@ use std::fmt;
 use std::sync::Arc;
 
 use super::{action, protocol};
+use crate::model::CorrelationId;
 use crate::phases::act::action::{ActionSession, ScaleAction};
 use crate::phases::act::{ActError, ActEvent};
 use crate::phases::governance::GovernanceOutcome;
@@ -19,7 +20,6 @@ use proctor::{AppData, ProctorResult, SharedString};
 use serde_json::json;
 use tokio::sync::broadcast;
 use tracing::Instrument;
-use crate::model::CorrelationId;
 
 const STAGE_NAME: &str = "execute_scaling";
 

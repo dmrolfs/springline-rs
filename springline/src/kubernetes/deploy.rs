@@ -1,13 +1,13 @@
-use k8s_openapi::api::apps::v1::{Deployment, StatefulSet};
-use kube::{Api, Client};
-use kube::api::{Patch, PatchParams};
-use serde_json::json;
+use crate::kubernetes::error;
+use crate::kubernetes::KubernetesError;
 use crate::model::CorrelationId;
 use crate::phases::act::ActError;
 use crate::settings::KubernetesDeployResource;
+use k8s_openapi::api::apps::v1::{Deployment, StatefulSet};
+use kube::api::{Patch, PatchParams};
+use kube::{Api, Client};
+use serde_json::json;
 use tracing::Instrument;
-use crate::kubernetes::error;
-use crate::kubernetes::KubernetesError;
 
 #[derive(Debug, Clone)]
 pub enum DeployApi {
@@ -36,15 +36,25 @@ impl DeployApi {
     pub async fn get_scale(&self, correlation: &CorrelationId) -> Result<Option<i32>, KubernetesError> {
         let span = tracing::info_span!("Kubernetes Admin Server", phase=%"act", action=%"get_scale", %correlation);
         let scale = match self {
-            Self::StatefulSet { name, api } => api.get_scale(name).instrument(span).await.map_err(error::convert_kube_error),
-            Self::Deployment { name, api } => api.get_scale(name).instrument(span).await.map_err(error::convert_kube_error),
+            Self::StatefulSet { name, api } => api
+                .get_scale(name)
+                .instrument(span)
+                .await
+                .map_err(error::convert_kube_error),
+            Self::Deployment { name, api } => api
+                .get_scale(name)
+                .instrument(span)
+                .await
+                .map_err(error::convert_kube_error),
         };
         let scale = scale.map(|s| s.spec.and_then(|ss| ss.replicas));
         tracing::info!("k8s scale received for {}: {:?}", self.name(), scale);
         scale
     }
 
-    pub async fn patch_scale(&self, replicas: usize, correlation: &CorrelationId) -> Result<Option<i32>, KubernetesError> {
+    pub async fn patch_scale(
+        &self, replicas: usize, correlation: &CorrelationId,
+    ) -> Result<Option<i32>, KubernetesError> {
         let span = tracing::info_span!("Kubernetes Admin Server", phase=%"act", action=%"patch_scale", %correlation);
         let params = PatchParams::default();
         let spec = json!({ "spec": { "replicas": replicas } });

@@ -3,9 +3,9 @@ use proctor::SharedString;
 use prometheus::Registry;
 
 use crate::engine::monitor;
-use crate::{flink, model};
 use crate::phases::{act, decision, eligibility, governance, plan, sense};
 use crate::Result;
+use crate::{flink, model};
 
 pub trait UpdateMetrics {
     fn update_metrics_for(name: SharedString) -> UpdateMetricsFn;
@@ -22,27 +22,15 @@ pub fn register_metrics(registry: &Registry) -> Result<()> {
     registry.register(Box::new(
         model::METRIC_CATALOG_JOB_HEALTH_NR_COMPLETED_CHECKPOINTS.clone(),
     ))?;
-    registry.register(Box::new(
-        model::METRIC_CATALOG_JOB_HEALTH_NR_FAILED_CHECKPOINTS.clone(),
-    ))?;
+    registry.register(Box::new(model::METRIC_CATALOG_JOB_HEALTH_NR_FAILED_CHECKPOINTS.clone()))?;
 
     registry.register(Box::new(model::METRIC_CATALOG_FLOW_RECORDS_IN_PER_SEC.clone()))?;
-    registry.register(Box::new(
-        model::METRIC_CATALOG_FLOW_RECORDS_OUT_PER_SEC.clone(),
-    ))?;
-    registry.register(Box::new(
-        model::METRIC_CATALOG_FLOW_INPUT_RECORDS_LAG_MAX.clone(),
-    ))?;
-    registry.register(Box::new(
-        model::METRIC_CATALOG_FLOW_INPUT_MILLIS_BEHIND_LATEST.clone(),
-    ))?;
-    registry.register(Box::new(
-        model::METRIC_CATALOG_CLUSTER_NR_TASK_MANAGERS.clone(),
-    ))?;
+    registry.register(Box::new(model::METRIC_CATALOG_FLOW_RECORDS_OUT_PER_SEC.clone()))?;
+    registry.register(Box::new(model::METRIC_CATALOG_FLOW_INPUT_RECORDS_LAG_MAX.clone()))?;
+    registry.register(Box::new(model::METRIC_CATALOG_FLOW_INPUT_MILLIS_BEHIND_LATEST.clone()))?;
+    registry.register(Box::new(model::METRIC_CATALOG_CLUSTER_NR_TASK_MANAGERS.clone()))?;
     registry.register(Box::new(model::METRIC_CATALOG_CLUSTER_TASK_CPU_LOAD.clone()))?;
-    registry.register(Box::new(
-        model::METRIC_CATALOG_CLUSTER_TASK_HEAP_MEMORY_USED.clone(),
-    ))?;
+    registry.register(Box::new(model::METRIC_CATALOG_CLUSTER_TASK_HEAP_MEMORY_USED.clone()))?;
     registry.register(Box::new(
         model::METRIC_CATALOG_CLUSTER_TASK_HEAP_MEMORY_COMMITTED.clone(),
     ))?;

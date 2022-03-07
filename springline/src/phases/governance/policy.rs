@@ -1,17 +1,17 @@
 use std::collections::{HashMap, HashSet};
 
+use crate::model::MetricCatalog;
 use oso::{Oso, PolarClass, PolarValue};
 use proctor::elements::{PolicySource, PolicySubscription, QueryPolicy, QueryResult, Telemetry};
 use proctor::error::PolicyError;
 use proctor::phases::sense::TelemetrySubscription;
 use proctor::{ProctorContext, SharedString};
 use serde::{Deserialize, Serialize};
-use crate::model::MetricCatalog;
 
 use super::context::GovernanceContext;
+use crate::metrics::UpdateMetrics;
 use crate::phases::plan::ScalePlan;
 use crate::settings::GovernanceSettings;
-use crate::metrics::UpdateMetrics;
 
 pub const ADJUSTED_TARGET: &str = "adjusted_target";
 

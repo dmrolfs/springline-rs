@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use lazy_static::lazy_static;
 use proctor::elements::Telemetry;
-use springline::phases::MC_FLOW__RECORDS_IN_PER_SEC;
+use springline::model::MC_FLOW__RECORDS_IN_PER_SEC;
 
 lazy_static! {
     pub static ref DT_1: DateTime<Utc> = DateTime::parse_from_str("2021-05-05T17:11:07.246310806Z", "%+")

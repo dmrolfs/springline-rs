@@ -1,5 +1,6 @@
 use std::fmt::Debug;
 
+use crate::model::MetricCatalog;
 use async_trait::async_trait;
 use proctor::elements::{RecordsPerSecond, Timestamp};
 use proctor::error::PlanError;
@@ -7,7 +8,6 @@ use proctor::graph::{Outlet, Port};
 use proctor::phases::plan::{PlanEvent, Planning};
 use std::sync::Arc;
 use tokio::sync::broadcast;
-use crate::model::MetricCatalog;
 
 use crate::phases::decision::DecisionResult;
 use crate::phases::plan::context::PlanningContext;
@@ -279,11 +279,11 @@ mod tests {
     use tokio_test::block_on;
 
     use super::*;
+    use crate::model::{ClusterMetrics, FlowMetrics, JobHealthMetrics};
     use crate::phases::plan::benchmark::*;
     use crate::phases::plan::forecast::*;
     use crate::phases::plan::performance_repository::*;
     use crate::phases::plan::{PerformanceRepositorySettings, MINIMAL_CLUSTER_SIZE};
-    use crate::phases::{ClusterMetrics, FlowMetrics, JobHealthMetrics};
 
     type TestPlanning = FlinkPlanning<LeastSquaresWorkloadForecaster>;
     #[allow(dead_code)]

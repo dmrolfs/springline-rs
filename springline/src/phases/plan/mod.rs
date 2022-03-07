@@ -22,6 +22,7 @@ mod performance_history;
 mod performance_repository;
 mod planning;
 
+use crate::model::{MetricCatalog, MC_FLOW__RECORDS_IN_PER_SEC};
 pub use context::{
     PlanningContext, PLANNING_CTX_FORECASTING_MAX_CATCH_UP_SECS, PLANNING_CTX_FORECASTING_RECOVERY_VALID_SECS,
     PLANNING_CTX_FORECASTING_RESTART_SECS, PLANNING_CTX_MIN_SCALING_STEP,
@@ -31,7 +32,6 @@ pub use model::ScalePlan;
 pub use performance_repository::make_performance_repository;
 pub use performance_repository::{PerformanceRepositorySettings, PerformanceRepositoryType};
 pub use planning::{FlinkPlanning, FlinkPlanningEvent, FlinkPlanningMonitor};
-use crate::model::{MC_FLOW__RECORDS_IN_PER_SEC, MetricCatalog};
 
 const MINIMAL_CLUSTER_SIZE: usize = 1;
 

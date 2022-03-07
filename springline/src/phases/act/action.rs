@@ -5,21 +5,27 @@ use crate::settings::ActionSettings;
 use async_trait::async_trait;
 use patch_replicas::PatchReplicas;
 
+use crate::flink::{JobId, JobSavepointReport};
+use crate::model::CorrelationId;
 use proctor::elements::{Telemetry, TelemetryValue};
 use proctor::AppData;
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::time::Duration;
-use crate::model::CorrelationId;
 
 mod patch_replicas;
+mod restart_jobs;
 mod savepoint;
-mod restart;
+
+pub use patch_replicas::FLINK_TASKMANAGER_PATCH_REPLICAS_TIME;
+pub use restart_jobs::FLINK_RESTART_JOB_TIME;
+pub use savepoint::FLINK_JOB_SAVEPOINT_WITH_CANCEL_TIME;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ActionSession<P> {
     pub plan: P,
-    pub data: Telemetry,
+    pub active_jobs: Option<Vec<JobId>>,
+    pub savepoints: Option<JobSavepointReport>,
     pub durations: HashMap<String, Duration>,
 }
 
@@ -30,14 +36,10 @@ where
     pub fn new(plan: P) -> Self {
         Self {
             plan,
-            data: Telemetry::default(),
+            active_jobs: None,
+            savepoints: None,
             durations: HashMap::new(),
         }
-    }
-
-    pub fn with_data(mut self, key: impl AsRef<str>, value: impl Into<TelemetryValue>) -> Self {
-        self.data.insert(key.as_ref().to_string(), value.into());
-        self
     }
 
     pub fn with_duration(mut self, label: impl AsRef<str>, duration: Duration) -> Self {
@@ -58,6 +60,6 @@ pub trait ScaleAction<P>: Debug + Send + Sync {
 pub fn make_action<T: AppData + ScaleActionPlan>(
     kube: &kube::Client, settings: &ActionSettings,
 ) -> Box<dyn ScaleAction<T>> {
-    let patch_replicas = PatchReplicas::new(&settings.taskmanager, kube);
+    let patch_replicas = PatchReplicas::new(patch_replicas::ACTION_LABEL, &settings.taskmanager, kube);
     Box::new(patch_replicas)
 }
