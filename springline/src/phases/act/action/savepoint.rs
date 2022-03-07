@@ -2,7 +2,7 @@ use crate::flink;
 use crate::flink::{FlinkContext, FlinkError, JobId, JobSavepointReport, OperationStatus, SavepointStatus};
 use crate::phases::act::action::{ActionSession, ScaleAction};
 use crate::phases::act::scale_actuator::ScaleActionPlan;
-use crate::phases::act::{ActError, CorrelationId};
+use crate::phases::act::ActError;
 
 use crate::settings::FlinkActionSettings;
 use async_trait::async_trait;
@@ -17,6 +17,7 @@ use std::future::Future;
 use std::time::Duration;
 use tracing::Instrument;
 use url::Url;
+use crate::model::CorrelationId;
 
 #[derive(Debug, Clone)]
 pub struct TriggerSavepoint<P> {

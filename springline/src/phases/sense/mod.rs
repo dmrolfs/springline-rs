@@ -7,9 +7,9 @@ use proctor::graph::stage::tick::{Tick, TickApi};
 use proctor::graph::stage::{SourceStage, WithApi};
 use proctor::phases::sense::builder::SenseBuilder;
 use proctor::phases::sense::{Sense, SensorSetting, TelemetrySensor};
+use crate::model::MetricCatalog;
 
 use crate::phases::sense::flink::FlinkSensorSpecification;
-use crate::phases::MetricCatalog;
 use crate::settings::SensorSettings;
 use crate::Result;
 

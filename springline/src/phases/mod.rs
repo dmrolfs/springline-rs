@@ -1,10 +1,8 @@
 // use fix_hidden_lifetime_bug;
-pub use metric_catalog::*;
-use proctor::elements::telemetry::UpdateMetricsFn;
 use proctor::graph::{Connect, SourceShape};
 use proctor::phases::policy_phase::PolicyPhase;
 use proctor::phases::sense::{ClearinghouseSubscriptionAgent, SubscriptionChannel, TelemetrySubscription};
-use proctor::{AppData, ProctorContext, SharedString};
+use proctor::{AppData, ProctorContext};
 use serde::Serialize;
 
 use crate::Result;
@@ -13,15 +11,10 @@ pub mod act;
 pub mod decision;
 pub mod eligibility;
 pub mod governance;
-pub mod metric_catalog;
 pub mod plan;
 pub mod sense;
 
 pub const REASON: &str = "reason";
-
-pub trait UpdateMetrics {
-    fn update_metrics_for(name: SharedString) -> UpdateMetricsFn;
-}
 
 #[tracing::instrument(level = "trace", skip(agent))]
 pub async fn subscribe_policy_phase<In, Out, C, D, A>(

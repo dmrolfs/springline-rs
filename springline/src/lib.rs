@@ -17,5 +17,6 @@ pub mod kubernetes;
 pub mod metrics;
 pub mod phases;
 pub mod settings;
+pub mod model;
 
 pub type Result<T> = anyhow::Result<T>;

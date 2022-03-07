@@ -3,13 +3,11 @@ use super::{api_model, Aggregation, MetricOrder, Unpack};
 use crate::flink::{self, JobDetail, JobId, JobSummary, VertexId};
 use crate::phases::sense::flink::api_model::FlinkMetricResponse;
 use crate::phases::sense::flink::{CorrelationGenerator, FlinkContext, OrdersByMetric, JOB_SCOPE, TASK_SCOPE};
-use crate::phases::{MetricCatalog, MC_CLUSTER__NR_ACTIVE_JOBS};
 use async_trait::async_trait;
 use cast_trait_object::dyn_upcast;
 use futures_util::TryFutureExt;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
-use pretty_snowflake::Id;
 use proctor::elements::{Telemetry, TelemetryValue};
 use proctor::error::SenseError;
 use proctor::graph::stage::{self, Stage};
@@ -23,6 +21,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing::Instrument;
 use url::Url;
+use crate::model::{CorrelationId, MC_CLUSTER__NR_ACTIVE_JOBS};
 
 /// Load telemetry for a specify scope from the Flink Job Manager REST API; e.g., Job or Taskmanager.
 /// Note: cast_trait_object issues a conflicting impl error if no generic is specified (at least for
@@ -206,7 +205,7 @@ where
     #[tracing::instrument(level = "info", skip(self, metric_telemetry, metric_orders))]
     async fn gather_vertex_telemetry(
         &self, job: JobSummary, metric_telemetry: Arc<Mutex<HashMap<String, Vec<TelemetryValue>>>>,
-        metric_orders: &OrdersByMetric, correlation: &Id<MetricCatalog>,
+        metric_orders: &OrdersByMetric, correlation: &CorrelationId,
     ) {
         if let Ok(detail) = self.query_job_details(&job.id).await {
             for vertex in detail.vertices.into_iter().filter(|v| v.status.is_active()) {
@@ -258,7 +257,7 @@ where
 
     #[tracing::instrument(level = "info", skip(self, metric_orders))]
     async fn query_vertex_telemetry(
-        &self, job_id: &JobId, vertex_id: &VertexId, metric_orders: &OrdersByMetric, correlation: &Id<MetricCatalog>,
+        &self, job_id: &JobId, vertex_id: &VertexId, metric_orders: &OrdersByMetric, correlation: &CorrelationId,
     ) -> Result<Telemetry, SenseError> {
         let mut url = self.context.jobs_endpoint();
         url.path_segments_mut()
@@ -284,7 +283,7 @@ where
 
     #[tracing::instrument(level = "info", skip(self, vertex_metrics_url, metric_orders))]
     async fn do_query_vertex_metric_picklist(
-        &self, vertex_metrics_url: Url, metric_orders: &OrdersByMetric, correlation: &Id<MetricCatalog>,
+        &self, vertex_metrics_url: Url, metric_orders: &OrdersByMetric, correlation: &CorrelationId,
     ) -> Result<Vec<String>, SenseError> {
         let _timer = start_flink_vertex_sensor_metric_picklist_time();
         let span = tracing::info_span!("query Flink vertex metric picklist", %correlation);
@@ -317,7 +316,7 @@ where
     #[tracing::instrument(level = "info", skip(self, picklist, metric_orders, vertex_metrics_url))]
     async fn do_query_vertex_available_telemetry(
         &self, picklist: Vec<String>, metric_orders: &OrdersByMetric, mut vertex_metrics_url: Url,
-        correlation: &Id<MetricCatalog>,
+        correlation: &CorrelationId,
     ) -> Result<Telemetry, SenseError> {
         let agg_span = Self::agg_span_for(&picklist, metric_orders);
         tracing::info!(
@@ -485,6 +484,7 @@ mod tests {
     use std::collections::HashSet;
     use std::sync::atomic::{AtomicU32, Ordering};
     use std::time::Duration;
+    use pretty_snowflake::Id;
     use tokio::sync::mpsc;
     use tokio_test::block_on;
     use url::Url;

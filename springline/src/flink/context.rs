@@ -1,10 +1,8 @@
 use crate::flink::error::FlinkError;
 use crate::flink::{self, model::JobSummary};
-use crate::phases::MetricCatalog;
 use crate::settings::FlinkSettings;
 use futures_util::TryFutureExt;
 use http::Method;
-use pretty_snowflake::Id;
 use proctor::error::UrlError;
 use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
 use reqwest_retry::policies::ExponentialBackoff;
@@ -13,6 +11,7 @@ use std::fmt;
 use std::sync::Arc;
 use tracing::Instrument;
 use url::Url;
+use crate::model::CorrelationId;
 
 #[derive(Debug, Clone)]
 pub struct FlinkContext {
@@ -60,7 +59,7 @@ impl FlinkContext {
     }
 
     #[tracing::instrument(level = "info", skip(self))]
-    pub async fn query_active_jobs(&self, correlation: &Id<MetricCatalog>) -> Result<Vec<JobSummary>, FlinkError> {
+    pub async fn query_active_jobs(&self, correlation: &CorrelationId) -> Result<Vec<JobSummary>, FlinkError> {
         self.inner.query_active_jobs(correlation).await
     }
 }
@@ -104,7 +103,7 @@ impl fmt::Debug for FlinkContextRef {
 }
 
 impl FlinkContextRef {
-    pub async fn query_active_jobs(&self, correlation: &Id<MetricCatalog>) -> Result<Vec<JobSummary>, FlinkError> {
+    pub async fn query_active_jobs(&self, correlation: &CorrelationId) -> Result<Vec<JobSummary>, FlinkError> {
         let _timer = flink::start_flink_active_jobs_timer();
         let span = tracing::info_span!("query Flink active jobs", %correlation);
 

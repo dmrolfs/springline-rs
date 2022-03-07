@@ -8,9 +8,11 @@ use proctor::phases::sense::TelemetrySubscription;
 use proctor::{ProctorContext, SharedString};
 use prometheus::{IntCounterVec, Opts};
 use serde::{Deserialize, Serialize};
+use crate::model::MetricCatalog;
+use crate::metrics::UpdateMetrics;
 
 use super::context::{ClusterStatus, EligibilityContext, TaskStatus};
-use crate::phases::{MetricCatalog, UpdateMetrics, REASON};
+use crate::phases::REASON;
 use crate::settings::EligibilitySettings;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

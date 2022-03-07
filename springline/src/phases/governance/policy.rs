@@ -6,11 +6,12 @@ use proctor::error::PolicyError;
 use proctor::phases::sense::TelemetrySubscription;
 use proctor::{ProctorContext, SharedString};
 use serde::{Deserialize, Serialize};
+use crate::model::MetricCatalog;
 
 use super::context::GovernanceContext;
 use crate::phases::plan::ScalePlan;
-use crate::phases::{MetricCatalog, UpdateMetrics};
 use crate::settings::GovernanceSettings;
+use crate::metrics::UpdateMetrics;
 
 pub const ADJUSTED_TARGET: &str = "adjusted_target";
 

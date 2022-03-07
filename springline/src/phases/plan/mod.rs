@@ -1,4 +1,3 @@
-use crate::phases::{MetricCatalog, MC_FLOW__RECORDS_IN_PER_SEC};
 use crate::settings::PlanSettings;
 use crate::Result;
 use once_cell::sync::Lazy;
@@ -32,6 +31,7 @@ pub use model::ScalePlan;
 pub use performance_repository::make_performance_repository;
 pub use performance_repository::{PerformanceRepositorySettings, PerformanceRepositoryType};
 pub use planning::{FlinkPlanning, FlinkPlanningEvent, FlinkPlanningMonitor};
+use crate::model::{MC_FLOW__RECORDS_IN_PER_SEC, MetricCatalog};
 
 const MINIMAL_CLUSTER_SIZE: usize = 1;
 

@@ -20,9 +20,10 @@ use crate::flink::FlinkContext;
 use crate::phases::act::ActMonitor;
 use crate::phases::governance::{self, GovernanceOutcome};
 use crate::phases::{act, decision, eligibility, plan, sense};
-use crate::phases::{MetricCatalog, UpdateMetrics};
 use crate::settings::Settings;
-use crate::{metrics, Result};
+use crate::Result;
+use crate::model::MetricCatalog;
+use crate::metrics::{self, UpdateMetrics};
 
 pub struct Autoscaler;
 impl Autoscaler {

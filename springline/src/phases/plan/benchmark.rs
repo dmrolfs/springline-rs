@@ -7,8 +7,8 @@ use approx::{AbsDiffEq, RelativeEq};
 use proctor::elements::{RecordsPerSecond, TelemetryType, TelemetryValue, ToTelemetry};
 use proctor::error::{PlanError, TelemetryError};
 use serde::{Deserialize, Serialize};
+use crate::model::MetricCatalog;
 
-use crate::phases::MetricCatalog;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct BenchmarkRange {

@@ -1,7 +1,7 @@
 use super::{FlinkScope, Unpack};
 use crate::flink;
 use crate::phases::sense::flink::{CorrelationGenerator, FlinkContext};
-use crate::phases::MC_CLUSTER__NR_TASK_MANAGERS;
+use crate::model::MC_CLUSTER__NR_TASK_MANAGERS;
 use async_trait::async_trait;
 use cast_trait_object::dyn_upcast;
 use futures_util::TryFutureExt;

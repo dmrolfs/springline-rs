@@ -1,5 +1,5 @@
 use crate::phases::act::scale_actuator::ScaleActionPlan;
-use crate::phases::act::{ActError, CorrelationId};
+use crate::phases::act::ActError;
 
 use crate::settings::ActionSettings;
 use async_trait::async_trait;
@@ -10,6 +10,7 @@ use proctor::AppData;
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::time::Duration;
+use crate::model::CorrelationId;
 
 mod patch_replicas;
 mod savepoint;

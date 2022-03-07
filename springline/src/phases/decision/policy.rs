@@ -8,11 +8,13 @@ use proctor::phases::sense::TelemetrySubscription;
 use proctor::{ProctorContext, ProctorIdGenerator, SharedString};
 use prometheus::{IntCounterVec, Opts};
 use serde::{Deserialize, Serialize};
+use crate::model::MetricCatalog;
 
 use super::context::DecisionContext;
 use crate::phases::decision::result::DECISION_DIRECTION;
-use crate::phases::{MetricCatalog, UpdateMetrics, REASON};
+use crate::phases::REASON;
 use crate::settings::DecisionSettings;
+use crate::metrics::UpdateMetrics;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]

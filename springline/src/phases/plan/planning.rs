@@ -7,6 +7,7 @@ use proctor::graph::{Outlet, Port};
 use proctor::phases::plan::{PlanEvent, Planning};
 use std::sync::Arc;
 use tokio::sync::broadcast;
+use crate::model::MetricCatalog;
 
 use crate::phases::decision::DecisionResult;
 use crate::phases::plan::context::PlanningContext;
@@ -15,7 +16,6 @@ use crate::phases::plan::model::ScalePlan;
 use crate::phases::plan::performance_history::PerformanceHistory;
 use crate::phases::plan::performance_repository::PerformanceRepository;
 use crate::phases::plan::{PlanningMeasurement, PLANNING_FORECASTED_WORKLOAD};
-use crate::phases::MetricCatalog;
 
 // todo: this needs to be worked into Plan stage...  Need to determine best design
 // todo: pub type FlinkPlanningApi = mpsc::UnboundedSender<FlinkPlanningCmd>;

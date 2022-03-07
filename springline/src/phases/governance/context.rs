@@ -11,8 +11,8 @@ use proctor::phases::sense::SubscriptionRequirements;
 use proctor::{ProctorContext, SharedString};
 use prometheus::IntGauge;
 use serde::{Deserialize, Serialize};
+use crate::metrics::UpdateMetrics;
 
-use crate::phases::UpdateMetrics;
 
 #[derive(PolarClass, Label, Debug, Clone, Serialize, Deserialize)]
 pub struct GovernanceContext {

@@ -13,9 +13,10 @@ use proctor::elements::PolicySubscription;
 use proctor::phases::policy_phase::PolicyPhase;
 use proctor::phases::sense::{ClearinghouseSubscriptionAgent, SubscriptionChannel};
 use proctor::SharedString;
+use crate::model::MetricCatalog;
 
+use crate::phases;
 use crate::phases::eligibility::EligibilityOutcome;
-use crate::phases::{self, MetricCatalog};
 use crate::settings::DecisionSettings;
 use crate::Result;
 

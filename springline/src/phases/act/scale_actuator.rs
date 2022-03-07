@@ -6,7 +6,6 @@ use super::{action, protocol};
 use crate::phases::act::action::{ActionSession, ScaleAction};
 use crate::phases::act::{ActError, ActEvent};
 use crate::phases::governance::GovernanceOutcome;
-use crate::phases::MetricCatalog;
 use crate::settings::{ActionSettings, KubernetesDeployResource, TaskmanagerContext};
 use async_trait::async_trait;
 use cast_trait_object::dyn_upcast;
@@ -20,18 +19,19 @@ use proctor::{AppData, ProctorResult, SharedString};
 use serde_json::json;
 use tokio::sync::broadcast;
 use tracing::Instrument;
+use crate::model::CorrelationId;
 
 const STAGE_NAME: &str = "execute_scaling";
 
 pub trait ScaleActionPlan {
-    fn correlation(&self) -> Id<MetricCatalog>;
+    fn correlation(&self) -> CorrelationId;
     fn recv_timestamp(&self) -> Timestamp;
     fn current_replicas(&self) -> usize;
     fn target_replicas(&self) -> usize;
 }
 
 impl ScaleActionPlan for GovernanceOutcome {
-    fn correlation(&self) -> Id<MetricCatalog> {
+    fn correlation(&self) -> CorrelationId {
         self.correlation_id.clone()
     }
 

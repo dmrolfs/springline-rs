@@ -1,5 +1,4 @@
 use crate::phases::act::ActError;
-use crate::phases::MetricCatalog;
 use crate::settings::KubernetesDeployResource;
 use k8s_openapi::api::apps::v1::{Deployment, StatefulSet};
 use k8s_openapi::api::core::v1::Pod;
@@ -8,6 +7,7 @@ use kube::{Api, Client};
 use pretty_snowflake::Id;
 use serde_json::json;
 use tracing_futures::Instrument;
+use crate::model::CorrelationId;
 
 pub const RUNNING_STATUS: &str = "Running";
 // pub const PENDING_STATUS: &str = "Pending";
@@ -68,7 +68,7 @@ impl DeployApi {
         }
     }
 
-    pub async fn get_scale(&self, correlation: &Id<MetricCatalog>) -> Result<Option<i32>, ActError> {
+    pub async fn get_scale(&self, correlation: &CorrelationId) -> Result<Option<i32>, ActError> {
         let span = tracing::info_span!("Kubernetes Admin Server", phase=%"act", action=%"get_scale", %correlation);
         let scale = match self {
             Self::StatefulSet { name, api } => api.get_scale(name).instrument(span).await.map_err(convert_kube_error),
@@ -79,7 +79,7 @@ impl DeployApi {
         scale
     }
 
-    pub async fn patch_scale(&self, replicas: usize, correlation: &Id<MetricCatalog>) -> Result<Option<i32>, ActError> {
+    pub async fn patch_scale(&self, replicas: usize, correlation: &CorrelationId) -> Result<Option<i32>, ActError> {
         let span = tracing::info_span!("Kubernetes Admin Server", phase=%"act", action=%"patch_scale", %correlation);
         let params = PatchParams::default();
         let spec = json!({ "spec": { "replicas": replicas } });

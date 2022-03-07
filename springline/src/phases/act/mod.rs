@@ -6,7 +6,6 @@ use proctor::SharedString;
 use prometheus::{Histogram, HistogramOpts, IntCounterVec, Opts};
 pub use protocol::{ActEvent, ActMonitor};
 use std::time::Duration;
-use pretty_snowflake::Id;
 use thiserror::Error;
 
 use crate::phases::governance::GovernanceOutcome;
@@ -16,9 +15,6 @@ mod kubernetes;
 mod scale_actuator;
 
 pub use scale_actuator::ScaleActuator;
-use crate::phases::MetricCatalog;
-
-type CorrelationId = Id<MetricCatalog>;
 
 #[derive(Debug, Error)]
 pub enum ActError {

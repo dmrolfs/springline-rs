@@ -9,11 +9,13 @@ use proctor::elements::telemetry::UpdateMetricsFn;
 use proctor::elements::{telemetry, Telemetry, Timestamp};
 use proctor::error::{PolicyError, ProctorError};
 use proctor::phases::sense::SubscriptionRequirements;
-use proctor::SharedString;
+use proctor::{ProctorIdGenerator, SharedString};
 use prometheus::{Gauge, IntGauge};
 use serde::{Deserialize, Serialize};
+use crate::metrics::UpdateMetrics;
 
-use crate::phases::UpdateMetrics;
+pub type CorrelationId = Id<MetricCatalog>;
+pub type CorrelationGenerator = ProctorIdGenerator<MetricCatalog>;
 
 // #[serde_as]
 #[derive(PolarClass, Label, PartialEq, Clone, Serialize, Deserialize)]
