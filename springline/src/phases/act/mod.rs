@@ -21,11 +21,11 @@ pub enum ActError {
     #[error("Action timed out after {0:?}: {1}")]
     Timeout(Duration, String),
 
-    #[error("failure in kubernetes client: {0}")]
-    Kube(#[from] kube::Error),
+    #[error("failure into kubernetes: {0}")]
+    Kubernetes(#[from] crate::kubernetes::KubernetesError),
 
-    #[error("failure in kubernetes api:{0}")]
-    KubeApi(#[from] kube::error::ErrorResponse),
+    // #[error("failure in kubernetes client: {0}")]
+    // Kube(#[from] kube::Error),
 
     #[error("failure while calling Flink API: {0}")]
     Flink(#[from] crate::flink::FlinkError),
@@ -52,8 +52,9 @@ impl MetricLabel for ActError {
     fn next(&self) -> Either<SharedString, Box<&dyn MetricLabel>> {
         match self {
             Self::Timeout(_, _) => Left("timeout".into()),
-            Self::Kube(_) => Left("kubernetes".into()),
-            Self::KubeApi(e) => Left(format!("kubernetes::{}", e.reason).into()),
+            Self::Kubernetes(_) => Left("kubernetes".into()),
+            // Self::Kube(_) => Left("kubernetes".into()),
+            // Self::KubeApi(e) => Left(format!("kubernetes::{}", e.reason).into()),
             Self::Flink(e) => Right(Box::new(e)),
             Self::Savepoint { .. } => Left("savepoint".into()),
             Self::Port(e) => Right(Box::new(e)),

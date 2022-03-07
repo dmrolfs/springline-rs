@@ -202,16 +202,17 @@ where
         }
     }
 
+    #[deprecated(note = "use action::patch_replicas instead")]
     #[tracing::instrument(level = "info", skip(stateful_set))]
     async fn patch_replicas_for(
         plan: &In, stateful_set: &kube::Api<StatefulSet>, workload_resource: &KubernetesDeployResource,
     ) -> Result<(), ActError> {
-        fn convert_kube_error(error: kube::Error) -> ActError {
-            match error {
-                kube::Error::Api(resp) => resp.into(),
-                err => err.into(),
-            }
-        }
+        // fn convert_kube_error(error: kube::Error) -> ActError {
+        //     match error {
+        //         kube::Error::Api(resp) => resp.into(),
+        //         err => err.into(),
+        //     }
+        // }
 
         let name = workload_resource.get_name();
         let target_nr_task_managers = plan.target_replicas();
@@ -227,7 +228,7 @@ where
             .get_scale(name)
             .instrument(k8s_get_scale_span)
             .await
-            .map_err(convert_kube_error)?;
+            .map_err(crate::kubernetes::convert_kube_error)?;
         tracing::info!("scale recv for {}: {:?}", name, original_scale.spec);
 
         let k8s_patch_scale_span = tracing::info_span!(
@@ -243,7 +244,7 @@ where
             .patch_scale(name, &patch_params, &kube::api::Patch::Merge(&fs))
             .instrument(k8s_patch_scale_span)
             .await
-            .map_err(convert_kube_error)?;
+            .map_err(crate::kubernetes::convert_kube_error)?;
 
         tracing::info!("Patched scale for {}: {:?}", name, patched_scale.spec);
         if let Some(original_nr_task_managers) = original_scale.spec.clone().and_then(|s| s.replicas) {

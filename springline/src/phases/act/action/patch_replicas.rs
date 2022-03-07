@@ -1,7 +1,7 @@
+use crate::kubernetes;
+use crate::phases::act::{self, ActError};
 use crate::phases::act::action::{ActionSession, ScaleAction};
-use crate::phases::act::kubernetes::{self, DeployApi};
 use crate::phases::act::scale_actuator::ScaleActionPlan;
-use crate::phases::act::ActError;
 use crate::settings::{self, KubernetesApiConstraints, KubernetesDeployResource};
 use async_trait::async_trait;
 use k8s_openapi::api::core::v1::Pod;
@@ -10,6 +10,8 @@ use kube::{Api, Client};
 use proctor::AppData;
 use std::collections::HashMap;
 use tokio::time::Instant;
+use crate::kubernetes::DeployApi;
+use crate::phases::act::kubernetes::TaskmanagerContext;
 
 const ACTION_LABEL: &str = "patch_replicas";
 
@@ -18,7 +20,7 @@ pub struct PatchReplicas<P> {
     pub label_selector: String,
     pub deploy_resource: KubernetesDeployResource,
     pub api_constraints: KubernetesApiConstraints,
-    pub taskmanagers: kubernetes::TaskmanagerContext,
+    pub taskmanagers: TaskmanagerContext,
     marker: std::marker::PhantomData<P>,
 }
 
@@ -27,7 +29,7 @@ impl<P> PatchReplicas<P> {
         let label_selector = scale_target.label_selector.clone();
         let deploy_resource = scale_target.deploy_resource.clone();
         let api_constraints = scale_target.kubernetes_api;
-        let taskmanagers = kubernetes::TaskmanagerContext {
+        let taskmanagers = TaskmanagerContext {
             deploy: DeployApi::from_kubernetes_resource(&scale_target.deploy_resource, kube),
             pods: Api::default_namespaced(kube.clone()),
             params: ListParams {
@@ -64,14 +66,14 @@ where
             .deploy
             .get_scale(&correlation)
             .await
-            .map_err(|err| (err, session.clone()))?;
+            .map_err(|err| (err.into(), session.clone()))?;
         tracing::info!(%nr_target_taskmanagers, ?original_nr_taskmanager_replicas, "patching to scale taskmanager replicas");
         let patched_nr_taskmanager_replicas = self
             .taskmanagers
             .deploy
             .patch_scale(nr_target_taskmanagers, &correlation)
             .await
-            .map_err(|err| (err, session.clone()))?;
+            .map_err(|err| (err.into(), session.clone()))?;
         tracing::info!(
             %nr_target_taskmanagers, ?original_nr_taskmanager_replicas, ?patched_nr_taskmanager_replicas,
             "patched taskmanager replicas"
