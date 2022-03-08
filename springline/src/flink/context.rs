@@ -12,6 +12,7 @@ use std::fmt;
 use std::sync::Arc;
 use tracing::Instrument;
 use url::Url;
+use crate::flink::model::JarSummary;
 
 #[derive(Debug, Clone)]
 pub struct FlinkContext {
@@ -26,12 +27,19 @@ impl FlinkContext {
             .map_err(|_| UrlError::UrlCannotBeBase(base_url.clone()))?
             .push("jobs");
 
+        let mut jars_endpoint = base_url.clone();
+        jars_endpoint
+            .path_segments_mut()
+            .map_err(|_| UrlError::UrlCannotBeBase(base_url.clone()))?
+            .push("jars");
+
         Ok(Self {
             inner: Arc::new(FlinkContextRef {
                 cluster_label: label.into(),
                 client,
                 base_url,
                 jobs_endpoint,
+                jars_endpoint,
             }),
         })
     }
@@ -62,6 +70,11 @@ impl FlinkContext {
     pub async fn query_active_jobs(&self, correlation: &CorrelationId) -> Result<Vec<JobSummary>, FlinkError> {
         self.inner.query_active_jobs(correlation).await
     }
+
+    #[tracing::instrument(level = "info", skip(self))]
+    pub async fn query_uploaded_jars(&self, correlation: &CorrelationId) -> Result<Vec<JarSummary>, FlinkError> {
+        self.inner.query_uploaded_jars(correlation).await
+    }
 }
 
 fn make_http_client(settings: &FlinkSettings) -> Result<ClientWithMiddleware, FlinkError> {
@@ -91,6 +104,7 @@ struct FlinkContextRef {
     pub client: ClientWithMiddleware,
     pub base_url: Url,
     pub jobs_endpoint: Url,
+    pub jars_endpoint: Url,
 }
 
 impl fmt::Debug for FlinkContextRef {
@@ -99,18 +113,45 @@ impl fmt::Debug for FlinkContextRef {
             .field("cluster_label", &self.cluster_label)
             .field("base_url", &self.base_url)
             .field("jobs_endpoint", &self.jobs_endpoint)
+            .field("jars_endpoint", &self.jars_endpoint)
             .finish()
     }
 }
 
 impl FlinkContextRef {
     #[tracing::instrument(level = "info", skip(self))]
-    async fn query_uploaded_jars(&self, correlation: &CorrelationId) -> Result<Vec<JarId>, FlinkError> {
+    async fn query_uploaded_jars(&self, correlation: &CorrelationId) -> Result<Vec<JarSummary>, FlinkError> {
         let _timer = flink::start_flink_uploaded_jars_timer(self.cluster_label.as_str());
         let span = tracing::info_span!("query Flink uploaded jars", %correlation);
 
-        // let result: Result<Vec<>>
-        todo!()
+        let result: Result<Vec<JarSummary>, FlinkError> = self
+            .client
+            .request(Method::GET, self.jars_endpoint.clone())
+            .send()
+            .map_err(|error| {
+                tracing::error!(?error, "failed Flink API jar_summary response");
+                error.into()
+            })
+            .and_then(|response| {
+                flink::log_response("uploaded jars", &response);
+                response.text().map_err(|err| err.into())
+            })
+            .instrument(span)
+            .await
+            .and_then(|body| {
+                let response = serde_json::from_str(body.as_str());
+                tracing::info!(%body, ?response, "Flink jar summery response body");
+                response.map(|resp: jars_protocal::GetJarsResponse| resp.files).map_err(|err| err.into())
+            });
+
+        match result {
+            Ok(jars) => Ok(jars),
+            Err(err) => {
+                tracing::error!(error=?err, "failed to query Flink uploaded jars");
+                flink::track_flink_errors(super::ACTIVE_JOBS, &err);
+                Err(err)
+            },
+        }
     }
 
     pub async fn query_active_jobs(&self, correlation: &CorrelationId) -> Result<Vec<JobSummary>, FlinkError> {
@@ -169,10 +210,9 @@ impl FlinkContextRef {
 }
 
 mod jars_protocal {
-    use super::JarId;
-    use proctor::elements::Timestamp;
     use serde::{Deserialize, Serialize};
     use url::Url;
+    use crate::flink::model::JarSummary;
 
     #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
     pub struct GetJarsResponse {
@@ -181,34 +221,7 @@ mod jars_protocal {
             deserialize_with = "proctor::serde::deserialize_from_str"
         )]
         pub address: Url,
-        pub files: Vec<JarFileInfo>,
-    }
-
-    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-    pub struct JarFileInfo {
-        pub id: JarId,
-
-        pub name: String,
-
-        #[serde(
-            serialize_with = "Timestamp::serialize_as_secs_i64",
-            deserialize_with = "Timestamp::deserialize_secs_i64"
-        )]
-        pub uploaded: Timestamp,
-
-        pub entry: Vec<JarEntry>,
-    }
-
-    impl JarFileInfo {
-        pub const fn timestamp_as_secs(ts: Timestamp) -> i64 {
-            Timestamp::as_secs(&ts)
-        }
-    }
-
-    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-    pub struct JarEntry {
-        pub name: String,
-        pub description: Option<String>,
+        pub files: Vec<JarSummary>,
     }
 }
 

@@ -58,6 +58,7 @@ where
         let timer = start_flink_job_savepoint_with_cancel_timer(&self.flink);
 
         let correlation = session.correlation();
+        //todo: consider moving this to context channel?? would support keeping track of jar and job?
         let active_jobs: Vec<JobId> = self
             .flink
             .query_active_jobs(&correlation)

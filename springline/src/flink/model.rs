@@ -89,6 +89,27 @@ impl TaskState {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct JarSummary {
+    pub id: JarId,
+
+    pub name: String,
+
+    #[serde(
+        serialize_with = "Timestamp::serialize_as_secs_i64",
+        deserialize_with = "Timestamp::deserialize_secs_i64"
+    )]
+    pub uploaded_at: Timestamp,
+
+    pub entry: Vec<JarEntry>
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct JarEntry {
+    pub name: String,
+    pub description: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct JarId(String);
 

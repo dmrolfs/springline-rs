@@ -46,28 +46,9 @@ where
 
         let parallelism = session.plan.target_replicas();
 
-        if let Some((active_jobs, savepoints)) = Self::extract_data_from(&session) {
+        if let Some((active_jobs,savepoints)) = Self::jobs_savepoints_from(&session) {
             todo!()
         }
-        // let (active_jobs, savepoints) = match (session.active_jobs, session.savepoints.as_ref()) {
-        //     (None, None) => {
-        //         tracing::warn!(?session, "No active jobs and no savepoints found in session to restart - skipping {ACTION_LABEL}.");
-        //         return Ok(session);
-        //     },
-        //     (None, _) => {},
-        // };
-        //
-        // let active_jobs = match session.active_jobs {
-        //     None => {
-        //         tracing::warn!(?session, "No active jobs found in session to restart - skipping {ACTION_LABEL}.");
-        //         return Ok(session);
-        //     },
-        //     Some(empty) if empty.is_empty() => {
-        //         tracing::warn!(?session, "Empty active jobs list found in session; nothing to restart -- skipping {ACTION_LABEL}");;
-        //         return Ok(session);
-        //     },
-        //     Some(jobs) => jobs,
-        // };
 
         // ---- query for jar id
         // let jars = self.query_uploaded_jars(&correlation).await?;
@@ -81,7 +62,7 @@ where
 
         // ---- for all started job_ids confirm (with budget) that they are running
 
-        todo!()
+        Ok(session.with_duration(ACTION_LABEL, Duration::from_secs_f64(timer.stop_and_record())))
     }
 }
 
@@ -90,7 +71,7 @@ where
     P: AppData + ScaleActionPlan,
 {
     #[allow(clippy::cognitive_complexity)]
-    fn extract_data_from(session: &ActionSession<P>) -> Option<(&[JobId], &JobSavepointReport)> {
+    fn jobs_savepoints_from(session: &ActionSession<P>) -> Option<(&[JobId], &JobSavepointReport)> {
         match (&session.active_jobs, session.savepoints.as_ref()) {
             //todo reconsider in cluster vs standalone support
             (None, None) => {

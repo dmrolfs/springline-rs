@@ -5,7 +5,7 @@ use crate::settings::ActionSettings;
 use async_trait::async_trait;
 use patch_replicas::PatchReplicas;
 
-use crate::flink::{JobId, JobSavepointReport};
+use crate::flink::{JarId, JobId, JobSavepointReport};
 use crate::model::CorrelationId;
 use proctor::elements::{Telemetry, TelemetryValue};
 use proctor::AppData;
@@ -16,6 +16,7 @@ use std::time::Duration;
 mod patch_replicas;
 mod restart_jobs;
 mod savepoint;
+mod prepare_data;
 
 pub use patch_replicas::FLINK_TASKMANAGER_PATCH_REPLICAS_TIME;
 pub use restart_jobs::FLINK_RESTART_JOB_TIME;
@@ -25,6 +26,7 @@ pub use savepoint::FLINK_JOB_SAVEPOINT_WITH_CANCEL_TIME;
 pub struct ActionSession<P> {
     pub plan: P,
     pub active_jobs: Option<Vec<JobId>>,
+    pub uploaded_jars: Option<Vec<JarId>>,
     pub savepoints: Option<JobSavepointReport>,
     pub durations: HashMap<String, Duration>,
 }
@@ -37,6 +39,7 @@ where
         Self {
             plan,
             active_jobs: None,
+            uploaded_jars: None,
             savepoints: None,
             durations: HashMap::new(),
         }
