@@ -207,7 +207,7 @@ where
         &self, job: JobSummary, metric_telemetry: Arc<Mutex<HashMap<String, Vec<TelemetryValue>>>>,
         metric_orders: &OrdersByMetric, correlation: &CorrelationId,
     ) {
-        if let Ok(detail) = self.query_job_details(&job.id).await {
+        if let Ok(detail) = self.context.query_job_details(&job.id, correlation).await {
             for vertex in detail.vertices.into_iter().filter(|v| v.status.is_active()) {
                 if let Ok(vertex_telemetry) = self
                     .query_vertex_telemetry(&job.id, &vertex.id, metric_orders, correlation)
@@ -218,41 +218,6 @@ where
                 }
             }
         }
-    }
-
-    #[tracing::instrument(level = "info", skip(self))]
-    async fn query_job_details(&self, job_id: &JobId) -> Result<JobDetail, SenseError> {
-        let mut url = self.context.jobs_endpoint();
-        url.path_segments_mut()
-            .map_err(|_| SenseError::NotABaseUrl(self.context.jobs_endpoint()))?
-            .push(job_id.as_ref());
-
-        let _timer = start_flink_query_job_detail_timer();
-        let span = tracing::info_span!("query FLink job detail");
-
-        let result: Result<JobDetail, SenseError> = self
-            .context
-            .client()
-            .request(Method::GET, url)
-            .send()
-            .map_err(|error| {
-                tracing::error!(?error, "failed Flink API job_detail response");
-                error.into()
-            })
-            .and_then(|response| {
-                flink::log_response("job detail", &response);
-                response.text().map_err(|err| err.into())
-            })
-            .instrument(span)
-            .await
-            // .map_err(|err| err.into())
-            .and_then(|body| {
-                let result = serde_json::from_str(body.as_str()).map_err(|err| err.into());
-                tracing::info!(%body, ?result, "Flink job detail response body");
-                result
-            });
-
-        super::identity_or_track_error(FlinkScope::Jobs, result)
     }
 
     #[tracing::instrument(level = "info", skip(self, metric_orders))]
@@ -392,23 +357,6 @@ where
         self.outlet.close().await;
         Ok(())
     }
-}
-
-pub static FLINK_QUERY_JOB_DETAIL_TIME: Lazy<HistogramVec> = Lazy::new(|| {
-    HistogramVec::new(
-        HistogramOpts::new(
-            "flink_query_job_detail_time",
-            "Time spent collecting job detail from Flink in seconds",
-        )
-        .buckets(vec![0.2, 0.225, 0.25, 0.275, 0.3, 0.35, 0.4, 0.45, 0.5, 0.75, 1.0]),
-        &["flink_scope"],
-    )
-    .expect("failed creating flink_query_job_detail_time metric")
-});
-
-#[inline]
-fn start_flink_query_job_detail_timer() -> HistogramTimer {
-    FLINK_QUERY_JOB_DETAIL_TIME.with_label_values(&[JOB_SCOPE]).start_timer()
 }
 
 pub static FLINK_VERTEX_SENSOR_TIME: Lazy<HistogramVec> = Lazy::new(|| {

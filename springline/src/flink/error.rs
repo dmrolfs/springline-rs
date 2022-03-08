@@ -10,6 +10,9 @@ pub enum FlinkError {
     #[error("{0}")]
     Url(#[from] proctor::error::UrlError),
 
+    #[error("supplied flink url cannot be a base to query: {0}")]
+    NotABaseUrl(url::Url),
+
     #[error("Flink REST API call failed: {0}")]
     HttpRequest(#[from] reqwest::Error),
 
@@ -43,6 +46,7 @@ impl MetricLabel for FlinkError {
     fn next(&self) -> Either<SharedString, Box<&dyn MetricLabel>> {
         match self {
             Self::Url(err) => Right(Box::new(err)),
+            Self::NotABaseUrl(_) => Left("http::url::NotABaseUrl".into()),
             Self::HttpRequest(_) => Left("http::request".into()),
             Self::HttpMiddleware(_) => Left("http::middleware".into()),
             Self::InvalidRequestHeaderDetail(_) => Left("http::header".into()),

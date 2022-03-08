@@ -24,7 +24,7 @@ mod vertex_sensor;
 use crate::model::{CorrelationGenerator, MC_FLOW__RECORDS_IN_PER_SEC};
 pub use metric_order::{Aggregation, FlinkScope, MetricOrder};
 pub use vertex_sensor::{
-    FLINK_QUERY_JOB_DETAIL_TIME, FLINK_VERTEX_SENSOR_AVAIL_TELEMETRY_TIME, FLINK_VERTEX_SENSOR_METRIC_PICKLIST_TIME,
+    FLINK_VERTEX_SENSOR_AVAIL_TELEMETRY_TIME, FLINK_VERTEX_SENSOR_METRIC_PICKLIST_TIME,
     FLINK_VERTEX_SENSOR_TIME,
 };
 
