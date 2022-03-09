@@ -14,7 +14,10 @@ mod action;
 mod kubernetes;
 mod scale_actuator;
 
-pub use action::{FLINK_JOB_SAVEPOINT_WITH_CANCEL_TIME, FLINK_RESTART_JOB_TIME, FLINK_TASKMANAGER_PATCH_REPLICAS_TIME};
+pub use action::{
+    FLINK_JOB_SAVEPOINT_WITH_CANCEL_TIME, FLINK_MISSED_JAR_RESTARTS, FLINK_RESTART_JOB_TIME,
+    FLINK_TASKMANAGER_PATCH_REPLICAS_TIME,
+};
 pub use scale_actuator::ScaleActuator;
 
 #[derive(Debug, Error)]

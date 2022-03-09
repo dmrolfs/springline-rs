@@ -195,7 +195,7 @@ where
                     },
                 }
 
-                tokio::time::sleep(self.savepoint_timeout).await;
+                tokio::time::sleep(self.polling_interval).await;
             }
 
             result.expect("savepoint status should have been populated")

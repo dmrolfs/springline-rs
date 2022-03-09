@@ -14,12 +14,12 @@ use std::fmt::Debug;
 use std::time::Duration;
 
 mod patch_replicas;
+mod prepare_data;
 mod restart_jobs;
 mod savepoint;
-mod prepare_data;
 
 pub use patch_replicas::FLINK_TASKMANAGER_PATCH_REPLICAS_TIME;
-pub use restart_jobs::FLINK_RESTART_JOB_TIME;
+pub use restart_jobs::{FLINK_MISSED_JAR_RESTARTS, FLINK_RESTART_JOB_TIME};
 pub use savepoint::FLINK_JOB_SAVEPOINT_WITH_CANCEL_TIME;
 
 #[derive(Debug, Clone, PartialEq)]

@@ -1,5 +1,6 @@
 use crate::flink::error::FlinkError;
-use crate::flink::{self, model::JobSummary, JarId, JobId, JobDetail};
+use crate::flink::model::JarSummary;
+use crate::flink::{self, model::JobSummary, JarId, JobDetail, JobId};
 use crate::model::{CorrelationId, MetricCatalog};
 use crate::settings::FlinkSettings;
 use futures_util::TryFutureExt;
@@ -12,7 +13,6 @@ use std::fmt;
 use std::sync::Arc;
 use tracing::Instrument;
 use url::Url;
-use crate::flink::model::JarSummary;
 
 #[derive(Debug, Clone)]
 pub struct FlinkContext {
@@ -66,13 +66,19 @@ impl FlinkContext {
         self.inner.jobs_endpoint.clone()
     }
 
+    pub fn jars_endpoint(&self) -> Url {
+        self.inner.jars_endpoint.clone()
+    }
+
     #[tracing::instrument(level = "info", skip(self))]
     pub async fn query_active_jobs(&self, correlation: &CorrelationId) -> Result<Vec<JobSummary>, FlinkError> {
         self.inner.query_active_jobs(correlation).await
     }
 
     #[tracing::instrument(level = "info", skip(self))]
-    pub async fn query_job_details(&self, job_id: &JobId, correlation: &CorrelationId) -> Result<JobDetail, FlinkError> {
+    pub async fn query_job_details(
+        &self, job_id: &JobId, correlation: &CorrelationId,
+    ) -> Result<JobDetail, FlinkError> {
         self.inner.query_job_details(job_id, correlation).await
     }
 
@@ -146,10 +152,17 @@ impl FlinkContextRef {
             .and_then(|body| {
                 let response = serde_json::from_str(body.as_str());
                 tracing::info!(%body, ?response, "Flink jar summery response body");
-                response.map(|resp: jars_protocal::GetJarsResponse| resp.files).map_err(|err| err.into())
+                response
+                    .map(|resp: jars_protocal::GetJarsResponse| resp.files)
+                    .map_err(|err| err.into())
             });
 
-        flink::track_result("uploaded_jars", result, "failed to query Flink uploaded jars", correlation)
+        flink::track_result(
+            "uploaded_jars",
+            result,
+            "failed to query Flink uploaded jars",
+            correlation,
+        )
     }
 
     pub async fn query_active_jobs(&self, correlation: &CorrelationId) -> Result<Vec<JobSummary>, FlinkError> {
@@ -199,7 +212,9 @@ impl FlinkContextRef {
         flink::track_result("active_jobs", result, "failed to query Flink active jobs", correlation)
     }
 
-    pub async fn query_job_details(&self, job_id: &JobId, correlation: &CorrelationId) -> Result<JobDetail, FlinkError> {
+    pub async fn query_job_details(
+        &self, job_id: &JobId, correlation: &CorrelationId,
+    ) -> Result<JobDetail, FlinkError> {
         let mut url = self.jobs_endpoint.clone();
         url.path_segments_mut()
             .map_err(|_| FlinkError::NotABaseUrl(self.jobs_endpoint.clone()))?
@@ -233,9 +248,9 @@ impl FlinkContextRef {
 }
 
 mod jars_protocal {
+    use crate::flink::model::JarSummary;
     use serde::{Deserialize, Serialize};
     use url::Url;
-    use crate::flink::model::JarSummary;
 
     #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
     pub struct GetJarsResponse {

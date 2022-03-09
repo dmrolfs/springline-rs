@@ -1,7 +1,7 @@
 use super::FlinkError;
 use either::Either;
 use std::collections::HashMap;
-use std::fmt::{self, Display};
+use std::fmt::{self, Display, Formatter};
 use std::hash::Hash;
 use std::marker::PhantomData;
 use std::time::Duration;
@@ -101,7 +101,7 @@ pub struct JarSummary {
     )]
     pub uploaded_at: Timestamp,
 
-    pub entry: Vec<JarEntry>
+    pub entry: Vec<JarEntry>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -453,7 +453,7 @@ pub enum OperationStatus {
     Completed,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct SavepointLocation(String);
 
 impl fmt::Display for SavepointLocation {

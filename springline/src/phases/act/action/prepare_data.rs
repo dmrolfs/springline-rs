@@ -29,14 +29,14 @@ pub struct PrepareData<P> {
 
 impl<P> PrepareData<P> {
     pub fn new(flink: FlinkContext) -> Self {
-        Self { flink, marker: std::marker::PhantomData, }
+        Self { flink, marker: std::marker::PhantomData }
     }
 }
 
 #[async_trait]
 impl<P> ScaleAction<P> for PrepareData<P>
-    where
-        P: AppData + ScaleActionPlan,
+where
+    P: AppData + ScaleActionPlan,
 {
     #[tracing::instrument(level = "info", name = "PrepareData::execute", skip(self))]
     async fn execute(

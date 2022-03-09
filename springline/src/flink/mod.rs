@@ -8,10 +8,10 @@ pub use model::{FailureReason, JobSavepointReport, OperationStatus, SavepointLoc
 pub use model::{JarId, JobDetail, JobId, JobState, JobSummary, TaskState, VertexDetail, VertexId};
 pub use model::{JOB_STATES, TASK_STATES};
 
+use crate::model::CorrelationId;
 use once_cell::sync::Lazy;
 use proctor::error::MetricLabel;
 use prometheus::{HistogramOpts, HistogramTimer, HistogramVec, IntCounterVec, Opts};
-use crate::model::CorrelationId;
 
 #[allow(clippy::cognitive_complexity)]
 pub(crate) fn log_response(label: &str, response: &reqwest::Response) {
@@ -66,10 +66,10 @@ pub static FLINK_QUERY_JOB_DETAIL_TIME: Lazy<HistogramVec> = Lazy::new(|| {
             "flink_query_job_detail_time",
             "Time spent collecting job detail from Flink in seconds",
         )
-            .buckets(vec![0.2, 0.225, 0.25, 0.275, 0.3, 0.35, 0.4, 0.45, 0.5, 0.75, 1.0]),
+        .buckets(vec![0.2, 0.225, 0.25, 0.275, 0.3, 0.35, 0.4, 0.45, 0.5, 0.75, 1.0]),
         &["action"],
     )
-        .expect("failed creating flink_query_job_detail_time metric")
+    .expect("failed creating flink_query_job_detail_time metric")
 });
 
 #[inline]
@@ -87,10 +87,7 @@ pub(crate) static FLINK_ERRORS: Lazy<IntCounterVec> = Lazy::new(|| {
 
 #[inline]
 pub(crate) fn track_result<T>(
-    label: &str,
-    result: Result<T, FlinkError>,
-    error_message: &str,
-    correlation: &CorrelationId
+    label: &str, result: Result<T, FlinkError>, error_message: &str, correlation: &CorrelationId,
 ) -> Result<T, FlinkError> {
     if let Err(ref err) = result {
         tracing::error!(error=?err, %correlation, "{}", error_message);

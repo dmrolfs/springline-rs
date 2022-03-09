@@ -24,8 +24,7 @@ mod vertex_sensor;
 use crate::model::{CorrelationGenerator, MC_FLOW__RECORDS_IN_PER_SEC};
 pub use metric_order::{Aggregation, FlinkScope, MetricOrder};
 pub use vertex_sensor::{
-    FLINK_VERTEX_SENSOR_AVAIL_TELEMETRY_TIME, FLINK_VERTEX_SENSOR_METRIC_PICKLIST_TIME,
-    FLINK_VERTEX_SENSOR_TIME,
+    FLINK_VERTEX_SENSOR_AVAIL_TELEMETRY_TIME, FLINK_VERTEX_SENSOR_METRIC_PICKLIST_TIME, FLINK_VERTEX_SENSOR_TIME,
 };
 
 // note: `cluster.nr_task_managers` is a standard metric pulled from Flink's admin API. The order
