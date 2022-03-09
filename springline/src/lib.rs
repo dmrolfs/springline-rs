@@ -15,6 +15,7 @@ pub mod engine;
 pub mod flink;
 pub mod kubernetes;
 pub mod metrics;
+pub mod model;
 pub mod phases;
 pub mod settings;
 

@@ -1,16 +1,16 @@
+use crate::model::{CorrelationId, MetricCatalog};
 use oso::PolarClass;
-use pretty_snowflake::Id;
+
 use proctor::elements::Timestamp;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
 use crate::phases::decision::DecisionResult;
 use crate::phases::plan::MINIMAL_CLUSTER_SIZE;
-use crate::phases::MetricCatalog;
 
 #[derive(PolarClass, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ScalePlan {
-    pub correlation_id: Id<MetricCatalog>,
+    pub correlation_id: CorrelationId,
 
     #[polar(attribute)]
     pub recv_timestamp: Timestamp,

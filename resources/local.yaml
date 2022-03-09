@@ -36,6 +36,6 @@ action:
     kubernetes_api:
       polling_interval_secs: 5
   flink:
+    polling_interval_secs: 3
     savepoint:
-      polling_interval_secs: 1
       directory: "s3a://my/flink/savepoints"

@@ -121,12 +121,15 @@ action:
       polling_interval_secs: 10
 
   flink:
+    # Interval in which Flink asynchronous API status is polled. Defaults to 10 seconds.
+    polling_interval_secs: 1
+
+    # Time allowed restarting and confirm a FLink job. Defaults to 1 minute.
+    restart_operation_timeout_secs: 60
+
     savepoint:
       # Time allowed for a savepoint to complete. Defaults to 10 minutes.
       operation_timeout_secs: 600
-
-      # Interval in which Flink savepoint status is polled. Defaults to 10 seconds.
-      polling_interval_secs: 10
 
       # Optional directory for the triggered savepoint. If not set, the default will the savepoint
       # directory configured with Flink.

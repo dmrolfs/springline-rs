@@ -1,10 +1,10 @@
 use crate::flink::error::FlinkError;
-use crate::flink::{self, model::JobSummary};
-use crate::phases::MetricCatalog;
+use crate::flink::model::JarSummary;
+use crate::flink::{self, model::JobSummary, JobDetail, JobId};
+use crate::model::CorrelationId;
 use crate::settings::FlinkSettings;
 use futures_util::TryFutureExt;
 use http::Method;
-use pretty_snowflake::Id;
 use proctor::error::UrlError;
 use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
 use reqwest_retry::policies::ExponentialBackoff;
@@ -27,12 +27,19 @@ impl FlinkContext {
             .map_err(|_| UrlError::UrlCannotBeBase(base_url.clone()))?
             .push("jobs");
 
+        let mut jars_endpoint = base_url.clone();
+        jars_endpoint
+            .path_segments_mut()
+            .map_err(|_| UrlError::UrlCannotBeBase(base_url.clone()))?
+            .push("jars");
+
         Ok(Self {
             inner: Arc::new(FlinkContextRef {
-                label: label.into(),
+                cluster_label: label.into(),
                 client,
                 base_url,
                 jobs_endpoint,
+                jars_endpoint,
             }),
         })
     }
@@ -44,7 +51,7 @@ impl FlinkContext {
     }
 
     pub fn label(&self) -> &str {
-        self.inner.label.as_str()
+        self.inner.cluster_label.as_str()
     }
 
     pub fn client(&self) -> &ClientWithMiddleware {
@@ -59,9 +66,25 @@ impl FlinkContext {
         self.inner.jobs_endpoint.clone()
     }
 
+    pub fn jars_endpoint(&self) -> Url {
+        self.inner.jars_endpoint.clone()
+    }
+
     #[tracing::instrument(level = "info", skip(self))]
-    pub async fn query_active_jobs(&self, correlation: &Id<MetricCatalog>) -> Result<Vec<JobSummary>, FlinkError> {
+    pub async fn query_active_jobs(&self, correlation: &CorrelationId) -> Result<Vec<JobSummary>, FlinkError> {
         self.inner.query_active_jobs(correlation).await
+    }
+
+    #[tracing::instrument(level = "info", skip(self))]
+    pub async fn query_job_details(
+        &self, job_id: &JobId, correlation: &CorrelationId,
+    ) -> Result<JobDetail, FlinkError> {
+        self.inner.query_job_details(job_id, correlation).await
+    }
+
+    #[tracing::instrument(level = "info", skip(self))]
+    pub async fn query_uploaded_jars(&self, correlation: &CorrelationId) -> Result<Vec<JarSummary>, FlinkError> {
+        self.inner.query_uploaded_jars(correlation).await
     }
 }
 
@@ -88,24 +111,62 @@ fn make_http_client(settings: &FlinkSettings) -> Result<ClientWithMiddleware, Fl
 
 struct FlinkContextRef {
     /// Label identifying the Flink cluster, possibly populated from the "release" pod label.
-    pub label: String,
+    pub cluster_label: String,
     pub client: ClientWithMiddleware,
     pub base_url: Url,
     pub jobs_endpoint: Url,
+    pub jars_endpoint: Url,
 }
 
 impl fmt::Debug for FlinkContextRef {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("FlinkContextRef")
+            .field("cluster_label", &self.cluster_label)
             .field("base_url", &self.base_url)
             .field("jobs_endpoint", &self.jobs_endpoint)
+            .field("jars_endpoint", &self.jars_endpoint)
             .finish()
     }
 }
 
 impl FlinkContextRef {
-    pub async fn query_active_jobs(&self, correlation: &Id<MetricCatalog>) -> Result<Vec<JobSummary>, FlinkError> {
-        let _timer = flink::start_flink_active_jobs_timer();
+    #[tracing::instrument(level = "info", skip(self))]
+    pub async fn query_uploaded_jars(&self, correlation: &CorrelationId) -> Result<Vec<JarSummary>, FlinkError> {
+        let _timer = flink::start_flink_uploaded_jars_timer(self.cluster_label.as_str());
+        let span = tracing::info_span!("query Flink uploaded jars", %correlation);
+
+        let result: Result<Vec<JarSummary>, FlinkError> = self
+            .client
+            .request(Method::GET, self.jars_endpoint.clone())
+            .send()
+            .map_err(|error| {
+                tracing::error!(?error, "failed Flink API jar_summary response");
+                error.into()
+            })
+            .and_then(|response| {
+                flink::log_response("uploaded jars", &response);
+                response.text().map_err(|err| err.into())
+            })
+            .instrument(span)
+            .await
+            .and_then(|body| {
+                let response = serde_json::from_str(body.as_str());
+                tracing::info!(%body, ?response, "Flink jar summery response body");
+                response
+                    .map(|resp: jars_protocal::GetJarsResponse| resp.files)
+                    .map_err(|err| err.into())
+            });
+
+        flink::track_result(
+            "uploaded_jars",
+            result,
+            "failed to query Flink uploaded jars",
+            correlation,
+        )
+    }
+
+    pub async fn query_active_jobs(&self, correlation: &CorrelationId) -> Result<Vec<JobSummary>, FlinkError> {
+        let _timer = flink::start_flink_active_jobs_timer(self.cluster_label.as_str());
         let span = tracing::info_span!("query Flink active jobs", %correlation);
 
         let result: Result<Vec<JobSummary>, FlinkError> = self
@@ -148,28 +209,78 @@ impl FlinkContextRef {
                     .collect()
             });
 
-        match result {
-            Ok(jobs) => Ok(jobs),
-            Err(err) => {
-                tracing::error!(error=?err, "failed to query Flink active jobs");
-                flink::track_flink_errors(super::ACTIVE_JOBS, &err);
-                Err(err)
-            },
-        }
+        flink::track_result("active_jobs", result, "failed to query Flink active jobs", correlation)
+    }
+
+    pub async fn query_job_details(
+        &self, job_id: &JobId, correlation: &CorrelationId,
+    ) -> Result<JobDetail, FlinkError> {
+        let mut url = self.jobs_endpoint.clone();
+        url.path_segments_mut()
+            .map_err(|_| FlinkError::NotABaseUrl(self.jobs_endpoint.clone()))?
+            .push(job_id.as_ref());
+
+        let _timer = flink::start_flink_query_job_detail_timer(self.cluster_label.as_str());
+        let span = tracing::info_span!("query FLink job detail");
+
+        let result: Result<JobDetail, FlinkError> = self
+            .client
+            .request(Method::GET, url)
+            .send()
+            .map_err(|error| {
+                tracing::error!(?error, "failed Flink API job_detail response");
+                error.into()
+            })
+            .and_then(|response| {
+                flink::log_response("job detail", &response);
+                response.text().map_err(|err| err.into())
+            })
+            .instrument(span)
+            .await
+            .and_then(|body| {
+                let result = serde_json::from_str(body.as_str()).map_err(|err| err.into());
+                tracing::info!(%body, ?result, "Flink job detail response body");
+                result
+            });
+
+        flink::track_result("job_detail", result, "failed to query Flink job detail", correlation)
+    }
+}
+
+mod jars_protocal {
+    use crate::flink::model::JarSummary;
+    use serde::{Deserialize, Serialize};
+    use url::Url;
+
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    pub struct GetJarsResponse {
+        #[serde(
+            serialize_with = "proctor::serde::serialize_to_str",
+            deserialize_with = "proctor::serde::deserialize_from_str"
+        )]
+        pub address: Url,
+        pub files: Vec<JarSummary>,
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::flink::{JobId, JobState};
+    use crate::flink::context::jars_protocal::GetJarsResponse;
+    use crate::flink::model::JarEntry;
+    use crate::flink::{JarId, JobId, JobState, TaskState, VertexDetail, VertexId};
+    use crate::phases::sense::flink::STD_METRIC_ORDERS;
     use claim::*;
     use pretty_assertions::assert_eq;
+    use pretty_snowflake::Id;
+    use proctor::elements::Timestamp;
     use reqwest::header::HeaderMap;
     use reqwest_middleware::ClientBuilder;
     use reqwest_retry::policies::ExponentialBackoff;
     use reqwest_retry::RetryTransientMiddleware;
-    use serde_json::json;
+    use serde_json::{json, json_unexpected};
+    use serde_test::{assert_tokens, Token};
+    use std::time::Duration;
     use tokio_test::block_on;
     use url::Url;
     use wiremock::matchers::{method, path};
@@ -236,6 +347,471 @@ mod tests {
                     },
                 ]
             )
+        })
+    }
+
+    #[test]
+    fn test_jars_response_serde_tokens() {
+        let data = jars_protocal::GetJarsResponse {
+            address: assert_ok!(Url::parse("http://dr-springline:8081")),
+            files: vec![
+                JarSummary {
+                    id: JarId::new("40a90069-0f69-4c89-b4ba-77ec4e728d23_TopSpeedWindowing.jar"),
+                    name: "TopSpeedWindowing.jar".to_string(),
+                    uploaded_at: Timestamp::from_secs(1646632951534),
+                    entry: vec![JarEntry {
+                        name: "org.apache.flink.streaming.examples.windowing.TopSpeedWindowing".to_string(),
+                        description: None,
+                    }],
+                },
+                JarSummary {
+                    id: JarId::new("61fad403-bdc9-4d73-8375-15ee714cc692_flink-tutorials-0.0.1-SNAPSHOT.jar"),
+                    name: "flink-tutorials-0.0.1-SNAPSHOT.jar".to_string(),
+                    uploaded_at: Timestamp::from_secs(1646632920247),
+                    entry: vec![JarEntry {
+                        name: "org.springframework.boot.loader.JarLauncher".to_string(),
+                        description: None,
+                    }],
+                },
+            ],
+        };
+
+        assert_tokens(
+            &data,
+            &vec![
+                Token::Struct { name: "GetJarsResponse", len: 2 },
+                Token::Str("address"),
+                Token::Str("http://dr-springline:8081/"),
+                Token::Str("files"),
+                Token::Seq { len: Some(2) },
+                Token::Struct { name: "JarSummary", len: 4 },
+                Token::Str("id"),
+                Token::NewtypeStruct { name: "JarId" },
+                Token::Str("40a90069-0f69-4c89-b4ba-77ec4e728d23_TopSpeedWindowing.jar"),
+                Token::Str("name"),
+                Token::Str("TopSpeedWindowing.jar"),
+                Token::Str("uploaded"),
+                Token::I64(1646632951534),
+                Token::Str("entry"),
+                Token::Seq { len: Some(1) },
+                Token::Struct { name: "JarEntry", len: 2 },
+                Token::Str("name"),
+                Token::Str("org.apache.flink.streaming.examples.windowing.TopSpeedWindowing"),
+                Token::Str("description"),
+                Token::None,
+                Token::StructEnd,
+                Token::SeqEnd,
+                Token::StructEnd,
+                Token::Struct { name: "JarSummary", len: 4 },
+                Token::Str("id"),
+                Token::NewtypeStruct { name: "JarId" },
+                Token::Str("61fad403-bdc9-4d73-8375-15ee714cc692_flink-tutorials-0.0.1-SNAPSHOT.jar"),
+                Token::Str("name"),
+                Token::Str("flink-tutorials-0.0.1-SNAPSHOT.jar"),
+                Token::Str("uploaded"),
+                Token::I64(1646632920247),
+                Token::Str("entry"),
+                Token::Seq { len: Some(1) },
+                Token::Struct { name: "JarEntry", len: 2 },
+                Token::Str("name"),
+                Token::Str("org.springframework.boot.loader.JarLauncher"),
+                Token::Str("description"),
+                Token::None,
+                Token::StructEnd,
+                Token::SeqEnd,
+                Token::StructEnd,
+                Token::SeqEnd,
+                Token::StructEnd,
+            ],
+        )
+    }
+
+    #[test]
+    fn test_jars_response_serde_ser_json() {
+        let data = jars_protocal::GetJarsResponse {
+            address: assert_ok!(Url::parse("http://dr-springline:8081/")),
+            files: vec![
+                JarSummary {
+                    id: JarId::new("40a90069-0f69-4c89-b4ba-77ec4e728d23_TopSpeedWindowing.jar"),
+                    name: "TopSpeedWindowing.jar".to_string(),
+                    uploaded_at: Timestamp::from_secs(1646632951534),
+                    entry: vec![JarEntry {
+                        name: "org.apache.flink.streaming.examples.windowing.TopSpeedWindowing".to_string(),
+                        description: None,
+                    }],
+                },
+                JarSummary {
+                    id: JarId::new("61fad403-bdc9-4d73-8375-15ee714cc692_flink-tutorials-0.0.1-SNAPSHOT.jar"),
+                    name: "flink-tutorials-0.0.1-SNAPSHOT.jar".to_string(),
+                    uploaded_at: Timestamp::from_secs(1646632920247),
+                    entry: vec![JarEntry {
+                        name: "org.springframework.boot.loader.JarLauncher".to_string(),
+                        description: None,
+                    }],
+                },
+            ],
+        };
+
+        let actual: serde_json::Value = assert_ok!(serde_json::to_value(data));
+
+        let expected = json!({
+            "address": "http://dr-springline:8081/",
+            "files": [
+                {
+                    "id": "40a90069-0f69-4c89-b4ba-77ec4e728d23_TopSpeedWindowing.jar",
+                    "name": "TopSpeedWindowing.jar",
+                    "uploaded": 1646632951534_i64,
+                    "entry": [
+                        {
+                            "name": "org.apache.flink.streaming.examples.windowing.TopSpeedWindowing",
+                            "description": null
+                        }
+                    ]
+                },
+                {
+                    "id": "61fad403-bdc9-4d73-8375-15ee714cc692_flink-tutorials-0.0.1-SNAPSHOT.jar",
+                    "name": "flink-tutorials-0.0.1-SNAPSHOT.jar",
+                    "uploaded": 1646632920247_i64,
+                    "entry": [
+                        {
+                            "name": "org.springframework.boot.loader.JarLauncher",
+                            "description": null
+                        }
+                    ]
+                }
+            ]
+        });
+
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_jars_response_serde_de_json() {
+        let body = json!({
+            "address": "http://dr-springline:8081",
+            "files": [
+                {
+                    "id": "40a90069-0f69-4c89-b4ba-77ec4e728d23_TopSpeedWindowing.jar",
+                    "name": "TopSpeedWindowing.jar",
+                    "uploaded": 1646632951534_i64,
+                    "entry": [
+                        {
+                            "name": "org.apache.flink.streaming.examples.windowing.TopSpeedWindowing",
+                            "description": null
+                        }
+                    ]
+                },
+                {
+                    "id": "61fad403-bdc9-4d73-8375-15ee714cc692_flink-tutorials-0.0.1-SNAPSHOT.jar",
+                    "name": "flink-tutorials-0.0.1-SNAPSHOT.jar",
+                    "uploaded": 1646632920247_i64,
+                    "entry": [
+                        {
+                            "name": "org.springframework.boot.loader.JarLauncher",
+                            "description": null
+                        }
+                    ]
+                }
+            ]
+        });
+
+        let actual: jars_protocal::GetJarsResponse = assert_ok!(serde_json::from_value(body));
+
+        let expected = jars_protocal::GetJarsResponse {
+            address: assert_ok!(Url::parse("http://dr-springline:8081")),
+            files: vec![
+                JarSummary {
+                    id: JarId::new("40a90069-0f69-4c89-b4ba-77ec4e728d23_TopSpeedWindowing.jar"),
+                    name: "TopSpeedWindowing.jar".to_string(),
+                    uploaded_at: Timestamp::from_secs(1646632951534),
+                    entry: vec![JarEntry {
+                        name: "org.apache.flink.streaming.examples.windowing.TopSpeedWindowing".to_string(),
+                        description: None,
+                    }],
+                },
+                JarSummary {
+                    id: JarId::new("61fad403-bdc9-4d73-8375-15ee714cc692_flink-tutorials-0.0.1-SNAPSHOT.jar"),
+                    name: "flink-tutorials-0.0.1-SNAPSHOT.jar".to_string(),
+                    uploaded_at: Timestamp::from_secs(1646632920247),
+                    entry: vec![JarEntry {
+                        name: "org.springframework.boot.loader.JarLauncher".to_string(),
+                        description: None,
+                    }],
+                },
+            ],
+        };
+
+        assert_eq!(actual, expected);
+    }
+
+    fn make_job_detail_body_and_expectation() -> (serde_json::Value, JobDetail) {
+        let body = json!({
+            "jid": "a97b6344d775aafe03e55a8e812d2713",
+            "name": "CarTopSpeedWindowingExample",
+            "isStoppable": false,
+            "state": "RUNNING",
+            "start-time": 1639156793312_i64,
+            "end-time": -1,
+            "duration": 23079,
+            "maxParallelism": -1,
+            "now": 1639156816391_i64,
+            "timestamps": {
+                "CREATED": 1639156793320_i64,
+                "FAILED": 0,
+                "RUNNING": 1639156794159_i64,
+                "CANCELED": 0,
+                "CANCELLING": 0,
+                "SUSPENDED": 0,
+                "FAILING": 0,
+                "RESTARTING": 0,
+                "FINISHED": 0,
+                "INITIALIZING": 1639156793312_i64,
+                "RECONCILING": 0
+            },
+            "vertices": [
+                {
+                    "id": "cbc357ccb763df2852fee8c4fc7d55f2",
+                    "name": "Source: Custom Source -> Timestamps/Watermarks",
+                    "maxParallelism": 128,
+                    "parallelism": 1,
+                    "status": "RUNNING",
+                    "start-time": 1639156794188_i64,
+                    "end-time": -1,
+                    "duration": 22203,
+                    "tasks": {
+                        "SCHEDULED": 0,
+                        "FINISHED": 0,
+                        "FAILED": 0,
+                        "CANCELING": 0,
+                        "CANCELED": 0,
+                        "DEPLOYING": 0,
+                        "RECONCILING": 0,
+                        "CREATED": 0,
+                        "RUNNING": 1,
+                        "INITIALIZING": 0
+                    },
+                    "metrics": {
+                        "read-bytes": 0,
+                        "read-bytes-complete": false,
+                        "write-bytes": 0,
+                        "write-bytes-complete": false,
+                        "read-records": 0,
+                        "read-records-complete": false,
+                        "write-records": 0,
+                        "write-records-complete": false
+                    }
+                },
+                {
+                    "id": "90bea66de1c231edf33913ecd54406c1",
+                    "name": "Window(GlobalWindows(), DeltaTrigger, TimeEvictor, ComparableAggregator, PassThroughWindowFunction) -> Sink: Print to Std. Out",
+                    "maxParallelism": 128,
+                    "parallelism": 1,
+                    "status": "RUNNING",
+                    "start-time": 1639156794193_i64,
+                    "end-time": -1,
+                    "duration": 22198,
+                    "tasks": {
+                        "SCHEDULED": 0,
+                        "FINISHED": 0,
+                        "FAILED": 0,
+                        "CANCELING": 0,
+                        "CANCELED": 0,
+                        "DEPLOYING": 0,
+                        "RECONCILING": 0,
+                        "CREATED": 0,
+                        "RUNNING": 1,
+                        "INITIALIZING": 0
+                    },
+                    "metrics": {
+                        "read-bytes": 0,
+                        "read-bytes-complete": false,
+                        "write-bytes": 0,
+                        "write-bytes-complete": false,
+                        "read-records": 0,
+                        "read-records-complete": false,
+                        "write-records": 0,
+                        "write-records-complete": false
+                    }
+                }
+            ],
+            "status-counts": {
+                "SCHEDULED": 0,
+                "FINISHED": 0,
+                "FAILED": 0,
+                "CANCELING": 0,
+                "CANCELED": 0,
+                "DEPLOYING": 0,
+                "RECONCILING": 0,
+                "CREATED": 0,
+                "RUNNING": 2,
+                "INITIALIZING": 0
+            },
+            "plan": {
+                "jid": "a97b6344d775aafe03e55a8e812d2713",
+                "name": "CarTopSpeedWindowingExample",
+                "nodes": [
+                    {
+                        "id": "90bea66de1c231edf33913ecd54406c1",
+                        "parallelism": 1,
+                        "operator": "",
+                        "operator_strategy": "",
+                        "description": "Window(GlobalWindows(), DeltaTrigger, TimeEvictor, ComparableAggregator, PassThroughWindowFunction) -&gt; Sink: Print to Std. Out",
+                        "inputs": [
+                            {
+                                "num": 0,
+                                "id": "cbc357ccb763df2852fee8c4fc7d55f2",
+                                "ship_strategy": "HASH",
+                                "exchange": "pipelined_bounded"
+                            }
+                        ],
+                        "optimizer_properties": {}
+                    },
+                    {
+                        "id": "cbc357ccb763df2852fee8c4fc7d55f2",
+                        "parallelism": 1,
+                        "operator": "",
+                        "operator_strategy": "",
+                        "description": "Source: Custom Source -&gt; Timestamps/Watermarks",
+                        "optimizer_properties": {}
+                    }
+                ]
+            }
+        });
+
+        let expected = JobDetail {
+            jid: JobId::new("a97b6344d775aafe03e55a8e812d2713"),
+            name: "CarTopSpeedWindowingExample".to_string(),
+            is_stoppable: false,
+            state: JobState::Running,
+            start_time: Timestamp::new(1639156793, 312_000_000),
+            end_time: None,
+            duration: Some(Duration::from_millis(23079)),
+            max_parallelism: None,
+            now: Timestamp::new(1639156816, 391_000_000),
+            timestamps: maplit::hashmap! {
+                JobState::Created => Timestamp::new(1639156793, 320_000_000),
+                JobState::Failed => Timestamp::ZERO,
+                JobState::Running => Timestamp::new(1639156794, 159_000_000),
+                JobState::Canceled => Timestamp::ZERO,
+                JobState::Cancelling => Timestamp::ZERO,
+                JobState::Suspended => Timestamp::ZERO,
+                JobState::Failing => Timestamp::ZERO,
+                JobState::Restarting => Timestamp::ZERO,
+                JobState::Finished => Timestamp::ZERO,
+                JobState::Initializing => Timestamp::new(1639156793, 312_000_000),
+                JobState::Reconciling => Timestamp::ZERO,
+            },
+            vertices: vec![
+                VertexDetail {
+                    id: VertexId::new("cbc357ccb763df2852fee8c4fc7d55f2"),
+                    name: "Source: Custom Source -> Timestamps/Watermarks".to_string(),
+                    max_parallelism: Some(128),
+                    parallelism: 1,
+                    status: TaskState::Running,
+                    start_time: Timestamp::new(1639156794, 188_000_000),
+                    end_time: None,
+                    duration: Some(Duration::from_millis(22203)),
+                    tasks: maplit::hashmap! {
+                        TaskState::Scheduled => 0,
+                        TaskState::Finished => 0,
+                        TaskState::Failed => 0,
+                        TaskState::Canceling => 0,
+                        TaskState::Canceled => 0,
+                        TaskState::Deploying => 0,
+                        TaskState::Reconciling => 0,
+                        TaskState::Created => 0,
+                        TaskState::Running => 1,
+                        TaskState::Initializing => 0,
+                    },
+                    metrics: maplit::hashmap! {
+                        "read-bytes".to_string() => 0_i64.into(),
+                        "read-bytes-complete".to_string() => false.into(),
+                        "write-bytes".to_string() => 0_i64.into(),
+                        "write-bytes-complete".to_string() => false.into(),
+                        "read-records".to_string() => 0_i64.into(),
+                        "read-records-complete".to_string() => false.into(),
+                        "write-records".to_string() => 0_i64.into(),
+                        "write-records-complete".to_string() => false.into(),
+                    },
+                },
+                VertexDetail {
+                    id: VertexId::new("90bea66de1c231edf33913ecd54406c1"),
+                    name: "Window(GlobalWindows(), DeltaTrigger, TimeEvictor, ComparableAggregator, \
+                                   PassThroughWindowFunction) -> Sink: Print to Std. Out"
+                        .to_string(),
+                    max_parallelism: Some(128),
+                    parallelism: 1,
+                    status: TaskState::Running,
+                    start_time: Timestamp::new(1639156794, 193_000_000),
+                    end_time: None,
+                    duration: Some(Duration::from_millis(22198)),
+                    tasks: maplit::hashmap! {
+                        TaskState::Scheduled => 0,
+                        TaskState::Finished => 0,
+                        TaskState::Failed => 0,
+                        TaskState::Canceling => 0,
+                        TaskState::Canceled => 0,
+                        TaskState::Deploying => 0,
+                        TaskState::Reconciling => 0,
+                        TaskState::Created => 0,
+                        TaskState::Running => 1,
+                        TaskState::Initializing => 0,
+                    },
+                    metrics: maplit::hashmap! {
+                        "read-bytes".to_string() => 0_i64.into(),
+                        "read-bytes-complete".to_string() => false.into(),
+                        "write-bytes".to_string() => 0_i64.into(),
+                        "write-bytes-complete".to_string() => false.into(),
+                        "read-records".to_string() => 0_i64.into(),
+                        "read-records-complete".to_string() => false.into(),
+                        "write-records".to_string() => 0_i64.into(),
+                        "write-records-complete".to_string() => false.into(),
+                    },
+                },
+            ],
+            status_counts: maplit::hashmap! {
+                TaskState::Scheduled => 0,
+                TaskState::Finished => 0,
+                TaskState::Failed => 0,
+                TaskState::Canceling => 0,
+                TaskState::Canceled => 0,
+                TaskState::Deploying => 0,
+                TaskState::Reconciling => 0,
+                TaskState::Created => 0,
+                TaskState::Running => 2,
+                TaskState::Initializing => 0,
+            },
+        };
+
+        (body, expected)
+    }
+
+    #[test]
+    fn test_query_job_details() {
+        once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
+        let main_span = tracing::info_span!("test_query_job_details");
+        let _ = main_span.enter();
+
+        block_on(async {
+            let mock_server = MockServer::start().await;
+
+            let (b, expected) = make_job_detail_body_and_expectation();
+
+            let response = ResponseTemplate::new(200).set_body_json(b);
+
+            let job_id = "a97b6344d775aafe03e55a8e812d2713".into();
+
+            Mock::given(method("GET"))
+                .and(path(format!("/jobs/{job_id}")))
+                .respond_with(response)
+                .expect(1)
+                .mount(&mock_server)
+                .await;
+
+            let context = assert_ok!(context_for(&mock_server));
+            let correlation = Id::direct("test_query_active_jobs", 17, "ABC");
+            let actual = assert_ok!(context.query_job_details(&job_id, &correlation).await);
+            assert_eq!(actual, expected);
         })
     }
 }

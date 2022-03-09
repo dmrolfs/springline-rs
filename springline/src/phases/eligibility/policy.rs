@@ -1,6 +1,8 @@
 use once_cell::sync::Lazy;
 use std::collections::{HashMap, HashSet};
 
+use crate::metrics::UpdateMetrics;
+use crate::model::MetricCatalog;
 use oso::{Oso, PolarClass, PolarValue};
 use proctor::elements::{PolicySource, PolicySubscription, QueryPolicy, QueryResult, Telemetry};
 use proctor::error::PolicyError;
@@ -10,7 +12,7 @@ use prometheus::{IntCounterVec, Opts};
 use serde::{Deserialize, Serialize};
 
 use super::context::{ClusterStatus, EligibilityContext, TaskStatus};
-use crate::phases::{MetricCatalog, UpdateMetrics, REASON};
+use crate::phases::REASON;
 use crate::settings::EligibilitySettings;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

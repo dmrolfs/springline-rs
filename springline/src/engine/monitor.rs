@@ -10,11 +10,11 @@ use proctor::phases::plan::{PlanEvent, PlanMonitor};
 use proctor::serde::FORMAT;
 use prometheus::{IntCounter, IntGauge};
 
+use crate::model;
 use crate::phases::act::{ActEvent, ActMonitor, ACT_PHASE_ERRORS, ACT_SCALE_ACTION_COUNT, PIPELINE_CYCLE_TIME};
 use crate::phases::decision::{DecisionContext, DecisionEvent, DecisionMonitor, DecisionResult};
 use crate::phases::eligibility::{EligibilityContext, EligibilityEvent, EligibilityMonitor};
 use crate::phases::governance::{GovernanceContext, GovernanceEvent, GovernanceMonitor, GovernanceOutcome};
-use crate::phases::metric_catalog;
 use crate::phases::plan::{FlinkPlanningEvent, FlinkPlanningMonitor, PlanningStrategy};
 
 #[bitflags(default = Sense | Plan | Act)]
@@ -214,8 +214,8 @@ impl Monitor {
 
                 if let Some((tx, (forecast_ts, forecast_val))) = tx_feedback.zip(*next_forecast) {
                     let telemetry = maplit::hashmap! {
-                        metric_catalog::MC_FLOW__FORECASTED_TIMESTAMP.to_string() => forecast_ts.into(),
-                        metric_catalog::MC_FLOW__FORECASTED_RECORDS_IN_PER_SEC.to_string() => forecast_val.into(),
+                        model::MC_FLOW__FORECASTED_TIMESTAMP.to_string() => forecast_ts.into(),
+                        model::MC_FLOW__FORECASTED_RECORDS_IN_PER_SEC.to_string() => forecast_val.into(),
                     };
 
                     match ActorSourceCmd::push(tx, telemetry.into()).await {

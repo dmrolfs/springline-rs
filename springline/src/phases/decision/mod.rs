@@ -9,13 +9,14 @@ pub use result::make_decision_transform;
 pub use result::DecisionResult;
 pub use result::DECISION_DIRECTION;
 
+use crate::model::MetricCatalog;
 use proctor::elements::PolicySubscription;
 use proctor::phases::policy_phase::PolicyPhase;
 use proctor::phases::sense::{ClearinghouseSubscriptionAgent, SubscriptionChannel};
 use proctor::SharedString;
 
+use crate::phases;
 use crate::phases::eligibility::EligibilityOutcome;
-use crate::phases::{self, MetricCatalog};
 use crate::settings::DecisionSettings;
 use crate::Result;
 

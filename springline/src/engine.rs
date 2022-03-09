@@ -17,12 +17,13 @@ use tokio::task::JoinHandle;
 
 use crate::engine::service::{EngineServiceApi, Service};
 use crate::flink::FlinkContext;
+use crate::metrics::{self, UpdateMetrics};
+use crate::model::MetricCatalog;
 use crate::phases::act::ActMonitor;
 use crate::phases::governance::{self, GovernanceOutcome};
 use crate::phases::{act, decision, eligibility, plan, sense};
-use crate::phases::{MetricCatalog, UpdateMetrics};
 use crate::settings::Settings;
-use crate::{metrics, Result};
+use crate::Result;
 
 pub struct Autoscaler;
 impl Autoscaler {

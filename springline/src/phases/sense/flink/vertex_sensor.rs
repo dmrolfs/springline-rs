@@ -1,15 +1,14 @@
 use super::FlinkScope;
 use super::{api_model, Aggregation, MetricOrder, Unpack};
-use crate::flink::{self, JobDetail, JobId, JobSummary, VertexId};
+use crate::flink::{self, JobId, JobSummary, VertexId};
+use crate::model::{CorrelationId, MC_CLUSTER__NR_ACTIVE_JOBS};
 use crate::phases::sense::flink::api_model::FlinkMetricResponse;
 use crate::phases::sense::flink::{CorrelationGenerator, FlinkContext, OrdersByMetric, JOB_SCOPE, TASK_SCOPE};
-use crate::phases::{MetricCatalog, MC_CLUSTER__NR_ACTIVE_JOBS};
 use async_trait::async_trait;
 use cast_trait_object::dyn_upcast;
 use futures_util::TryFutureExt;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
-use pretty_snowflake::Id;
 use proctor::elements::{Telemetry, TelemetryValue};
 use proctor::error::SenseError;
 use proctor::graph::stage::{self, Stage};
@@ -206,9 +205,9 @@ where
     #[tracing::instrument(level = "info", skip(self, metric_telemetry, metric_orders))]
     async fn gather_vertex_telemetry(
         &self, job: JobSummary, metric_telemetry: Arc<Mutex<HashMap<String, Vec<TelemetryValue>>>>,
-        metric_orders: &OrdersByMetric, correlation: &Id<MetricCatalog>,
+        metric_orders: &OrdersByMetric, correlation: &CorrelationId,
     ) {
-        if let Ok(detail) = self.query_job_details(&job.id).await {
+        if let Ok(detail) = self.context.query_job_details(&job.id, correlation).await {
             for vertex in detail.vertices.into_iter().filter(|v| v.status.is_active()) {
                 if let Ok(vertex_telemetry) = self
                     .query_vertex_telemetry(&job.id, &vertex.id, metric_orders, correlation)
@@ -221,44 +220,9 @@ where
         }
     }
 
-    #[tracing::instrument(level = "info", skip(self))]
-    async fn query_job_details(&self, job_id: &JobId) -> Result<JobDetail, SenseError> {
-        let mut url = self.context.jobs_endpoint();
-        url.path_segments_mut()
-            .map_err(|_| SenseError::NotABaseUrl(self.context.jobs_endpoint()))?
-            .push(job_id.as_ref());
-
-        let _timer = start_flink_query_job_detail_timer();
-        let span = tracing::info_span!("query FLink job detail");
-
-        let result: Result<JobDetail, SenseError> = self
-            .context
-            .client()
-            .request(Method::GET, url)
-            .send()
-            .map_err(|error| {
-                tracing::error!(?error, "failed Flink API job_detail response");
-                error.into()
-            })
-            .and_then(|response| {
-                flink::log_response("job detail", &response);
-                response.text().map_err(|err| err.into())
-            })
-            .instrument(span)
-            .await
-            // .map_err(|err| err.into())
-            .and_then(|body| {
-                let result = serde_json::from_str(body.as_str()).map_err(|err| err.into());
-                tracing::info!(%body, ?result, "Flink job detail response body");
-                result
-            });
-
-        super::identity_or_track_error(FlinkScope::Jobs, result)
-    }
-
     #[tracing::instrument(level = "info", skip(self, metric_orders))]
     async fn query_vertex_telemetry(
-        &self, job_id: &JobId, vertex_id: &VertexId, metric_orders: &OrdersByMetric, correlation: &Id<MetricCatalog>,
+        &self, job_id: &JobId, vertex_id: &VertexId, metric_orders: &OrdersByMetric, correlation: &CorrelationId,
     ) -> Result<Telemetry, SenseError> {
         let mut url = self.context.jobs_endpoint();
         url.path_segments_mut()
@@ -284,7 +248,7 @@ where
 
     #[tracing::instrument(level = "info", skip(self, vertex_metrics_url, metric_orders))]
     async fn do_query_vertex_metric_picklist(
-        &self, vertex_metrics_url: Url, metric_orders: &OrdersByMetric, correlation: &Id<MetricCatalog>,
+        &self, vertex_metrics_url: Url, metric_orders: &OrdersByMetric, correlation: &CorrelationId,
     ) -> Result<Vec<String>, SenseError> {
         let _timer = start_flink_vertex_sensor_metric_picklist_time();
         let span = tracing::info_span!("query Flink vertex metric picklist", %correlation);
@@ -317,7 +281,7 @@ where
     #[tracing::instrument(level = "info", skip(self, picklist, metric_orders, vertex_metrics_url))]
     async fn do_query_vertex_available_telemetry(
         &self, picklist: Vec<String>, metric_orders: &OrdersByMetric, mut vertex_metrics_url: Url,
-        correlation: &Id<MetricCatalog>,
+        correlation: &CorrelationId,
     ) -> Result<Telemetry, SenseError> {
         let agg_span = Self::agg_span_for(&picklist, metric_orders);
         tracing::info!(
@@ -395,23 +359,6 @@ where
     }
 }
 
-pub static FLINK_QUERY_JOB_DETAIL_TIME: Lazy<HistogramVec> = Lazy::new(|| {
-    HistogramVec::new(
-        HistogramOpts::new(
-            "flink_query_job_detail_time",
-            "Time spent collecting job detail from Flink in seconds",
-        )
-        .buckets(vec![0.2, 0.225, 0.25, 0.275, 0.3, 0.35, 0.4, 0.45, 0.5, 0.75, 1.0]),
-        &["flink_scope"],
-    )
-    .expect("failed creating flink_query_job_detail_time metric")
-});
-
-#[inline]
-fn start_flink_query_job_detail_timer() -> HistogramTimer {
-    FLINK_QUERY_JOB_DETAIL_TIME.with_label_values(&[JOB_SCOPE]).start_timer()
-}
-
 pub static FLINK_VERTEX_SENSOR_TIME: Lazy<HistogramVec> = Lazy::new(|| {
     HistogramVec::new(
         HistogramOpts::new(
@@ -470,11 +417,12 @@ fn start_flink_vertex_sensor_avail_telemetry_timer() -> HistogramTimer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::flink::{JobState, TaskState, VertexDetail};
+    use crate::flink::{JobDetail, JobState, TaskState, VertexDetail};
     use crate::phases::sense::flink;
     use crate::phases::sense::flink::STD_METRIC_ORDERS;
     use claim::*;
     use pretty_assertions::assert_eq;
+    use pretty_snowflake::Id;
     use proctor::elements::{Telemetry, TelemetryType, Timestamp};
     use reqwest::header::HeaderMap;
     use reqwest_middleware::ClientBuilder;
@@ -541,278 +489,6 @@ mod tests {
         stage.trigger.attach("trigger".into(), rx_trigger).await;
         stage.outlet.attach("out".into(), tx_out).await;
         (stage, tx_trigger, rx_out)
-    }
-
-    fn make_job_detail_body_and_expectation() -> (serde_json::Value, JobDetail) {
-        let body = json!({
-            "jid": "a97b6344d775aafe03e55a8e812d2713",
-            "name": "CarTopSpeedWindowingExample",
-            "isStoppable": false,
-            "state": "RUNNING",
-            "start-time": 1639156793312_i64,
-            "end-time": -1,
-            "duration": 23079,
-            "maxParallelism": -1,
-            "now": 1639156816391_i64,
-            "timestamps": {
-                "CREATED": 1639156793320_i64,
-                "FAILED": 0,
-                "RUNNING": 1639156794159_i64,
-                "CANCELED": 0,
-                "CANCELLING": 0,
-                "SUSPENDED": 0,
-                "FAILING": 0,
-                "RESTARTING": 0,
-                "FINISHED": 0,
-                "INITIALIZING": 1639156793312_i64,
-                "RECONCILING": 0
-            },
-            "vertices": [
-                {
-                    "id": "cbc357ccb763df2852fee8c4fc7d55f2",
-                    "name": "Source: Custom Source -> Timestamps/Watermarks",
-                    "maxParallelism": 128,
-                    "parallelism": 1,
-                    "status": "RUNNING",
-                    "start-time": 1639156794188_i64,
-                    "end-time": -1,
-                    "duration": 22203,
-                    "tasks": {
-                        "SCHEDULED": 0,
-                        "FINISHED": 0,
-                        "FAILED": 0,
-                        "CANCELING": 0,
-                        "CANCELED": 0,
-                        "DEPLOYING": 0,
-                        "RECONCILING": 0,
-                        "CREATED": 0,
-                        "RUNNING": 1,
-                        "INITIALIZING": 0
-                    },
-                    "metrics": {
-                        "read-bytes": 0,
-                        "read-bytes-complete": false,
-                        "write-bytes": 0,
-                        "write-bytes-complete": false,
-                        "read-records": 0,
-                        "read-records-complete": false,
-                        "write-records": 0,
-                        "write-records-complete": false
-                    }
-                },
-                {
-                    "id": "90bea66de1c231edf33913ecd54406c1",
-                    "name": "Window(GlobalWindows(), DeltaTrigger, TimeEvictor, ComparableAggregator, PassThroughWindowFunction) -> Sink: Print to Std. Out",
-                    "maxParallelism": 128,
-                    "parallelism": 1,
-                    "status": "RUNNING",
-                    "start-time": 1639156794193_i64,
-                    "end-time": -1,
-                    "duration": 22198,
-                    "tasks": {
-                        "SCHEDULED": 0,
-                        "FINISHED": 0,
-                        "FAILED": 0,
-                        "CANCELING": 0,
-                        "CANCELED": 0,
-                        "DEPLOYING": 0,
-                        "RECONCILING": 0,
-                        "CREATED": 0,
-                        "RUNNING": 1,
-                        "INITIALIZING": 0
-                    },
-                    "metrics": {
-                        "read-bytes": 0,
-                        "read-bytes-complete": false,
-                        "write-bytes": 0,
-                        "write-bytes-complete": false,
-                        "read-records": 0,
-                        "read-records-complete": false,
-                        "write-records": 0,
-                        "write-records-complete": false
-                    }
-                }
-            ],
-            "status-counts": {
-                "SCHEDULED": 0,
-                "FINISHED": 0,
-                "FAILED": 0,
-                "CANCELING": 0,
-                "CANCELED": 0,
-                "DEPLOYING": 0,
-                "RECONCILING": 0,
-                "CREATED": 0,
-                "RUNNING": 2,
-                "INITIALIZING": 0
-            },
-            "plan": {
-                "jid": "a97b6344d775aafe03e55a8e812d2713",
-                "name": "CarTopSpeedWindowingExample",
-                "nodes": [
-                    {
-                        "id": "90bea66de1c231edf33913ecd54406c1",
-                        "parallelism": 1,
-                        "operator": "",
-                        "operator_strategy": "",
-                        "description": "Window(GlobalWindows(), DeltaTrigger, TimeEvictor, ComparableAggregator, PassThroughWindowFunction) -&gt; Sink: Print to Std. Out",
-                        "inputs": [
-                            {
-                                "num": 0,
-                                "id": "cbc357ccb763df2852fee8c4fc7d55f2",
-                                "ship_strategy": "HASH",
-                                "exchange": "pipelined_bounded"
-                            }
-                        ],
-                        "optimizer_properties": {}
-                    },
-                    {
-                        "id": "cbc357ccb763df2852fee8c4fc7d55f2",
-                        "parallelism": 1,
-                        "operator": "",
-                        "operator_strategy": "",
-                        "description": "Source: Custom Source -&gt; Timestamps/Watermarks",
-                        "optimizer_properties": {}
-                    }
-                ]
-            }
-        });
-
-        let expected = JobDetail {
-            jid: JobId::new("a97b6344d775aafe03e55a8e812d2713"),
-            name: "CarTopSpeedWindowingExample".to_string(),
-            is_stoppable: false,
-            state: JobState::Running,
-            start_time: Timestamp::new(1639156793, 312_000_000),
-            end_time: None,
-            duration: Some(Duration::from_millis(23079)),
-            max_parallelism: None,
-            now: Timestamp::new(1639156816, 391_000_000),
-            timestamps: maplit::hashmap! {
-                JobState::Created => Timestamp::new(1639156793, 320_000_000),
-                JobState::Failed => Timestamp::ZERO,
-                JobState::Running => Timestamp::new(1639156794, 159_000_000),
-                JobState::Canceled => Timestamp::ZERO,
-                JobState::Cancelling => Timestamp::ZERO,
-                JobState::Suspended => Timestamp::ZERO,
-                JobState::Failing => Timestamp::ZERO,
-                JobState::Restarting => Timestamp::ZERO,
-                JobState::Finished => Timestamp::ZERO,
-                JobState::Initializing => Timestamp::new(1639156793, 312_000_000),
-                JobState::Reconciling => Timestamp::ZERO,
-            },
-            vertices: vec![
-                VertexDetail {
-                    id: VertexId::new("cbc357ccb763df2852fee8c4fc7d55f2"),
-                    name: "Source: Custom Source -> Timestamps/Watermarks".to_string(),
-                    max_parallelism: Some(128),
-                    parallelism: 1,
-                    status: TaskState::Running,
-                    start_time: Timestamp::new(1639156794, 188_000_000),
-                    end_time: None,
-                    duration: Some(Duration::from_millis(22203)),
-                    tasks: maplit::hashmap! {
-                        TaskState::Scheduled => 0,
-                        TaskState::Finished => 0,
-                        TaskState::Failed => 0,
-                        TaskState::Canceling => 0,
-                        TaskState::Canceled => 0,
-                        TaskState::Deploying => 0,
-                        TaskState::Reconciling => 0,
-                        TaskState::Created => 0,
-                        TaskState::Running => 1,
-                        TaskState::Initializing => 0,
-                    },
-                    metrics: maplit::hashmap! {
-                        "read-bytes".to_string() => 0_i64.into(),
-                        "read-bytes-complete".to_string() => false.into(),
-                        "write-bytes".to_string() => 0_i64.into(),
-                        "write-bytes-complete".to_string() => false.into(),
-                        "read-records".to_string() => 0_i64.into(),
-                        "read-records-complete".to_string() => false.into(),
-                        "write-records".to_string() => 0_i64.into(),
-                        "write-records-complete".to_string() => false.into(),
-                    },
-                },
-                VertexDetail {
-                    id: VertexId::new("90bea66de1c231edf33913ecd54406c1"),
-                    name: "Window(GlobalWindows(), DeltaTrigger, TimeEvictor, ComparableAggregator, \
-                                   PassThroughWindowFunction) -> Sink: Print to Std. Out"
-                        .to_string(),
-                    max_parallelism: Some(128),
-                    parallelism: 1,
-                    status: TaskState::Running,
-                    start_time: Timestamp::new(1639156794, 193_000_000),
-                    end_time: None,
-                    duration: Some(Duration::from_millis(22198)),
-                    tasks: maplit::hashmap! {
-                        TaskState::Scheduled => 0,
-                        TaskState::Finished => 0,
-                        TaskState::Failed => 0,
-                        TaskState::Canceling => 0,
-                        TaskState::Canceled => 0,
-                        TaskState::Deploying => 0,
-                        TaskState::Reconciling => 0,
-                        TaskState::Created => 0,
-                        TaskState::Running => 1,
-                        TaskState::Initializing => 0,
-                    },
-                    metrics: maplit::hashmap! {
-                        "read-bytes".to_string() => 0_i64.into(),
-                        "read-bytes-complete".to_string() => false.into(),
-                        "write-bytes".to_string() => 0_i64.into(),
-                        "write-bytes-complete".to_string() => false.into(),
-                        "read-records".to_string() => 0_i64.into(),
-                        "read-records-complete".to_string() => false.into(),
-                        "write-records".to_string() => 0_i64.into(),
-                        "write-records-complete".to_string() => false.into(),
-                    },
-                },
-            ],
-            status_counts: maplit::hashmap! {
-                TaskState::Scheduled => 0,
-                TaskState::Finished => 0,
-                TaskState::Failed => 0,
-                TaskState::Canceling => 0,
-                TaskState::Canceled => 0,
-                TaskState::Deploying => 0,
-                TaskState::Reconciling => 0,
-                TaskState::Created => 0,
-                TaskState::Running => 2,
-                TaskState::Initializing => 0,
-            },
-        };
-
-        (body, expected)
-    }
-
-    #[test]
-    fn test_query_job_details() {
-        once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
-        let main_span = tracing::info_span!("test_query_job_details");
-        let _ = main_span.enter();
-
-        block_on(async {
-            let mock_server = MockServer::start().await;
-
-            let (b, expected) = make_job_detail_body_and_expectation();
-
-            let response = ResponseTemplate::new(200).set_body_json(b);
-
-            let job_id = "a97b6344d775aafe03e55a8e812d2713".into();
-
-            Mock::given(method("GET"))
-                .and(path(format!("/jobs/{job_id}")))
-                .respond_with(response)
-                .expect(1)
-                .mount(&mock_server)
-                .await;
-
-            let context = assert_ok!(context_for(&mock_server));
-            let (stage, _, _) = test_stage_for(&STD_METRIC_ORDERS, context).await;
-
-            let actual = assert_ok!(stage.query_job_details(&job_id).await);
-            assert_eq!(actual, expected);
-        })
     }
 
     struct EmptyQueryParamMatcher;
@@ -973,7 +649,7 @@ mod tests {
             assert_eq!(
                 actual,
                 maplit::hashmap! {
-                    crate::phases::metric_catalog::MC_FLOW__RECORDS_IN_PER_SEC.to_string() => 0_f64.into(),
+                    crate::model::MC_FLOW__RECORDS_IN_PER_SEC.to_string() => 0_f64.into(),
                     "flow.records_out_per_sec".to_string() => 20_f64.into(),
                     "cluster.task_network_input_queue_len".to_string() => 0_f64.into(),
                     "cluster.task_network_input_pool_usage".to_string() => 0_f64.into(),

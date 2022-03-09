@@ -1,5 +1,5 @@
+use crate::metrics::UpdateMetrics;
 use crate::phases::plan::ForecastInputs;
-use crate::phases::UpdateMetrics;
 use once_cell::sync::Lazy;
 use pretty_snowflake::{Id, Label};
 use proctor::elements::telemetry::UpdateMetricsFn;

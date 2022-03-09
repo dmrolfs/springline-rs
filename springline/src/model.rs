@@ -2,6 +2,7 @@ use std::collections::HashSet;
 use std::fmt::{self, Debug};
 use std::ops::Add;
 
+use crate::metrics::UpdateMetrics;
 use once_cell::sync::Lazy;
 use oso::PolarClass;
 use pretty_snowflake::{Id, Label};
@@ -9,11 +10,12 @@ use proctor::elements::telemetry::UpdateMetricsFn;
 use proctor::elements::{telemetry, Telemetry, Timestamp};
 use proctor::error::{PolicyError, ProctorError};
 use proctor::phases::sense::SubscriptionRequirements;
-use proctor::SharedString;
+use proctor::{ProctorIdGenerator, SharedString};
 use prometheus::{Gauge, IntGauge};
 use serde::{Deserialize, Serialize};
 
-use crate::phases::UpdateMetrics;
+pub type CorrelationId = Id<MetricCatalog>;
+pub type CorrelationGenerator = ProctorIdGenerator<MetricCatalog>;
 
 // #[serde_as]
 #[derive(PolarClass, Label, PartialEq, Clone, Serialize, Deserialize)]

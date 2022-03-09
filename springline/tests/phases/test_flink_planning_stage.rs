@@ -11,6 +11,7 @@ use proctor::graph::stage::{self, WithApi, WithMonitor};
 use proctor::graph::{Connect, Graph, SinkShape, SourceShape};
 use proctor::phases::plan::{Plan, PlanEvent};
 use proctor::ProctorResult;
+use springline::model::{ClusterMetrics, FlowMetrics, JobHealthMetrics, MetricCatalog};
 use springline::phases::decision::DecisionResult;
 use springline::phases::plan::{
     make_performance_repository, FlinkPlanningMonitor, ForecastInputs, PlanningContext, PlanningMeasurement,
@@ -19,7 +20,6 @@ use springline::phases::plan::{
     FlinkPlanning, LeastSquaresWorkloadForecaster, PerformanceRepositorySettings, PerformanceRepositoryType, ScalePlan,
     SpikeSettings,
 };
-use springline::phases::{ClusterMetrics, FlowMetrics, JobHealthMetrics, MetricCatalog};
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 

@@ -2,7 +2,6 @@ use crate::flink::{self, FlinkContext};
 use crate::phases::sense::flink::scope_sensor::ScopeSensor;
 use crate::phases::sense::flink::taskmanager_admin_sensor::TaskmanagerAdminSensor;
 use crate::phases::sense::flink::vertex_sensor::VertexSensor;
-use crate::phases::{MetricCatalog, MC_FLOW__RECORDS_IN_PER_SEC};
 use crate::settings::FlinkSensorSettings;
 use cast_trait_object::DynCastExt;
 use once_cell::sync::Lazy;
@@ -11,7 +10,7 @@ use proctor::elements::telemetry::{self, Telemetry, TelemetryValue};
 use proctor::error::{SenseError, TelemetryError};
 use proctor::graph::stage::{self, SourceStage, ThroughStage};
 use proctor::graph::{Connect, Graph, SinkShape, SourceShape, UniformFanInShape, UniformFanOutShape};
-use proctor::{ProctorIdGenerator, SharedString};
+use proctor::SharedString;
 use prometheus::{HistogramOpts, HistogramTimer, HistogramVec};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -22,10 +21,10 @@ mod scope_sensor;
 mod taskmanager_admin_sensor;
 mod vertex_sensor;
 
+use crate::model::{CorrelationGenerator, MC_FLOW__RECORDS_IN_PER_SEC};
 pub use metric_order::{Aggregation, FlinkScope, MetricOrder};
 pub use vertex_sensor::{
-    FLINK_QUERY_JOB_DETAIL_TIME, FLINK_VERTEX_SENSOR_AVAIL_TELEMETRY_TIME, FLINK_VERTEX_SENSOR_METRIC_PICKLIST_TIME,
-    FLINK_VERTEX_SENSOR_TIME,
+    FLINK_VERTEX_SENSOR_AVAIL_TELEMETRY_TIME, FLINK_VERTEX_SENSOR_METRIC_PICKLIST_TIME, FLINK_VERTEX_SENSOR_TIME,
 };
 
 // note: `cluster.nr_task_managers` is a standard metric pulled from Flink's admin API. The order
@@ -125,8 +124,6 @@ pub struct FlinkSensorSpecification<'a> {
     pub settings: &'a FlinkSensorSettings,
     pub machine_node: MachineNode,
 }
-
-type CorrelationGenerator = ProctorIdGenerator<MetricCatalog>;
 
 #[tracing::instrument(level = "info")]
 pub async fn make_sensor(spec: FlinkSensorSpecification<'_>) -> Result<Box<dyn SourceStage<Telemetry>>, SenseError> {

@@ -3,7 +3,7 @@ use proctor::phases::policy_phase::PolicyPhase;
 use proctor::phases::sense::{ClearinghouseSubscriptionAgent, SubscriptionChannel};
 use proctor::SharedString;
 
-use crate::phases::{self, MetricCatalog};
+use crate::phases;
 use crate::settings::EligibilitySettings;
 use crate::Result;
 
@@ -18,6 +18,7 @@ pub(crate) use context::{
 };
 pub(crate) use policy::ELIGIBILITY_POLICY_INELIGIBLE_DECISIONS_COUNT;
 
+use crate::model::MetricCatalog;
 pub use policy::{EligibilityPolicy, EligibilityTemplateData};
 
 pub type EligibilityOutcome = MetricCatalog;

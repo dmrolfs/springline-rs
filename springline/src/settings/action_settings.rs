@@ -33,9 +33,46 @@ pub struct TaskmanagerContext {
     pub kubernetes_api: KubernetesApiConstraints,
 }
 
+#[serde_as]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FlinkActionSettings {
+    /// Interval in which Flink asynchronous API is polled. Defaults to 1 second.
+    #[serde(
+        default = "FlinkActionSettings::default_polling_interval",
+        rename = "polling_interval_secs"
+    )]
+    #[serde_as(as = "serde_with::DurationSeconds<u64>")]
+    pub polling_interval: Duration,
+
+    /// Time allowed restarting and confirm a FLink job. Defaults to 1 minute.
+    #[serde(
+        default = "FlinkActionSettings::default_restart_operation_timeout",
+        rename = "restart_operation_timeout_secs"
+    )]
+    #[serde_as(as = "serde_with::DurationSeconds<u64>")]
+    pub restart_operation_timeout: Duration,
+
     pub savepoint: SavepointSettings,
+}
+
+impl Default for FlinkActionSettings {
+    fn default() -> Self {
+        Self {
+            polling_interval: Self::default_polling_interval(),
+            restart_operation_timeout: Self::default_restart_operation_timeout(),
+            savepoint: SavepointSettings::default(),
+        }
+    }
+}
+
+impl FlinkActionSettings {
+    pub const fn default_polling_interval() -> Duration {
+        Duration::from_secs(1)
+    }
+
+    pub const fn default_restart_operation_timeout() -> Duration {
+        Duration::from_secs(60)
+    }
 }
 
 #[serde_as]
@@ -53,14 +90,6 @@ pub struct SavepointSettings {
     )]
     #[serde_as(as = "serde_with::DurationSeconds<u64>")]
     pub operation_timeout: Duration,
-
-    /// Interval in which Flink savepoint status is polled. Defaults to 10 seconds.
-    #[serde(
-        default = "SavepointSettings::default_savepoint_polling_interval",
-        rename = "polling_interval_secs"
-    )]
-    #[serde_as(as = "serde_with::DurationSeconds<u64>")]
-    pub polling_interval: Duration,
 }
 
 impl Default for SavepointSettings {
@@ -68,7 +97,6 @@ impl Default for SavepointSettings {
         Self {
             directory: None,
             operation_timeout: Self::default_operation_timeout(),
-            polling_interval: Self::default_savepoint_polling_interval(),
         }
     }
 }
@@ -76,9 +104,6 @@ impl Default for SavepointSettings {
 impl SavepointSettings {
     pub const fn default_operation_timeout() -> Duration {
         Duration::from_secs(10 * 60)
-    }
-    pub const fn default_savepoint_polling_interval() -> Duration {
-        Duration::from_secs(10)
     }
 }
 
@@ -203,6 +228,7 @@ mod tests {
                     directory: Some("s3a://flink-98dnkj/foo-bar/savepoints".to_string()),
                     ..SavepointSettings::default()
                 },
+                ..FlinkActionSettings::default()
             },
         };
 
@@ -227,16 +253,18 @@ mod tests {
                 Token::StructEnd,
                 Token::StructEnd,
                 Token::Str("flink"),
-                Token::Struct { name: "FlinkActionSettings", len: 1 },
+                Token::Struct { name: "FlinkActionSettings", len: 3 },
+                Token::Str("polling_interval_secs"),
+                Token::U64(1),
+                Token::Str("restart_operation_timeout_secs"),
+                Token::U64(60),
                 Token::Str("savepoint"),
-                Token::Struct { name: "SavepointSettings", len: 3 },
+                Token::Struct { name: "SavepointSettings", len: 2 },
                 Token::Str("directory"),
                 Token::Some,
                 Token::Str("s3a://flink-98dnkj/foo-bar/savepoints"),
                 Token::Str("operation_timeout_secs"),
                 Token::U64(600),
-                Token::Str("polling_interval_secs"),
-                Token::U64(10),
                 Token::StructEnd,
                 Token::StructEnd,
                 Token::StructEnd,
@@ -261,6 +289,7 @@ mod tests {
                     directory: Some("/service_namespace_port/v1/jobs/flink_job_id/savepoints".to_string()),
                     ..SavepointSettings::default()
                 },
+                ..FlinkActionSettings::default()
             },
         };
 
@@ -268,7 +297,7 @@ mod tests {
         assert_eq!(
             json,
             format!(
-                r##"{{"action_timeout_secs":777,"taskmanager":{{"label_selector":"app=flink,component=taskmanager","deploy_resource":{},"kubernetes_api":{{"api_timeout_secs":275,"polling_interval_secs":7}}}},"flink":{{"savepoint":{{"directory":"/service_namespace_port/v1/jobs/flink_job_id/savepoints","operation_timeout_secs":600,"polling_interval_secs":10}}}}}}"##,
+                r##"{{"action_timeout_secs":777,"taskmanager":{{"label_selector":"app=flink,component=taskmanager","deploy_resource":{},"kubernetes_api":{{"api_timeout_secs":275,"polling_interval_secs":7}}}},"flink":{{"polling_interval_secs":1,"restart_operation_timeout_secs":60,"savepoint":{{"directory":"/service_namespace_port/v1/jobs/flink_job_id/savepoints","operation_timeout_secs":600}}}}}}"##,
                 EXPECTED_REP
             )
         );
@@ -277,7 +306,7 @@ mod tests {
         assert_eq!(
             ron,
             format!(
-                r##"(action_timeout_secs:777,taskmanager:(label_selector:"app=flink,component=taskmanager",deploy_resource:{},kubernetes_api:(api_timeout_secs:275,polling_interval_secs:7)),flink:(savepoint:(directory:Some("/service_namespace_port/v1/jobs/flink_job_id/savepoints"),operation_timeout_secs:600,polling_interval_secs:10)))"##,
+                r##"(action_timeout_secs:777,taskmanager:(label_selector:"app=flink,component=taskmanager",deploy_resource:{},kubernetes_api:(api_timeout_secs:275,polling_interval_secs:7)),flink:(polling_interval_secs:1,restart_operation_timeout_secs:60,savepoint:(directory:Some("/service_namespace_port/v1/jobs/flink_job_id/savepoints"),operation_timeout_secs:600)))"##,
                 EXPECTED_REP
             )
         );

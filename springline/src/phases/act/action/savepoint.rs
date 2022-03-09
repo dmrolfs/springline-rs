@@ -3,13 +3,14 @@ use crate::flink::{FlinkContext, FlinkError, JobId, JobSavepointReport, Operatio
 use crate::phases::act::action::{ActionSession, ScaleAction};
 use crate::phases::act::scale_actuator::ScaleActionPlan;
 use crate::phases::act::ActError;
-use crate::phases::MetricCatalog;
+
 use crate::settings::FlinkActionSettings;
 use async_trait::async_trait;
 use futures_util::{FutureExt, TryFutureExt};
 use http::Method;
 use once_cell::sync::Lazy;
-use pretty_snowflake::Id;
+
+use crate::model::CorrelationId;
 use proctor::error::UrlError;
 use proctor::AppData;
 use prometheus::{HistogramOpts, HistogramTimer, HistogramVec};
@@ -18,27 +19,27 @@ use std::time::Duration;
 use tracing::Instrument;
 use url::Url;
 
-type CorrelationId = Id<MetricCatalog>;
+pub const ACTION_LABEL: &str = "trigger_savepoint";
 
 #[derive(Debug, Clone)]
 pub struct TriggerSavepoint<P> {
     pub flink: FlinkContext,
-    pub savepoint_timeout: Duration,
     pub polling_interval: Duration,
+    pub savepoint_timeout: Duration,
     pub savepoint_dir: Option<String>,
     marker: std::marker::PhantomData<P>,
 }
 
 impl<P> TriggerSavepoint<P> {
     pub fn from_settings(flink: FlinkContext, settings: &FlinkActionSettings) -> Self {
+        let polling_interval = settings.polling_interval;
         let savepoint_timeout = settings.savepoint.operation_timeout;
-        let polling_interval = settings.savepoint.polling_interval;
         let savepoint_dir = settings.savepoint.directory.clone();
 
         Self {
             flink,
-            savepoint_timeout,
             polling_interval,
+            savepoint_timeout,
             savepoint_dir,
             marker: std::marker::PhantomData,
         }
@@ -57,6 +58,7 @@ where
         let timer = start_flink_job_savepoint_with_cancel_timer(&self.flink);
 
         let correlation = session.correlation();
+        //todo: consider moving this to context channel?? would support keeping track of jar and job?
         let active_jobs: Vec<JobId> = self
             .flink
             .query_active_jobs(&correlation)
@@ -69,7 +71,7 @@ where
             .await
             .map_err(|err| (err, session.clone()))?;
 
-        session = session.with_data("active_jobs", active_jobs);
+        session.active_jobs = Some(active_jobs);
 
         let tasks = job_triggers
             .into_iter()
@@ -83,15 +85,10 @@ where
             .await
             .map_err(|err| (err, session.clone()))?;
 
-        let savepoint_duration = Duration::from_secs_f64(timer.stop_and_record());
-        session = session
-                .with_data("savepoint_report", savepoint_report)
-                .with_duration("savepoint", savepoint_duration);
-        Ok(session)
+        session.savepoints = Some(savepoint_report);
+        Ok(session.with_duration(ACTION_LABEL, Duration::from_secs_f64(timer.stop_and_record())))
     }
 }
-
-const TRIGGER_SAVEPOINT: &str = "trigger_savepoint";
 
 impl<P> TriggerSavepoint<P>
 where
@@ -144,7 +141,7 @@ where
                 error.into()
             })
             .and_then(|response| {
-                flink::log_response(TRIGGER_SAVEPOINT, &response);
+                flink::log_response(ACTION_LABEL, &response);
                 response.text().map_err(|err| err.into())
             })
             .instrument(span)
@@ -160,7 +157,7 @@ where
             Ok(tid) => Ok(tid),
             Err(err) => {
                 tracing::error!(error=?err, "failed to trigger savepoint in Flink for job {job_id}");
-                flink::track_flink_errors(TRIGGER_SAVEPOINT, &err);
+                flink::track_flink_errors(ACTION_LABEL, &err);
                 Err(err)
             },
         }
@@ -198,7 +195,7 @@ where
                     },
                 }
 
-                tokio::time::sleep(self.savepoint_timeout).await;
+                tokio::time::sleep(self.polling_interval).await;
             }
 
             result.expect("savepoint status should have been populated")
@@ -231,7 +228,7 @@ where
                 error.into()
             })
             .and_then(|response| {
-                flink::log_response(TRIGGER_SAVEPOINT, &response);
+                flink::log_response(ACTION_LABEL, &response);
                 response.text().map_err(|err| err.into())
             })
             .instrument(span)
@@ -247,7 +244,7 @@ where
             Ok(info) => Ok(info),
             Err(err) => {
                 tracing::error!(error=?err, "failed to get Flink savepoint info for job {job_id}");
-                flink::track_flink_errors(TRIGGER_SAVEPOINT, &err);
+                flink::track_flink_errors(ACTION_LABEL, &err);
                 Err(err)
             },
         }
