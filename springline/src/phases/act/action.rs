@@ -7,7 +7,7 @@ use patch_replicas::PatchReplicas;
 
 use crate::flink::{JarId, JobId, JobSavepointReport};
 use crate::model::CorrelationId;
-use proctor::elements::{Telemetry, TelemetryValue};
+
 use proctor::AppData;
 use std::collections::HashMap;
 use std::fmt::Debug;

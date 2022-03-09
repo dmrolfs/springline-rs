@@ -11,7 +11,7 @@ use crate::settings::{ActionSettings, KubernetesDeployResource, TaskmanagerConte
 use async_trait::async_trait;
 use cast_trait_object::dyn_upcast;
 use k8s_openapi::api::apps::v1::StatefulSet;
-use pretty_snowflake::Id;
+
 use proctor::elements::Timestamp;
 use proctor::error::{MetricLabel, ProctorError};
 use proctor::graph::stage::Stage;

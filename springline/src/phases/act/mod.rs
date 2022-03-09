@@ -1,4 +1,3 @@
-use crate::model::MetricCatalog;
 use crate::phases::governance::GovernanceOutcome;
 use either::{Either, Left, Right};
 use once_cell::sync::Lazy;

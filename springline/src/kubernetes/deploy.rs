@@ -1,7 +1,7 @@
 use crate::kubernetes::error;
 use crate::kubernetes::KubernetesError;
 use crate::model::CorrelationId;
-use crate::phases::act::ActError;
+
 use crate::settings::KubernetesDeployResource;
 use k8s_openapi::api::apps::v1::{Deployment, StatefulSet};
 use kube::api::{Patch, PatchParams};

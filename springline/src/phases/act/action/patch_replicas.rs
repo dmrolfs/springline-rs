@@ -3,7 +3,7 @@ use crate::kubernetes::DeployApi;
 use crate::phases::act::action::{ActionSession, ScaleAction};
 use crate::phases::act::kubernetes::TaskmanagerContext;
 use crate::phases::act::scale_actuator::ScaleActionPlan;
-use crate::phases::act::{self, ActError};
+use crate::phases::act::ActError;
 use crate::settings::{self, KubernetesApiConstraints, KubernetesDeployResource};
 use async_trait::async_trait;
 use k8s_openapi::api::core::v1::Pod;

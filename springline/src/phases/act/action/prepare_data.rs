@@ -1,23 +1,9 @@
-use crate::flink;
-use crate::flink::{FlinkContext, FlinkError, JarId, JobId, JobSavepointReport, OperationStatus, SavepointStatus};
+use crate::flink::{FlinkContext, JarId, JobId};
 use crate::phases::act::action::{ActionSession, ScaleAction};
 use crate::phases::act::scale_actuator::ScaleActionPlan;
 use crate::phases::act::ActError;
-
-use crate::settings::FlinkActionSettings;
 use async_trait::async_trait;
-use futures_util::{FutureExt, TryFutureExt};
-use http::Method;
-use once_cell::sync::Lazy;
-
-use crate::model::CorrelationId;
-use proctor::error::UrlError;
 use proctor::AppData;
-use prometheus::{HistogramOpts, HistogramTimer, HistogramVec};
-use std::future::Future;
-use std::time::Duration;
-use tracing::Instrument;
-use url::Url;
 
 pub const ACTION_LABEL: &str = "prepare_data";
 
@@ -28,7 +14,7 @@ pub struct PrepareData<P> {
 }
 
 impl<P> PrepareData<P> {
-    pub fn new(flink: FlinkContext) -> Self {
+    pub const fn new(flink: FlinkContext) -> Self {
         Self { flink, marker: std::marker::PhantomData }
     }
 }

@@ -10,7 +10,7 @@ use proctor::elements::telemetry::{self, Telemetry, TelemetryValue};
 use proctor::error::{SenseError, TelemetryError};
 use proctor::graph::stage::{self, SourceStage, ThroughStage};
 use proctor::graph::{Connect, Graph, SinkShape, SourceShape, UniformFanInShape, UniformFanOutShape};
-use proctor::{ProctorIdGenerator, SharedString};
+use proctor::SharedString;
 use prometheus::{HistogramOpts, HistogramTimer, HistogramVec};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;

@@ -1,14 +1,10 @@
 use crate::kubernetes::DeployApi;
-use crate::model::CorrelationId;
+
 use crate::phases::act::ActError;
-use crate::settings::KubernetesDeployResource;
-use k8s_openapi::api::apps::v1::{Deployment, StatefulSet};
+
 use k8s_openapi::api::core::v1::Pod;
-use kube::api::{ListParams, Patch, PatchParams};
-use kube::{Api, Client};
-use pretty_snowflake::Id;
-use serde_json::json;
-use tracing_futures::Instrument;
+use kube::api::ListParams;
+use kube::Api;
 
 #[derive(Debug, Clone)]
 pub struct TaskmanagerContext {

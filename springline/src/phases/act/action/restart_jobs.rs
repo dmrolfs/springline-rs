@@ -1,5 +1,5 @@
 use crate::flink;
-use crate::flink::{FlinkContext, FlinkError, JarId, JobId, JobSavepointReport, JobState, SavepointLocation};
+use crate::flink::{FlinkContext, FlinkError, JarId, JobId, JobState, SavepointLocation};
 use crate::model::CorrelationId;
 use crate::phases::act::action::{ActionSession, ScaleAction};
 use crate::phases::act::scale_actuator::ScaleActionPlan;
@@ -7,7 +7,7 @@ use crate::phases::act::ActError;
 use crate::settings::FlinkActionSettings;
 use async_trait::async_trait;
 use either::{Either, Left, Right};
-use futures_util::stream::{FuturesOrdered, FuturesUnordered};
+use futures_util::stream::FuturesUnordered;
 use futures_util::{FutureExt, StreamExt, TryFutureExt};
 use http::{Method, StatusCode};
 use once_cell::sync::Lazy;
@@ -48,9 +48,7 @@ where
     P: AppData + ScaleActionPlan,
 {
     #[tracing::instrument(level = "info", name = "RestartFlinkWithNewParallelism::execute", skip(self))]
-    async fn execute(
-        &mut self, mut session: ActionSession<P>,
-    ) -> Result<ActionSession<P>, (ActError, ActionSession<P>)> {
+    async fn execute(&mut self, session: ActionSession<P>) -> Result<ActionSession<P>, (ActError, ActionSession<P>)> {
         let timer = start_flink_restart_job_timer(&self.flink);
         let correlation = session.correlation();
 
@@ -229,7 +227,7 @@ where
                     .await
                     .map(|job_state| (job_id.clone(), job_state))
             })
-            .collect::<FuturesOrdered<_>>();
+            .collect::<FuturesUnordered<_>>();
 
         while let Some(task) = tasks.next().await {
             let (job_id, job_state) = task?;
@@ -297,7 +295,7 @@ where
                 .active_jobs
                 .as_ref()
                 .map(|jobs| jobs.iter().cloned().collect())
-                .unwrap_or_else(|| HashSet::new());
+                .unwrap_or_else(HashSet::new);
             let completed_inactive_jobs: HashSet<&JobId> = completed_jobs.difference(&active_jobs).collect();
             if !completed_inactive_jobs.is_empty() {
                 tracing::warn!(
@@ -338,7 +336,7 @@ mod restart {
         pub parallelism: Option<usize>,
 
         /// Comma-separated list of program arguments.
-        #[serde(default)]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         pub program_args: Option<String>,
 
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -407,7 +405,7 @@ mod restart {
 }
 
 #[inline]
-pub(crate) fn track_missed_jar_restarts() {
+pub fn track_missed_jar_restarts() {
     FLINK_MISSED_JAR_RESTARTS.inc()
 }
 
@@ -452,8 +450,8 @@ mod tests {
             ..restart::RestartJarRequestBody::default()
         };
 
-        let actual = assert_ok!(serde_json::to_string());
-        assert_eq!(actual, r##"{"savepointPath":"/path/to/savepoint","parallelism":27}"##)
+        let actual = assert_ok!(serde_json::to_string(&body));
+        assert_eq!(actual, r##"{"parallelism":27,"savepointPath":"/path/to/savepoint"}"##)
     }
 
     #[test]
@@ -467,13 +465,14 @@ mod tests {
         assert_tokens(
             &body,
             &[
-                Token::Struct { name: "RestartJarRequestBody", len: 3 },
-                Token::Str("savepointPath"),
-                Token::Some,
-                Token::Str("/path/to/savepoint"),
+                Token::Struct { name: "RestartJarRequestBody", len: 2 },
                 Token::Str("parallelism"),
                 Token::Some,
                 Token::U64(27),
+                Token::Str("savepointPath"),
+                Token::Some,
+                Token::NewtypeStruct { name: "SavepointLocation" },
+                Token::Str("/path/to/savepoint"),
                 Token::StructEnd,
             ],
         );
@@ -495,7 +494,7 @@ mod tests {
         assert_tokens(
             &body,
             &vec![
-                Token::Struct { name: "RestartJarRequestBody", len: 9 },
+                Token::Struct { name: "RestartJarRequestBody", len: 8 },
                 Token::Str("allowNonRestoredState"),
                 Token::Some,
                 Token::Bool(true),
@@ -504,6 +503,7 @@ mod tests {
                 Token::Str("org.apache.flink.examples.WordCount"),
                 Token::Str("jobId"),
                 Token::Some,
+                Token::NewtypeStruct { name: "JobId" },
                 Token::Str("job-id-1"),
                 Token::Str("parallelism"),
                 Token::Some,
@@ -522,6 +522,7 @@ mod tests {
                 Token::Str("CLAIM"),
                 Token::Str("savepointPath"),
                 Token::Some,
+                Token::NewtypeStruct { name: "SavepointLocation" },
                 Token::Str("/path/to/savepoint"),
                 Token::StructEnd,
             ],

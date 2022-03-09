@@ -1,7 +1,7 @@
 use super::FlinkError;
 use either::Either;
 use std::collections::HashMap;
-use std::fmt::{self, Display, Formatter};
+use std::fmt::{self, Display};
 use std::hash::Hash;
 use std::marker::PhantomData;
 use std::time::Duration;
@@ -96,6 +96,7 @@ pub struct JarSummary {
     pub name: String,
 
     #[serde(
+        rename = "uploaded",
         serialize_with = "Timestamp::serialize_as_secs_i64",
         deserialize_with = "Timestamp::deserialize_secs_i64"
     )]
@@ -456,6 +457,12 @@ pub enum OperationStatus {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct SavepointLocation(String);
 
+impl SavepointLocation {
+    pub fn new(location: impl Into<String>) -> Self {
+        Self(location.into())
+    }
+}
+
 impl fmt::Display for SavepointLocation {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
@@ -482,6 +489,12 @@ impl AsRef<str> for SavepointLocation {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FailureReason(String);
+
+impl FailureReason {
+    pub fn new(reason: impl Into<String>) -> Self {
+        Self(reason.into())
+    }
+}
 
 impl fmt::Display for FailureReason {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
