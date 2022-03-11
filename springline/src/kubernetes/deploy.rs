@@ -1,8 +1,7 @@
-use crate::kubernetes::error;
 use crate::kubernetes::KubernetesError;
+use crate::kubernetes::{error, KubernetesDeployResource};
 use crate::model::CorrelationId;
 
-use crate::settings::KubernetesDeployResource;
 use k8s_openapi::api::apps::v1::{Deployment, StatefulSet};
 use kube::api::{Patch, PatchParams};
 use kube::{Api, Client};
@@ -16,11 +15,11 @@ pub enum DeployApi {
 }
 
 impl DeployApi {
-    pub fn from_kubernetes_resource(resource: &KubernetesDeployResource, client: &Client) -> Self {
+    pub fn from_kubernetes_resource(resource: &KubernetesDeployResource, client: Client) -> Self {
         match resource {
             KubernetesDeployResource::StatefulSet { name } => Self::StatefulSet {
                 name: name.clone(),
-                api: Api::default_namespaced(client.clone()),
+                api: Api::default_namespaced(client),
             },
             // KubernetesWorkloadResource::Deployment(deploy) => Self::Deployment(Api::default_namespaced(deploy.client.clone())),
         }

@@ -1,7 +1,5 @@
-use crate::flink;
-use crate::flink::{FlinkContext, FlinkError, JobId, JobSavepointReport, OperationStatus, SavepointStatus};
-use crate::phases::act::action::{ActionSession, ScaleAction};
-use crate::phases::act::scale_actuator::ScaleActionPlan;
+use super::{ActionSession, ScaleAction};
+use crate::flink::{self, FlinkContext, FlinkError, JobId, JobSavepointReport, OperationStatus, SavepointStatus};
 use crate::phases::act::ActError;
 
 use crate::settings::FlinkActionSettings;
@@ -11,8 +9,8 @@ use http::Method;
 use once_cell::sync::Lazy;
 
 use crate::model::CorrelationId;
+use crate::phases::plan::ScalePlan;
 use proctor::error::UrlError;
-use proctor::AppData;
 use prometheus::{HistogramOpts, HistogramTimer, HistogramVec};
 use std::future::Future;
 use std::time::Duration;
@@ -21,86 +19,89 @@ use url::Url;
 
 pub const ACTION_LABEL: &str = "trigger_savepoint";
 
-#[derive(Debug, Clone)]
-pub struct TriggerSavepoint<P> {
-    pub flink: FlinkContext,
+#[derive(Debug)]
+pub struct TriggerSavepoint {
+    // pub flink: FlinkContext,
     pub polling_interval: Duration,
     pub savepoint_timeout: Duration,
     pub savepoint_dir: Option<String>,
-    marker: std::marker::PhantomData<P>,
+    // marker: std::marker::PhantomData<P>,
 }
 
-impl<P> TriggerSavepoint<P> {
-    pub fn from_settings(flink: FlinkContext, settings: &FlinkActionSettings) -> Self {
+impl TriggerSavepoint {
+    // pub fn from_settings(flink: FlinkContext, settings: &FlinkActionSettings) -> Self {
+    pub fn from_settings(settings: &FlinkActionSettings) -> Self {
         let polling_interval = settings.polling_interval;
         let savepoint_timeout = settings.savepoint.operation_timeout;
         let savepoint_dir = settings.savepoint.directory.clone();
 
         Self {
-            flink,
+            // flink,
             polling_interval,
             savepoint_timeout,
             savepoint_dir,
-            marker: std::marker::PhantomData,
+            // marker: std::marker::PhantomData,
         }
     }
 }
 
 #[async_trait]
-impl<P> ScaleAction<P> for TriggerSavepoint<P>
-where
-    P: AppData + ScaleActionPlan,
+impl ScaleAction for TriggerSavepoint
+// where
+//     P: AppData + ScaleActionPlan,
 {
+    type In = ScalePlan;
+    // type Plan = GovernanceOutcome;
+
     #[tracing::instrument(level = "info", name = "StopFlinkWithSavepoint::execute", skip(self))]
-    async fn execute(
-        &mut self, mut session: ActionSession<P>,
-    ) -> Result<ActionSession<P>, (ActError, ActionSession<P>)> {
-        let timer = start_flink_job_savepoint_with_cancel_timer(&self.flink);
+    async fn execute<'s>(&self, _plan: &'s Self::In, session: &'s mut ActionSession) -> Result<(), ActError> {
+        let timer = start_flink_job_savepoint_with_cancel_timer(&session.flink);
 
         let correlation = session.correlation();
         //todo: consider moving this to context channel?? would support keeping track of jar and job?
-        let active_jobs: Vec<JobId> = self
+        let active_jobs: Vec<JobId> = session
             .flink
             .query_active_jobs(&correlation)
             .await
-            .map_err(|err| (err.into(), session.clone()))
             .map(|jobs| jobs.into_iter().map(|j| j.id).collect())?;
 
-        let job_triggers: Vec<(JobId, trigger::TriggerId)> = self
-            .trigger_savepoints_for(&active_jobs, &correlation)
-            .await
-            .map_err(|err| (err, session.clone()))?;
+        let job_triggers = Self::trigger_savepoints_for(&active_jobs, session).await?;
 
         session.active_jobs = Some(active_jobs);
 
         let tasks = job_triggers
             .into_iter()
             .map(|(job, trigger)| {
-                self.wait_on_savepoint(job.clone(), trigger, &correlation)
-                    .map(|savepoint_info| (job, savepoint_info))
+                Self::wait_on_savepoint(
+                    job.clone(),
+                    trigger,
+                    self.polling_interval,
+                    self.savepoint_timeout,
+                    session,
+                )
+                .map(|savepoint_info| (job, savepoint_info))
             })
             .collect::<Vec<_>>();
 
-        let savepoint_report = Self::block_for_all_savepoints(tasks, &correlation)
-            .await
-            .map_err(|err| (err, session.clone()))?;
+        let savepoint_report = Self::block_for_all_savepoints(tasks, &correlation).await?;
 
         session.savepoints = Some(savepoint_report);
-        Ok(session.with_duration(ACTION_LABEL, Duration::from_secs_f64(timer.stop_and_record())))
+        session.mark_duration(ACTION_LABEL, Duration::from_secs_f64(timer.stop_and_record()));
+        Ok(())
     }
 }
 
-impl<P> TriggerSavepoint<P>
-where
-    P: AppData + ScaleActionPlan,
+impl TriggerSavepoint
+// where
+//     P: AppData + ScaleActionPlan,
 {
     async fn trigger_savepoints_for(
-        &self, jobs: &[JobId], correlation: &CorrelationId,
+        jobs: &[JobId], session: &ActionSession,
     ) -> Result<Vec<(JobId, trigger::TriggerId)>, ActError> {
         let mut job_triggers = Vec::with_capacity(jobs.len());
         let mut trigger_failures = Vec::new();
         for job in jobs.iter().cloned() {
-            let trigger_result = self.trigger_savepoint(&job, true, correlation).await;
+            let trigger_result = Self::trigger_savepoint(&job, true, session).await;
             match trigger_result {
                 Ok(trigger_id) => job_triggers.push((job, trigger_id)),
                 Err(err) => trigger_failures.push((job, err)),
@@ -118,19 +119,19 @@ where
         Ok(job_triggers)
     }
 
-    #[tracing::instrument(level = "info", skip(self))]
+    #[tracing::instrument(level = "info", skip(session))]
     async fn trigger_savepoint(
-        &self, job_id: &JobId, cancel_job: bool, correlation: &CorrelationId,
+        job_id: &JobId, cancel_job: bool, session: &ActionSession,
     ) -> Result<trigger::TriggerId, FlinkError> {
-        let url = self.trigger_endpoint_url_for(job_id)?;
-        let span = tracing::info_span!("trigger_savepoint", %url, %correlation);
+        let url = Self::trigger_endpoint_url_for(&session.flink, job_id)?;
+        let span = tracing::info_span!("trigger_savepoint", %url, correlation=%session.correlation());
 
         let body = trigger::SavepointRequestBody {
             cancel_job,
             ..trigger::SavepointRequestBody::default()
         };
 
-        let trigger_id: Result<trigger::TriggerId, FlinkError> = self
+        let trigger_id: Result<trigger::TriggerId, FlinkError> = session
             .flink
             .client()
             .request(Method::POST, url)
@@ -163,24 +164,25 @@ where
         }
     }
 
-    fn trigger_endpoint_url_for(&self, id: &JobId) -> Result<Url, UrlError> {
-        let mut endpoint_url = self.flink.jobs_endpoint();
+    fn trigger_endpoint_url_for(flink: &FlinkContext, id: &JobId) -> Result<Url, UrlError> {
+        let mut endpoint_url = flink.jobs_endpoint();
         endpoint_url
             .path_segments_mut()
-            .map_err(|_| UrlError::UrlCannotBeBase(self.flink.jobs_endpoint()))?
+            .map_err(|_| UrlError::UrlCannotBeBase(flink.jobs_endpoint()))?
             .push(id.as_ref())
             .push("savepoints");
         Ok(endpoint_url)
     }
 
-    #[tracing::instrument(level = "info", skip(self))]
+    #[tracing::instrument(level = "info", skip(session))]
     async fn wait_on_savepoint(
-        &self, job: JobId, trigger: trigger::TriggerId, correlation: &CorrelationId,
+        job: JobId, trigger: trigger::TriggerId, polling_interval: Duration, savepoint_timeout: Duration,
+        session: &ActionSession,
     ) -> Result<SavepointStatus, FlinkError> {
         let task = async {
             let mut result = None;
             while result.is_none() {
-                match self.check_savepoint(&job, &trigger, correlation).await {
+                match Self::check_savepoint(&job, &trigger, session).await {
                     Ok(savepoint) if savepoint.status == OperationStatus::Completed => {
                         result = Some(savepoint);
                         break;
@@ -189,36 +191,35 @@ where
                     Err(err) => {
                         //todo: consider capping attempts
                         tracing::warn!(
-                            error=?err, ?trigger, %correlation,
+                            error=?err, ?trigger, correlation=%session.correlation(),
                             "check on savepoint operation for {job} failed - checking again."
                         );
                     },
                 }
 
-                tokio::time::sleep(self.polling_interval).await;
+                tokio::time::sleep(polling_interval).await;
             }
 
             result.expect("savepoint status should have been populated")
         };
 
-        tokio::time::timeout(self.savepoint_timeout, task)
-            .await
-            .map_err(|_elapsed| {
-                FlinkError::Timeout(
-                    format!("flink savepoint (job:{job}, trigger:{trigger})"),
-                    self.savepoint_timeout,
-                )
-            })
+        tokio::time::timeout(savepoint_timeout, task).await.map_err(|_elapsed| {
+            FlinkError::Timeout(
+                format!("flink savepoint (job:{job}, trigger:{trigger})"),
+                savepoint_timeout,
+            )
+        })
     }
 
-    #[tracing::instrument(level = "info", skip(self))]
+    #[tracing::instrument(level = "info", skip(session))]
     async fn check_savepoint(
-        &self, job_id: &JobId, trigger_id: &trigger::TriggerId, correlation: &CorrelationId,
+        job_id: &JobId, trigger_id: &trigger::TriggerId, session: &ActionSession,
     ) -> Result<SavepointStatus, FlinkError> {
-        let url = self.info_endpoint_url_for(job_id, trigger_id)?;
-        let span = tracing::info_span!("check_savepoint", %job_id, %trigger_id, %url, %correlation);
+        let url = Self::info_endpoint_url_for(&session.flink, job_id, trigger_id)?;
+        let span =
+            tracing::info_span!("check_savepoint", %job_id, %trigger_id, %url, correlation=%session.correlation());
 
-        let info: Result<SavepointStatus, FlinkError> = self
+        let info: Result<SavepointStatus, FlinkError> = session
             .flink
             .client()
             .request(Method::GET, url)
@@ -250,11 +251,13 @@ where
         }
     }
 
-    fn info_endpoint_url_for(&self, job_id: &JobId, trigger_id: &trigger::TriggerId) -> Result<Url, UrlError> {
-        let mut endpoint_url = self.flink.jobs_endpoint();
+    fn info_endpoint_url_for(
+        flink: &FlinkContext, job_id: &JobId, trigger_id: &trigger::TriggerId,
+    ) -> Result<Url, UrlError> {
+        let mut endpoint_url = flink.jobs_endpoint();
         endpoint_url
             .path_segments_mut()
-            .map_err(|_| UrlError::UrlCannotBeBase(self.flink.jobs_endpoint()))?
+            .map_err(|_| UrlError::UrlCannotBeBase(flink.jobs_endpoint()))?
             .push(job_id.as_ref())
             .push("savepoints")
             .push(trigger_id.as_ref());

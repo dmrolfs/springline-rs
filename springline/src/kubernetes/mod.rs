@@ -1,8 +1,14 @@
 use crate::settings::{KubernetesSettings, LoadKubeConfig};
+use itertools::Itertools;
+use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
+use std::fmt;
 
+mod context;
 mod deploy;
 mod error;
+mod taskmanager;
 
+pub use context::{FlinkComponent, KubernetesApiConstraints, KubernetesContext};
 pub use deploy::DeployApi;
 pub use error::{convert_kube_error, KubernetesError};
 
@@ -14,7 +20,7 @@ pub const RUNNING_STATUS: &str = "Running";
 pub const UNKNOWN_STATUS: &str = "Unknown";
 
 #[tracing::instrument(level = "info", name = "make kubernetes client")]
-pub async fn make_client(settings: &KubernetesSettings) -> Result<kube::Client, KubernetesError> {
+async fn make_client(settings: &KubernetesSettings) -> Result<kube::Client, KubernetesError> {
     let config = match &settings.client_config {
         LoadKubeConfig::Infer => {
             tracing::info!(
@@ -58,6 +64,74 @@ pub async fn make_client(settings: &KubernetesSettings) -> Result<kube::Client, 
     client
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum KubernetesDeployResource {
+    StatefulSet { name: String },
+}
+
+impl KubernetesDeployResource {
+    pub fn get_name(&self) -> &str {
+        match self {
+            Self::StatefulSet { name } => name.as_str(),
+        }
+    }
+}
+
+const SEPARATOR: char = '/';
+const STATEFUL_SET: &str = "statefulset";
+
+impl Serialize for KubernetesDeployResource {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let rep = match self {
+            Self::StatefulSet { name } => format!("{}{}{}", STATEFUL_SET, SEPARATOR, name),
+        };
+
+        serializer.serialize_str(rep.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for KubernetesDeployResource {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct Visitor;
+
+        impl<'v> de::Visitor<'v> for Visitor {
+            type Value = KubernetesDeployResource;
+
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                write!(f, "a string for the k8s workload resource type/target")
+            }
+
+            fn visit_str<E>(self, rep: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                let (workload_resource, name) = rep.split(SEPARATOR).collect_tuple().ok_or_else(|| {
+                    serde::de::Error::custom(format!(
+                        "expected string in form: <<workload-resource-type>/<resource-name>) but got:{}",
+                        rep
+                    ))
+                })?;
+
+                match workload_resource.to_lowercase().as_str() {
+                    STATEFUL_SET => Ok(KubernetesDeployResource::StatefulSet { name: name.to_string() }),
+                    value => Err(serde::de::Error::custom(format!(
+                        "unknown kubernetes workload resource representation: {}",
+                        value
+                    ))),
+                }
+            }
+        }
+
+        deserializer.deserialize_str(Visitor)
+    }
+}
+
 struct KubeUrl(url::Url);
 
 impl TryFrom<KubeUrl> for http::Uri {
@@ -94,6 +168,32 @@ impl TryFrom<KubeUrl> for http::Uri {
             .path_and_query(path_and_query)
             .build()
             .map_err(|err| err.into())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use claim::*;
+    use pretty_assertions::assert_eq;
+    use serde_test::{assert_tokens, Token};
+
+    const EXPECTED_REP: &str = "\"statefulset/springline\"";
+
+    #[test]
+    fn test_kubernetes_workload_resource_serde_tokens() {
+        let resource = KubernetesDeployResource::StatefulSet { name: "springline".to_string() };
+        assert_tokens(&resource, &vec![Token::Str("statefulset/springline")])
+    }
+
+    #[test]
+    fn test_kubernetes_workload_resource_serde() {
+        let resource = KubernetesDeployResource::StatefulSet { name: "springline".to_string() };
+        let json = assert_ok!(serde_json::to_string(&resource));
+        assert_eq!(&json, EXPECTED_REP);
+
+        let ron = assert_ok!(ron::to_string(&resource));
+        assert_eq!(&ron, EXPECTED_REP);
     }
 }
 
