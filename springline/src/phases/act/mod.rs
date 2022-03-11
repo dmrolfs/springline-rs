@@ -4,13 +4,12 @@ use once_cell::sync::Lazy;
 use proctor::error::MetricLabel;
 use proctor::graph::stage::{self, SinkStage};
 use proctor::SharedString;
-use prometheus::{Histogram, HistogramOpts, IntCounterVec, Opts};
+use prometheus::{Histogram, HistogramOpts, HistogramTimer, HistogramVec, IntCounterVec, Opts};
 pub use protocol::{ActEvent, ActMonitor};
 use std::time::Duration;
 use thiserror::Error;
 
 mod action;
-mod kubernetes;
 mod scale_actuator;
 
 pub use action::{
@@ -69,14 +68,31 @@ mod protocol {
     use std::sync::Arc;
     use tokio::sync::broadcast;
 
-    pub type ActMonitor<T> = broadcast::Receiver<Arc<ActEvent<T>>>;
+    pub type ActMonitor<P> = broadcast::Receiver<Arc<ActEvent<P>>>;
 
     #[derive(Debug, Clone, PartialEq)]
-    pub enum ActEvent<T> {
-        PlanExecuted(T),
-        PlanFailed { plan: T, error_metric_label: String },
+    pub enum ActEvent<P> {
+        PlanExecuted(P),
+        PlanFailed { plan: P, error_metric_label: String },
     }
 }
+
+#[inline]
+fn start_scale_action_timer(cluster_label: &str) -> HistogramTimer {
+    ACT_SCALE_ACTION_TIME.with_label_values(&[cluster_label]).start_timer()
+}
+
+pub(crate) static ACT_SCALE_ACTION_TIME: Lazy<HistogramVec> = Lazy::new(|| {
+    HistogramVec::new(
+        HistogramOpts::new(
+            "act_scale_action_time_seconds",
+            "Time spent during the entire scale action",
+        )
+        .buckets(vec![1., 1.5, 2., 3., 4., 5., 10.0, 25., 50., 75., 100.]),
+        &["label"],
+    )
+    .expect("failed creating act_scale_action_time_seconds histogram metric")
+});
 
 pub(crate) static ACT_SCALE_ACTION_COUNT: Lazy<IntCounterVec> = Lazy::new(|| {
     IntCounterVec::new(

@@ -1,7 +1,6 @@
-use itertools::Itertools;
-use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
+use crate::kubernetes::{KubernetesApiConstraints, KubernetesDeployResource};
+use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
-use std::fmt;
 use std::time::Duration;
 
 #[serde_as]
@@ -104,101 +103,6 @@ impl Default for SavepointSettings {
 impl SavepointSettings {
     pub const fn default_operation_timeout() -> Duration {
         Duration::from_secs(10 * 60)
-    }
-}
-
-#[serde_as]
-#[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
-pub struct KubernetesApiConstraints {
-    /// Timeout for the kubernetes list/watch call.
-    ///
-    /// This limits the duration of the call, regardless of any activity or inactivity.
-    /// If unset, the default used is 290s.
-    /// We limit this to 295s due to [inherent watch limitations](https://github.com/kubernetes/kubernetes/issues/6513).
-    #[serde(
-        default = "KubernetesApiConstraints::default_api_timeout",
-        rename = "api_timeout_secs"
-    )]
-    #[serde_as(as = "serde_with::DurationSeconds<u64>")]
-    pub api_timeout: Duration,
-
-    /// Interval to query kubernetes API for the status of the scaling action.
-    #[serde_as(as = "serde_with::DurationSeconds<u64>")]
-    #[serde(default, rename = "polling_interval_secs")]
-    pub polling_interval: Duration,
-}
-
-impl KubernetesApiConstraints {
-    const fn default_api_timeout() -> Duration {
-        Duration::from_secs(295)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum KubernetesDeployResource {
-    StatefulSet { name: String },
-}
-
-impl KubernetesDeployResource {
-    pub fn get_name(&self) -> &str {
-        match self {
-            Self::StatefulSet { name } => name.as_str(),
-        }
-    }
-}
-
-const SEPARATOR: char = '/';
-const STATEFUL_SET: &str = "statefulset";
-
-impl Serialize for KubernetesDeployResource {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let rep = match self {
-            Self::StatefulSet { name } => format!("{}{}{}", STATEFUL_SET, SEPARATOR, name),
-        };
-
-        serializer.serialize_str(rep.as_str())
-    }
-}
-
-impl<'de> Deserialize<'de> for KubernetesDeployResource {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        struct Visitor;
-
-        impl<'v> de::Visitor<'v> for Visitor {
-            type Value = KubernetesDeployResource;
-
-            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                write!(f, "a string for the k8s workload resource type/target")
-            }
-
-            fn visit_str<E>(self, rep: &str) -> Result<Self::Value, E>
-            where
-                E: de::Error,
-            {
-                let (workload_resource, name) = rep.split(SEPARATOR).collect_tuple().ok_or_else(|| {
-                    serde::de::Error::custom(format!(
-                        "expected string in form: <<workload-resource-type>/<resource-name>) but got:{}",
-                        rep
-                    ))
-                })?;
-
-                match workload_resource.to_lowercase().as_str() {
-                    STATEFUL_SET => Ok(KubernetesDeployResource::StatefulSet { name: name.to_string() }),
-                    value => Err(serde::de::Error::custom(format!(
-                        "unknown kubernetes workload resource representation: {}",
-                        value
-                    ))),
-                }
-            }
-        }
-
-        deserializer.deserialize_str(Visitor)
     }
 }
 
@@ -310,21 +214,5 @@ mod tests {
                 EXPECTED_REP
             )
         );
-    }
-
-    #[test]
-    fn test_kubernetes_workload_resource_serde_tokens() {
-        let resource = KubernetesDeployResource::StatefulSet { name: "springline".to_string() };
-        assert_tokens(&resource, &vec![Token::Str("statefulset/springline")])
-    }
-
-    #[test]
-    fn test_kubernetes_workload_resource_serde() {
-        let resource = KubernetesDeployResource::StatefulSet { name: "springline".to_string() };
-        let json = assert_ok!(serde_json::to_string(&resource));
-        assert_eq!(&json, EXPECTED_REP);
-
-        let ron = assert_ok!(ron::to_string(&resource));
-        assert_eq!(&ron, EXPECTED_REP);
     }
 }

@@ -28,8 +28,8 @@ fn main() -> Result<()> {
     let flink = springline::flink::FlinkContext::from_settings(&settings.flink)?;
 
     start_pipeline(async move {
-        let kube = springline::kubernetes::make_client(&settings.kubernetes).await?;
-        let patch_replicas = ScaleActuator::new(kube, &settings.action);
+        let kube = springline::kubernetes::KubernetesContext::from_settings(&settings).await?;
+        let patch_replicas = ScaleActuator::new(kube, flink.clone(), &settings);
         let rx_action_monitor = patch_replicas.rx_monitor();
 
         let (monitor_feedback_sensor, tx_monitor_feedback) = make_monitor_sensor_and_api();

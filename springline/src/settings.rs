@@ -20,9 +20,7 @@ mod kubernetes_settings;
 mod plan_settings;
 mod sensor_settings;
 
-pub use action_settings::{
-    ActionSettings, FlinkActionSettings, KubernetesApiConstraints, KubernetesDeployResource, TaskmanagerContext,
-};
+pub use action_settings::{ActionSettings, FlinkActionSettings, TaskmanagerContext};
 pub use engine_settings::EngineSettings;
 pub use flink_settings::FlinkSettings;
 pub use governance_settings::{GovernancePolicySettings, GovernanceRuleSettings, GovernanceSettings};
@@ -37,23 +35,33 @@ pub type DecisionSettings = PolicySettings<DecisionTemplateData>;
 #[cfg_attr(test, derive(PartialEq))]
 pub struct Settings {
     pub http: HttpServerSettings,
+
     #[serde(default)]
     pub flink: FlinkSettings,
+
     #[serde(default)]
     pub kubernetes: KubernetesSettings,
+
     #[serde(default)]
     pub engine: EngineSettings,
+
     #[serde(default)]
     pub sensor: SensorSettings,
+
     #[serde(default)]
     pub eligibility: EligibilitySettings,
+
     #[serde(default)]
     pub decision: DecisionSettings,
+
     #[serde(default)]
     pub plan: PlanSettings,
+
     #[serde(default)]
     pub governance: GovernanceSettings,
+
     pub action: ActionSettings,
+
     pub context_stub: ContextStubSettings,
 }
 
@@ -148,6 +156,7 @@ mod tests {
     use std::time::Duration;
     use std::{env, panic};
 
+    use crate::kubernetes::{KubernetesApiConstraints, KubernetesDeployResource};
     use chrono::TimeZone;
     use claim::*;
     use config::{Config, FileFormat};

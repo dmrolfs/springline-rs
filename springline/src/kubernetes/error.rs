@@ -29,6 +29,9 @@ pub enum KubernetesError {
 
     #[error("could not make HTTP URI from kubernetes url: {0}")]
     Http(#[from] http::Error),
+
+    #[error("timeout setting too big for kubernetes: {0}")]
+    TimeoutTooBig(#[from] std::num::TryFromIntError),
 }
 
 const CONFIG_LABEL: &str = "config";
@@ -46,6 +49,7 @@ impl MetricLabel for KubernetesError {
             Self::KubeApi(_) => Left("api".into()),
             Self::Kube(_) => Left("client".into()),
             Self::Http(_) => Left("http".into()),
+            Self::TimeoutTooBig(_) => Left(CONFIG_LABEL.into()),
         }
     }
 }
