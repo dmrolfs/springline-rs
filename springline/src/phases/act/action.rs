@@ -1,5 +1,6 @@
 use crate::phases::act::scale_actuator::ScaleActionPlan;
 use crate::phases::act::ActError;
+use std::fmt::{self, Debug};
 
 use async_trait::async_trait;
 
@@ -9,7 +10,6 @@ use crate::model::CorrelationId;
 use crate::kubernetes::KubernetesContext;
 use proctor::AppData;
 use std::collections::HashMap;
-use std::fmt::Debug;
 use std::time::Duration;
 
 mod composite;
@@ -41,7 +41,9 @@ pub trait ScaleAction: Debug + Send + Sync {
     async fn execute<'s>(&self, plan: &'s Self::In, session: &'s mut ActionSession) -> Result<(), ActError>;
 }
 
-#[derive(Debug, Clone)]
+pub const ACTION_TOTAL_DURATION: &str = "total_duration";
+
+#[derive(Clone)]
 pub struct ActionSession {
     // pub plan: ScalePlan,
     pub correlation: CorrelationId,
@@ -78,5 +80,17 @@ impl ActionSession {
 
     pub fn mark_duration(&mut self, label: impl AsRef<str>, duration: Duration) {
         self.durations.insert(label.as_ref().to_string(), duration);
+    }
+}
+
+impl Debug for ActionSession {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ActionSession")
+            .field("correlation", &format!("{}", self.correlation))
+            .field("durations", &self.durations)
+            .field("active_jobs", &self.active_jobs)
+            .field("uploaded_jars", &self.uploaded_jars)
+            .field("savepoints", &self.savepoints)
+            .finish()
     }
 }

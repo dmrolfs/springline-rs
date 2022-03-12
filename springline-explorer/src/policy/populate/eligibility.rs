@@ -19,6 +19,10 @@ impl PopulateContext for EligibilityContext {
             .with_prompt("Is the cluster actively deploying at policy evaluation?")
             .interact()?;
 
+        let is_rescaling = Confirm::with_theme(&*THEME)
+            .with_prompt("Is the cluster actively rescaling at policy evaluation?")
+            .interact()?;
+
         let since_last_deployment = Input::with_theme(&*THEME)
             .with_prompt("How many seconds before policy evaluation was the last deployment?")
             .default(settings.template_data.clone().and_then(|td| td.cooling_secs).unwrap_or(0))
@@ -60,7 +64,7 @@ impl PopulateContext for EligibilityContext {
             recv_timestamp: now.into(),
             all_sinks_healthy,
             task_status: TaskStatus { last_failure },
-            cluster_status: ClusterStatus { is_deploying, last_deployment },
+            cluster_status: ClusterStatus { is_deploying, is_rescaling, last_deployment },
             custom,
         })
     }

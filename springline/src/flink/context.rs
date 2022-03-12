@@ -130,7 +130,6 @@ impl fmt::Debug for FlinkContextRef {
 }
 
 impl FlinkContextRef {
-    #[tracing::instrument(level = "info", skip(self))]
     pub async fn query_uploaded_jars(&self, correlation: &CorrelationId) -> Result<Vec<JarSummary>, FlinkError> {
         let _timer = flink::start_flink_uploaded_jars_timer(self.cluster_label.as_str());
         let span = tracing::info_span!("query Flink uploaded jars", %correlation);
@@ -266,10 +265,8 @@ mod jars_protocal {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::flink::context::jars_protocal::GetJarsResponse;
     use crate::flink::model::JarEntry;
     use crate::flink::{JarId, JobId, JobState, TaskState, VertexDetail, VertexId};
-    use crate::phases::sense::flink::STD_METRIC_ORDERS;
     use claim::*;
     use pretty_assertions::assert_eq;
     use pretty_snowflake::Id;
@@ -278,7 +275,7 @@ mod tests {
     use reqwest_middleware::ClientBuilder;
     use reqwest_retry::policies::ExponentialBackoff;
     use reqwest_retry::RetryTransientMiddleware;
-    use serde_json::{json, json_unexpected};
+    use serde_json::json;
     use serde_test::{assert_tokens, Token};
     use std::time::Duration;
     use tokio_test::block_on;

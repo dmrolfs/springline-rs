@@ -12,6 +12,7 @@ use thiserror::Error;
 mod action;
 mod scale_actuator;
 
+pub use action::ACTION_TOTAL_DURATION;
 pub use action::{
     FLINK_JOB_SAVEPOINT_WITH_CANCEL_TIME, FLINK_MISSED_JAR_RESTARTS, FLINK_RESTART_JOB_TIME,
     FLINK_TASKMANAGER_PATCH_REPLICAS_TIME,
@@ -65,15 +66,24 @@ impl MetricLabel for ActError {
 }
 
 mod protocol {
+    use std::collections::HashMap;
     use std::sync::Arc;
+    use std::time::Duration;
     use tokio::sync::broadcast;
 
     pub type ActMonitor<P> = broadcast::Receiver<Arc<ActEvent<P>>>;
 
     #[derive(Debug, Clone, PartialEq)]
     pub enum ActEvent<P> {
-        PlanExecuted(P),
-        PlanFailed { plan: P, error_metric_label: String },
+        PlanActionStarted(P),
+        PlanExecuted {
+            plan: P,
+            durations: HashMap<String, Duration>,
+        },
+        PlanFailed {
+            plan: P,
+            error_metric_label: String,
+        },
     }
 }
 
