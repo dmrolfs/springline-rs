@@ -552,7 +552,7 @@ mod tests {
                 correlation_id: Id::direct("planning", 17, "ABS"),
                 recv_timestamp: Timestamp::now(),
                 min_scaling_step: None,
-                restart: Some(expected.restart),
+                rescale_restart: Some(expected.restart),
                 max_catch_up: None,
                 recovery_valid: Some(expected.valid_offset),
             };

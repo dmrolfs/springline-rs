@@ -1,13 +1,13 @@
-use chrono::Utc;
+use std::collections::HashMap;
 use std::fmt::{self, Display};
 use std::sync::Arc;
+use std::time::Duration;
 
 use enumflags2::{bitflags, BitFlags};
 use once_cell::sync::Lazy;
 use proctor::elements::{Telemetry, Timestamp};
 use proctor::graph::stage::{ActorSourceApi, ActorSourceCmd};
 use proctor::phases::plan::{PlanEvent, PlanMonitor};
-use proctor::serde::FORMAT;
 use prometheus::{IntCounter, IntGauge};
 
 use crate::model;
@@ -15,7 +15,7 @@ use crate::phases::act::{ActEvent, ActMonitor, ACT_PHASE_ERRORS, ACT_SCALE_ACTIO
 use crate::phases::decision::{DecisionContext, DecisionEvent, DecisionMonitor, DecisionResult};
 use crate::phases::eligibility::{EligibilityContext, EligibilityEvent, EligibilityMonitor};
 use crate::phases::governance::{GovernanceContext, GovernanceEvent, GovernanceMonitor, GovernanceOutcome};
-use crate::phases::plan::{FlinkPlanningEvent, FlinkPlanningMonitor, PlanningStrategy};
+use crate::phases::plan::{FlinkPlanningEvent, FlinkPlanningMonitor, PlanningStrategy, ScalePlan};
 
 #[bitflags(default = Sense | Plan | Act)]
 #[repr(u8)]
@@ -260,53 +260,91 @@ impl Monitor {
         event: Arc<ActEvent<GovernanceOutcome>>, tx_feedback: Option<&ActorSourceApi<Telemetry>>,
         _loaded: &mut BitFlags<ReadyPhases>,
     ) {
-        match &*event {
-            ActEvent::PlanExecuted(plan) => {
-                tracing::info!(?plan, correlation=?plan.correlation_id, "plan executed");
-                ACT_SCALE_ACTION_COUNT
-                    .with_label_values(&[
-                        plan.current_nr_task_managers.to_string().as_str(),
-                        plan.target_nr_task_managers.to_string().as_str(),
-                    ])
-                    .inc();
+        let now = Timestamp::now();
 
-                let now = Timestamp::now();
-                let start = plan.recv_timestamp;
-                let seconds = now.as_f64() - start.as_f64();
-                PIPELINE_CYCLE_TIME.observe(seconds);
+        let action_info = match &*event {
+            ActEvent::PlanActionStarted(plan) => Self::do_handle_plan_started(plan),
+            ActEvent::PlanExecuted { plan, durations } => Self::do_handle_plan_executed(plan, durations, now),
+            ActEvent::PlanFailed { plan, error_metric_label } => Self::do_handle_plan_failed(plan, error_metric_label),
+        };
 
-                if let Some(tx) = tx_feedback {
-                    let now: chrono::DateTime<Utc> = now.into();
-                    let now_rep = format!("{}", now.format(FORMAT));
-                    let telemetry = maplit::hashmap! { crate::phases::eligibility::CLUSTER__LAST_DEPLOYMENT.to_string() => now_rep.into(), };
-                    match ActorSourceCmd::push(tx, telemetry.into()).await {
-                        // let (cmd, rx) = ActorSourceCmd::push(telemetry.into());
-                        //
-                        // match tx.send(cmd) {
-                        Ok(_) => {
-                            tracing::info!(scale_deployment_timestamp=?now, "notify springline of scale deployment");
-                        },
-                        Err(err) => {
-                            tracing::error!(error=?err, "failed to send scale deployment notification from monitor.");
-                        },
-                    }
-
-                    // if let Err(error) = rx.await {
-                    //     tracing::error!(?error, "scale deployment notification failed at clearinghouse")
-                    // }
-                }
-            },
-            ActEvent::PlanFailed { plan, error_metric_label } => {
-                tracing::error!(%error_metric_label, ?plan, "plan action during act phase failed.");
-                ACT_PHASE_ERRORS
-                    .with_label_values(&[
-                        plan.current_nr_task_managers.to_string().as_str(),
-                        plan.target_nr_task_managers.to_string().as_str(),
-                        error_metric_label,
-                    ])
-                    .inc()
-            },
+        if let Some(tx) = tx_feedback {
+            match ActorSourceCmd::push(tx, action_info).await {
+                Ok(_) => {
+                    tracing::info!(scale_deployment_timestamp=%now, "notify springline of scale action");
+                },
+                Err(err) => {
+                    tracing::error!(error=?err, "failed to send scale deployment notification from monitor -- may impact future eligibility determination.");
+                },
+            }
         }
+    }
+
+    #[tracing::instrument(level = "info", skip(plan))]
+    fn do_handle_plan_started(plan: &ScalePlan) -> Telemetry {
+        tracing::info!(?plan, correlation=?plan.correlation_id, "plan action started");
+
+        let mut started_info = Telemetry::new();
+        started_info.insert(
+            crate::phases::eligibility::CLUSTER__IS_RESCALING.to_string(),
+            true.into(),
+        );
+        started_info
+    }
+
+    #[tracing::instrument(level = "info", skip(plan, durations))]
+    fn do_handle_plan_executed(plan: &ScalePlan, durations: &HashMap<String, Duration>, now: Timestamp) -> Telemetry {
+        tracing::info!(?plan, correlation=?plan.correlation_id, ?durations, "plan executed");
+        ACT_SCALE_ACTION_COUNT
+            .with_label_values(&[
+                plan.current_nr_task_managers.to_string().as_str(),
+                plan.target_nr_task_managers.to_string().as_str(),
+            ])
+            .inc();
+
+        let start = plan.recv_timestamp;
+        let cycle_time_seconds = now.as_f64() - start.as_f64();
+        PIPELINE_CYCLE_TIME.observe(cycle_time_seconds);
+
+        let mut executed_info = maplit::hashmap! {
+            crate::phases::eligibility::CLUSTER__IS_RESCALING.to_string() => false.into(),
+            crate::phases::eligibility::CLUSTER__LAST_DEPLOYMENT.to_string() => now.to_string().into(),
+        };
+
+        if let Some(rescale_restart) = durations.get(crate::phases::act::ACTION_TOTAL_DURATION) {
+            match i64::try_from(rescale_restart.as_secs()) {
+                Ok(rescale_restart_secs) => {
+                    executed_info.insert(
+                        crate::phases::plan::PLANNING__RESCALE_RESTART.to_string(),
+                        rescale_restart_secs.into(),
+                    );
+                },
+                Err(err) => {
+                    tracing::warn!(error=?err, "failed to convert rescale restart duration to seconds - not publishing");
+                },
+            }
+        }
+
+        executed_info.into()
+    }
+
+    #[tracing::instrument(level = "info", skip(plan))]
+    fn do_handle_plan_failed(plan: &ScalePlan, error_metric_label: &str) -> Telemetry {
+        tracing::error!(%error_metric_label, ?plan, "plan action during act phase failed.");
+        ACT_PHASE_ERRORS
+            .with_label_values(&[
+                plan.current_nr_task_managers.to_string().as_str(),
+                plan.target_nr_task_managers.to_string().as_str(),
+                error_metric_label,
+            ])
+            .inc();
+
+        let mut failed_info = Telemetry::new();
+        failed_info.insert(
+            crate::phases::eligibility::CLUSTER__IS_RESCALING.to_string(),
+            false.into(),
+        );
+        failed_info
     }
 }
 

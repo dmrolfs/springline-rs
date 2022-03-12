@@ -49,6 +49,7 @@ impl SubscriptionRequirements for EligibilityContext {
         maplit::hashset! {
             // this works because we rename the property via #serde field attributes
             "cluster.is_deploying".into(),
+            CLUSTER__LAST_DEPLOYMENT.into(),
             "cluster.last_deployment".into(),
             "all_sinks_healthy".into(),
         }
@@ -57,6 +58,7 @@ impl SubscriptionRequirements for EligibilityContext {
     fn optional_fields() -> HashSet<SharedString> {
         maplit::hashset! {
             "task.last_failure".into(),
+            CLUSTER__IS_RESCALING.into(),
         }
     }
 }
@@ -120,6 +122,7 @@ impl TaskStatus {
 }
 
 pub const CLUSTER__LAST_DEPLOYMENT: &str = "cluster.last_deployment";
+pub const CLUSTER__IS_RESCALING: &str = "cluster.is_rescaling";
 
 #[derive(PolarClass, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ClusterStatus {
@@ -131,6 +134,12 @@ pub struct ClusterStatus {
     #[polar(attribute)]
     #[serde(rename = "cluster.is_deploying")]
     pub is_deploying: bool,
+
+    /// Springline is actively rescaling the cluster. This status is supplied as feedback from the
+    /// Action phase.
+    #[polar(attribute)]
+    #[serde(default, rename = "cluster.is_rescaling")]
+    pub is_rescaling: bool,
 
     // todo: source property via k8s describe job-manager pod in json then
     // filter for .status.conditions until type:Ready has status:True
@@ -207,7 +216,11 @@ mod tests {
             recv_timestamp: Timestamp::new(0, 0),
             all_sinks_healthy: true,
             task_status: TaskStatus { last_failure: Some(DT_1.clone()) },
-            cluster_status: ClusterStatus { is_deploying: false, last_deployment: DT_2.clone() },
+            cluster_status: ClusterStatus {
+                is_deploying: false,
+                is_rescaling: false,
+                last_deployment: DT_2.clone(),
+            },
             custom: maplit::hashmap! {
                 "custom_foo".to_string() => "fred flintstone".into(),
                 "custom_bar".to_string() => "The Happy Barber".into(),
@@ -312,7 +325,11 @@ mod tests {
             recv_timestamp: Timestamp::new(0, 0),
             all_sinks_healthy: false,
             task_status: TaskStatus { last_failure: Some(DT_1.clone()) },
-            cluster_status: ClusterStatus { is_deploying: false, last_deployment: DT_2.clone() },
+            cluster_status: ClusterStatus {
+                is_deploying: false,
+                is_rescaling: false,
+                last_deployment: DT_2.clone(),
+            },
             custom: maplit::hashmap! {"foo".to_string() => "bar".into(),},
         };
         tracing::info!("actual: {:?}", actual);

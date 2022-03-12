@@ -417,13 +417,12 @@ fn start_flink_vertex_sensor_avail_telemetry_timer() -> HistogramTimer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::flink::{JobDetail, JobState, TaskState, VertexDetail};
     use crate::phases::sense::flink;
     use crate::phases::sense::flink::STD_METRIC_ORDERS;
     use claim::*;
     use pretty_assertions::assert_eq;
     use pretty_snowflake::Id;
-    use proctor::elements::{Telemetry, TelemetryType, Timestamp};
+    use proctor::elements::{Telemetry, TelemetryType};
     use reqwest::header::HeaderMap;
     use reqwest_middleware::ClientBuilder;
     use reqwest_retry::policies::ExponentialBackoff;
@@ -432,7 +431,6 @@ mod tests {
     use std::borrow::Cow;
     use std::collections::HashSet;
     use std::sync::atomic::{AtomicU32, Ordering};
-    use std::time::Duration;
     use tokio::sync::mpsc;
     use tokio_test::block_on;
     use url::Url;

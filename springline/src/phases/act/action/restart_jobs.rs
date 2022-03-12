@@ -444,7 +444,6 @@ mod tests {
     use super::*;
     use claim::*;
     use pretty_assertions::assert_eq;
-    use serde_json::json;
     use serde_test::{assert_tokens, Token};
 
     #[test]

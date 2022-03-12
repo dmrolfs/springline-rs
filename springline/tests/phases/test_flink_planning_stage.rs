@@ -566,7 +566,7 @@ async fn test_flink_planning_context_change() {
             correlation_id: CORRELATION_ID.relabel::<PlanningContext>(),
             recv_timestamp: Timestamp::now(),
             min_scaling_step: Some(100),
-            restart: Some(Duration::from_millis(1)),
+            rescale_restart: Some(Duration::from_millis(1)),
             max_catch_up: Some(Duration::from_millis(2)),
             recovery_valid: Some(Duration::from_millis(3)),
         })
@@ -577,7 +577,7 @@ async fn test_flink_planning_context_change() {
     match context_event.as_ref() {
         PlanEvent::ContextChanged(ctx) => {
             assert_eq!(assert_some!(ctx.min_scaling_step), 100);
-            assert_eq!(assert_some!(ctx.restart), Duration::from_millis(1));
+            assert_eq!(assert_some!(ctx.rescale_restart), Duration::from_millis(1));
             assert_eq!(assert_some!(ctx.max_catch_up), Duration::from_millis(2));
             assert_eq!(assert_some!(ctx.recovery_valid), Duration::from_millis(3));
         },

@@ -13,6 +13,8 @@ use serde_with::serde_as;
 use std::collections::HashSet;
 use std::time::Duration;
 
+pub const PLANNING__RESCALE_RESTART: &str = "planning.rescale_restart";
+
 #[serde_as]
 #[derive(Label, Debug, Clone, Serialize, Deserialize)]
 pub struct PlanningContext {
@@ -26,9 +28,9 @@ pub struct PlanningContext {
 
     /// Time expected to restart Flink when scaling. Baseline time is set via configuration, but as
     /// springline rescales, it measures the restart duration and updates planning accordingly.
-    #[serde(rename = "planning.restart")]
+    #[serde(rename = "planning.rescale_restart")]
     #[serde_as(as = "Option<serde_with::DurationSeconds<u64>>")]
-    pub restart: Option<Duration>,
+    pub rescale_restart: Option<Duration>,
 
     /// Configured maximum time allowed to catch up processing accumulated records after the
     /// rescaling action. If the tolerating a longer catch-up time, allows the target cluster size
@@ -46,7 +48,7 @@ pub struct PlanningContext {
 
 impl PlanningContext {
     pub fn patch_inputs(&self, inputs: &mut ForecastInputs) {
-        if let Some(r) = self.restart {
+        if let Some(r) = self.rescale_restart {
             inputs.restart = r;
         }
 
@@ -63,7 +65,7 @@ impl PlanningContext {
 impl PartialEq for PlanningContext {
     fn eq(&self, other: &Self) -> bool {
         self.min_scaling_step == other.min_scaling_step
-            && self.restart == other.restart
+            && self.rescale_restart == other.rescale_restart
             && self.max_catch_up == other.max_catch_up
             && self.recovery_valid == other.recovery_valid
     }
@@ -93,7 +95,7 @@ impl UpdateMetrics for PlanningContext {
                     PLANNING_CTX_MIN_SCALING_STEP.set(min_scaling_step as i64);
                 }
 
-                if let Some(restart) = ctx.restart {
+                if let Some(restart) = ctx.rescale_restart {
                     PLANNING_CTX_FORECASTING_RESTART_SECS.set(restart.as_secs() as i64);
                 }
 
@@ -164,7 +166,7 @@ mod tests {
             recv_timestamp: now,
             correlation_id: corr.clone(),
             min_scaling_step: None,
-            restart: Some(Duration::from_secs(17)),
+            rescale_restart: Some(Duration::from_secs(17)),
             max_catch_up: None,
             recovery_valid: Some(Duration::from_secs(22)),
         };
@@ -187,7 +189,7 @@ mod tests {
                 Token::TupleStructEnd,
                 Token::Str("planning.min_scaling_step"),
                 Token::None,
-                Token::Str("planning.restart"),
+                Token::Str("planning.rescale_restart"),
                 Token::Some,
                 Token::U64(17),
                 Token::Str("planning.max_catch_up"),

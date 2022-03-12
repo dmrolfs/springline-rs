@@ -53,21 +53,21 @@ impl ScaleAction for TriggerSavepoint
     type In = ScalePlan;
     // type Plan = GovernanceOutcome;
 
-    #[tracing::instrument(level = "info", name = "StopFlinkWithSavepoint::execute", skip(self))]
+    #[tracing::instrument(level = "info", name = "StopFlinkWithSavepoint::execute", skip(self, _plan))]
     async fn execute<'s>(&self, _plan: &'s Self::In, session: &'s mut ActionSession) -> Result<(), ActError> {
         let timer = start_flink_job_savepoint_with_cancel_timer(&session.flink);
 
         let correlation = session.correlation();
-        //todo: consider moving this to context channel?? would support keeping track of jar and job?
-        let active_jobs: Vec<JobId> = session
-            .flink
-            .query_active_jobs(&correlation)
-            .await
-            .map(|jobs| jobs.into_iter().map(|j| j.id).collect())?;
+        let active_jobs = session.active_jobs.clone().unwrap_or_default();
+        // let active_jobs: Vec<JobId> = session
+        //     .flink
+        //     .query_active_jobs(&correlation)
+        //     .await
+        //     .map(|jobs| jobs.into_iter().map(|j| j.id).collect())?;
 
         let job_triggers = Self::trigger_savepoints_for(&active_jobs, session).await?;
 
-        session.active_jobs = Some(active_jobs);
+        // session.active_jobs = Some(active_jobs);
 
         let tasks = job_triggers
             .into_iter()
@@ -211,7 +211,7 @@ impl TriggerSavepoint
         })
     }
 
-    #[tracing::instrument(level = "info", skip(session))]
+    #[tracing::instrument(level = "info", skip(job_id, trigger_id, session))]
     async fn check_savepoint(
         job_id: &JobId, trigger_id: &trigger::TriggerId, session: &ActionSession,
     ) -> Result<SavepointStatus, FlinkError> {
@@ -235,6 +235,7 @@ impl TriggerSavepoint
             .instrument(span)
             .await
             .and_then(|body: String| {
+                tracing::warn!(%body, "DMR: SAVEPOINT BODY");
                 let info_response: Result<query::SavepointInfoResponseBody, FlinkError> =
                     serde_json::from_str(body.as_str()).map_err(|err| err.into());
                 tracing::info!(%body, ?info_response, "Savepoint info received");
@@ -282,8 +283,13 @@ impl TriggerSavepoint
                     let error = FlinkError::UnexpectedSavepointStatus(job.clone(), s);
                     errors.push((job, error));
                 },
-                Ok(s) if s.operation.is_right() => {
-                    tracing::error!(%job, savepoint=?s, "savepoint task completed but failed: {}", s.operation.as_ref().right().unwrap());
+                Ok(s) if s.operation.is_none() => {
+                    tracing::error!(%job, savepoint=?s, "savepoint task finished but no operation was returned - this should not happen");
+                    failed.push((job, s))
+                },
+                Ok(s) if s.operation.as_ref().unwrap().is_right() => {
+                    let failure_reason = s.operation.as_ref().and_then(|o| o.as_ref().right()).unwrap();
+                    tracing::error!(%job, savepoint=?s, "savepoint task completed but failed: {failure_reason}");
                     // let error = FlinkError::UnexpectedSavepointStatus(job.clone(), s);
                     failed.push((job, s));
                 },
@@ -399,15 +405,16 @@ mod query {
     #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
     pub struct SavepointInfoResponseBody {
         pub status: QueueStatus,
-        pub operation: SavepointOperation,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub operation: Option<SavepointOperation>,
     }
 
     impl From<SavepointInfoResponseBody> for SavepointStatus {
         fn from(info: SavepointInfoResponseBody) -> Self {
-            Self {
-                status: info.status.into(),
-                operation: TryFrom::try_from(info.operation).expect("invalid savepoint operation"),
-            }
+            let operation = info
+                .operation
+                .map(|op| TryFrom::try_from(op).expect("invalid savepoint operation"));
+            Self { status: info.status.into(), operation }
         }
     }
 
@@ -429,7 +436,9 @@ mod query {
 
     #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
     pub struct SavepointOperation {
+        #[serde(skip_serializing_if = "Option::is_none")]
         pub location: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
         pub failure_reason: Option<String>,
     }
 
@@ -517,6 +526,19 @@ mod tests {
     }
 
     #[test]
+    fn test_savepoint_body_null_operation_json() {
+        let body = r##"{"status":{"id":"IN_PROGRESS"},"operation":null}"##;
+        let actual: query::SavepointInfoResponseBody = assert_ok!(serde_json::from_str(body));
+        assert_eq!(
+            actual,
+            query::SavepointInfoResponseBody {
+                status: QueueStatus { id: QueueState::InProgress },
+                operation: None,
+            }
+        );
+    }
+
+    #[test]
     fn test_savepoint_info_serde_json() {
         let success = json!({
             "status": { "id": "COMPLETED" },
@@ -529,10 +551,10 @@ mod tests {
             actual,
             query::SavepointInfoResponseBody {
                 status: QueueStatus { id: QueueState::Completed },
-                operation: SavepointOperation {
+                operation: Some(SavepointOperation {
                     location: Some("s3a://dev-flink-58dz/foo/savepoints/savepoint-957152-e82cbb4804b1".to_string()),
                     failure_reason: None,
-                },
+                }),
             }
         )
     }

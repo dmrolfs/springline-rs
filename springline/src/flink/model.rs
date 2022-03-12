@@ -399,6 +399,7 @@ impl JobSavepointReport {
             .map(|(job, status)| {
                 let location = status
                     .operation
+                    .expect("savepoint status must have an operation")
                     .left()
                     .expect("successful savepoint location is not populated.");
                 (job, location)
@@ -410,6 +411,7 @@ impl JobSavepointReport {
             .map(|(job, status)| {
                 let failure = status
                     .operation
+                    .expect("failed savepoint status must have an operation")
                     .right()
                     .expect("failed savepoint failure reason is not populated.");
                 (job, failure)
@@ -445,7 +447,7 @@ impl From<JobSavepointReport> for TelemetryValue {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SavepointStatus {
     pub status: OperationStatus,
-    pub operation: Either<SavepointLocation, FailureReason>,
+    pub operation: Option<Either<SavepointLocation, FailureReason>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

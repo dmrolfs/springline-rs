@@ -14,7 +14,7 @@ impl ScaleAction for PrepareData {
     type In = ScalePlan;
     // type Plan = GovernanceOutcome;
 
-    #[tracing::instrument(level = "info", name = "PrepareData::execute", skip(self))]
+    #[tracing::instrument(level = "info", name = "PrepareData::execute", skip(self, _plan))]
     async fn execute<'s>(&self, _plan: &'s Self::In, session: &'s mut ActionSession) -> Result<(), ActError> {
         let start = tokio::time::Instant::now();
 

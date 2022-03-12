@@ -10,8 +10,8 @@ use crate::Result;
 mod context;
 mod policy;
 
-pub use context::CLUSTER__LAST_DEPLOYMENT;
 pub use context::{ClusterStatus, EligibilityContext, TaskStatus};
+pub use context::{CLUSTER__IS_RESCALING, CLUSTER__LAST_DEPLOYMENT};
 pub(crate) use context::{
     ELIGIBILITY_CTX_ALL_SINKS_HEALTHY, ELIGIBILITY_CTX_CLUSTER_IS_DEPLOYING, ELIGIBILITY_CTX_CLUSTER_LAST_DEPLOYMENT,
     ELIGIBILITY_CTX_TASK_LAST_FAILURE,

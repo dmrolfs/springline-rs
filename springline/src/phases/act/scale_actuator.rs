@@ -127,7 +127,7 @@ where
         Ok(())
     }
 
-    #[tracing::instrument(level = "info", name = "run patch replicas", skip(self))]
+    #[tracing::instrument(level = "info", name = "run act scale actuator", skip(self))]
     async fn run(&mut self) -> ProctorResult<()> {
         self.do_run().await.map_err(|err| ProctorError::Phase(err.into()))?;
         Ok(())
@@ -157,6 +157,7 @@ where
         // let stateful_set: kube::Api<StatefulSet> = kube::Api::default_namespaced(self.kube.clone());
 
         while let Some(plan) = inlet.recv().await {
+            self.notify_action_started(plan.clone());
             let _timer = proctor::graph::stage::start_stage_eval_time(STAGE_NAME);
             let mut session = ActionSession::new(plan.correlation().clone(), self.kube.clone(), self.flink.clone());
             match self.action.execute(&plan, &mut session).await {
@@ -173,38 +174,57 @@ where
         Ok(())
     }
 
-    #[tracing::instrument(level = "info", skip(self))]
-    fn notify_action_succeeded(&self, plan: In, session: ActionSession) {
-        let correlation = session.correlation();
-        let recv_timestamp = plan.recv_timestamp();
-        match self.tx_action_monitor.send(Arc::new(ActEvent::PlanExecuted(plan))) {
-            Ok(recipients) => {
-                tracing::info!(?correlation, %recv_timestamp, "published PlanExecuted to {} recipients", recipients);
-            },
-            Err(err) => {
-                tracing::error!(error=?err, ?correlation, %recv_timestamp, "failed to publish PlanExecuted event.");
-            },
+    #[tracing::instrument(
+        level = "info",
+        skip(self, plan),
+        fields(correlation=%plan.correlation(), recv_timestamp=%plan.recv_timestamp())
+    )]
+    fn notify_action_started(&self, plan: In) {
+        tracing::info!(?plan, "scale action started");
+        match self.tx_action_monitor.send(Arc::new(ActEvent::PlanActionStarted(plan))) {
+            Ok(nr_recipients) => tracing::info!("published PlanActionStarted event to {nr_recipients} recipients."),
+            Err(err) => tracing::error!(error=?err, "failed to publish PlanActionStarted event."),
         }
     }
 
-    #[tracing::instrument(level = "info", skip(self, error))]
+    #[tracing::instrument(
+        level = "info",
+        skip(self, plan, session),
+        fields(correlation=%plan.correlation(), recv_timestamp=%plan.recv_timestamp())
+    )]
+    fn notify_action_succeeded(&self, plan: In, session: ActionSession) {
+        let event = Arc::new(ActEvent::PlanExecuted { plan, durations: session.durations.clone() });
+
+        match self.tx_action_monitor.send(event) {
+            Ok(nr_recipients) => tracing::info!(
+                action_durations=?session.durations,
+                "published PlanExecuted event to {nr_recipients} recipients."
+            ),
+            Err(err) => tracing::error!(error=?err, "failed to publish PlanExecuted event."),
+        }
+    }
+
+    #[tracing::instrument(
+        level = "info",
+        skip(self, plan, session, error),
+        fields(correlation=%plan.correlation(), recv_timestamp=%plan.recv_timestamp(), error_label=%error.label(),)
+    )]
     fn notify_action_failed<E>(&self, plan: In, session: ActionSession, error: E)
     where
         E: Error + MetricLabel,
     {
-        let correlation = session.correlation();
-        let recv_timestamp = plan.recv_timestamp();
         let label = error.label();
         match self.tx_action_monitor.send(Arc::new(ActEvent::PlanFailed {
             plan,
             error_metric_label: label.into(),
         })) {
-            Ok(recipients) => {
-                tracing::info!(?correlation, %recv_timestamp, action_error=?error, "published PlanFailed to {} recipients", recipients);
-            },
-            Err(err) => {
-                tracing::error!(?correlation, %recv_timestamp, action_error=?error, publish_error=?err, "failed to publish PlanFailed event.");
-            },
+            Ok(recipients) => tracing::info!(
+                action_durations=?session.durations, action_error=?error,
+                "published PlanFailed to {} recipients", recipients
+            ),
+            Err(err) => tracing::error!(
+                action_error=?error, publish_error=?err, "failed to publish PlanFailed event."
+            ),
         }
     }
 

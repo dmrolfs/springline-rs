@@ -23,8 +23,9 @@ mod performance_repository;
 mod planning;
 
 use crate::model::{MetricCatalog, MC_FLOW__RECORDS_IN_PER_SEC};
+pub use context::{PlanningContext, PLANNING__RESCALE_RESTART};
 pub use context::{
-    PlanningContext, PLANNING_CTX_FORECASTING_MAX_CATCH_UP_SECS, PLANNING_CTX_FORECASTING_RECOVERY_VALID_SECS,
+    PLANNING_CTX_FORECASTING_MAX_CATCH_UP_SECS, PLANNING_CTX_FORECASTING_RECOVERY_VALID_SECS,
     PLANNING_CTX_FORECASTING_RESTART_SECS, PLANNING_CTX_MIN_SCALING_STEP,
 };
 pub use forecast::{ForecastInputs, Forecaster, LeastSquaresWorkloadForecaster, SpikeSettings, WorkloadMeasurement};

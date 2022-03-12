@@ -291,6 +291,7 @@ async fn test_flink_eligibility_happy_flow() -> anyhow::Result<()> {
     let ctx_1 = make_context(
         None,
         false,
+        false,
         t1,
         maplit::hashmap! { "location_code".to_string() => 3_i32.to_telemetry() },
     );
@@ -340,6 +341,7 @@ async fn test_flink_eligibility_block_on_active_deployment() -> anyhow::Result<(
     let ctx_1 = make_context(
         None,
         true,
+        false,
         t1,
         maplit::hashmap! { "location_code".to_string() => 3_i32.to_telemetry() },
     );
@@ -393,6 +395,7 @@ async fn test_flink_eligibility_block_on_recent_deployment() -> anyhow::Result<(
     let ctx_cold = make_context(
         None,
         false,
+        true,
         ts_cold,
         maplit::hashmap! { "location_code".to_string() => 3_i32.to_telemetry() },
     );
@@ -447,6 +450,7 @@ async fn test_flink_eligibility_block_on_recent_failure() -> anyhow::Result<()> 
     let ctx = make_context(
         Some(ts),
         false,
+        false,
         ts,
         maplit::hashmap! { "location_code".to_string() => 3_i32.to_telemetry() },
     );
@@ -468,10 +472,60 @@ async fn test_flink_eligibility_block_on_recent_failure() -> anyhow::Result<()> 
     Ok(())
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn test_flink_eligibility_block_on_rescaling() -> anyhow::Result<()> {
+    once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
+    let main_span = tracing::info_span!("test_flink_eligibility_block_on_rescaling");
+    let _ = main_span.enter();
+
+    let settings = EligibilitySettings::default()
+        .with_source(
+            PolicySource::from_template_file("../resources/eligibility.polar")
+                .expect("failed to create eligibility policy source"),
+        )
+        .with_source(
+            PolicySource::from_template_file("../resources/eligibility_basis.polar")
+                .expect("failed to create eligibility_basis policy source"),
+        )
+        .with_template_data(EligibilityTemplateData { ..EligibilityTemplateData::default() });
+
+    let policy = EligibilityPolicy::new(&settings);
+
+    let stage = PolicyPhase::strip_policy_outcome("test_eligibility", policy).await?;
+
+    let mut flow = TestFlow::new(stage).await?;
+
+    let now = Utc::now();
+    let t1 = now - chrono::Duration::days(1);
+
+    let ctx_1 = make_context(
+        None,
+        false,
+        true,
+        t1,
+        maplit::hashmap! { "location_code".to_string() => 3_i32.to_telemetry() },
+    );
+
+    tracing::info!(?ctx_1, "pushing test context...");
+    assert_ok!(flow.push_context(ctx_1).await);
+
+    let event = &*assert_ok!(flow.recv_policy_event().await);
+    tracing::info!(?event, "received policy event.");
+    claim::assert_matches!(event, &elements::PolicyFilterEvent::ContextChanged(_));
+
+    let data_1 = make_test_item(maplit::hashmap! {"foo".to_string() => "bar".into()});
+    flow.push_data(data_1.clone()).await?;
+
+    let event = &*assert_ok!(flow.recv_policy_event().await);
+    tracing::info!(?event, "received policy event.");
+    claim::assert_matches!(event, &elements::PolicyFilterEvent::ItemBlocked(_, _));
+    Ok(())
+}
+
 static ID_GENERATOR: Lazy<Mutex<ProctorIdGenerator<()>>> = Lazy::new(|| Mutex::new(ProctorIdGenerator::default()));
 
 pub fn make_context(
-    last_failure: Option<DateTime<Utc>>, is_deploying: bool, last_deployment: DateTime<Utc>,
+    last_failure: Option<DateTime<Utc>>, is_deploying: bool, is_rescaling: bool, last_deployment: DateTime<Utc>,
     custom: telemetry::TableType,
 ) -> Context {
     let mut gen = ID_GENERATOR.lock().unwrap();
@@ -481,7 +535,7 @@ pub fn make_context(
         correlation_id: gen.next_id().relabel(),
         all_sinks_healthy: true,
         task_status: TaskStatus { last_failure },
-        cluster_status: ClusterStatus { is_deploying, last_deployment },
+        cluster_status: ClusterStatus { is_deploying, is_rescaling, last_deployment },
         custom,
     }
 }
