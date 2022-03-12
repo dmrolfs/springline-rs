@@ -79,7 +79,7 @@ impl SubscriptionRequirements for PlanningContext {
     fn optional_fields() -> HashSet<SharedString> {
         maplit::hashset! {
             "planning.min_scaling_step".into(),
-            "planning.restart".into(),
+            PLANNING__RESCALE_RESTART.into(),
             "planning.max_catch_up".into(),
             "planning.recovery_valid".into(),
         }
