@@ -1,5 +1,6 @@
 use super::{ActionSession, ScaleAction};
 use crate::kubernetes::{self, FlinkComponent, KubernetesContext};
+use crate::model::CorrelationId;
 use crate::phases::act::scale_actuator::ScaleActionPlan;
 use crate::phases::act::ActError;
 use crate::phases::plan::ScalePlan;
@@ -96,25 +97,32 @@ impl PatchReplicas
 {
     #[tracing::instrument(level = "info", skip(kube))]
     async fn block_until_satisfied(kube: &KubernetesContext, plan: &<Self as ScaleAction>::In) -> Result<(), ActError> {
+        let correlation = plan.correlation();
         let target_nr_task_managers = plan.target_replicas();
         let start = Instant::now();
         let mut action_satisfied = false;
         let mut pods_by_status = None;
         //TODO: convert to kube::runtime watcher - see pod watch example.
-        while Instant::now().duration_since(start) < kube.api_constraints().api_timeout {
+
+        let api_constraints = kube.api_constraints();
+        tracing::warn!(
+            %correlation,
+            "DMR: budgeting {:?} to kubernetes for patch replicas with {:?} polling interval.",
+            api_constraints.api_timeout, api_constraints.polling_interval
+        );
+
+        while Instant::now().duration_since(start) < api_constraints.api_timeout {
             let task_managers = kube.list_pods(FlinkComponent::TaskManager).await?;
             pods_by_status = Some(Self::group_pods_by_status(task_managers));
-            let running = pods_by_status
-                .as_ref()
-                .and_then(|ps| ps.get(kubernetes::RUNNING_STATUS).map(|pods| pods.len()))
-                .unwrap_or(0);
 
-            if running == target_nr_task_managers {
+            let nr_running = Self::do_count_running_pods(pods_by_status.as_ref(), target_nr_task_managers, correlation);
+
+            if nr_running == target_nr_task_managers {
                 action_satisfied = true;
                 break;
             }
 
-            tokio::time::sleep(kube.api_constraints().polling_interval).await;
+            tokio::time::sleep(api_constraints.polling_interval).await;
         }
 
         if !action_satisfied {
@@ -127,13 +135,40 @@ impl PatchReplicas
             return Err(ActError::Timeout(
                 kube.api_constraints().api_timeout,
                 format!(
-                    "Timed out waiting for patch replicas to complete: nr_target={} :: status_counts={:?}",
-                    target_nr_task_managers, status_counts,
+                    "Timed out waiting for patch replicas to complete: nr_target={} :: status_counts={:?} [correlation={}]",
+                    target_nr_task_managers, status_counts, correlation,
                 ),
             ));
         }
 
         Ok(())
+    }
+
+    fn do_count_running_pods(
+        pods_by_status: Option<&HashMap<String, Vec<Pod>>>, target_nr_task_managers: usize, correlation: &CorrelationId,
+    ) -> usize {
+        if pods_by_status.is_none() {
+            return 0;
+        }
+
+        let pod_status_counts: HashMap<String, usize> = pods_by_status
+            .as_ref()
+            .unwrap()
+            .iter()
+            .map(|(status, pods)| (status.clone(), pods.len()))
+            .collect();
+
+        let nr_running = pods_by_status
+            .as_ref()
+            .and_then(|ps| ps.get(kubernetes::RUNNING_STATUS).map(|pods| pods.len()))
+            .unwrap_or(0);
+
+        tracing::warn!(
+            %correlation, ?pod_status_counts, %nr_running, %target_nr_task_managers,
+            "DMR: PATCH_REPLICAS: pods by status"
+        );
+
+        nr_running
     }
 
     fn group_pods_by_status(pods: Vec<Pod>) -> HashMap<String, Vec<Pod>> {
