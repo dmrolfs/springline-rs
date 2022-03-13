@@ -1,6 +1,7 @@
 use crate::phases::governance::GovernanceOutcome;
 use either::{Either, Left, Right};
 use once_cell::sync::Lazy;
+use proctor::elements::Timestamp;
 use proctor::error::MetricLabel;
 use proctor::graph::stage::{self, SinkStage};
 use proctor::SharedString;
@@ -11,6 +12,8 @@ use thiserror::Error;
 
 mod action;
 mod scale_actuator;
+use crate::model::CorrelationId;
+use crate::phases::plan::ScalePlan;
 
 pub use action::ACTION_TOTAL_DURATION;
 pub use action::{
@@ -18,6 +21,31 @@ pub use action::{
     FLINK_TASKMANAGER_PATCH_REPLICAS_TIME,
 };
 pub use scale_actuator::ScaleActuator;
+
+pub trait ScaleActionPlan {
+    fn correlation(&self) -> &CorrelationId;
+    fn recv_timestamp(&self) -> Timestamp;
+    fn current_replicas(&self) -> usize;
+    fn target_replicas(&self) -> usize;
+}
+
+impl ScaleActionPlan for ScalePlan {
+    fn correlation(&self) -> &CorrelationId {
+        &self.correlation_id
+    }
+
+    fn recv_timestamp(&self) -> Timestamp {
+        self.recv_timestamp
+    }
+
+    fn current_replicas(&self) -> usize {
+        self.current_nr_task_managers as usize
+    }
+
+    fn target_replicas(&self) -> usize {
+        self.target_nr_task_managers as usize
+    }
+}
 
 #[derive(Debug, Error)]
 pub enum ActError {
@@ -66,6 +94,8 @@ impl MetricLabel for ActError {
 }
 
 mod protocol {
+    use crate::model::CorrelationId;
+    use crate::phases::act::ScaleActionPlan;
     use std::collections::HashMap;
     use std::sync::Arc;
     use std::time::Duration;
@@ -84,6 +114,20 @@ mod protocol {
             plan: P,
             error_metric_label: String,
         },
+    }
+
+    impl<P: ScaleActionPlan> ActEvent<P> {
+        pub fn plan(&self) -> &P {
+            match self {
+                Self::PlanActionStarted(p) => p,
+                Self::PlanExecuted { plan, .. } => plan,
+                Self::PlanFailed { plan, .. } => plan,
+            }
+        }
+
+        pub fn correlation(&self) -> &CorrelationId {
+            self.plan().correlation()
+        }
     }
 }
 

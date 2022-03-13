@@ -5,7 +5,7 @@ use url::Url;
 #[serde(default)]
 #[cfg_attr(test, derive(PartialEq))]
 pub struct KubernetesSettings {
-    pub client_config: LoadKubeConfig,
+    pub client: LoadKubeConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -148,19 +148,19 @@ mod tests {
 
     #[test]
     fn test_load_kube_config_serde_tokens() {
-        let s1 = KubernetesSettings { client_config: LoadKubeConfig::Infer };
+        let s1 = KubernetesSettings { client: LoadKubeConfig::Infer };
         assert_tokens(
             &s1,
             &vec![
                 Token::Struct { name: "KubernetesSettings", len: 1 },
-                Token::Str("client_config"),
+                Token::Str("client"),
                 Token::UnitVariant { name: "LoadKubeConfig", variant: "infer" },
                 Token::StructEnd,
             ],
         );
 
         let s2 = KubernetesSettings {
-            client_config: LoadKubeConfig::KubeConfig(KubeConfigOptions {
+            client: LoadKubeConfig::KubeConfig(KubeConfigOptions {
                 context: Some("foo-context".to_string()),
                 cluster: Some("cluster-1".to_string()),
                 user: None,
@@ -170,7 +170,7 @@ mod tests {
             &s2,
             &vec![
                 Token::Struct { name: "KubernetesSettings", len: 1 },
-                Token::Str("client_config"),
+                Token::Str("client"),
                 Token::NewtypeVariant { name: "LoadKubeConfig", variant: "kube_config" },
                 Token::Struct { name: "KubeConfigOptions", len: 2 },
                 Token::Str("context"),

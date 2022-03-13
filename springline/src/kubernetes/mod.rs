@@ -21,7 +21,7 @@ pub const UNKNOWN_STATUS: &str = "Unknown";
 
 #[tracing::instrument(level = "info", name = "make kubernetes client")]
 async fn make_client(settings: &KubernetesSettings) -> Result<kube::Client, KubernetesError> {
-    let config = match &settings.client_config {
+    let config = match &settings.client {
         LoadKubeConfig::Infer => {
             tracing::info!(
                 "inferring kubernetes configuration from in-cluster environment or fallback to local kubeconfig."

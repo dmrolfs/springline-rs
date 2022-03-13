@@ -12,7 +12,7 @@ flink:
   pool_max_idle_per_host: 5
 
 kubernetes:
-  client_config: infer
+  client: infer
 
 sensor:
   # The `flink` sensor is more complicated that the modular sensors that can be specified via the

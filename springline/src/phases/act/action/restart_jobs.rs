@@ -1,7 +1,6 @@
 use crate::flink::{self, FlinkContext, FlinkError, JarId, JobId, JobState, SavepointLocation};
 use crate::phases::act::action::{ActionSession, ScaleAction};
-use crate::phases::act::scale_actuator::ScaleActionPlan;
-use crate::phases::act::ActError;
+use crate::phases::act::{ActError, ScaleActionPlan};
 use crate::phases::plan::ScalePlan;
 use crate::settings::FlinkActionSettings;
 use async_trait::async_trait;

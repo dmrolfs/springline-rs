@@ -1,8 +1,7 @@
 use super::{ActionSession, ScaleAction};
 use crate::kubernetes::{self, FlinkComponent, KubernetesContext};
 use crate::model::CorrelationId;
-use crate::phases::act::scale_actuator::ScaleActionPlan;
-use crate::phases::act::ActError;
+use crate::phases::act::{ActError, ScaleActionPlan};
 use crate::phases::plan::ScalePlan;
 use async_trait::async_trait;
 use k8s_openapi::api::core::v1::Pod;
@@ -84,7 +83,15 @@ impl ScaleAction for PatchReplicas
             "patched taskmanager replicas"
         );
 
-        Self::block_until_satisfied(&session.kube, plan).await?;
+        if let Err(error) = Self::block_until_satisfied(&session.kube, plan).await {
+            match error {
+                ActError::Timeout(duration, message) => tracing::error!(
+                    patch_replicas_budget=?duration,
+                    "{message} - moving on to next action."
+                ),
+                err => return Err(err),
+            }
+        }
 
         session.mark_duration(ACTION_LABEL, Duration::from_secs_f64(timer.stop_and_record()));
         Ok(())
@@ -100,7 +107,6 @@ impl PatchReplicas
         let correlation = plan.correlation();
         let target_nr_task_managers = plan.target_replicas();
         let start = Instant::now();
-        let mut action_satisfied = false;
         let mut pods_by_status = None;
         //TODO: convert to kube::runtime watcher - see pod watch example.
 
@@ -111,8 +117,11 @@ impl PatchReplicas
             api_constraints.api_timeout, api_constraints.polling_interval
         );
 
+        let mut action_satisfied = false;
         while Instant::now().duration_since(start) < api_constraints.api_timeout {
             let task_managers = kube.list_pods(FlinkComponent::TaskManager).await?;
+            tracing::warn!(?task_managers, "DMR: kube taskmanagers");
+
             pods_by_status = Some(Self::group_pods_by_status(task_managers));
 
             let nr_running = Self::do_count_running_pods(pods_by_status.as_ref(), target_nr_task_managers, correlation);

@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use enumflags2::{bitflags, BitFlags};
 use once_cell::sync::Lazy;
-use proctor::elements::{Telemetry, Timestamp};
+use proctor::elements::{RecordsPerSecond, Telemetry, Timestamp};
 use proctor::graph::stage::{ActorSourceApi, ActorSourceCmd};
 use proctor::phases::plan::{PlanEvent, PlanMonitor};
 use prometheus::{IntCounter, IntGauge};
@@ -16,6 +16,71 @@ use crate::phases::decision::{DecisionContext, DecisionEvent, DecisionMonitor, D
 use crate::phases::eligibility::{EligibilityContext, EligibilityEvent, EligibilityMonitor};
 use crate::phases::governance::{GovernanceContext, GovernanceEvent, GovernanceMonitor, GovernanceOutcome};
 use crate::phases::plan::{FlinkPlanningEvent, FlinkPlanningMonitor, PlanningStrategy, ScalePlan};
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct PlanningFeedback {
+    pub forecasted_timestamp: Timestamp,
+    pub forecasted_records_in_per_sec: RecordsPerSecond,
+}
+
+impl From<PlanningFeedback> for Telemetry {
+    fn from(feedback: PlanningFeedback) -> Self {
+        let mut telemetry = Self::new();
+
+        telemetry.insert(
+            model::MC_FLOW__FORECASTED_TIMESTAMP.to_string(),
+            feedback.forecasted_timestamp.into(),
+        );
+
+        telemetry.insert(
+            model::MC_FLOW__FORECASTED_RECORDS_IN_PER_SEC.to_string(),
+            feedback.forecasted_records_in_per_sec.into(),
+        );
+
+        telemetry
+    }
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+struct ActionFeedback {
+    pub is_rescaling: bool,
+    pub last_deployment: Option<Timestamp>,
+    pub rescale_restart: Option<Duration>,
+}
+
+impl From<ActionFeedback> for Telemetry {
+    fn from(feedback: ActionFeedback) -> Self {
+        let mut telemetry = Self::new();
+
+        telemetry.insert(
+            crate::phases::eligibility::CLUSTER__IS_RESCALING.to_string(),
+            feedback.is_rescaling.into(),
+        );
+
+        if let Some(last_deployment) = feedback.last_deployment {
+            telemetry.insert(
+                crate::phases::eligibility::CLUSTER__LAST_DEPLOYMENT.to_string(),
+                last_deployment.to_string().into(),
+            );
+        }
+
+        if let Some(rescale_restart) = feedback.rescale_restart {
+            match i64::try_from(rescale_restart.as_secs()) {
+                Ok(rescale_restart_secs) => {
+                    telemetry.insert(
+                        crate::phases::plan::PLANNING__RESCALE_RESTART.to_string(),
+                        rescale_restart_secs.into(),
+                    );
+                },
+                Err(err) => {
+                    tracing::warn!(error=?err, "failed to convert rescale restart duration to seconds - not publishing");
+                },
+            }
+        }
+
+        telemetry
+    }
+}
 
 #[bitflags(default = Sense | Plan | Act)]
 #[repr(u8)]
@@ -213,24 +278,20 @@ impl Monitor {
                 PLAN_OBSERVATION_COUNT.inc();
 
                 if let Some((tx, (forecast_ts, forecast_val))) = tx_feedback.zip(*next_forecast) {
-                    let telemetry = maplit::hashmap! {
-                        model::MC_FLOW__FORECASTED_TIMESTAMP.to_string() => forecast_ts.into(),
-                        model::MC_FLOW__FORECASTED_RECORDS_IN_PER_SEC.to_string() => forecast_val.into(),
+                    let feedback = PlanningFeedback {
+                        forecasted_timestamp: forecast_ts,
+                        forecasted_records_in_per_sec: forecast_val,
                     };
 
-                    match ActorSourceCmd::push(tx, telemetry.into()).await {
-                        Ok(_) => {
-                            tracing::info!(
-                                %forecast_ts, %forecast_val, correlation=?observation.correlation_id,
-                                "feeding next forecast back into springline system"
-                            );
-                        },
-                        Err(err) => {
-                            tracing::error!(
-                                error=?err, %forecast_ts, %forecast_val, correlation=?observation.correlation_id,
-                                "failed to feed forecasted workflow back into system."
-                            )
-                        },
+                    tracing::info!(
+                        %forecast_ts, %forecast_val, correlation=?observation.correlation_id,
+                        "planning feedback of next forecast back into springline system"
+                    );
+                    if let Err(err) = ActorSourceCmd::push(tx, feedback.into()).await {
+                        tracing::error!(
+                            error=?err, %forecast_ts, %forecast_val, correlation=?observation.correlation_id,
+                            "failed to feed forecasted workflow back into system."
+                        )
                     }
                 }
             },
@@ -261,39 +322,32 @@ impl Monitor {
         _loaded: &mut BitFlags<ReadyPhases>,
     ) {
         let now = Timestamp::now();
+        let correlation = event.correlation();
 
-        let action_info = match &*event {
+        let action_feedback = match &*event {
             ActEvent::PlanActionStarted(plan) => Self::do_handle_plan_started(plan),
             ActEvent::PlanExecuted { plan, durations } => Self::do_handle_plan_executed(plan, durations, now),
             ActEvent::PlanFailed { plan, error_metric_label } => Self::do_handle_plan_failed(plan, error_metric_label),
         };
 
         if let Some(tx) = tx_feedback {
-            match ActorSourceCmd::push(tx, action_info).await {
-                Ok(_) => {
-                    tracing::info!(scale_deployment_timestamp=%now, "notify springline of scale action");
-                },
-                Err(err) => {
-                    tracing::error!(error=?err, "failed to send scale deployment notification from monitor -- may impact future eligibility determination.");
-                },
+            tracing::info!(?action_feedback, %correlation, "feedback springline from scale action");
+            if let Err(err) = ActorSourceCmd::push(tx, action_feedback.into()).await {
+                tracing::error!(error=?err, %correlation, "failed to send scale deployment notification from monitor -- may impact future eligibility determination.");
             }
         }
     }
 
     #[tracing::instrument(level = "info", skip(plan))]
-    fn do_handle_plan_started(plan: &ScalePlan) -> Telemetry {
+    fn do_handle_plan_started(plan: &ScalePlan) -> ActionFeedback {
         tracing::info!(?plan, correlation=?plan.correlation_id, "plan action started");
-
-        let mut started_info = Telemetry::new();
-        started_info.insert(
-            crate::phases::eligibility::CLUSTER__IS_RESCALING.to_string(),
-            true.into(),
-        );
-        started_info
+        ActionFeedback { is_rescaling: true, ..ActionFeedback::default() }
     }
 
     #[tracing::instrument(level = "info", skip(plan, durations))]
-    fn do_handle_plan_executed(plan: &ScalePlan, durations: &HashMap<String, Duration>, now: Timestamp) -> Telemetry {
+    fn do_handle_plan_executed(
+        plan: &ScalePlan, durations: &HashMap<String, Duration>, now: Timestamp,
+    ) -> ActionFeedback {
         tracing::info!(?plan, correlation=?plan.correlation_id, ?durations, "plan executed");
         ACT_SCALE_ACTION_COUNT
             .with_label_values(&[
@@ -306,30 +360,15 @@ impl Monitor {
         let cycle_time_seconds = now.as_f64() - start.as_f64();
         PIPELINE_CYCLE_TIME.observe(cycle_time_seconds);
 
-        let mut executed_info = maplit::hashmap! {
-            crate::phases::eligibility::CLUSTER__IS_RESCALING.to_string() => false.into(),
-            crate::phases::eligibility::CLUSTER__LAST_DEPLOYMENT.to_string() => now.to_string().into(),
-        };
-
-        if let Some(rescale_restart) = durations.get(crate::phases::act::ACTION_TOTAL_DURATION) {
-            match i64::try_from(rescale_restart.as_secs()) {
-                Ok(rescale_restart_secs) => {
-                    executed_info.insert(
-                        crate::phases::plan::PLANNING__RESCALE_RESTART.to_string(),
-                        rescale_restart_secs.into(),
-                    );
-                },
-                Err(err) => {
-                    tracing::warn!(error=?err, "failed to convert rescale restart duration to seconds - not publishing");
-                },
-            }
+        ActionFeedback {
+            is_rescaling: false,
+            last_deployment: Some(now),
+            rescale_restart: durations.get(crate::phases::act::ACTION_TOTAL_DURATION).copied(),
         }
-
-        executed_info.into()
     }
 
     #[tracing::instrument(level = "info", skip(plan))]
-    fn do_handle_plan_failed(plan: &ScalePlan, error_metric_label: &str) -> Telemetry {
+    fn do_handle_plan_failed(plan: &ScalePlan, error_metric_label: &str) -> ActionFeedback {
         tracing::error!(%error_metric_label, ?plan, "plan action during act phase failed.");
         ACT_PHASE_ERRORS
             .with_label_values(&[
@@ -339,12 +378,7 @@ impl Monitor {
             ])
             .inc();
 
-        let mut failed_info = Telemetry::new();
-        failed_info.insert(
-            crate::phases::eligibility::CLUSTER__IS_RESCALING.to_string(),
-            false.into(),
-        );
-        failed_info
+        ActionFeedback { is_rescaling: false, ..ActionFeedback::default() }
     }
 }
 

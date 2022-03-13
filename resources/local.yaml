@@ -12,6 +12,9 @@ flink:
   pool_idle_timeout_secs: 60
   pool_max_idle_per_host: 5
 
+kubernetes:
+  client: infer
+
 sensor:
   flink:
     metrics_initial_delay_secs: 10

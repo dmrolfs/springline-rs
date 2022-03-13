@@ -1,6 +1,5 @@
 use super::{ActionSession, ScaleAction};
-use crate::phases::act::scale_actuator::ScaleActionPlan;
-use crate::phases::act::{self, ActError};
+use crate::phases::act::{self, ActError, ScaleActionPlan};
 use async_trait::async_trait;
 use proctor::AppData;
 use std::time::Duration;

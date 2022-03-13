@@ -6,6 +6,10 @@ flink:
   label: dr-springline-demo
   job_manager_host: host.lima.internal
 
+kubernetes:
+#  client: cluser_env
+  client: infer
+
 http:
   host: localhost
 

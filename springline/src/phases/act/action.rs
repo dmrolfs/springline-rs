@@ -1,4 +1,4 @@
-use crate::phases::act::scale_actuator::ScaleActionPlan;
+use super::ScaleActionPlan;
 use crate::phases::act::ActError;
 use std::fmt::{self, Debug};
 

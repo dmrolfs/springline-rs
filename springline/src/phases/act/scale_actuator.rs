@@ -3,8 +3,7 @@ use std::fmt;
 use std::sync::Arc;
 
 use super::action::{self, ActionSession, CompositeAction, ScaleAction};
-use super::{protocol, ActError, ActEvent};
-use crate::model::CorrelationId;
+use super::{protocol, ActError, ActEvent, ScaleActionPlan};
 use crate::settings::Settings;
 use async_trait::async_trait;
 use cast_trait_object::dyn_upcast;
@@ -12,7 +11,6 @@ use cast_trait_object::dyn_upcast;
 use crate::flink::FlinkContext;
 use crate::kubernetes::KubernetesContext;
 use crate::phases::plan::ScalePlan;
-use proctor::elements::Timestamp;
 use proctor::error::{MetricLabel, ProctorError};
 use proctor::graph::stage::Stage;
 use proctor::graph::{Inlet, Port, SinkShape, PORT_DATA};
@@ -20,31 +18,6 @@ use proctor::{AppData, ProctorResult, SharedString};
 use tokio::sync::broadcast;
 
 const STAGE_NAME: &str = "execute_scaling";
-
-pub trait ScaleActionPlan {
-    fn correlation(&self) -> &CorrelationId;
-    fn recv_timestamp(&self) -> Timestamp;
-    fn current_replicas(&self) -> usize;
-    fn target_replicas(&self) -> usize;
-}
-
-impl ScaleActionPlan for ScalePlan {
-    fn correlation(&self) -> &CorrelationId {
-        &self.correlation_id
-    }
-
-    fn recv_timestamp(&self) -> Timestamp {
-        self.recv_timestamp
-    }
-
-    fn current_replicas(&self) -> usize {
-        self.current_nr_task_managers as usize
-    }
-
-    fn target_replicas(&self) -> usize {
-        self.target_nr_task_managers as usize
-    }
-}
 
 // #[derive(Debug)]
 pub struct ScaleActuator<In> {
