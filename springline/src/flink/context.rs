@@ -150,7 +150,7 @@ impl FlinkContextRef {
             .await
             .and_then(|body| {
                 let response = serde_json::from_str(body.as_str());
-                tracing::info!(%body, ?response, "Flink jar summery response body");
+                tracing::info!(%body, ?response, "Flink jar summary response body");
                 response
                     .map(|resp: jars_protocal::GetJarsResponse| resp.files)
                     .map_err(|err| err.into())
@@ -183,8 +183,9 @@ impl FlinkContextRef {
             .instrument(span)
             .await
             .and_then(|body| {
+                tracing::info!(%body, "Flink job summary response body");
                 let result = serde_json::from_str(body.as_str()).map_err(|err| err.into());
-                tracing::info!(%body, ?result, "Flink job summary response body");
+                tracing::info!(?result, "Flink parsed job summary response json value");
                 result
             })
             .and_then(|jobs_json_value: serde_json::Value| {

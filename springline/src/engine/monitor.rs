@@ -2,10 +2,11 @@ use std::collections::HashMap;
 use std::fmt::{self, Display};
 use std::sync::Arc;
 use std::time::Duration;
+use chrono::{DateTime, Utc};
 
 use enumflags2::{bitflags, BitFlags};
 use once_cell::sync::Lazy;
-use proctor::elements::{RecordsPerSecond, Telemetry, Timestamp};
+use proctor::elements::{FORMAT, RecordsPerSecond, Telemetry, Timestamp};
 use proctor::graph::stage::{ActorSourceApi, ActorSourceCmd};
 use proctor::phases::plan::{PlanEvent, PlanMonitor};
 use prometheus::{IntCounter, IntGauge};
@@ -44,7 +45,7 @@ impl From<PlanningFeedback> for Telemetry {
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 struct ActionFeedback {
     pub is_rescaling: bool,
-    pub last_deployment: Option<Timestamp>,
+    pub last_deployment: Option<DateTime<Utc>>,
     pub rescale_restart: Option<Duration>,
 }
 
@@ -58,9 +59,10 @@ impl From<ActionFeedback> for Telemetry {
         );
 
         if let Some(last_deployment) = feedback.last_deployment {
+            let last_deployment_rep = format!("{}", last_deployment.format(FORMAT));
             telemetry.insert(
                 crate::phases::eligibility::CLUSTER__LAST_DEPLOYMENT.to_string(),
-                last_deployment.to_string().into(),
+                last_deployment_rep.into(),
             );
         }
 
@@ -156,7 +158,7 @@ impl Monitor {
             tokio::select! {
                 Ok(e) = self.rx_eligibility_monitor.recv() => Self::handle_eligibility_event(e, &mut loaded),
                 Ok(e) = self.rx_decision_monitor.recv() => Self::handle_decision_event(e, &mut loaded),
-                Ok(e) = self.rx_plan_monitor.recv() => Self::handle_plan_event(e),
+                Ok(e) = self.rx_plan_monitor.recv() => Self::handle_plan_event(e, &mut loaded),
                 Ok(e) = self.rx_flink_planning_monitor.recv() => Self::handle_flink_planning_event(e, tx_feedback).await,
                 Ok(e) = self.rx_governance_monitor.recv() => Self::handle_governance_event(e, &mut loaded),
                 Ok(e) = rx_action.recv() => Self::handle_action_event(e, tx_feedback, &mut loaded).await,
@@ -208,7 +210,9 @@ impl Monitor {
                 tracing::info!(?event, "Eligibility Phase initial context loaded!");
                 loaded.toggle(ReadyPhases::Eligibility);
             },
-            ignored_event => tracing::warn!(?ignored_event, "ignoring eligibility event"),
+            EligibilityEvent::ContextChanged(context) => {
+                tracing::info!(?context, "Eligibility Phase context changed");
+            },
         }
     }
 
@@ -227,41 +231,33 @@ impl Monitor {
                 tracing::info!(?event, "Decision Phase initial context loaded!");
                 loaded.toggle(ReadyPhases::Decision);
             },
-            ignored_event => tracing::warn!(?ignored_event, "ignoring decision event"),
+            DecisionEvent::ContextChanged(context) => {
+                tracing::info!(?context, "Decision Phase context changed");
+            },
         }
     }
 
     #[allow(clippy::cognitive_complexity)]
-    fn handle_plan_event(event: Arc<PlanEvent<PlanningStrategy>>) {
+    fn handle_plan_event(event: Arc<PlanEvent<PlanningStrategy>>, loaded: &mut BitFlags<ReadyPhases>) {
         match &*event {
-            PlanEvent::DecisionPlanned(decision, plan) => {
-                // match decision {
-                //     DecisionResult::ScaleUp(_) => DECISION_SCALING_DECISION_COUNT.up.inc(),
-                //     DecisionResult::ScaleDown(_) => DECISION_SCALING_DECISION_COUNT.down.inc(),
-                //     DecisionResult::NoAction(_) => DECISION_SCALING_DECISION_COUNT.no_action.inc(),
-                // }
-
-                match decision {
-                    DecisionResult::ScaleUp(_) | DecisionResult::ScaleDown(_) => {
-                        tracing::info!(?event, correlation=?decision.item().correlation_id, "planning for scaling decision");
-                        DECISION_PLAN_CURRENT_NR_TASK_MANAGERS.set(plan.current_nr_task_managers as i64);
-                        PLAN_TARGET_NR_TASK_MANAGERS.set(plan.target_nr_task_managers as i64);
-                    },
-                    _no_action => {
-                        tracing::info!(?event, correlation=?decision.item().correlation_id, "no planning action by decision");
-                    },
-                }
+            PlanEvent::DecisionPlanned(decision, plan) => match decision {
+                DecisionResult::ScaleUp(_) | DecisionResult::ScaleDown(_) => {
+                    tracing::info!(?event, correlation=?decision.item().correlation_id, "planning for scaling decision");
+                    DECISION_PLAN_CURRENT_NR_TASK_MANAGERS.set(plan.current_nr_task_managers as i64);
+                    PLAN_TARGET_NR_TASK_MANAGERS.set(plan.target_nr_task_managers as i64);
+                },
+                _no_action => {
+                    tracing::info!(?event, correlation=?decision.item().correlation_id, "no planning action by decision");
+                },
             },
             PlanEvent::DecisionIgnored(decision) => {
                 tracing::info!(?event, correlation=?decision.item().correlation_id, "planning is ignoring decision result.");
-
-                // match decision {
-                //     DecisionResult::ScaleUp(_) => DECISION_SCALING_DECISION_COUNT.up.inc(),
-                //     DecisionResult::ScaleDown(_) => DECISION_SCALING_DECISION_COUNT.down.inc(),
-                //     DecisionResult::NoAction(_) => DECISION_SCALING_DECISION_COUNT.no_action.inc(),
-                // }
             },
 
+            PlanEvent::ContextChanged(context) if !loaded.contains(ReadyPhases::Plan) => {
+                tracing::info!(?event, ?context, "Plan Phase initial context loaded!");
+                loaded.toggle(ReadyPhases::Plan);
+            },
             PlanEvent::ContextChanged(context) => {
                 tracing::info!(?context, "Flink Planning context changed.");
             },
@@ -313,16 +309,18 @@ impl Monitor {
                 tracing::info!(?event, "Governance Phase initial context loaded!");
                 loaded.toggle(ReadyPhases::Governance);
             },
-            ignored_event => tracing::warn!(?ignored_event, "ignoring governance event"),
+            GovernanceEvent::ContextChanged(context) => {
+                tracing::info!(?context, "Governance context changed.");
+            },
         }
     }
 
+    #[tracing::instrument(level="info", skip(tx_feedback), fields(correlation=%event.correlation()))]
     async fn handle_action_event(
         event: Arc<ActEvent<GovernanceOutcome>>, tx_feedback: Option<&ActorSourceApi<Telemetry>>,
         _loaded: &mut BitFlags<ReadyPhases>,
     ) {
         let now = Timestamp::now();
-        let correlation = event.correlation();
 
         let action_feedback = match &*event {
             ActEvent::PlanActionStarted(plan) => Self::do_handle_plan_started(plan),
@@ -331,24 +329,22 @@ impl Monitor {
         };
 
         if let Some(tx) = tx_feedback {
-            tracing::info!(?action_feedback, %correlation, "feedback springline from scale action");
+            tracing::info!(?action_feedback, "feedback springline from scale action");
             if let Err(err) = ActorSourceCmd::push(tx, action_feedback.into()).await {
-                tracing::error!(error=?err, %correlation, "failed to send scale deployment notification from monitor -- may impact future eligibility determination.");
+                tracing::error!(error=?err, "failed to send scale deployment notification from monitor -- may impact future eligibility determination.");
             }
         }
     }
 
-    #[tracing::instrument(level = "info", skip(plan))]
     fn do_handle_plan_started(plan: &ScalePlan) -> ActionFeedback {
         tracing::info!(?plan, correlation=?plan.correlation_id, "plan action started");
         ActionFeedback { is_rescaling: true, ..ActionFeedback::default() }
     }
 
-    #[tracing::instrument(level = "info", skip(plan, durations))]
     fn do_handle_plan_executed(
         plan: &ScalePlan, durations: &HashMap<String, Duration>, now: Timestamp,
     ) -> ActionFeedback {
-        tracing::info!(?plan, correlation=?plan.correlation_id, ?durations, "plan executed");
+        tracing::info!(%now, ?plan, correlation=?plan.correlation_id, ?durations, "plan executed");
         ACT_SCALE_ACTION_COUNT
             .with_label_values(&[
                 plan.current_nr_task_managers.to_string().as_str(),
@@ -362,12 +358,11 @@ impl Monitor {
 
         ActionFeedback {
             is_rescaling: false,
-            last_deployment: Some(now),
+            last_deployment: Some(now.as_utc()),
             rescale_restart: durations.get(crate::phases::act::ACTION_TOTAL_DURATION).copied(),
         }
     }
 
-    #[tracing::instrument(level = "info", skip(plan))]
     fn do_handle_plan_failed(plan: &ScalePlan, error_metric_label: &str) -> ActionFeedback {
         tracing::error!(%error_metric_label, ?plan, "plan action during act phase failed.");
         ACT_PHASE_ERRORS
@@ -381,18 +376,6 @@ impl Monitor {
         ActionFeedback { is_rescaling: false, ..ActionFeedback::default() }
     }
 }
-
-// make_static_metric! {
-//     pub label_enum ScalingDecision {
-//         up,
-//         down,
-//         no_action,
-//     }
-//
-//     pub struct ScalingDecisionsCount: IntCounter {
-//         "decision" => ScalingDecision,
-//     }
-// }
 
 pub(crate) static ELIGIBILITY_IS_ELIGIBLE_FOR_SCALING: Lazy<IntGauge> = Lazy::new(|| {
     IntGauge::new(
@@ -409,20 +392,6 @@ pub(crate) static DECISION_SHOULD_PLAN_FOR_SCALING: Lazy<IntGauge> = Lazy::new(|
     )
     .expect("failed creating decision_should_plan_for_scaling metric")
 });
-
-// pub(crate) static DECISION_SCALING_DECISION_COUNT_METRIC: Lazy<IntCounterVec> = Lazy::new(|| {
-//     IntCounterVec::new(
-//         Opts::new(
-//             "decision_scaling_decision_count",
-//             "Count of decisions for scaling planning made.",
-//         ),
-//         &["decision"],
-//     )
-//     .expect("failed creating decision_scaling_decision_count metric")
-// });
-//
-// pub(crate) static DECISION_SCALING_DECISION_COUNT: Lazy<ScalingDecisionsCount> =
-//     Lazy::new(|| ScalingDecisionsCount::from(&DECISION_SCALING_DECISION_COUNT_METRIC));
 
 pub(crate) static PLAN_OBSERVATION_COUNT: Lazy<IntCounter> = Lazy::new(|| {
     IntCounter::new("plan_observation_count", "Number of observations made for planning.")

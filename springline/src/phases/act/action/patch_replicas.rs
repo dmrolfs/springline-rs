@@ -10,6 +10,7 @@ use prometheus::{HistogramOpts, HistogramTimer, HistogramVec};
 use std::collections::HashMap;
 use std::time::Duration;
 use tokio::time::Instant;
+use crate::phases::act;
 
 pub const ACTION_LABEL: &str = "patch_replicas";
 
@@ -63,7 +64,8 @@ impl ScaleAction for PatchReplicas
 
     #[tracing::instrument(level = "info", name = "PatchReplicas::execute", skip(self))]
     async fn execute<'s>(&self, plan: &'s Self::In, session: &'s mut ActionSession) -> Result<(), ActError> {
-        let timer = start_flink_taskmanager_patch_replicas_timer(session.cluster_label());
+        // let timer = start_flink_taskmanager_patch_replicas_timer(session.cluster_label());
+        let timer = act::start_scale_action_timer(session.cluster_label(), ACTION_LABEL);
 
         // async fn execute(&mut self, plan: &P) -> Result<Duration, ActError> {
         let correlation = session.correlation();
@@ -120,7 +122,7 @@ impl PatchReplicas
         let mut action_satisfied = false;
         while Instant::now().duration_since(start) < api_constraints.api_timeout {
             let task_managers = kube.list_pods(FlinkComponent::TaskManager).await?;
-            tracing::warn!(?task_managers, "DMR: kube taskmanagers");
+            tracing::info!("kube: found {} taskmanagers in cluster", task_managers.len());
 
             pods_by_status = Some(Self::group_pods_by_status(task_managers));
 
@@ -198,21 +200,21 @@ impl PatchReplicas
     }
 }
 
-#[inline]
-fn start_flink_taskmanager_patch_replicas_timer(cluster_label: &str) -> HistogramTimer {
-    FLINK_TASKMANAGER_PATCH_REPLICAS_TIME
-        .with_label_values(&[cluster_label])
-        .start_timer()
-}
-
-pub static FLINK_TASKMANAGER_PATCH_REPLICAS_TIME: Lazy<HistogramVec> = Lazy::new(|| {
-    HistogramVec::new(
-        HistogramOpts::new(
-            "flink_taskmanager_patch_replicas_time_seconds",
-            "Time spent patching taskmanager replicas and confirming they are running",
-        )
-        .buckets(vec![10., 15., 20., 30., 40., 50., 100., 250., 500., 750., 1000.]),
-        &["label"],
-    )
-    .expect("failed creating flink_taskmanager_patch_replicas_time_seconds histogram metric")
-});
+// #[inline]
+// fn start_flink_taskmanager_patch_replicas_timer(cluster_label: &str) -> HistogramTimer {
+//     FLINK_TASKMANAGER_PATCH_REPLICAS_TIME
+//         .with_label_values(&[cluster_label])
+//         .start_timer()
+// }
+//
+// pub static FLINK_TASKMANAGER_PATCH_REPLICAS_TIME: Lazy<HistogramVec> = Lazy::new(|| {
+//     HistogramVec::new(
+//         HistogramOpts::new(
+//             "flink_taskmanager_patch_replicas_time_seconds",
+//             "Time spent patching taskmanager replicas and confirming they are running",
+//         )
+//         .buckets(vec![10., 15., 20., 30., 40., 50., 100., 250., 500., 750., 1000.]),
+//         &["label"],
+//     )
+//     .expect("failed creating flink_taskmanager_patch_replicas_time_seconds histogram metric")
+// });

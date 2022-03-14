@@ -140,12 +140,20 @@ pub struct FlowMetrics {
 
     /// Timestamp (in fractional secs) for the forecasted_records_in_per_sec value.
     #[polar(attribute)]
-    #[serde(rename = "flow.forecasted_timestamp")]
+    #[serde(
+        default,
+        rename = "flow.forecasted_timestamp",
+        skip_serializing_if = "Option::is_none",
+    )]
     pub forecasted_timestamp: Option<f64>,
 
     /// Forecasted rate of records flow predicted by springline.
     #[polar(attribute)]
-    #[serde(rename = "flow.forecasted_records_in_per_sec")]
+    #[serde(
+        default,
+        rename = "flow.forecasted_records_in_per_sec",
+        skip_serializing_if = "Option::is_none",
+    )]
     pub forecasted_records_in_per_sec: Option<f64>,
 
     /// Applies to Kafka input connections. Pulled from the FlinkKafkaConsumer records-lag-max
@@ -364,9 +372,11 @@ impl SubscriptionRequirements for MetricCatalog {
 
     fn optional_fields() -> HashSet<SharedString> {
         maplit::hashset! {
-             // FlowMetrics
-             "flow.input_records_lag_max".into(),
-             "flow.input_millis_behind_latest".into(),
+            // FlowMetrics
+            "flow.forecasted_timestamp".into(),
+            "flow.forecasted_records_in_per_sec".into(),
+            "flow.input_records_lag_max".into(),
+            "flow.input_millis_behind_latest".into(),
         }
     }
 }
@@ -637,12 +647,6 @@ mod tests {
             }
         }
     }
-    // impl FromStr for Bar {
-    //     type Err = ();
-    //     fn from_str(s: &str) -> Result<Self, Self::Err> {
-    //         Ok(Bar(s.to_string()))
-    //     }
-    // }
 
     #[test]
     fn test_custom_metric() {

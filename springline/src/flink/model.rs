@@ -52,6 +52,14 @@ impl JobState {
     pub const fn is_active(&self) -> bool {
         !matches!(self, Self::Finished | Self::Failed | Self::Canceled | Self::Suspended)
     }
+
+    pub const fn is_engaged(&self) -> bool {
+        matches!(self, Self::Running | Self::Finished | Self::Reconciling)
+        // !matches!(
+        //     self,
+        //     Self::Initializing | Self::Failing | Self::Failed | Self::Cancelling | Self::Canceled | Self:: Suspended
+        // )
+    }
 }
 
 pub const TASK_STATES: [TaskState; 10] = [

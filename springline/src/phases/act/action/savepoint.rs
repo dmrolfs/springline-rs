@@ -16,6 +16,7 @@ use std::future::Future;
 use std::time::Duration;
 use tracing::Instrument;
 use url::Url;
+use crate::phases::act;
 
 pub const ACTION_LABEL: &str = "trigger_savepoint";
 
@@ -55,7 +56,8 @@ impl ScaleAction for TriggerSavepoint
 
     #[tracing::instrument(level = "info", name = "StopFlinkWithSavepoint::execute", skip(self, _plan))]
     async fn execute<'s>(&self, _plan: &'s Self::In, session: &'s mut ActionSession) -> Result<(), ActError> {
-        let timer = start_flink_job_savepoint_with_cancel_timer(&session.flink);
+        // let timer = start_flink_job_savepoint_with_cancel_timer(&session.flink);
+        let timer = act::start_scale_action_timer(session.cluster_label(), ACTION_LABEL);
 
         let correlation = session.correlation();
         let active_jobs = session.active_jobs.clone().unwrap_or_default();
@@ -187,12 +189,14 @@ impl TriggerSavepoint
                         result = Some(savepoint);
                         break;
                     },
-                    Ok(savepoint) => tracing::info!(?savepoint, "savepoint in progress - checking again"),
+                    Ok(savepoint) => {
+                        tracing::info!(?savepoint, "savepoint in progress - checking again in {polling_interval:?}")
+                    },
                     Err(err) => {
                         //todo: consider capping attempts
                         tracing::warn!(
                             error=?err, ?trigger, correlation=%session.correlation(),
-                            "check on savepoint operation for {job} failed - checking again."
+                            "check on savepoint operation for {job} failed - checking again in {polling_interval:?}."
                         );
                     },
                 }
@@ -312,24 +316,24 @@ impl TriggerSavepoint
     }
 }
 
-#[inline]
-fn start_flink_job_savepoint_with_cancel_timer(context: &FlinkContext) -> HistogramTimer {
-    FLINK_JOB_SAVEPOINT_WITH_CANCEL_TIME
-        .with_label_values(&[context.label()])
-        .start_timer()
-}
-
-pub static FLINK_JOB_SAVEPOINT_WITH_CANCEL_TIME: Lazy<HistogramVec> = Lazy::new(|| {
-    HistogramVec::new(
-        HistogramOpts::new(
-            "flink_job_savepoint_with_cancel_time_seconds",
-            "Time spent waiting for savepoint with cancel to complete",
-        )
-        .buckets(vec![0.01, 0.015, 0.02, 0.03, 0.04, 0.05, 0.1, 0.25, 0.5, 0.75, 1.0]),
-        &["label"],
-    )
-    .expect("failed creating flink_job_savepoint_with_cancel_time_seconds histogram metric")
-});
+// #[inline]
+// fn start_flink_job_savepoint_with_cancel_timer(context: &FlinkContext) -> HistogramTimer {
+//     FLINK_JOB_SAVEPOINT_WITH_CANCEL_TIME
+//         .with_label_values(&[context.label()])
+//         .start_timer()
+// }
+//
+// pub static FLINK_JOB_SAVEPOINT_WITH_CANCEL_TIME: Lazy<HistogramVec> = Lazy::new(|| {
+//     HistogramVec::new(
+//         HistogramOpts::new(
+//             "flink_job_savepoint_with_cancel_time_seconds",
+//             "Time spent waiting for savepoint with cancel to complete",
+//         )
+//         .buckets(vec![0.01, 0.015, 0.02, 0.03, 0.04, 0.05, 0.1, 0.25, 0.5, 0.75, 1.0]),
+//         &["label"],
+//     )
+//     .expect("failed creating flink_job_savepoint_with_cancel_time_seconds histogram metric")
+// });
 
 mod trigger {
     use crate::flink::FlinkError;

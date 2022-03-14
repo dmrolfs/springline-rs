@@ -23,12 +23,12 @@ pub struct PlanningContext {
     pub recv_timestamp: Timestamp,
 
     /// Allowed cluster size change in a rescaling action.
-    #[serde(rename = "planning.min_scaling_step")]
+    #[serde(default, rename = "planning.min_scaling_step")]
     pub min_scaling_step: Option<u32>,
 
     /// Time expected to restart Flink when scaling. Baseline time is set via configuration, but as
     /// springline rescales, it measures the restart duration and updates planning accordingly.
-    #[serde(rename = "planning.rescale_restart")]
+    #[serde(default, rename = "planning.rescale_restart")]
     #[serde_as(as = "Option<serde_with::DurationSeconds<u64>>")]
     pub rescale_restart: Option<Duration>,
 
@@ -36,27 +36,31 @@ pub struct PlanningContext {
     /// rescaling action. If the tolerating a longer catch-up time, allows the target cluster size
     /// to closely match that required for the predicted target workload. A shorter allowed catch
     /// up time may result in over-provisioning the cluster.
-    #[serde(rename = "planning.max_catch_up")]
+    #[serde(default, rename = "planning.max_catch_up")]
     #[serde_as(as = "Option<serde_with::DurationSeconds<u64>>")]
     pub max_catch_up: Option<Duration>,
 
     /// The time after recovery allowed to settle the cluster.
-    #[serde(rename = "planning.recovery_valid")]
+    #[serde(default, rename = "planning.recovery_valid")]
     #[serde_as(as = "Option<serde_with::DurationSeconds<u64>>")]
     pub recovery_valid: Option<Duration>,
 }
 
 impl PlanningContext {
+    #[tracing::instrument(level="info",)]
     pub fn patch_inputs(&self, inputs: &mut ForecastInputs) {
         if let Some(r) = self.rescale_restart {
+            tracing::info!(rescale_restart=?r, old_restart_input=?inputs.restart, "patching planning rescale_restart");
             inputs.restart = r;
         }
 
         if let Some(c) = self.max_catch_up {
+            tracing::info!(max_catch_up=?c, old_max_catch_up_input=?inputs.max_catch_up, "patching planning max_catch_up");
             inputs.max_catch_up = c;
         }
 
         if let Some(valid) = self.recovery_valid {
+            tracing::info!(?valid, old_valid_offset_input=?inputs.valid_offset, "patching planning valid_offset");
             inputs.valid_offset = valid;
         }
     }

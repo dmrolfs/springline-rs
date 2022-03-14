@@ -15,6 +15,7 @@ use std::collections::HashSet;
 use std::time::Duration;
 use tracing_futures::Instrument;
 use url::Url;
+use crate::phases::act;
 
 pub const ACTION_LABEL: &str = "restart_jobs";
 
@@ -50,14 +51,15 @@ impl ScaleAction for RestartJobs
 
     #[tracing::instrument(level = "info", name = "RestartFlinkWithNewParallelism::execute", skip(self))]
     async fn execute<'s>(&self, plan: &'s Self::In, session: &'s mut ActionSession) -> Result<(), ActError> {
-        let timer = start_flink_restart_job_timer(&session.flink);
+        // let timer = start_flink_restart_job_timer(&session.flink);
+        let timer = act::start_scale_action_timer(session.cluster_label(), ACTION_LABEL);
         let correlation = session.correlation();
 
         let parallelism = plan.target_replicas();
 
-        if let Some(locations) = Self::locations_from(session) {
+        if let Some(mut locations) = Self::locations_from(session) {
             if let Some(ref uploaded_jars) = session.uploaded_jars {
-                let jar_restarts = Self::try_all_jar_restarts(uploaded_jars, locations, parallelism, session).await;
+                let jar_restarts = Self::try_all_jar_restarts(uploaded_jars, &mut locations, parallelism, session).await;
                 let jobs = match jar_restarts {
                     Ok(jobs) => jobs,
                     Err(err) => {
@@ -87,6 +89,13 @@ impl ScaleAction for RestartJobs
                     "No uploaded jars to start jobs from -- skipping {ACTION_LABEL}. Flink standalone not supported. Todo: add identification of standalone mode and once detected apply Reactive Flink approach (with necessary assumption that Reactive mode is configured."
                 );
             };
+
+            if !locations.is_empty() {
+                tracing::warn!(
+                    ?session, %correlation, ?locations,
+                    "Some savepoints were not restarted -- need manual intervention"
+                );
+            }
         }
 
         session.mark_duration(ACTION_LABEL, Duration::from_secs_f64(timer.stop_and_record()));
@@ -100,45 +109,46 @@ impl RestartJobs
 {
     #[tracing::instrument(level = "info", skip(session))]
     async fn try_all_jar_restarts(
-        jars: &[JarId], mut locations: HashSet<SavepointLocation>, parallelism: usize, session: &ActionSession,
+        jars: &[JarId], locations: &mut HashSet<SavepointLocation>, parallelism: usize, session: &ActionSession,
     ) -> Result<Vec<JobId>, FlinkError> {
         let mut jobs = Vec::with_capacity(jars.len());
         let correlation = session.correlation();
 
         for jar_id in jars {
-            let mut used_location = None;
+            // let mut used_location = None;
 
-            match Self::try_restart_locations_for_jar(jar_id, locations.clone(), parallelism, session).await? {
-                Some((job_id, location)) => {
+            match Self::try_jar_restart(jar_id, locations.clone(), parallelism, session).await? {
+                Some((job_id, used_location)) => {
                     jobs.push(job_id);
-                    used_location = Some(location);
-                },
+                    locations.remove(&used_location);
+                    // used_location = Some(location);
+                }
                 None => {
                     track_missed_jar_restarts();
-                    tracing::error!(
-                        %jar_id, ?locations, %parallelism, %correlation,
-                        "no savepoint locations match to restart jar -- manual intervention may be required"
+                    tracing::warn!(
+                        ?locations, %parallelism, %correlation,
+                        "no savepoint locations match to restart jar -- manual intervention may be required for jar: {jar_id}"
                     );
                 },
             };
 
-            if let Some(location_to_remove) = used_location {
-                locations.remove(&location_to_remove);
-            }
+            // if let Some(location_to_remove) = used_location {
+            //     locations.remove(&location_to_remove);
+            // }
         }
 
         Ok(jobs)
     }
 
     #[tracing::instrument(level = "info", skip(session))]
-    async fn try_restart_locations_for_jar(
+    async fn try_jar_restart(
         jar_id: &JarId, locations: HashSet<SavepointLocation>, parallelism: usize, session: &ActionSession,
     ) -> Result<Option<(JobId, SavepointLocation)>, FlinkError> {
         let mut job_savepoint = None;
         let correlation = session.correlation();
 
         for location in locations {
-            match Self::try_restart(jar_id, &location, parallelism, session).await? {
+            match Self::try_jar_restart_for_location(jar_id, &location, parallelism, session).await? {
                 Left(job_id) => {
                     tracing::info!(%job_id, %parallelism, %correlation, "restarted job from jar({jar_id}) + savepoint({location}) pair.");
                     job_savepoint = Some((job_id, location));
@@ -157,7 +167,7 @@ impl RestartJobs
     }
 
     #[tracing::instrument(level = "info", skip(session))]
-    async fn try_restart(
+    async fn try_jar_restart_for_location(
         jar: &JarId, location: &SavepointLocation, parallelism: usize, session: &ActionSession,
     ) -> Result<Either<JobId, StatusCode>, FlinkError> {
         let correlation = session.correlation();
@@ -197,10 +207,12 @@ impl RestartJobs
     }
 
     fn do_assess_restart_response(body: &str, status: StatusCode) -> Result<Either<JobId, StatusCode>, FlinkError> {
+        tracing::warn!(%body, ?status, "flink job try_restart response body received");
+
         if status.is_success() {
             serde_json::from_str(body)
                 .map(|r: restart::RestartJarResponseBody| {
-                    tracing::info!(%body, restart_response=?r, "Restart jar response");
+                    // tracing::info!(%body, restart_response=?r, "Restart jar response");
                     Left(r.job_id)
                 })
                 .map_err(|err| err.into())
@@ -219,7 +231,11 @@ impl RestartJobs
         Ok(endpoint_url)
     }
 
-    #[tracing::instrument(level = "info", skip(session))]
+    #[tracing::instrument(
+        level = "info",
+        skip(session),
+        fields(correlation = %session.correlation()),
+    )]
     async fn block_until_all_jobs_restarted(
         jobs: &[JobId], polling_interval: Duration, restart_timeout: Duration, session: &ActionSession,
     ) -> Result<(), FlinkError> {
@@ -234,13 +250,24 @@ impl RestartJobs
 
         while let Some(task) = tasks.next().await {
             let (job_id, job_state) = task?;
-            tracing::info!("job restarted: job({job_id}): {job_state}");
+            tracing::warn!(
+                is_active=%job_state.is_active(), is_engaged=%job_state.is_engaged(),
+                "DMR: job restarted: job({job_id}): {job_state}"
+            );
+
+            if job_state == JobState::Failing && job_state == JobState::Failed {
+                tracing::error!(%job_id, %job_state, "DMR: job has failed -- may need manual intervention");
+            }
         }
 
         Ok(())
     }
 
-    #[tracing::instrument(level = "info", skip(session))]
+    #[tracing::instrument(
+        level = "info",
+        skip(job, session),
+        fields(job_id=%job, correlation = %session.correlation()),
+    )]
     async fn wait_on_job_restart(
         job: &JobId, polling_interval: Duration, restart_timeout: Duration, session: &ActionSession,
     ) -> Result<JobState, FlinkError> {
@@ -250,13 +277,16 @@ impl RestartJobs
             let mut result = None;
             while result.is_none() {
                 match session.flink.query_job_details(job, &correlation).await {
-                    Ok(detail) => {
-                        tracing::info!(%job, %correlation, ?detail, "job detail received");
+                    Ok(detail) if detail.state.is_engaged() => {
+                        tracing::info!(?detail, "job detail received");
                         result = Some(detail.state);
+                    },
+                    Ok(detail) => {
+                        tracing::info!(?detail, "job detail received but job is not engaged - checking again in {polling_interval:?}")
                     },
                     Err(err) => {
                         //todo: consider capping attempts
-                        tracing::error!(%job, %correlation, %err, "failed to query job details");
+                        tracing::error!(%err, "failed to query job details - checking again in {polling_interval:?}");
                     },
                 }
 
@@ -404,6 +434,7 @@ mod restart {
     #[serde(rename_all = "kebab-case")]
     pub struct RestartJarResponseBody {
         /// The ID of the job that was restarted.
+        #[serde(rename = "jobid")]
         pub job_id: JobId,
     }
 }
@@ -421,22 +452,22 @@ pub static FLINK_MISSED_JAR_RESTARTS: Lazy<IntCounter> = Lazy::new(|| {
     .expect("failed creating flink_missed_jar_restarts metric")
 });
 
-#[inline]
-fn start_flink_restart_job_timer(context: &FlinkContext) -> HistogramTimer {
-    FLINK_RESTART_JOB_TIME.with_label_values(&[context.label()]).start_timer()
-}
+// #[inline]
+// fn start_flink_restart_job_timer(context: &FlinkContext) -> HistogramTimer {
+//     FLINK_RESTART_JOB_TIME.with_label_values(&[context.label()]).start_timer()
+// }
 
-pub static FLINK_RESTART_JOB_TIME: Lazy<HistogramVec> = Lazy::new(|| {
-    HistogramVec::new(
-        HistogramOpts::new(
-            "flink_job_restart_job_time_seconds",
-            "Time spent restarting a job to complete",
-        )
-        .buckets(vec![1., 1.5, 2., 3., 4., 5., 10.0, 25., 50., 75., 100.]),
-        &["label"],
-    )
-    .expect("failed creating flink_restart_job_time_seconds histogram metric")
-});
+// pub static FLINK_RESTART_JOB_TIME: Lazy<HistogramVec> = Lazy::new(|| {
+//     HistogramVec::new(
+//         HistogramOpts::new(
+//             "flink_job_restart_job_time_seconds",
+//             "Time spent restarting a job to complete",
+//         )
+//         .buckets(vec![1., 1.5, 2., 3., 4., 5., 10.0, 25., 50., 75., 100.]),
+//         &["label"],
+//     )
+//     .expect("failed creating flink_restart_job_time_seconds histogram metric")
+// });
 
 #[cfg(test)]
 mod tests {

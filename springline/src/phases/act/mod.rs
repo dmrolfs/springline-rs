@@ -16,10 +16,10 @@ use crate::model::CorrelationId;
 use crate::phases::plan::ScalePlan;
 
 pub use action::ACTION_TOTAL_DURATION;
-pub use action::{
-    FLINK_JOB_SAVEPOINT_WITH_CANCEL_TIME, FLINK_MISSED_JAR_RESTARTS, FLINK_RESTART_JOB_TIME,
-    FLINK_TASKMANAGER_PATCH_REPLICAS_TIME,
-};
+pub use action::FLINK_MISSED_JAR_RESTARTS;
+// pub use action::{
+//     FLINK_JOB_SAVEPOINT_WITH_CANCEL_TIME, FLINK_RESTART_JOB_TIME, FLINK_TASKMANAGER_PATCH_REPLICAS_TIME,
+// };
 pub use scale_actuator::ScaleActuator;
 
 pub trait ScaleActionPlan {
@@ -132,8 +132,8 @@ mod protocol {
 }
 
 #[inline]
-fn start_scale_action_timer(cluster_label: &str) -> HistogramTimer {
-    ACT_SCALE_ACTION_TIME.with_label_values(&[cluster_label]).start_timer()
+fn start_scale_action_timer(cluster_label: &str, action: &str) -> HistogramTimer {
+    ACT_SCALE_ACTION_TIME.with_label_values(&[cluster_label, action]).start_timer()
 }
 
 pub(crate) static ACT_SCALE_ACTION_TIME: Lazy<HistogramVec> = Lazy::new(|| {
@@ -143,7 +143,7 @@ pub(crate) static ACT_SCALE_ACTION_TIME: Lazy<HistogramVec> = Lazy::new(|| {
             "Time spent during the entire scale action",
         )
         .buckets(vec![1., 1.5, 2., 3., 4., 5., 10.0, 25., 50., 75., 100.]),
-        &["label"],
+        &["label", "action"],
     )
     .expect("failed creating act_scale_action_time_seconds histogram metric")
 });

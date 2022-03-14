@@ -234,7 +234,7 @@ impl<F: Forecaster> Planning for FlinkPlanning<F> {
     #[tracing::instrument(level = "info", skip(self))]
     async fn patch_context(&mut self, context: Self::Context) -> Result<Option<PlanEvent<Self>>, PlanError> {
         context.patch_inputs(&mut self.forecast_calculator.inputs);
-        tracing::error!(forecast_inputs=?self.forecast_calculator.inputs, "DMR: patched context inputs.");
+        tracing::info!(forecast_inputs=?self.forecast_calculator.inputs, "DMR: patched context inputs.");
         Ok(Some(PlanEvent::<Self>::ContextChanged(context)))
     }
 
