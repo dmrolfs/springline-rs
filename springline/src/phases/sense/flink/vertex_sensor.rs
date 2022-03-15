@@ -35,7 +35,6 @@ pub struct VertexSensor<Out> {
     correlation_gen: CorrelationGenerator,
     trigger: Inlet<()>,
     outlet: Outlet<Out>,
-    // jobs_endpoint: Url,
 }
 
 const NAME: &str = "vertex_sensor";
@@ -47,12 +46,6 @@ impl<Out> VertexSensor<Out> {
         let scopes = vec![FlinkScope::Task, FlinkScope::Kafka, FlinkScope::Kinesis];
         let trigger = Inlet::new(NAME, "trigger");
         let outlet = Outlet::new(NAME, "outlet");
-
-        // let mut jobs_endpoint = context.base_url();
-        // jobs_endpoint
-        //     .path_segments_mut()
-        //     .map_err(|_| SenseError::NotABaseUrl(context.base_url()))?
-        //     .push("jobs");
 
         Ok(Self {
             scopes,
@@ -160,24 +153,6 @@ where
                                     .await
                                 }))
                                 .await;
-                            //todo: clean up once vertex_gather_tasks proves ok in real env
-                            // for job in active_jobs {
-                            // let detail = match self.query_job_details(&job.id).await {
-                            //     Ok(job) => job,
-                            //     Err(_) => continue,
-                            // };
-                            //
-                            // for vertex in detail.vertices.into_iter().filter(|v| v.status.is_active()) {
-                            //     let vertex_telemetry =
-                            //         self.query_vertex_telemetry(&job.id, &vertex.id, &metric_orders).await;
-                            //     let vertex_telemetry = match vertex_telemetry {
-                            //         Ok(telemetry) => telemetry,
-                            //         Err(_) => continue,
-                            //     };
-                            //
-                            //     super::merge_into_metric_groups(&mut metric_telemetry, vertex_telemetry);
-                            // }
-                            // }
 
                             let groups = metric_telemetry.lock().await.drain().collect();
                             super::consolidate_active_job_telemetry_for_order(groups, &self.orders)
@@ -320,7 +295,6 @@ where
                 })
                 .instrument(span)
                 .await
-                // .map_err(|err| err.into())
                 .and_then(|body| {
                     let result = serde_json::from_str(body.as_str()).map_err(|err| err.into());
                     tracing::info!(%body, ?result, "Flink vertex metrics response body");

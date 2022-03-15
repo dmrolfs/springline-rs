@@ -19,12 +19,10 @@ use tokio::sync::broadcast;
 
 const STAGE_NAME: &str = "execute_scaling";
 
-// #[derive(Debug)]
 pub struct ScaleActuator<In> {
     kube: KubernetesContext,
     flink: FlinkContext,
     action: Box<dyn ScaleAction<In = In>>,
-    // context: TaskmanagerContext,
     inlet: Inlet<In>,
     pub tx_action_monitor: broadcast::Sender<Arc<protocol::ActEvent<In>>>,
 }
@@ -32,7 +30,6 @@ pub struct ScaleActuator<In> {
 impl ScaleActuator<ScalePlan> {
     #[tracing::instrument(level = "info", skip(kube))]
     pub fn new(kube: KubernetesContext, flink: FlinkContext, settings: &Settings) -> Self {
-        // let cluster_label = flink.label();
         let flink_action_settings = &settings.action.flink;
 
         let composite: CompositeAction<ScalePlan> = action::CompositeAction::default()
@@ -47,7 +44,6 @@ impl ScaleActuator<ScalePlan> {
             kube,
             flink,
             action: Box::new(composite),
-            // context: taskmanager_action_settings.clone(),
             inlet: Inlet::new(STAGE_NAME, PORT_DATA),
             tx_action_monitor,
         }
@@ -125,9 +121,7 @@ where
 
     #[inline]
     async fn do_run(&mut self) -> Result<(), ActError> {
-        // let workload_resource = &self.workload_resource;
         let mut inlet = self.inlet.clone();
-        // let stateful_set: kube::Api<StatefulSet> = kube::Api::default_namespaced(self.kube.clone());
 
         while let Some(plan) = inlet.recv().await {
             self.notify_action_started(plan.clone());
@@ -200,62 +194,6 @@ where
             ),
         }
     }
-
-    // #[deprecated(note = "use action::patch_replicas instead")]
-    // #[tracing::instrument(level = "info", skip(stateful_set))]
-    // async fn patch_replicas_for(
-    //     plan: &In, stateful_set: &kube::Api<StatefulSet>, workload_resource: &KubernetesDeployResource,
-    // ) -> Result<(), ActError> {
-    //     // fn convert_kube_error(error: kube::Error) -> ActError {
-    //     //     match error {
-    //     //         kube::Error::Api(resp) => resp.into(),
-    //     //         err => err.into(),
-    //     //     }
-    //     // }
-    //
-    //     let name = workload_resource.get_name();
-    //     let target_nr_task_managers = plan.target_replicas();
-    //
-    //     let k8s_get_scale_span = tracing::info_span!(
-    //         "Kubernetes Admin Server",
-    //         phase=%"act",
-    //         action=%"get_scale",
-    //         correlation=%plan.correlation()
-    //     );
-    //
-    //     let original_scale = stateful_set
-    //         .get_scale(name)
-    //         .instrument(k8s_get_scale_span)
-    //         .await
-    //         .map_err(crate::kubernetes::convert_kube_error)?;
-    //     tracing::info!("scale recv for {}: {:?}", name, original_scale.spec);
-    //
-    //     let k8s_patch_scale_span = tracing::info_span!(
-    //         "Kubernetes Admin Server",
-    //         phase=%"act",
-    //         action=%"patch_scale",
-    //         correlation=%plan.correlation()
-    //     );
-    //
-    //     let patch_params = kube::api::PatchParams::default();
-    //     let fs = json!({ "spec": { "replicas": target_nr_task_managers }});
-    //     let patched_scale = stateful_set
-    //         .patch_scale(name, &patch_params, &kube::api::Patch::Merge(&fs))
-    //         .instrument(k8s_patch_scale_span)
-    //         .await
-    //         .map_err(crate::kubernetes::convert_kube_error)?;
-    //
-    //     tracing::info!("Patched scale for {}: {:?}", name, patched_scale.spec);
-    //     if let Some(original_nr_task_managers) = original_scale.spec.clone().and_then(|s| s.replicas) {
-    //         if target_nr_task_managers == original_nr_task_managers as usize {
-    //             tracing::warn!(
-    //                 %target_nr_task_managers,
-    //                 "patched scale when current cluster size equals scale plan to be executed."
-    //             );
-    //         }
-    //     }
-    //     Ok(())
-    // }
 
     #[inline]
     async fn do_close(mut self: Box<Self>) -> Result<(), ActError> {

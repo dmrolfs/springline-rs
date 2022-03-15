@@ -1,73 +1,28 @@
 use super::{ActionSession, ScaleAction};
 use crate::kubernetes::{self, FlinkComponent, KubernetesContext};
 use crate::model::CorrelationId;
+use crate::phases::act;
 use crate::phases::act::{ActError, ScaleActionPlan};
 use crate::phases::plan::ScalePlan;
 use async_trait::async_trait;
 use k8s_openapi::api::core::v1::Pod;
-use once_cell::sync::Lazy;
-use prometheus::{HistogramOpts, HistogramTimer, HistogramVec};
 use std::collections::HashMap;
 use std::time::Duration;
 use tokio::time::Instant;
-use crate::phases::act;
 
 pub const ACTION_LABEL: &str = "patch_replicas";
 
 #[derive(Debug)]
 pub struct PatchReplicas;
-// pub cluster_label: String,
-// pub kube: KubernetesContext,
-// pub label_selector: String,
-// pub deploy_resource: KubernetesDeployResource,
-// pub api_constraints: KubernetesApiConstraints,
-// pub taskmanagers: TaskmanagerContext,
-// marker: std::marker::PhantomData<P>,
-// }
-
-// impl PatchReplicas<P> {
-//     pub fn new(cluster_label: &str, kube: KubernetesContext) -> Self {
-//         // let label_selector = scale_target.label_selector.clone();
-//         // let deploy_resource = scale_target.deploy_resource.clone();
-//         // let api_constraints = scale_target.kubernetes_api;
-//
-//         // let taskmanagers = TaskmanagerContext {
-//         //     deploy: DeployApi::from_kubernetes_resource(&scale_target.deploy_resource, kube.clone()),
-//         //     pods: Api::default_namespaced(kube),
-//         //     params: ListParams {
-//         //         label_selector: Some(scale_target.label_selector.clone()),
-//         //         timeout: Some(api_constraints.api_timeout.as_secs() as u32),
-//         //         ..Default::default()
-//         //     },
-//         // };
-//
-//         let marker = std::marker::PhantomData;
-//         Self {
-//             cluster_label: cluster_label.to_string(),
-//             kube,
-//             // label_selector,
-//             // deploy_resource,
-//             // api_constraints,
-//             // taskmanagers,
-//             marker,
-//         }
-//     }
-// }
 
 #[async_trait]
-impl ScaleAction for PatchReplicas
-// where
-//     P: AppData + ScaleActionPlan,
-{
+impl ScaleAction for PatchReplicas {
     type In = ScalePlan;
-    // type Plan = GovernanceOutcome;
 
     #[tracing::instrument(level = "info", name = "PatchReplicas::execute", skip(self))]
     async fn execute<'s>(&self, plan: &'s Self::In, session: &'s mut ActionSession) -> Result<(), ActError> {
-        // let timer = start_flink_taskmanager_patch_replicas_timer(session.cluster_label());
         let timer = act::start_scale_action_timer(session.cluster_label(), ACTION_LABEL);
 
-        // async fn execute(&mut self, plan: &P) -> Result<Duration, ActError> {
         let correlation = session.correlation();
         let nr_target_taskmanagers = plan.target_replicas();
 
@@ -100,10 +55,7 @@ impl ScaleAction for PatchReplicas
     }
 }
 
-impl PatchReplicas
-// where
-//     P: AppData + ScaleActionPlan,
-{
+impl PatchReplicas {
     #[tracing::instrument(level = "info", skip(kube))]
     async fn block_until_satisfied(kube: &KubernetesContext, plan: &<Self as ScaleAction>::In) -> Result<(), ActError> {
         let correlation = plan.correlation();
@@ -199,22 +151,3 @@ impl PatchReplicas
         result
     }
 }
-
-// #[inline]
-// fn start_flink_taskmanager_patch_replicas_timer(cluster_label: &str) -> HistogramTimer {
-//     FLINK_TASKMANAGER_PATCH_REPLICAS_TIME
-//         .with_label_values(&[cluster_label])
-//         .start_timer()
-// }
-//
-// pub static FLINK_TASKMANAGER_PATCH_REPLICAS_TIME: Lazy<HistogramVec> = Lazy::new(|| {
-//     HistogramVec::new(
-//         HistogramOpts::new(
-//             "flink_taskmanager_patch_replicas_time_seconds",
-//             "Time spent patching taskmanager replicas and confirming they are running",
-//         )
-//         .buckets(vec![10., 15., 20., 30., 40., 50., 100., 250., 500., 750., 1000.]),
-//         &["label"],
-//     )
-//     .expect("failed creating flink_taskmanager_patch_replicas_time_seconds histogram metric")
-// });

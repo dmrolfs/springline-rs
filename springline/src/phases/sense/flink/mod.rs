@@ -127,10 +127,6 @@ pub struct FlinkSensorSpecification<'a> {
 
 #[tracing::instrument(level = "info")]
 pub async fn make_sensor(spec: FlinkSensorSpecification<'_>) -> Result<Box<dyn SourceStage<Telemetry>>, SenseError> {
-    // pub async fn make_sensor(spec: FlinkSensorSpecification)
-    //     name: &str,
-    //     context: FlinkContext, scheduler: Box<dyn SourceStage<()>>, settings: &FlinkSensorSettings, machine_node: MachineNode,
-    // ) -> Result<Box<dyn SourceStage<Telemetry>>, SenseError> {
     let name: SharedString = format!("{}_flink_sensor", spec.name).into();
 
     let orders = Arc::new(MetricOrder::extend_standard_with_settings(spec.settings));
@@ -186,15 +182,6 @@ pub async fn make_sensor(spec: FlinkSensorSpecification<'_>) -> Result<Box<dyn S
 
     Ok(composite)
 }
-
-// fn make_source_scheduler(name: &str, settings: &FlinkSettings) -> stage::Tick<()> {
-//     stage::Tick::new(
-//         format!("flink_source_{}_tick", name),
-//         settings.metrics_initial_delay,
-//         settings.metrics_interval,
-//         (),
-//     )
-// }
 
 // This type is also only needed to circumvent the issue cast_trait_object places on forcing the generic Out type.
 // Since Telemetry is only used for this stage, The generic variation is dead.

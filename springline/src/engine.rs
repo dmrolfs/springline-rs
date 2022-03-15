@@ -138,7 +138,6 @@ impl AutoscaleEngine<Building> {
             decision::make_decision_phase(&settings.decision, &mut sense_builder).await?;
         let rx_decision_monitor = decision_phase.rx_monitor();
 
-        // let (planning_phase, planning_data_channel, planning_context_channel) =
         let planning_phase = plan::make_plan_phase(&settings.plan, &mut sense_builder).await?;
         let rx_plan_monitor = planning_phase.phase.rx_monitor();
         let rx_flink_planning_monitor = planning_phase.rx_flink_planning_monitor;

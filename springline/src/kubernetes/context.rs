@@ -163,14 +163,3 @@ impl KubernetesContextRef {
         self.list_pods(&ps).await
     }
 }
-
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-//     use claim::*;
-//     use pretty_assertions::assert_eq;
-//     use serde_test::{assert_tokens, Token};
-//
-// const EXPECTED_REP: &str = "\"statefulset/springline\"";
-
-// }

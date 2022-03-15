@@ -55,10 +55,6 @@ impl JobState {
 
     pub const fn is_engaged(&self) -> bool {
         matches!(self, Self::Running | Self::Finished | Self::Reconciling)
-        // !matches!(
-        //     self,
-        //     Self::Initializing | Self::Failing | Self::Failed | Self::Cancelling | Self::Canceled | Self:: Suspended
-        // )
     }
 }
 

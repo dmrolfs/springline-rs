@@ -299,13 +299,6 @@ impl<'r> Service<'r> {
         };
 
         snapshot.map_err(|err| err.into())
-        // let (cmd, rx) = subscription
-        //     .as_ref()
-        //     .map(ClearinghouseCmd::get_subscription_snapshot)
-        //     .unwrap_or_else(ClearinghouseCmd::get_clearinghouse_snapshot);
-        // let _ = self.tx_clearinghouse_api.send(cmd)?;
-        // let snapshot = rx.await?;
-        // Ok(snapshot)
     }
 
     #[tracing::instrument(level = "info", skip(self))]
@@ -313,8 +306,5 @@ impl<'r> Service<'r> {
         tick::TickCmd::stop(&self.tx_stop_flink_sensor)
             .await
             .map_err(|err| EngineApiError::Handler(err.into()))
-        // let (cmd, rx) = tick::TickMsg::stop();
-        // self.tx_stop_flink_sensor.send(cmd)?;
-        // rx.await?.map_err(|err| EngineApiError::Handler(err.into()))
     }
 }

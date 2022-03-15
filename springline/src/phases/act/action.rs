@@ -22,17 +22,8 @@ pub use composite::CompositeAction;
 pub use patch_replicas::PatchReplicas;
 pub use prepare_data::PrepareData;
 pub use restart_jobs::RestartJobs;
-pub use savepoint::TriggerSavepoint;
-
-// pub use patch_replicas::{FLINK_TASKMANAGER_PATCH_REPLICAS_TIME, FLINK_RESTART_JOB_TIME, FLINK_JOB_SAVEPOINT_WITH_CANCEL_TIME};
 pub use restart_jobs::FLINK_MISSED_JAR_RESTARTS;
-
-// pub fn make_action<T: AppData + ScaleActionPlan>(
-//     kube: &kube::Client, settings: &ActionSettings,
-// ) -> Box<dyn ScaleAction<T>> {
-//     let patch_replicas = PatchReplicas::new(patch_replicas::ACTION_LABEL, &settings.taskmanager, kube);
-//     Box::new(patch_replicas)
-// }
+pub use savepoint::TriggerSavepoint;
 
 #[async_trait]
 pub trait ScaleAction: Debug + Send + Sync {
@@ -44,7 +35,6 @@ pub const ACTION_TOTAL_DURATION: &str = "total_duration";
 
 #[derive(Clone)]
 pub struct ActionSession {
-    // pub plan: ScalePlan,
     pub correlation: CorrelationId,
     pub kube: KubernetesContext,
     pub flink: FlinkContext,
@@ -55,10 +45,8 @@ pub struct ActionSession {
 }
 
 impl ActionSession {
-    // pub fn new(plan: ScalePlan, kube: KubernetesContext, flink: FlinkContext) -> Self {
     pub fn new(correlation: CorrelationId, kube: KubernetesContext, flink: FlinkContext) -> Self {
         Self {
-            // plan,
             correlation,
             kube,
             flink,

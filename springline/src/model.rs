@@ -143,7 +143,7 @@ pub struct FlowMetrics {
     #[serde(
         default,
         rename = "flow.forecasted_timestamp",
-        skip_serializing_if = "Option::is_none",
+        skip_serializing_if = "Option::is_none"
     )]
     pub forecasted_timestamp: Option<f64>,
 
@@ -152,7 +152,7 @@ pub struct FlowMetrics {
     #[serde(
         default,
         rename = "flow.forecasted_records_in_per_sec",
-        skip_serializing_if = "Option::is_none",
+        skip_serializing_if = "Option::is_none"
     )]
     pub forecasted_records_in_per_sec: Option<f64>,
 
@@ -274,54 +274,6 @@ impl fmt::Debug for ClusterMetrics {
             .finish()
     }
 }
-
-// #[cfg(test)]
-// use std::sync::Mutex;
-// #[cfg(test)]
-// use chrono::{DateTime, Utc};
-// #[cfg(test)]
-// use proctor::elements::telemetry::UpdateMetricsFn;
-// #[cfg(test)]
-// use proctor::ProctorIdGenerator;
-//
-// #[cfg(test)]
-// use once_cell::sync::Lazy;
-// #[cfg(test)]
-// static ID_GENERATOR: Lazy<Mutex<ProctorIdGenerator<MetricCatalog>>> = Lazy::new(||
-// Mutex::new(ProctorIdGenerator::default()));
-//
-// impl MetricCatalog {
-//     #[cfg(test)]
-//     pub(crate) fn for_test_with_timestamp(timestamp: Timestamp, custom: telemetry::TableType) ->
-// Self {         let generator = &mut ID_GENERATOR.lock().unwrap();
-//
-//         Self {
-//             correlation_id: generator.next_id(),
-//             timestamp,
-//             health: JobHealthMetrics::default(),
-//             flow: FlowMetrics::default(),
-//             cluster: ClusterMetrics::default(),
-//             custom,
-//         }
-//     }
-//
-//     #[cfg(test)]
-//     pub(crate) fn for_test_with_datetime(timestamp: DateTime<Utc>, custom: telemetry::TableType)
-// -> Self {         Self::for_test_with_timestamp(timestamp.into(), custom)
-//     }
-//
-//     // todo limited usefulness by itself; keys? iter support for custom and for entire catalog?
-//     pub fn custom<T: TryFrom<TelemetryValue>>(&self, metric: &str) -> Option<Result<T,
-// TelemetryError>>     where
-//         T: TryFrom<TelemetryValue>,
-//         TelemetryError: From<<T as TryFrom<TelemetryValue>>::Error>,
-//     {
-//         self.custom.get(metric).map(|telemetry| {
-//             let value = T::try_from(telemetry.clone())?;
-//             Ok(value)
-//         })
-//     }
-// }
 
 impl Add for MetricCatalog {
     type Output = Self;

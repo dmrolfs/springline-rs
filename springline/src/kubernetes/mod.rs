@@ -6,7 +6,6 @@ use std::fmt;
 mod context;
 mod deploy;
 mod error;
-mod taskmanager;
 
 pub use context::{FlinkComponent, KubernetesApiConstraints, KubernetesContext};
 pub use deploy::DeployApi;

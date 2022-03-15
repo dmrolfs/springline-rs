@@ -47,7 +47,7 @@ pub struct PlanningContext {
 }
 
 impl PlanningContext {
-    #[tracing::instrument(level="info",)]
+    #[tracing::instrument(level = "info")]
     pub fn patch_inputs(&self, inputs: &mut ForecastInputs) {
         if let Some(r) = self.rescale_restart {
             tracing::info!(rescale_restart=?r, old_restart_input=?inputs.restart, "patching planning rescale_restart");

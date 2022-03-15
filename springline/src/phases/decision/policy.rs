@@ -151,29 +151,6 @@ impl QueryPolicy for DecisionPolicy {
 
     fn query_policy(&self, engine: &Oso, args: Self::Args) -> Result<QueryResult, PolicyError> {
         QueryResult::from_query(engine.query_rule("scale", args)?)
-        // .map(|query_result| {
-        // if query_result.passed {
-        //     let decision = query_result
-        //         .bindings
-        //         .get(DECISION)
-        //         .and_then(|rs| rs.first())
-        //         .map(|r| r.to_string())
-        //         .unwrap_or("no_action".into());
-        //
-        //     let reason = query_result
-        //         .bindings
-        //         .get(REASON)
-        //         .and_then(|rs| rs.first())
-        //         .map(|r| r.to_string())
-        //         .unwrap_or("unspecified".into());
-        //
-        //     DECISION_SCALING_DECISION_COUNT_METRIC
-        //         .with_label_values(&[&decision, &reason])
-        //         .inc();
-        // }
-        //
-        // query_result
-        // })
     }
 
     fn zero_context(&self) -> Option<Self::Context> {
