@@ -17,9 +17,6 @@ use crate::phases::plan::ScalePlan;
 
 pub use action::ACTION_TOTAL_DURATION;
 pub use action::FLINK_MISSED_JAR_RESTARTS;
-// pub use action::{
-//     FLINK_JOB_SAVEPOINT_WITH_CANCEL_TIME, FLINK_RESTART_JOB_TIME, FLINK_TASKMANAGER_PATCH_REPLICAS_TIME,
-// };
 pub use scale_actuator::ScaleActuator;
 
 pub trait ScaleActionPlan {
@@ -133,7 +130,9 @@ mod protocol {
 
 #[inline]
 fn start_scale_action_timer(cluster_label: &str, action: &str) -> HistogramTimer {
-    ACT_SCALE_ACTION_TIME.with_label_values(&[cluster_label, action]).start_timer()
+    ACT_SCALE_ACTION_TIME
+        .with_label_values(&[cluster_label, action])
+        .start_timer()
 }
 
 pub(crate) static ACT_SCALE_ACTION_TIME: Lazy<HistogramVec> = Lazy::new(|| {
@@ -177,7 +176,6 @@ pub(crate) static ACT_PHASE_ERRORS: Lazy<IntCounterVec> = Lazy::new(|| {
 
 #[tracing::instrument(level = "info")]
 pub fn make_logger_act_phase() -> Box<dyn SinkStage<GovernanceOutcome>> {
-    // let act: Box<dyn SinkStage<GovernanceOutcome>> =
     Box::new(stage::Foreach::new("actlogging_act", |plan: GovernanceOutcome| {
         ACT_SCALE_ACTION_COUNT
             .with_label_values(&[
@@ -187,6 +185,4 @@ pub fn make_logger_act_phase() -> Box<dyn SinkStage<GovernanceOutcome>> {
             .inc();
         tracing::warn!(scale_plan=?plan, "EXECUTE SCALE PLAN!");
     }))
-
-    // act
 }

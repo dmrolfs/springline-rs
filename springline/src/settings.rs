@@ -493,7 +493,7 @@ mod tests {
         action: ActionSettings {
             action_timeout: Duration::from_secs(600),
             taskmanager: TaskmanagerContext {
-                label_selector: "app=flink,component=taskmanager".to_string(),
+                label_selector: "component=taskmanager".to_string(),
                 deploy_resource: KubernetesDeployResource::StatefulSet { name: "dr-springline-tm".to_string() },
                 kubernetes_api: KubernetesApiConstraints {
                     api_timeout: Duration::from_secs(295),
@@ -594,7 +594,7 @@ mod tests {
                         taskmanager: TaskmanagerContext {
                             kubernetes_api: KubernetesApiConstraints {
                                 api_timeout: Duration::from_secs(290),
-                                polling_interval: Duration::from_secs(10),
+                                polling_interval: Duration::from_secs(5),
                                 ..SETTINGS.action.taskmanager.kubernetes_api.clone()
                             },
                             ..SETTINGS.action.taskmanager.clone()
@@ -790,7 +790,7 @@ mod tests {
                         taskmanager: TaskmanagerContext {
                             kubernetes_api: KubernetesApiConstraints {
                                 api_timeout: Duration::from_secs(290),
-                                polling_interval: Duration::from_secs(10),
+                                polling_interval: Duration::from_secs(5),
                                 ..SETTINGS.action.taskmanager.kubernetes_api.clone()
                             },
                             ..SETTINGS.action.taskmanager.clone()

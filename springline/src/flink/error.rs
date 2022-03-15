@@ -34,6 +34,9 @@ pub enum FlinkError {
     #[error("Flink left unexpected savepoint condition for job {0}: {1:?}")]
     UnexpectedSavepointStatus(JobId, SavepointStatus),
 
+    #[error("Flink savepoint operation failed for job {job_id}: {failure_reason}")]
+    Savepoint { job_id: JobId, failure_reason: String },
+
     #[error("Flink API operation {0} failed to complete within timeout of {1:?}")]
     Timeout(String, std::time::Duration),
 }
@@ -54,6 +57,7 @@ impl MetricLabel for FlinkError {
             Self::ExpectedTelemetryType(_, _) => Left("telemetry".into()),
             Self::UnexpectedValue { .. } => Left("http::unexpected".into()),
             Self::UnexpectedSavepointStatus(_, _) => Left("savepoint".into()),
+            Self::Savepoint { .. } => Left("savepoint".into()),
             Self::Timeout(_, _) => Left("http::timeout".into()),
         }
     }

@@ -1,12 +1,12 @@
+use chrono::{DateTime, Utc};
 use std::collections::HashMap;
 use std::fmt::{self, Display};
 use std::sync::Arc;
 use std::time::Duration;
-use chrono::{DateTime, Utc};
 
 use enumflags2::{bitflags, BitFlags};
 use once_cell::sync::Lazy;
-use proctor::elements::{FORMAT, RecordsPerSecond, Telemetry, Timestamp};
+use proctor::elements::{RecordsPerSecond, Telemetry, Timestamp, FORMAT};
 use proctor::graph::stage::{ActorSourceApi, ActorSourceCmd};
 use proctor::phases::plan::{PlanEvent, PlanMonitor};
 use prometheus::{IntCounter, IntGauge};
@@ -30,7 +30,7 @@ impl From<PlanningFeedback> for Telemetry {
 
         telemetry.insert(
             model::MC_FLOW__FORECASTED_TIMESTAMP.to_string(),
-            feedback.forecasted_timestamp.into(),
+            feedback.forecasted_timestamp.as_f64().into(),
         );
 
         telemetry.insert(

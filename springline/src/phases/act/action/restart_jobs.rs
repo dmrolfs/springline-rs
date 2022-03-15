@@ -1,4 +1,5 @@
 use crate::flink::{self, FlinkContext, FlinkError, JarId, JobId, JobState, SavepointLocation};
+use crate::phases::act;
 use crate::phases::act::action::{ActionSession, ScaleAction};
 use crate::phases::act::{ActError, ScaleActionPlan};
 use crate::phases::plan::ScalePlan;
@@ -10,48 +11,35 @@ use futures_util::{FutureExt, StreamExt, TryFutureExt};
 use http::{Method, StatusCode};
 use once_cell::sync::Lazy;
 use proctor::error::UrlError;
-use prometheus::{HistogramOpts, HistogramTimer, HistogramVec, IntCounter};
+use prometheus::IntCounter;
 use std::collections::HashSet;
 use std::time::Duration;
 use tracing_futures::Instrument;
 use url::Url;
-use crate::phases::act;
 
 pub const ACTION_LABEL: &str = "restart_jobs";
 
 #[derive(Debug)]
 pub struct RestartJobs {
-    // pub flink: FlinkContext,
     pub restart_timeout: Duration,
     pub polling_interval: Duration,
-    // marker: std::marker::PhantomData<P>,
 }
 
 impl RestartJobs {
-    // pub const fn from_settings(flink: FlinkContext, settings: &FlinkActionSettings) -> Self {
     pub const fn from_settings(settings: &FlinkActionSettings) -> Self {
-        let polling_interval = settings.polling_interval;
-        let restart_timeout = settings.restart_operation_timeout;
         Self {
-            // flink,
-            restart_timeout,
-            polling_interval,
-            // marker: std::marker::PhantomData,
+            restart_timeout: settings.restart_operation_timeout,
+            polling_interval: settings.polling_interval,
         }
     }
 }
 
 #[async_trait]
-impl ScaleAction for RestartJobs
-// where
-//     P: AppData + ScaleActionPlan,
-{
+impl ScaleAction for RestartJobs {
     type In = ScalePlan;
-    // type Plan = GovernanceOutcome;
 
     #[tracing::instrument(level = "info", name = "RestartFlinkWithNewParallelism::execute", skip(self))]
     async fn execute<'s>(&self, plan: &'s Self::In, session: &'s mut ActionSession) -> Result<(), ActError> {
-        // let timer = start_flink_restart_job_timer(&session.flink);
         let timer = act::start_scale_action_timer(session.cluster_label(), ACTION_LABEL);
         let correlation = session.correlation();
 
@@ -59,7 +47,8 @@ impl ScaleAction for RestartJobs
 
         if let Some(mut locations) = Self::locations_from(session) {
             if let Some(ref uploaded_jars) = session.uploaded_jars {
-                let jar_restarts = Self::try_all_jar_restarts(uploaded_jars, &mut locations, parallelism, session).await;
+                let jar_restarts =
+                    Self::try_all_jar_restarts(uploaded_jars, &mut locations, parallelism, session).await;
                 let jobs = match jar_restarts {
                     Ok(jobs) => jobs,
                     Err(err) => {
@@ -103,10 +92,7 @@ impl ScaleAction for RestartJobs
     }
 }
 
-impl RestartJobs
-// where
-//     P: AppData + ScaleActionPlan,
-{
+impl RestartJobs {
     #[tracing::instrument(level = "info", skip(session))]
     async fn try_all_jar_restarts(
         jars: &[JarId], locations: &mut HashSet<SavepointLocation>, parallelism: usize, session: &ActionSession,
@@ -115,14 +101,11 @@ impl RestartJobs
         let correlation = session.correlation();
 
         for jar_id in jars {
-            // let mut used_location = None;
-
             match Self::try_jar_restart(jar_id, locations.clone(), parallelism, session).await? {
                 Some((job_id, used_location)) => {
                     jobs.push(job_id);
                     locations.remove(&used_location);
-                    // used_location = Some(location);
-                }
+                },
                 None => {
                     track_missed_jar_restarts();
                     tracing::warn!(
@@ -131,10 +114,6 @@ impl RestartJobs
                     );
                 },
             };
-
-            // if let Some(location_to_remove) = used_location {
-            //     locations.remove(&location_to_remove);
-            // }
         }
 
         Ok(jobs)
@@ -211,10 +190,7 @@ impl RestartJobs
 
         if status.is_success() {
             serde_json::from_str(body)
-                .map(|r: restart::RestartJarResponseBody| {
-                    // tracing::info!(%body, restart_response=?r, "Restart jar response");
-                    Left(r.job_id)
-                })
+                .map(|r: restart::RestartJarResponseBody| Left(r.job_id))
                 .map_err(|err| err.into())
         } else {
             Ok(Right(status))
@@ -274,15 +250,17 @@ impl RestartJobs
         let correlation = session.correlation();
 
         let task = async {
-            let mut result = None;
-            while result.is_none() {
+            loop {
                 match session.flink.query_job_details(job, &correlation).await {
                     Ok(detail) if detail.state.is_engaged() => {
                         tracing::info!(?detail, "job detail received");
-                        result = Some(detail.state);
+                        break detail.state;
                     },
                     Ok(detail) => {
-                        tracing::info!(?detail, "job detail received but job is not engaged - checking again in {polling_interval:?}")
+                        tracing::info!(
+                            ?detail,
+                            "job detail received but job is not engaged - checking again in {polling_interval:?}"
+                        )
                     },
                     Err(err) => {
                         //todo: consider capping attempts
@@ -292,8 +270,6 @@ impl RestartJobs
 
                 tokio::time::sleep(polling_interval).await;
             }
-
-            result.expect("job restart should have been populated")
         };
 
         tokio::time::timeout(restart_timeout, task).await.map_err(|_elapsed| {
@@ -354,7 +330,7 @@ mod restart {
     pub struct RestartJarRequestBody {
         /// Boolean value that specifies whether the job submission should be rejected if the
         /// savepoint contains state that cannot be mapped back to the job.
-        #[serde(skip_serializing_if = "Option::is_none")]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         pub allow_non_restored_state: Option<bool>,
 
         /// String value that specifies the fully qualified name of the entry point class.
@@ -451,23 +427,6 @@ pub static FLINK_MISSED_JAR_RESTARTS: Lazy<IntCounter> = Lazy::new(|| {
     )
     .expect("failed creating flink_missed_jar_restarts metric")
 });
-
-// #[inline]
-// fn start_flink_restart_job_timer(context: &FlinkContext) -> HistogramTimer {
-//     FLINK_RESTART_JOB_TIME.with_label_values(&[context.label()]).start_timer()
-// }
-
-// pub static FLINK_RESTART_JOB_TIME: Lazy<HistogramVec> = Lazy::new(|| {
-//     HistogramVec::new(
-//         HistogramOpts::new(
-//             "flink_job_restart_job_time_seconds",
-//             "Time spent restarting a job to complete",
-//         )
-//         .buckets(vec![1., 1.5, 2., 3., 4., 5., 10.0, 25., 50., 75., 100.]),
-//         &["label"],
-//     )
-//     .expect("failed creating flink_restart_job_time_seconds histogram metric")
-// });
 
 #[cfg(test)]
 mod tests {

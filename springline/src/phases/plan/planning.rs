@@ -216,11 +216,18 @@ impl<F: Forecaster> Planning for FlinkPlanning<F> {
             })
             .map_err(|err| {
                 let (needed, window) = self.forecast_calculator.observations_needed();
-                tracing::warn!(
-                    error=?err,
-                    "failed to forecast next workload -- needed: {} of {}",
-                    needed, window
-                );
+                match &err {
+                    PlanError::NotEnoughData { supplied, need } => {
+                        tracing::info!(
+                            supplied=%supplied, need=%need,
+                            "not enough data to forecast next observation - need: {needed} of {window}."
+                        );
+                    },
+                    e => {
+                        tracing::warn!(error = ?e, "error while forecasting next observation.");
+                    },
+                };
+
                 err
             })
             .ok();

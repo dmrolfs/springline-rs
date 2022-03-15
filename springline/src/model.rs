@@ -539,6 +539,7 @@ pub(crate) static METRIC_CATALOG_CLUSTER_TASK_NETWORK_OUTPUT_POOL_USAGE: Lazy<Ga
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
     use std::convert::TryFrom;
     use std::sync::Mutex;
 
@@ -546,6 +547,7 @@ mod tests {
     use claim::*;
     use once_cell::sync::Lazy;
     use pretty_assertions::assert_eq;
+    use proctor::elements::telemetry::TableValue;
     use proctor::elements::{Telemetry, TelemetryType, TelemetryValue, ToTelemetry};
     use proctor::error::TelemetryError;
     use proctor::phases::sense::{SUBSCRIPTION_CORRELATION, SUBSCRIPTION_TIMESTAMP};
@@ -598,6 +600,116 @@ mod tests {
                 }),
             }
         }
+    }
+
+    #[test]
+    fn test_invalid_type_serde_issue() {
+        let mut telemetry = Telemetry::new();
+        telemetry.insert("cluster.task_cpu_load".to_string(), TelemetryValue::Float(0.025));
+        telemetry.insert(
+            "cluster.task_heap_memory_used".to_string(),
+            TelemetryValue::Float(2511508464.0),
+        );
+        telemetry.insert(
+            "cluster.task_network_input_queue_len".to_string(),
+            TelemetryValue::Float(1.0),
+        );
+        telemetry.insert("health.job_uptime_millis".to_string(), TelemetryValue::Integer(201402));
+        telemetry.insert(
+            "flow.forecasted_timestamp".to_string(),
+            TelemetryValue::Float(Timestamp::new(1647307440, 378969192).as_f64()),
+        );
+        telemetry.insert(
+            "cluster.task_network_output_queue_len".to_string(),
+            TelemetryValue::Float(1.0),
+        );
+        telemetry.insert("cluster.nr_active_jobs".to_string(), TelemetryValue::Integer(0));
+        telemetry.insert("health.job_nr_restarts".to_string(), TelemetryValue::Integer(0));
+        telemetry.insert(
+            "recv_timestamp".to_string(),
+            TelemetryValue::Table(TableValue(Box::new(maplit::hashmap! {
+                "secs".to_string() => TelemetryValue::Integer(1647307527),
+                "nanos".to_string() => TelemetryValue::Integer(57406000)
+            }))),
+        );
+        telemetry.insert("flow.records_in_per_sec".to_string(), TelemetryValue::Float(20.0));
+        telemetry.insert(
+            "health.job_nr_completed_checkpoints".to_string(),
+            TelemetryValue::Integer(0),
+        );
+        telemetry.insert(
+            "cluster.task_network_output_pool_usage".to_string(),
+            TelemetryValue::Float(0.1),
+        );
+        telemetry.insert(
+            "flow.records_out_per_sec".to_string(),
+            TelemetryValue::Float(19.966666666666665),
+        );
+        telemetry.insert(
+            "cluster.task_heap_memory_committed".to_string(),
+            TelemetryValue::Float(3623878656.0),
+        );
+        telemetry.insert("cluster.task_nr_threads".to_string(), TelemetryValue::Integer(57));
+        telemetry.insert(
+            "cluster.task_network_input_pool_usage".to_string(),
+            TelemetryValue::Float(0.0),
+        );
+        telemetry.insert("cluster.nr_task_managers".to_string(), TelemetryValue::Integer(5));
+        telemetry.insert(
+            "correlation_id".to_string(),
+            TelemetryValue::Table(TableValue(Box::new(maplit::hashmap! {
+                "pretty".to_string() => TelemetryValue::Text("FRQB-08549-HYQY-31208".to_string()),
+                "snowflake".to_string() => TelemetryValue::Integer(6909308549966213120)
+            }))),
+        );
+        telemetry.insert(
+            "health.job_nr_failed_checkpoints".to_string(),
+            TelemetryValue::Integer(0),
+        );
+        telemetry.insert(
+            "flow.forecasted_records_in_per_sec".to_string(),
+            TelemetryValue::Float(21.4504261933966),
+        );
+
+        let actual: MetricCatalog = assert_ok!(telemetry.try_into());
+        assert_eq!(
+            actual,
+            MetricCatalog {
+                correlation_id: CorrelationId::direct(
+                    "MetricCatalog",
+                    6909308549966213120_i64,
+                    "FRQB-08549-HYQY-31208"
+                ),
+                recv_timestamp: Timestamp::new(1647307527, 57406000),
+                health: JobHealthMetrics {
+                    job_uptime_millis: 201402,
+                    job_nr_restarts: 0,
+                    job_nr_completed_checkpoints: 0,
+                    job_nr_failed_checkpoints: 0,
+                },
+                flow: FlowMetrics {
+                    records_in_per_sec: 20.0,
+                    records_out_per_sec: 19.966666666666665,
+                    forecasted_timestamp: Some(Timestamp::new(1647307440, 378969192).as_f64()),
+                    forecasted_records_in_per_sec: Some(21.4504261933966),
+                    input_records_lag_max: None,
+                    input_millis_behind_latest: None,
+                },
+                cluster: ClusterMetrics {
+                    nr_active_jobs: 0,
+                    nr_task_managers: 5,
+                    task_cpu_load: 0.025,
+                    task_heap_memory_used: 2511508464.0,
+                    task_heap_memory_committed: 3623878656.0,
+                    task_nr_threads: 57,
+                    task_network_input_queue_len: 1.0,
+                    task_network_input_pool_usage: 0.0,
+                    task_network_output_queue_len: 1.,
+                    task_network_output_pool_usage: 0.1,
+                },
+                custom: HashMap::new(),
+            }
+        );
     }
 
     #[test]

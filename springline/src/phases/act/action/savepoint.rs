@@ -6,70 +6,46 @@ use crate::settings::FlinkActionSettings;
 use async_trait::async_trait;
 use futures_util::{FutureExt, TryFutureExt};
 use http::Method;
-use once_cell::sync::Lazy;
 
 use crate::model::CorrelationId;
+use crate::phases::act;
 use crate::phases::plan::ScalePlan;
 use proctor::error::UrlError;
-use prometheus::{HistogramOpts, HistogramTimer, HistogramVec};
 use std::future::Future;
 use std::time::Duration;
 use tracing::Instrument;
 use url::Url;
-use crate::phases::act;
 
 pub const ACTION_LABEL: &str = "trigger_savepoint";
 
 #[derive(Debug)]
 pub struct TriggerSavepoint {
-    // pub flink: FlinkContext,
     pub polling_interval: Duration,
     pub savepoint_timeout: Duration,
     pub savepoint_dir: Option<String>,
-    // marker: std::marker::PhantomData<P>,
 }
 
 impl TriggerSavepoint {
-    // pub fn from_settings(flink: FlinkContext, settings: &FlinkActionSettings) -> Self {
     pub fn from_settings(settings: &FlinkActionSettings) -> Self {
-        let polling_interval = settings.polling_interval;
-        let savepoint_timeout = settings.savepoint.operation_timeout;
-        let savepoint_dir = settings.savepoint.directory.clone();
-
         Self {
-            // flink,
-            polling_interval,
-            savepoint_timeout,
-            savepoint_dir,
-            // marker: std::marker::PhantomData,
+            polling_interval: settings.polling_interval,
+            savepoint_timeout: settings.savepoint.operation_timeout,
+            savepoint_dir: settings.savepoint.directory.clone(),
         }
     }
 }
 
 #[async_trait]
-impl ScaleAction for TriggerSavepoint
-// where
-//     P: AppData + ScaleActionPlan,
-{
+impl ScaleAction for TriggerSavepoint {
     type In = ScalePlan;
-    // type Plan = GovernanceOutcome;
 
     #[tracing::instrument(level = "info", name = "StopFlinkWithSavepoint::execute", skip(self, _plan))]
     async fn execute<'s>(&self, _plan: &'s Self::In, session: &'s mut ActionSession) -> Result<(), ActError> {
-        // let timer = start_flink_job_savepoint_with_cancel_timer(&session.flink);
         let timer = act::start_scale_action_timer(session.cluster_label(), ACTION_LABEL);
 
         let correlation = session.correlation();
         let active_jobs = session.active_jobs.clone().unwrap_or_default();
-        // let active_jobs: Vec<JobId> = session
-        //     .flink
-        //     .query_active_jobs(&correlation)
-        //     .await
-        //     .map(|jobs| jobs.into_iter().map(|j| j.id).collect())?;
-
         let job_triggers = Self::trigger_savepoints_for(&active_jobs, session).await?;
-
-        // session.active_jobs = Some(active_jobs);
 
         let tasks = job_triggers
             .into_iter()
@@ -86,17 +62,14 @@ impl ScaleAction for TriggerSavepoint
             .collect::<Vec<_>>();
 
         let savepoint_report = Self::block_for_all_savepoints(tasks, &correlation).await?;
-
         session.savepoints = Some(savepoint_report);
+
         session.mark_duration(ACTION_LABEL, Duration::from_secs_f64(timer.stop_and_record()));
         Ok(())
     }
 }
 
-impl TriggerSavepoint
-// where
-//     P: AppData + ScaleActionPlan,
-{
+impl TriggerSavepoint {
     async fn trigger_savepoints_for(
         jobs: &[JobId], session: &ActionSession,
     ) -> Result<Vec<(JobId, trigger::TriggerId)>, ActError> {
@@ -182,15 +155,16 @@ impl TriggerSavepoint
         session: &ActionSession,
     ) -> Result<SavepointStatus, FlinkError> {
         let task = async {
-            let mut result = None;
-            while result.is_none() {
+            loop {
                 match Self::check_savepoint(&job, &trigger, session).await {
                     Ok(savepoint) if savepoint.status == OperationStatus::Completed => {
-                        result = Some(savepoint);
-                        break;
+                        break savepoint;
                     },
                     Ok(savepoint) => {
-                        tracing::info!(?savepoint, "savepoint in progress - checking again in {polling_interval:?}")
+                        tracing::info!(
+                            ?savepoint,
+                            "savepoint in progress - checking again in {polling_interval:?}"
+                        )
                     },
                     Err(err) => {
                         //todo: consider capping attempts
@@ -203,8 +177,6 @@ impl TriggerSavepoint
 
                 tokio::time::sleep(polling_interval).await;
             }
-
-            result.expect("savepoint status should have been populated")
         };
 
         tokio::time::timeout(savepoint_timeout, task).await.map_err(|_elapsed| {
@@ -220,8 +192,9 @@ impl TriggerSavepoint
         job_id: &JobId, trigger_id: &trigger::TriggerId, session: &ActionSession,
     ) -> Result<SavepointStatus, FlinkError> {
         let url = Self::info_endpoint_url_for(&session.flink, job_id, trigger_id)?;
-        let span =
-            tracing::info_span!("check_savepoint", %job_id, %trigger_id, %url, correlation=%session.correlation());
+        let span = tracing::info_span!(
+            "check_savepoint", %job_id, %trigger_id, %url, correlation=%session.correlation()
+        );
 
         let info: Result<SavepointStatus, FlinkError> = session
             .flink
@@ -243,7 +216,7 @@ impl TriggerSavepoint
                 let info_response: Result<query::SavepointInfoResponseBody, FlinkError> =
                     serde_json::from_str(body.as_str()).map_err(|err| err.into());
                 tracing::info!(%body, ?info_response, "Savepoint info received");
-                info_response.map(|resp| resp.into())
+                info_response.and_then(|resp| resp.try_into())
             });
 
         match info {
@@ -311,29 +284,9 @@ impl TriggerSavepoint
             return Err(ActError::Savepoint { source, job_ids: failed_jobs });
         }
 
-        let report = JobSavepointReport::new(completed, failed);
-        Ok(report)
+        JobSavepointReport::new(completed, failed).map_err(|err| err.into())
     }
 }
-
-// #[inline]
-// fn start_flink_job_savepoint_with_cancel_timer(context: &FlinkContext) -> HistogramTimer {
-//     FLINK_JOB_SAVEPOINT_WITH_CANCEL_TIME
-//         .with_label_values(&[context.label()])
-//         .start_timer()
-// }
-//
-// pub static FLINK_JOB_SAVEPOINT_WITH_CANCEL_TIME: Lazy<HistogramVec> = Lazy::new(|| {
-//     HistogramVec::new(
-//         HistogramOpts::new(
-//             "flink_job_savepoint_with_cancel_time_seconds",
-//             "Time spent waiting for savepoint with cancel to complete",
-//         )
-//         .buckets(vec![0.01, 0.015, 0.02, 0.03, 0.04, 0.05, 0.1, 0.25, 0.5, 0.75, 1.0]),
-//         &["label"],
-//     )
-//     .expect("failed creating flink_job_savepoint_with_cancel_time_seconds histogram metric")
-// });
 
 mod trigger {
     use crate::flink::FlinkError;
@@ -348,11 +301,14 @@ mod trigger {
     #[serde(default, rename_all = "kebab-case")]
     pub struct SavepointRequestBody {
         pub cancel_job: bool,
+
         #[serde(rename = "formatType", skip_serializing_if = "Option::is_none")]
         #[serde_as(as = "Option<serde_with::DisplayFromStr>")]
         pub format_type: Option<SavepointFormatType>,
+
         #[serde(skip_serializing_if = "Option::is_none")]
         pub target_directory: Option<String>,
+
         #[serde(rename = "triggerId", skip_serializing_if = "Option::is_none")]
         pub trigger_id: Option<String>,
     }
@@ -400,7 +356,6 @@ mod trigger {
 
 mod query {
     use crate::flink::{FailureReason, FlinkError, OperationStatus, SavepointLocation, SavepointStatus};
-    use crate::phases::act::ActError;
     use either::Either;
     use serde::{Deserialize, Serialize};
     use serde_with::serde_as;
@@ -409,16 +364,17 @@ mod query {
     #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
     pub struct SavepointInfoResponseBody {
         pub status: QueueStatus,
+
         #[serde(skip_serializing_if = "Option::is_none")]
         pub operation: Option<SavepointOperation>,
     }
 
-    impl From<SavepointInfoResponseBody> for SavepointStatus {
-        fn from(info: SavepointInfoResponseBody) -> Self {
-            let operation = info
-                .operation
-                .map(|op| TryFrom::try_from(op).expect("invalid savepoint operation"));
-            Self { status: info.status.into(), operation }
+    impl TryFrom<SavepointInfoResponseBody> for SavepointStatus {
+        type Error = FlinkError;
+
+        fn try_from(body: SavepointInfoResponseBody) -> Result<Self, Self::Error> {
+            let operation = body.operation.map(TryFrom::try_from).transpose()?;
+            Ok(Self { status: body.status.into(), operation })
         }
     }
 
@@ -439,26 +395,28 @@ mod query {
     }
 
     #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+    #[serde(rename_all = "kebab-case")]
     pub struct SavepointOperation {
         #[serde(skip_serializing_if = "Option::is_none")]
         pub location: Option<String>,
+
         #[serde(skip_serializing_if = "Option::is_none")]
-        pub failure_reason: Option<String>,
+        pub failure_cause: Option<String>,
     }
 
     impl TryFrom<SavepointOperation> for Either<SavepointLocation, FailureReason> {
-        type Error = ActError;
+        type Error = FlinkError;
 
         fn try_from(that: SavepointOperation) -> Result<Self, Self::Error> {
-            if let Some(reason) = that.failure_reason {
+            if let Some(reason) = that.failure_cause {
                 Ok(Self::Right(FailureReason::from(reason)))
             } else if let Some(location) = that.location {
                 Ok(Self::Left(SavepointLocation::from(location)))
             } else {
-                Err(ActError::Flink(FlinkError::UnexpectedValue {
-                    expected: "location or failure_reason".to_string(),
+                Err(FlinkError::UnexpectedValue {
+                    expected: "location or failure_cause".to_string(),
                     given: format!("{:?}", that),
-                }))
+                })
             }
         }
     }
@@ -557,7 +515,7 @@ mod tests {
                 status: QueueStatus { id: QueueState::Completed },
                 operation: Some(SavepointOperation {
                     location: Some("s3a://dev-flink-58dz/foo/savepoints/savepoint-957152-e82cbb4804b1".to_string()),
-                    failure_reason: None,
+                    failure_cause: None,
                 }),
             }
         )

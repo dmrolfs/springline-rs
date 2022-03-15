@@ -160,7 +160,7 @@ pub static ELIGIBILITY_CTX_ALL_SINKS_HEALTHY: Lazy<IntGauge> = Lazy::new(|| {
         "eligibility_ctx_all_sinks_healthy",
         "Are all sinks for the FLink jobs healthy",
     )
-    .expect("failed creating eligibility_ctx_all_sinks_healthy")
+    .expect("failed creating eligibility_ctx_all_sinks_healthy metric")
 });
 
 pub static ELIGIBILITY_CTX_TASK_LAST_FAILURE: Lazy<IntGauge> = Lazy::new(|| {

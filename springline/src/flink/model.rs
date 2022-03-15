@@ -397,32 +397,51 @@ pub struct JobSavepointReport {
 impl JobSavepointReport {
     pub fn new(
         completed_statuses: Vec<(JobId, SavepointStatus)>, failed_statuses: Vec<(JobId, SavepointStatus)>,
-    ) -> Self {
+    ) -> Result<Self, FlinkError> {
         let completed = completed_statuses
             .into_iter()
-            .map(|(job, status)| {
+            .map::<Result<_, FlinkError>, _>(|(job_id, status)| {
                 let location = status
                     .operation
-                    .expect("savepoint status must have an operation")
-                    .left()
-                    .expect("successful savepoint location is not populated.");
-                (job, location)
+                    .ok_or_else(|| FlinkError::UnexpectedValue {
+                        expected: "completed savepoint status must have an operation".to_string(),
+                        given: "<none>".to_string(),
+                    })?
+                    .either(Ok, |reason| {
+                        Err(FlinkError::Savepoint { job_id: job_id.clone(), failure_reason: reason.0 })
+                    })?;
+
+                Ok((job_id, location))
             })
+            .flatten()
             .collect();
 
         let failed = failed_statuses
             .into_iter()
-            .map(|(job, status)| {
+            .map::<Result<_, FlinkError>, _>(|(job, status)| {
                 let failure = status
                     .operation
-                    .expect("failed savepoint status must have an operation")
-                    .right()
-                    .expect("failed savepoint failure reason is not populated.");
-                (job, failure)
+                    .ok_or_else(|| FlinkError::UnexpectedValue {
+                        expected: "failed savepoint status must have an operation".to_string(),
+                        given: "<none>".to_string(),
+                    })?
+                    .either(
+                        |loc| {
+                            Err(FlinkError::UnexpectedValue {
+                                expected: "failed savepoint status must have a failure reason, not a location"
+                                    .to_string(),
+                                given: loc.to_string(),
+                            })
+                        },
+                        Ok,
+                    )?;
+
+                Ok((job, failure))
             })
+            .flatten()
             .collect();
 
-        Self { completed, failed }
+        Ok(Self { completed, failed })
     }
 }
 
