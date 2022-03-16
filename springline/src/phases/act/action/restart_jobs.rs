@@ -110,7 +110,7 @@ impl RestartJobs {
                     track_missed_jar_restarts();
                     tracing::warn!(
                         ?locations, %parallelism, %correlation,
-                        "no savepoint locations match to restart jar -- manual intervention may be required for jar: {jar_id}"
+                        "no savepoint locations match to restart jar -- manual intervention may be required for jar({jar_id}) if it corresponds to an active job."
                     );
                 },
             };
@@ -170,8 +170,14 @@ impl RestartJobs {
                 error.into()
             })
             .and_then(|response| {
-                flink::log_response(ACTION_LABEL, &response);
                 let status = response.status();
+                if !status.is_success() {
+                    tracing::info!(
+                        ?response,
+                        "jar+savepoint pair rejected by Flink - following error is informational only"
+                    );
+                }
+                flink::log_response(ACTION_LABEL, &response);
 
                 response
                     .text()
@@ -226,13 +232,13 @@ impl RestartJobs {
 
         while let Some(task) = tasks.next().await {
             let (job_id, job_state) = task?;
-            tracing::warn!(
+            tracing::info!(
                 is_active=%job_state.is_active(), is_engaged=%job_state.is_engaged(),
-                "DMR: job restarted: job({job_id}): {job_state}"
+                "job restarted: job({job_id}): {job_state}"
             );
 
             if job_state == JobState::Failing && job_state == JobState::Failed {
-                tracing::error!(%job_id, %job_state, "DMR: job has failed -- may need manual intervention");
+                tracing::error!(%job_id, %job_state, "job failed after restart -- may need manual intervention");
             }
         }
 

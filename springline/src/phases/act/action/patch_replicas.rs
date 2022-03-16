@@ -65,9 +65,9 @@ impl PatchReplicas {
         //TODO: convert to kube::runtime watcher - see pod watch example.
 
         let api_constraints = kube.api_constraints();
-        tracing::warn!(
+        tracing::info!(
             %correlation,
-            "DMR: budgeting {:?} to kubernetes for patch replicas with {:?} polling interval.",
+            "budgeting {:?} to kubernetes for patch replicas with {:?} polling interval.",
             api_constraints.api_timeout, api_constraints.polling_interval
         );
 
@@ -126,9 +126,9 @@ impl PatchReplicas {
             .and_then(|ps| ps.get(kubernetes::RUNNING_STATUS).map(|pods| pods.len()))
             .unwrap_or(0);
 
-        tracing::warn!(
+        tracing::info!(
             %correlation, ?pod_status_counts, %nr_running, %target_nr_task_managers,
-            "DMR: PATCH_REPLICAS: pods by status"
+            "patch_replicas: pods by status"
         );
 
         nr_running

@@ -4,7 +4,7 @@ mod model;
 
 pub use context::FlinkContext;
 pub use error::FlinkError;
-pub use model::{FailureReason, JobSavepointReport, OperationStatus, SavepointLocation, SavepointStatus};
+pub use model::{FailureCause, JobSavepointReport, OperationStatus, SavepointLocation, SavepointStatus};
 pub use model::{JarId, JobDetail, JobId, JobState, JobSummary, TaskState, VertexDetail, VertexId};
 pub use model::{JOB_STATES, TASK_STATES};
 
@@ -20,7 +20,7 @@ pub(crate) fn log_response(label: &str, response: &reqwest::Response) {
     if status.is_success() || status.is_informational() {
         tracing::info!(?response, "{PREAMBLE}: {label}");
     } else if status.is_client_error() {
-        tracing::error!(?response, "{PREAMBLE}: {label}");
+        tracing::warn!(?response, "{PREAMBLE}: {label}");
     } else {
         tracing::warn!(?response, "{PREAMBLE}: {label}");
     }

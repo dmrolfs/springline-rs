@@ -97,13 +97,12 @@ impl KubernetesContext {
         &self.inner.taskmanager
     }
 
-    #[tracing::instrument(level = "info", skip(self))]
     pub async fn list_pods(&self, component: FlinkComponent) -> Result<Vec<Pod>, KubernetesError> {
         let params = match component {
             FlinkComponent::TaskManager => &self.inner.taskmanager.params,
         };
 
-        tracing::warn!(?params, "DMR: Listing pods for params...");
+        tracing::info!(?params, "Listing pods for params...");
         self.inner.list_pods(params).await
     }
 

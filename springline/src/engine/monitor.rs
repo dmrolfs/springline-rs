@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 use std::collections::HashMap;
-use std::fmt::{self, Display};
+use std::fmt::Display;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -96,6 +96,7 @@ enum ReadyPhases {
     Act = 1 << 5,
 }
 
+#[derive(Debug)]
 pub struct Monitor {
     rx_eligibility_monitor: EligibilityMonitor,
     rx_decision_monitor: DecisionMonitor,
@@ -106,19 +107,19 @@ pub struct Monitor {
     tx_feedback: Option<ActorSourceApi<Telemetry>>,
 }
 
-impl std::fmt::Debug for Monitor {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Monitor")
-            .field("rx_eligibility", &self.rx_eligibility_monitor)
-            .field("rx_decision", &self.rx_decision_monitor)
-            .field("rx_plan", &self.rx_plan_monitor)
-            .field("rx_flink_planning", &self.rx_flink_planning_monitor)
-            .field("rx_governance", &self.rx_governance_monitor)
-            .field("rx_action", &self.rx_action_monitor)
-            .field("tx_feedback", &self.tx_feedback)
-            .finish()
-    }
-}
+// impl std::fmt::Debug for Monitor {
+//     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+//         f.debug_struct("Monitor")
+//             .field("rx_eligibility", &self.rx_eligibility_monitor)
+//             .field("rx_decision", &self.rx_decision_monitor)
+//             .field("rx_plan", &self.rx_plan_monitor)
+//             .field("rx_flink_planning", &self.rx_flink_planning_monitor)
+//             .field("rx_governance", &self.rx_governance_monitor)
+//             .field("rx_action", &self.rx_action_monitor)
+//             .field("tx_feedback", &self.tx_feedback)
+//             .finish()
+//     }
+// }
 
 impl Monitor {
     pub fn new(
@@ -138,7 +139,7 @@ impl Monitor {
         }
     }
 
-    #[tracing::instrument(level = "info", skip(self), name = "monitor phase events")]
+    #[tracing::instrument(level = "trace", skip(self), name = "monitor phase events")]
     pub async fn run(mut self) {
         let mut loaded = BitFlags::<ReadyPhases>::default();
         Self::mark_ready_phases(&mut loaded);
@@ -151,7 +152,7 @@ impl Monitor {
         let tx_feedback = self.tx_feedback.as_ref();
 
         loop {
-            let span = tracing::info_span!("monitor event cycle");
+            let span = tracing::trace_span!("monitor event cycle");
             let _span_guard = span.enter();
 
             // WORK HERE To add act events and context fields -- see notebook
@@ -174,7 +175,7 @@ impl Monitor {
         }
     }
 
-    #[tracing::instrument(level = "info")]
+    #[tracing::instrument(level = "trace")]
     fn mark_ready_phases(loaded: &mut BitFlags<ReadyPhases>) {
         use proctor::phases::sense::SubscriptionRequirements;
 
@@ -211,7 +212,7 @@ impl Monitor {
                 loaded.toggle(ReadyPhases::Eligibility);
             },
             EligibilityEvent::ContextChanged(context) => {
-                tracing::info!(?context, "Eligibility Phase context changed");
+                tracing::debug!(?context, "Eligibility Phase context changed");
             },
         }
     }
@@ -224,7 +225,7 @@ impl Monitor {
                 DECISION_SHOULD_PLAN_FOR_SCALING.set(true as i64)
             },
             DecisionEvent::ItemBlocked(_item, query_result) => {
-                tracing::info!(?event, ?query_result, "data item blocked by scaling decision");
+                tracing::debug!(?event, ?query_result, "data item blocked by scaling decision");
                 DECISION_SHOULD_PLAN_FOR_SCALING.set(false as i64)
             },
             DecisionEvent::ContextChanged(Some(_ctx)) if !loaded.contains(ReadyPhases::Decision) => {
@@ -232,7 +233,7 @@ impl Monitor {
                 loaded.toggle(ReadyPhases::Decision);
             },
             DecisionEvent::ContextChanged(context) => {
-                tracing::info!(?context, "Decision Phase context changed");
+                tracing::debug!(?context, "Decision Phase context changed");
             },
         }
     }
@@ -242,16 +243,16 @@ impl Monitor {
         match &*event {
             PlanEvent::DecisionPlanned(decision, plan) => match decision {
                 DecisionResult::ScaleUp(_) | DecisionResult::ScaleDown(_) => {
-                    tracing::info!(?event, correlation=?decision.item().correlation_id, "planning for scaling decision");
+                    tracing::debug!(?event, correlation=?decision.item().correlation_id, "planning for scaling decision");
                     DECISION_PLAN_CURRENT_NR_TASK_MANAGERS.set(plan.current_nr_task_managers as i64);
                     PLAN_TARGET_NR_TASK_MANAGERS.set(plan.target_nr_task_managers as i64);
                 },
                 _no_action => {
-                    tracing::info!(?event, correlation=?decision.item().correlation_id, "no planning action by decision");
+                    tracing::debug!(?event, correlation=?decision.item().correlation_id, "no planning action by decision");
                 },
             },
             PlanEvent::DecisionIgnored(decision) => {
-                tracing::info!(?event, correlation=?decision.item().correlation_id, "planning is ignoring decision result.");
+                tracing::debug!(?event, correlation=?decision.item().correlation_id, "planning is ignoring decision result.");
             },
 
             PlanEvent::ContextChanged(context) if !loaded.contains(ReadyPhases::Plan) => {
@@ -259,7 +260,7 @@ impl Monitor {
                 loaded.toggle(ReadyPhases::Plan);
             },
             PlanEvent::ContextChanged(context) => {
-                tracing::info!(?context, "Flink Planning context changed.");
+                tracing::debug!(?context, "Flink Planning context changed.");
             },
         }
     }
@@ -270,7 +271,7 @@ impl Monitor {
     ) {
         match &*event {
             FlinkPlanningEvent::ObservationAdded { observation, next_forecast } => {
-                tracing::info!(?observation, correlation=?observation.correlation_id, "observation added to planning");
+                tracing::debug!(?observation, correlation=?observation.correlation_id, "observation added to planning");
                 PLAN_OBSERVATION_COUNT.inc();
 
                 if let Some((tx, (forecast_ts, forecast_val))) = tx_feedback.zip(*next_forecast) {
@@ -279,7 +280,7 @@ impl Monitor {
                         forecasted_records_in_per_sec: forecast_val,
                     };
 
-                    tracing::info!(
+                    tracing::debug!(
                         %forecast_ts, %forecast_val, correlation=?observation.correlation_id,
                         "planning feedback of next forecast back into springline system"
                     );
@@ -298,7 +299,7 @@ impl Monitor {
     fn handle_governance_event(event: Arc<GovernanceEvent>, loaded: &mut BitFlags<ReadyPhases>) {
         match &*event {
             GovernanceEvent::ItemPassed(_item, query_result) => {
-                tracing::info!(?event, ?query_result, "data item passed governance");
+                tracing::debug!(?event, ?query_result, "data item passed governance");
                 GOVERNANCE_PLAN_ACCEPTED.set(true as i64)
             },
             GovernanceEvent::ItemBlocked(_item, query_result) => {
@@ -310,7 +311,7 @@ impl Monitor {
                 loaded.toggle(ReadyPhases::Governance);
             },
             GovernanceEvent::ContextChanged(context) => {
-                tracing::info!(?context, "Governance context changed.");
+                tracing::debug!(?context, "Governance context changed.");
             },
         }
     }
@@ -329,7 +330,7 @@ impl Monitor {
         };
 
         if let Some(tx) = tx_feedback {
-            tracing::info!(?action_feedback, "feedback springline from scale action");
+            tracing::debug!(?action_feedback, "feedback springline from scale action");
             if let Err(err) = ActorSourceCmd::push(tx, action_feedback.into()).await {
                 tracing::error!(error=?err, "failed to send scale deployment notification from monitor -- may impact future eligibility determination.");
             }
@@ -337,7 +338,7 @@ impl Monitor {
     }
 
     fn do_handle_plan_started(plan: &ScalePlan) -> ActionFeedback {
-        tracing::info!(?plan, correlation=?plan.correlation_id, "plan action started");
+        tracing::debug!(?plan, correlation=?plan.correlation_id, "plan action started");
         ActionFeedback { is_rescaling: true, ..ActionFeedback::default() }
     }
 
@@ -364,7 +365,7 @@ impl Monitor {
     }
 
     fn do_handle_plan_failed(plan: &ScalePlan, error_metric_label: &str) -> ActionFeedback {
-        tracing::error!(%error_metric_label, ?plan, "plan action during act phase failed.");
+        tracing::warn!(%error_metric_label, ?plan, "plan action during act phase failed.");
         ACT_PHASE_ERRORS
             .with_label_values(&[
                 plan.current_nr_task_managers.to_string().as_str(),

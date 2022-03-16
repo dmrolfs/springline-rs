@@ -1,4 +1,4 @@
-use crate::flink::{JobId, SavepointStatus};
+use crate::flink::{FailureCause, JobId, SavepointStatus};
 use either::{Either, Left, Right};
 use proctor::elements::{TelemetryType, TelemetryValue};
 use proctor::error::MetricLabel;
@@ -34,8 +34,8 @@ pub enum FlinkError {
     #[error("Flink left unexpected savepoint condition for job {0}: {1:?}")]
     UnexpectedSavepointStatus(JobId, SavepointStatus),
 
-    #[error("Flink savepoint operation failed for job {job_id}: {failure_reason}")]
-    Savepoint { job_id: JobId, failure_reason: String },
+    #[error("Flink savepoint operation failed for job {job_id}: {cause}")]
+    Savepoint { job_id: JobId, cause: FailureCause },
 
     #[error("Flink API operation {0} failed to complete within timeout of {1:?}")]
     Timeout(String, std::time::Duration),

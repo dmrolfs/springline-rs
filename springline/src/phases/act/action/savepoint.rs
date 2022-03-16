@@ -16,7 +16,7 @@ use std::time::Duration;
 use tracing::Instrument;
 use url::Url;
 
-pub const ACTION_LABEL: &str = "trigger_savepoint";
+pub const ACTION_LABEL: &str = "savepoint";
 
 #[derive(Debug)]
 pub struct TriggerSavepoint {
@@ -39,7 +39,7 @@ impl TriggerSavepoint {
 impl ScaleAction for TriggerSavepoint {
     type In = ScalePlan;
 
-    #[tracing::instrument(level = "info", name = "StopFlinkWithSavepoint::execute", skip(self, _plan))]
+    #[tracing::instrument(level = "trace", name = "StopFlinkWithSavepoint::execute", skip(self, _plan))]
     async fn execute<'s>(&self, _plan: &'s Self::In, session: &'s mut ActionSession) -> Result<(), ActError> {
         let timer = act::start_scale_action_timer(session.cluster_label(), ACTION_LABEL);
 
@@ -94,7 +94,7 @@ impl TriggerSavepoint {
         Ok(job_triggers)
     }
 
-    #[tracing::instrument(level = "info", skip(session))]
+    #[tracing::instrument(level = "debug", skip(session))]
     async fn trigger_savepoint(
         job_id: &JobId, cancel_job: bool, session: &ActionSession,
     ) -> Result<trigger::TriggerId, FlinkError> {
@@ -113,7 +113,7 @@ impl TriggerSavepoint {
             .json(&body)
             .send()
             .map_err(|error| {
-                tracing::error!(%error, "Failed to trigger savepoint in Flink for job {job_id}");
+                tracing::warn!(%error, "Failed to trigger savepoint in Flink for job {job_id}");
                 error.into()
             })
             .and_then(|response| {
@@ -132,7 +132,7 @@ impl TriggerSavepoint {
         match trigger_id {
             Ok(tid) => Ok(tid),
             Err(err) => {
-                tracing::error!(error=?err, "failed to trigger savepoint in Flink for job {job_id}");
+                tracing::warn!(error=?err, "failed to trigger savepoint in Flink for job {job_id}");
                 flink::track_flink_errors(ACTION_LABEL, &err);
                 Err(err)
             },
@@ -149,7 +149,7 @@ impl TriggerSavepoint {
         Ok(endpoint_url)
     }
 
-    #[tracing::instrument(level = "info", skip(session))]
+    #[tracing::instrument(level = "trace", skip(session))]
     async fn wait_on_savepoint(
         job: JobId, trigger: trigger::TriggerId, polling_interval: Duration, savepoint_timeout: Duration,
         session: &ActionSession,
@@ -158,10 +158,11 @@ impl TriggerSavepoint {
             loop {
                 match Self::check_savepoint(&job, &trigger, session).await {
                     Ok(savepoint) if savepoint.status == OperationStatus::Completed => {
+                        tracing::info!(?savepoint, "savepoint completed.");
                         break savepoint;
                     },
                     Ok(savepoint) => {
-                        tracing::info!(
+                        tracing::debug!(
                             ?savepoint,
                             "savepoint in progress - checking again in {polling_interval:?}"
                         )
@@ -187,12 +188,12 @@ impl TriggerSavepoint {
         })
     }
 
-    #[tracing::instrument(level = "info", skip(job_id, trigger_id, session))]
+    #[tracing::instrument(level = "trace", skip(job_id, trigger_id, session))]
     async fn check_savepoint(
         job_id: &JobId, trigger_id: &trigger::TriggerId, session: &ActionSession,
     ) -> Result<SavepointStatus, FlinkError> {
         let url = Self::info_endpoint_url_for(&session.flink, job_id, trigger_id)?;
-        let span = tracing::info_span!(
+        let span = tracing::trace_span!(
             "check_savepoint", %job_id, %trigger_id, %url, correlation=%session.correlation()
         );
 
@@ -202,7 +203,7 @@ impl TriggerSavepoint {
             .request(Method::GET, url)
             .send()
             .map_err(|error| {
-                tracing::error!(%error, "Failed to get Flink savepoint info for job {job_id}");
+                tracing::warn!(%error, "Failed to get Flink savepoint info for job {job_id}");
                 error.into()
             })
             .and_then(|response| {
@@ -212,17 +213,17 @@ impl TriggerSavepoint {
             .instrument(span)
             .await
             .and_then(|body: String| {
-                tracing::warn!(%body, "DMR: SAVEPOINT BODY");
+                tracing::debug!(%body, "savepoint body");
                 let info_response: Result<query::SavepointInfoResponseBody, FlinkError> =
                     serde_json::from_str(body.as_str()).map_err(|err| err.into());
-                tracing::info!(%body, ?info_response, "Savepoint info received");
+                tracing::debug!(?info_response, "Savepoint info received");
                 info_response.and_then(|resp| resp.try_into())
             });
 
         match info {
             Ok(info) => Ok(info),
             Err(err) => {
-                tracing::error!(error=?err, "failed to get Flink savepoint info for job {job_id}");
+                tracing::warn!(error=?err, "failed to get Flink savepoint info for job {job_id}");
                 flink::track_flink_errors(ACTION_LABEL, &err);
                 Err(err)
             },
@@ -242,7 +243,7 @@ impl TriggerSavepoint {
         Ok(endpoint_url)
     }
 
-    #[tracing::instrument(level = "info", skip(tasks))]
+    #[tracing::instrument(level = "trace", skip(tasks))]
     async fn block_for_all_savepoints<F>(
         tasks: Vec<F>, correlation: &CorrelationId,
     ) -> Result<JobSavepointReport, ActError>
@@ -265,18 +266,20 @@ impl TriggerSavepoint {
                     failed.push((job, s))
                 },
                 Ok(s) if s.operation.as_ref().unwrap().is_right() => {
-                    let failure_reason = s.operation.as_ref().and_then(|o| o.as_ref().right()).unwrap();
-                    tracing::error!(%job, savepoint=?s, "savepoint task completed but failed: {failure_reason}");
-                    // let error = FlinkError::UnexpectedSavepointStatus(job.clone(), s);
+                    let cause = s.operation.as_ref().and_then(|o| o.as_ref().right()).unwrap();
+                    tracing::info!(%job, savepoint=?s, "savepoint task completed but failed: {cause}");
                     failed.push((job, s));
                 },
-                Ok(s) => completed.push((job, s)),
+                Ok(s) => {
+                    tracing::info!(%job, savepoint=?s, "savepoint task completed successfully");
+                    completed.push((job, s))
+                },
             }
         }
 
         if !errors.is_empty() {
             let failed_jobs = errors.iter().map(|(job, _)| job).cloned().collect();
-            tracing::error!(
+            tracing::warn!(
                 nr_savepoint_errors=%errors.len(), %correlation, error=?errors.first().unwrap(),
                 "failed to complete savepoints - cannot scale Flink server"
             );
@@ -355,7 +358,7 @@ mod trigger {
 }
 
 mod query {
-    use crate::flink::{FailureReason, FlinkError, OperationStatus, SavepointLocation, SavepointStatus};
+    use crate::flink::{FailureCause, FlinkError, OperationStatus, SavepointLocation, SavepointStatus};
     use either::Either;
     use serde::{Deserialize, Serialize};
     use serde_with::serde_as;
@@ -397,19 +400,19 @@ mod query {
     #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
     #[serde(rename_all = "kebab-case")]
     pub struct SavepointOperation {
-        #[serde(skip_serializing_if = "Option::is_none")]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         pub location: Option<String>,
 
-        #[serde(skip_serializing_if = "Option::is_none")]
-        pub failure_cause: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub failure_cause: Option<FailureCause>,
     }
 
-    impl TryFrom<SavepointOperation> for Either<SavepointLocation, FailureReason> {
+    impl TryFrom<SavepointOperation> for Either<SavepointLocation, FailureCause> {
         type Error = FlinkError;
 
         fn try_from(that: SavepointOperation) -> Result<Self, Self::Error> {
-            if let Some(reason) = that.failure_cause {
-                Ok(Self::Right(FailureReason::from(reason)))
+            if let Some(cause) = that.failure_cause {
+                Ok(Self::Right(cause))
             } else if let Some(location) = that.location {
                 Ok(Self::Left(SavepointLocation::from(location)))
             } else {

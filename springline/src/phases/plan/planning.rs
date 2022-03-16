@@ -241,7 +241,7 @@ impl<F: Forecaster> Planning for FlinkPlanning<F> {
     #[tracing::instrument(level = "info", skip(self))]
     async fn patch_context(&mut self, context: Self::Context) -> Result<Option<PlanEvent<Self>>, PlanError> {
         context.patch_inputs(&mut self.forecast_calculator.inputs);
-        tracing::info!(forecast_inputs=?self.forecast_calculator.inputs, "DMR: patched context inputs.");
+        tracing::info!(forecast_inputs=?self.forecast_calculator.inputs, "patched planning context inputs.");
         Ok(Some(PlanEvent::<Self>::ContextChanged(context)))
     }
 
@@ -392,7 +392,7 @@ mod tests {
         label: &str, decision: &DecisionResult<MetricCatalog>, planning: Arc<Mutex<TestPlanning>>,
         probe_rx: &mut Receiver<ScalePlan>, expected: ScalePlan,
     ) -> anyhow::Result<()> {
-        tracing::warn!("DMR - testing {}...", label);
+        tracing::warn!("testing {}...", label);
 
         let decision = decision.clone();
         let planning_2 = Arc::clone(&planning);

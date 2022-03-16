@@ -28,7 +28,7 @@ pub struct ScaleActuator<In> {
 }
 
 impl ScaleActuator<ScalePlan> {
-    #[tracing::instrument(level = "info", skip(kube))]
+    #[tracing::instrument(level = "debug", skip(kube))]
     pub fn new(kube: KubernetesContext, flink: FlinkContext, settings: &Settings) -> Self {
         let flink_action_settings = &settings.action.flink;
 
@@ -56,7 +56,6 @@ impl<In> fmt::Debug for ScaleActuator<In> {
             .field("action", &self.action)
             .field("kube", &self.kube)
             .field("flink", &self.flink)
-            // .field("context", &self.context)
             .field("inlet", &self.inlet)
             .finish()
     }
@@ -90,19 +89,19 @@ where
         SharedString::Borrowed(STAGE_NAME)
     }
 
-    #[tracing::instrument(level = "info", skip(self))]
+    #[tracing::instrument(level = "trace", skip(self))]
     async fn check(&self) -> ProctorResult<()> {
         self.do_check().await.map_err(|err| ProctorError::Phase(err.into()))?;
         Ok(())
     }
 
-    #[tracing::instrument(level = "info", name = "run act scale actuator", skip(self))]
+    #[tracing::instrument(level = "trace", name = "run act scale actuator", skip(self))]
     async fn run(&mut self) -> ProctorResult<()> {
         self.do_run().await.map_err(|err| ProctorError::Phase(err.into()))?;
         Ok(())
     }
 
-    #[tracing::instrument(level = "info", skip(self))]
+    #[tracing::instrument(level = "trace", skip(self))]
     async fn close(self: Box<Self>) -> ProctorResult<()> {
         self.do_close().await.map_err(|err| ProctorError::Phase(err.into()))?;
         Ok(())
@@ -122,8 +121,16 @@ where
     #[inline]
     async fn do_run(&mut self) -> Result<(), ActError> {
         let mut inlet = self.inlet.clone();
+        let rescaling_lock = tokio::sync::Mutex::new(false);
 
         while let Some(plan) = inlet.recv().await {
+            let mut is_rescaling = rescaling_lock.lock().await;
+            if *is_rescaling {
+                tracing::info!(?plan, "prior rescale in progress, skipping.");
+                continue;
+            }
+
+            *is_rescaling = true;
             self.notify_action_started(plan.clone());
             let _timer = proctor::graph::stage::start_stage_eval_time(STAGE_NAME);
             let mut session = ActionSession::new(plan.correlation().clone(), self.kube.clone(), self.flink.clone());
@@ -132,30 +139,31 @@ where
                     self.notify_action_succeeded(plan, session);
                 },
                 Err(err) => {
-                    tracing::error!(error=?err, ?session, "failure in scale action - dropping.");
+                    tracing::warn!(error=?err, ?session, "failure in scale action - dropping.");
                     self.notify_action_failed(plan, session, err);
                 },
             }
+            *is_rescaling = false;
         }
 
         Ok(())
     }
 
     #[tracing::instrument(
-        level = "info",
+        level = "debug",
         skip(self, plan),
         fields(correlation=%plan.correlation(), recv_timestamp=%plan.recv_timestamp())
     )]
     fn notify_action_started(&self, plan: In) {
-        tracing::info!(?plan, "scale action started");
+        tracing::debug!(?plan, "scale action started");
         match self.tx_action_monitor.send(Arc::new(ActEvent::PlanActionStarted(plan))) {
-            Ok(nr_recipients) => tracing::info!("published PlanActionStarted event to {nr_recipients} recipients."),
-            Err(err) => tracing::error!(error=?err, "failed to publish PlanActionStarted event."),
+            Ok(nr_recipients) => tracing::debug!("published PlanActionStarted event to {nr_recipients} recipients."),
+            Err(err) => tracing::warn!(error=?err, "failed to publish PlanActionStarted event."),
         }
     }
 
     #[tracing::instrument(
-        level = "info",
+        level = "debug",
         skip(self, plan, session),
         fields(correlation=%plan.correlation(), recv_timestamp=%plan.recv_timestamp())
     )]
@@ -163,16 +171,16 @@ where
         let event = Arc::new(ActEvent::PlanExecuted { plan, durations: session.durations.clone() });
 
         match self.tx_action_monitor.send(event) {
-            Ok(nr_recipients) => tracing::info!(
+            Ok(nr_recipients) => tracing::debug!(
                 action_durations=?session.durations,
                 "published PlanExecuted event to {nr_recipients} recipients."
             ),
-            Err(err) => tracing::error!(error=?err, "failed to publish PlanExecuted event."),
+            Err(err) => tracing::warn!(error=?err, "failed to publish PlanExecuted event."),
         }
     }
 
     #[tracing::instrument(
-        level = "info",
+        level = "debug",
         skip(self, plan, session, error),
         fields(correlation=%plan.correlation(), recv_timestamp=%plan.recv_timestamp(), error_label=%error.label(),)
     )]
@@ -185,11 +193,11 @@ where
             plan,
             error_metric_label: label.into(),
         })) {
-            Ok(recipients) => tracing::info!(
+            Ok(recipients) => tracing::debug!(
                 action_durations=?session.durations, action_error=?error,
                 "published PlanFailed to {} recipients", recipients
             ),
-            Err(err) => tracing::error!(
+            Err(err) => tracing::warn!(
                 action_error=?error, publish_error=?err, "failed to publish PlanFailed event."
             ),
         }

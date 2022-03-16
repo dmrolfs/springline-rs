@@ -231,24 +231,35 @@ impl TryFrom<TelemetryValue> for JobId {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct JobDetail {
     pub jid: JobId,
+
     pub name: String,
+
     #[serde(alias = "isStoppable")]
     pub is_stoppable: bool,
+
     pub state: JobState,
+
     #[serde(alias = "start-time", deserialize_with = "deserialize_timestamp_millis")]
     pub start_time: Timestamp,
+
     #[serde(alias = "end-time", deserialize_with = "deserialize_opt_timestamp_millis")]
     pub end_time: Option<Timestamp>,
+
     #[serde(deserialize_with = "deserialize_opt_duration_millis")]
     pub duration: Option<Duration>,
+
     #[serde(alias = "maxParallelism", deserialize_with = "deserialize_i64_as_opt_usize")]
     pub max_parallelism: Option<usize>,
+
     #[serde(deserialize_with = "deserialize_timestamp_millis")]
     pub now: Timestamp,
+
     #[serde(default, deserialize_with = "deserialize_key_timestamps")]
     pub timestamps: HashMap<JobState, Timestamp>,
+
     #[serde(default)]
     pub vertices: Vec<VertexDetail>,
+
     #[serde(default, alias = "status-counts")]
     pub status_counts: HashMap<TaskState, usize>,
 }
@@ -296,18 +307,27 @@ impl From<&str> for VertexId {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct VertexDetail {
     pub id: VertexId,
+
     pub name: String,
+
     #[serde(alias = "maxParallelism", deserialize_with = "deserialize_i64_as_opt_usize")]
     pub max_parallelism: Option<usize>,
+
     pub parallelism: usize,
+
     pub status: TaskState,
+
     #[serde(alias = "start-time", deserialize_with = "deserialize_timestamp_millis")]
     pub start_time: Timestamp,
+
     #[serde(alias = "end-time", deserialize_with = "deserialize_opt_timestamp_millis")]
     pub end_time: Option<Timestamp>,
+
     #[serde(deserialize_with = "deserialize_opt_duration_millis")]
     pub duration: Option<Duration>,
+
     pub tasks: HashMap<TaskState, usize>,
+
     pub metrics: HashMap<String, TelemetryValue>,
 }
 
@@ -391,7 +411,7 @@ where
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct JobSavepointReport {
     pub completed: HashMap<JobId, SavepointLocation>,
-    pub failed: HashMap<JobId, FailureReason>,
+    pub failed: HashMap<JobId, FailureCause>,
 }
 
 impl JobSavepointReport {
@@ -407,9 +427,7 @@ impl JobSavepointReport {
                         expected: "completed savepoint status must have an operation".to_string(),
                         given: "<none>".to_string(),
                     })?
-                    .either(Ok, |reason| {
-                        Err(FlinkError::Savepoint { job_id: job_id.clone(), failure_reason: reason.0 })
-                    })?;
+                    .either(Ok, |cause| Err(FlinkError::Savepoint { job_id: job_id.clone(), cause }))?;
 
                 Ok((job_id, location))
             })
@@ -470,7 +488,7 @@ impl From<JobSavepointReport> for TelemetryValue {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SavepointStatus {
     pub status: OperationStatus,
-    pub operation: Option<Either<SavepointLocation, FailureReason>>,
+    pub operation: Option<Either<SavepointLocation, FailureCause>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -513,35 +531,35 @@ impl AsRef<str> for SavepointLocation {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FailureReason(String);
+#[serde(rename_all = "kebab-case")]
+pub struct FailureCause {
+    pub class: String,
+    pub stack_trace: String,
+}
 
-impl FailureReason {
-    pub fn new(reason: impl Into<String>) -> Self {
-        Self(reason.into())
+impl FailureCause {
+    pub fn new(class: impl Into<String>, stack_trace: impl Into<String>) -> Self {
+        Self {
+            class: class.into(),
+            stack_trace: stack_trace.into(),
+        }
     }
 }
 
-impl fmt::Display for FailureReason {
+impl fmt::Display for FailureCause {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
+        write!(f, "{}", self.class)
     }
 }
 
-impl From<String> for FailureReason {
-    fn from(s: String) -> Self {
-        Self(s)
-    }
-}
+impl From<FailureCause> for TelemetryValue {
+    fn from(reason: FailureCause) -> Self {
+        let tv: HashMap<String, Self> = maplit::hashmap! {
+            "class".to_string() => reason.class.into(),
+            "stack_trace".to_string() => reason.stack_trace.into(),
+        };
 
-impl From<FailureReason> for TelemetryValue {
-    fn from(reason: FailureReason) -> Self {
-        Self::Text(reason.0)
-    }
-}
-
-impl AsRef<str> for FailureReason {
-    fn as_ref(&self) -> &str {
-        self.0.as_str()
+        tv.into()
     }
 }
 
