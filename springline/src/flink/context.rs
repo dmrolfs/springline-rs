@@ -132,7 +132,7 @@ impl fmt::Debug for FlinkContextRef {
 impl FlinkContextRef {
     pub async fn query_uploaded_jars(&self, correlation: &CorrelationId) -> Result<Vec<JarSummary>, FlinkError> {
         let _timer = flink::start_flink_uploaded_jars_timer(self.cluster_label.as_str());
-        let span = tracing::info_span!("query Flink uploaded jars", %correlation);
+        let span = tracing::info_span!("query Flink uploaded jars", ?correlation);
 
         let result: Result<Vec<JarSummary>, FlinkError> = self
             .client
@@ -166,7 +166,7 @@ impl FlinkContextRef {
 
     pub async fn query_active_jobs(&self, correlation: &CorrelationId) -> Result<Vec<JobSummary>, FlinkError> {
         let _timer = flink::start_flink_active_jobs_timer(self.cluster_label.as_str());
-        let span = tracing::info_span!("query Flink active jobs", %correlation);
+        let span = tracing::info_span!("query Flink active jobs", ?correlation);
 
         let result: Result<Vec<JobSummary>, FlinkError> = self
             .client

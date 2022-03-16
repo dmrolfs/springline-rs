@@ -128,7 +128,7 @@ where
             let _stage_timer = stage::start_stage_eval_time(self.name().as_ref());
 
             let correlation = self.correlation_gen.next_id();
-            let span = tracing::info_span!("collect Flink vertex telemetry", %correlation);
+            let span = tracing::info_span!("collect Flink vertex telemetry", ?correlation);
             let send_telemetry: Result<(), SenseError> = self
                 .outlet
                 .reserve_send(async {
@@ -209,7 +209,7 @@ where
             .push("metrics");
 
         let _timer = start_flink_vertex_sensor_timer();
-        let span = tracing::info_span!("query Flink vertex telemetry", %correlation);
+        let span = tracing::info_span!("query Flink vertex telemetry", ?correlation);
 
         self.do_query_vertex_metric_picklist(url.clone(), metric_orders, correlation)
             .and_then(|picklist| {
@@ -226,7 +226,7 @@ where
         &self, vertex_metrics_url: Url, metric_orders: &OrdersByMetric, correlation: &CorrelationId,
     ) -> Result<Vec<String>, SenseError> {
         let _timer = start_flink_vertex_sensor_metric_picklist_time();
-        let span = tracing::info_span!("query Flink vertex metric picklist", %correlation);
+        let span = tracing::info_span!("query Flink vertex metric picklist", ?correlation);
 
         let picklist: Result<Vec<String>, SenseError> = self
             .context
@@ -262,7 +262,7 @@ where
         tracing::info!(
             ?picklist,
             ?agg_span,
-            %correlation,
+            ?correlation,
             "vertex metric picklist and aggregation span for metric order"
         );
 
@@ -279,7 +279,7 @@ where
             }
 
             let _timer = start_flink_vertex_sensor_avail_telemetry_timer();
-            let span = tracing::info_span!("query Flink vertex available telemetry", %correlation);
+            let span = tracing::info_span!("query Flink vertex available telemetry", ?correlation);
 
             self.context
                 .client()

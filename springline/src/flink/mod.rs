@@ -90,7 +90,7 @@ pub(crate) fn track_result<T>(
     label: &str, result: Result<T, FlinkError>, error_message: &str, correlation: &CorrelationId,
 ) -> Result<T, FlinkError> {
     if let Err(ref err) = result {
-        tracing::error!(error=?err, %correlation, "{}", error_message);
+        tracing::error!(error=?err, ?correlation, "{}", error_message);
         track_flink_errors(label, err);
     }
 

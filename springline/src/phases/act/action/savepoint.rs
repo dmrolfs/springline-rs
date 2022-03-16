@@ -280,7 +280,7 @@ impl TriggerSavepoint {
         if !errors.is_empty() {
             let failed_jobs = errors.iter().map(|(job, _)| job).cloned().collect();
             tracing::warn!(
-                nr_savepoint_errors=%errors.len(), %correlation, error=?errors.first().unwrap(),
+                nr_savepoint_errors=%errors.len(), ?correlation, error=?errors.first().unwrap(),
                 "failed to complete savepoints - cannot scale Flink server"
             );
             let source = errors.remove(0).1;

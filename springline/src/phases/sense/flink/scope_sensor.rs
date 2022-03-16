@@ -138,7 +138,7 @@ where
             let _stage_timer = stage::start_stage_eval_time(name.as_ref());
 
             let correlation = self.correlation_gen.next_id();
-            let span = tracing::info_span!("collect Flink scope sensor telemetry", scope=%self.scope, %correlation);
+            let span = tracing::info_span!("collect Flink scope sensor telemetry", scope=%self.scope, ?correlation);
             let send_telemetry: Result<(), SenseError> = self
                 .outlet
                 .reserve_send::<_, SenseError>(async {

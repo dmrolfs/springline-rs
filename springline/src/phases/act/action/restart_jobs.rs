@@ -54,7 +54,7 @@ impl ScaleAction for RestartJobs {
                     Err(err) => {
                         flink::track_flink_errors("restart_jobs::restart", &err);
                         tracing::error!(
-                            error=?err, %correlation,
+                            error=?err, ?correlation,
                             "failure while trying to restart jobs -- need manual intervention"
                         );
                         Vec::default()
@@ -68,20 +68,20 @@ impl ScaleAction for RestartJobs {
                 if let Err(err) = restarted {
                     flink::track_flink_errors("restart_jobs::confirm", &err);
                     tracing::error!(
-                        error=?err, %correlation,
+                        error=?err, ?correlation,
                         "failure while waiting for all jobs to restart -- need manual intervention"
                     );
                 }
             } else {
                 tracing::warn!(
-                    ?session, %correlation,
+                    ?session, ?correlation,
                     "No uploaded jars to start jobs from -- skipping {ACTION_LABEL}. Flink standalone not supported. Todo: add identification of standalone mode and once detected apply Reactive Flink approach (with necessary assumption that Reactive mode is configured."
                 );
             };
 
             if !locations.is_empty() {
                 tracing::warn!(
-                    ?session, %correlation, ?locations,
+                    ?session, ?correlation, ?locations,
                     "Some savepoints were not restarted -- need manual intervention"
                 );
             }
@@ -109,7 +109,7 @@ impl RestartJobs {
                 None => {
                     track_missed_jar_restarts();
                     tracing::warn!(
-                        ?locations, %parallelism, %correlation,
+                        ?locations, %parallelism, ?correlation,
                         "no savepoint locations match to restart jar -- manual intervention may be required for jar({jar_id}) if it corresponds to an active job."
                     );
                 },
@@ -129,13 +129,13 @@ impl RestartJobs {
         for location in locations {
             match Self::try_jar_restart_for_location(jar_id, &location, parallelism, session).await? {
                 Left(job_id) => {
-                    tracing::info!(%job_id, %parallelism, %correlation, "restarted job from jar({jar_id}) + savepoint({location}) pair.");
+                    tracing::info!(%job_id, %parallelism, ?correlation, "restarted job from jar({jar_id}) + savepoint({location}) pair.");
                     job_savepoint = Some((job_id, location));
                     break;
                 },
                 Right(http_status) => {
                     tracing::info!(
-                        %parallelism, %correlation, ?http_status,
+                        %parallelism, ?correlation, ?http_status,
                         "Flink rejected jar({jar_id}) + savepoint({location}) pair. Trying next savepoint location."
                     );
                 },
@@ -151,7 +151,7 @@ impl RestartJobs {
     ) -> Result<Either<JobId, StatusCode>, FlinkError> {
         let correlation = session.correlation();
         let url = Self::restart_jar_url_for(&session.flink, jar)?;
-        let span = tracing::info_span!("restart_jar", %url, %correlation, %jar, %location, %parallelism);
+        let span = tracing::info_span!("restart_jar", %url, ?correlation, %jar, %location, %parallelism);
 
         let body = restart::RestartJarRequestBody {
             savepoint_path: Some(location.clone()),
@@ -304,7 +304,7 @@ impl RestartJobs {
         let correlation = session.correlation();
 
         if completed_jobs.is_empty() {
-            tracing::warn!(?session, %correlation, "No savepoints found in session to restart - skipping {ACTION_LABEL}.");
+            tracing::warn!(?session, ?correlation, "No savepoints found in session to restart - skipping {ACTION_LABEL}.");
             false
         } else {
             let active_jobs = session
@@ -315,7 +315,7 @@ impl RestartJobs {
             let completed_inactive_jobs: HashSet<&JobId> = completed_jobs.difference(&active_jobs).collect();
             if !completed_inactive_jobs.is_empty() {
                 tracing::warn!(
-                    ?completed_inactive_jobs, %correlation,
+                    ?completed_inactive_jobs, ?correlation,
                     "Found completed savepoints for jobs that were not active. This is unexpected and may indicate a bug in the application."
                 );
             }

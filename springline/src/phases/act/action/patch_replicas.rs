@@ -66,7 +66,7 @@ impl PatchReplicas {
 
         let api_constraints = kube.api_constraints();
         tracing::info!(
-            %correlation,
+            ?correlation,
             "budgeting {:?} to kubernetes for patch replicas with {:?} polling interval.",
             api_constraints.api_timeout, api_constraints.polling_interval
         );
@@ -127,7 +127,7 @@ impl PatchReplicas {
             .unwrap_or(0);
 
         tracing::info!(
-            %correlation, ?pod_status_counts, %nr_running, %target_nr_task_managers,
+            ?correlation, ?pod_status_counts, %nr_running, %target_nr_task_managers,
             "patch_replicas: pods by status"
         );
 
