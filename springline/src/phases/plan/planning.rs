@@ -93,7 +93,7 @@ impl<F: Forecaster> FlinkPlanning<F> {
         self.tx_monitor.subscribe()
     }
 
-    #[tracing::instrument(level = "info", skip(self, decision), fields(%decision))]
+    #[tracing::instrument(level = "trace", skip(self, decision), fields(%decision))]
     pub async fn update_performance_history(
         &mut self, decision: &DecisionResult<MetricCatalog>,
     ) -> Result<(), PlanError> {
@@ -124,7 +124,7 @@ impl<F: Forecaster> FlinkPlanning<F> {
         Ok(())
     }
 
-    #[tracing::instrument(level = "debug", skip(self, _metrics))]
+    #[tracing::instrument(level = "trace", skip(self, _metrics))]
     fn handle_do_not_scale_decision(&mut self, _metrics: &MetricCatalog) -> Result<Option<ScalePlan>, PlanError> {
         tracing::debug!("Decision made not scale cluster up or down.");
         Ok(None)
@@ -133,7 +133,7 @@ impl<F: Forecaster> FlinkPlanning<F> {
     #[tracing::instrument(
         level = "info",
         skip(self, decision),
-        fields(planning_name=%self.name, %decision),
+        fields(planning_name=%self.name, ?decision),
     )]
     async fn handle_scale_decision(
         &mut self, decision: DecisionResult<MetricCatalog>,
@@ -152,7 +152,7 @@ impl<F: Forecaster> FlinkPlanning<F> {
 
             if let Some(plan) = ScalePlan::new(decision, required_nr_task_managers, self.min_scaling_step) {
                 if let Some(ref mut outlet) = self.outlet {
-                    tracing::info!(?plan, "pushing scale plan.");
+                    tracing::debug!(?plan, "pushing scale plan.");
                     outlet.send(plan.clone()).await?;
                 } else {
                     tracing::warn!(outlet=?self.outlet, ?plan, "wanted to push plan but could not since planning outlet is not set.");
@@ -162,13 +162,13 @@ impl<F: Forecaster> FlinkPlanning<F> {
                 tracing::warn!(
                     ?required_nr_task_managers,
                     %current_nr_task_managers,
-                    "performance history suggests no change in cluster size needed."
+                    "planning performance history suggests no change in cluster size needed in spite of decision."
                 );
                 // todo: should we clear some of the history????
                 None
             }
         } else {
-            tracing::info!(
+            tracing::debug!(
                 needed=%self.forecast_calculator.observations_needed().0,
                 required=%self.forecast_calculator.observations_needed().1,
                 "passing on planning decision since more observations are required to forecast workflow."
@@ -211,7 +211,7 @@ impl<F: Forecaster> Planning for FlinkPlanning<F> {
             .forecast_calculator
             .calculate_next_workload(observation.recv_timestamp)
             .map(|forecast| {
-                tracing::info!(forecast_ts=%forecast.0, forecast_val=%forecast.1, "next observation forecasted.");
+                tracing::debug!(forecast_ts=%forecast.0, forecast_val=%forecast.1, "next observation forecasted.");
                 forecast
             })
             .map_err(|err| {
@@ -238,14 +238,14 @@ impl<F: Forecaster> Planning for FlinkPlanning<F> {
         }
     }
 
-    #[tracing::instrument(level = "info", skip(self))]
+    #[tracing::instrument(level = "trace", skip(self))]
     async fn patch_context(&mut self, context: Self::Context) -> Result<Option<PlanEvent<Self>>, PlanError> {
         context.patch_inputs(&mut self.forecast_calculator.inputs);
         tracing::info!(forecast_inputs=?self.forecast_calculator.inputs, "patched planning context inputs.");
         Ok(Some(PlanEvent::<Self>::ContextChanged(context)))
     }
 
-    #[tracing::instrument(level = "info", skip(self))]
+    #[tracing::instrument(level = "trace", skip(self))]
     async fn handle_decision(&mut self, decision: Self::Decision) -> Result<Option<ScalePlan>, PlanError> {
         self.update_performance_history(&decision).await?;
 

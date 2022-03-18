@@ -15,7 +15,7 @@ use crate::Result;
 
 pub mod flink;
 
-#[tracing::instrument(level = "info", skip(name, settings, auxiliary_sensors))]
+#[tracing::instrument(level = "trace", skip(name, settings, auxiliary_sensors))]
 pub async fn make_sense_phase(
     name: &str, context: FlinkContext, settings: &SensorSettings,
     auxiliary_sensors: Vec<Box<dyn SourceStage<Telemetry>>>, machine_node: MachineNode,
@@ -47,7 +47,7 @@ pub async fn make_sense_phase(
 }
 
 /// Makes `SourceStage`-based sensors specified in the sensor::sensors.
-#[tracing::instrument(level = "info", skip())]
+#[tracing::instrument(level = "trace", skip())]
 async fn do_make_modular_sensors(
     settings: &HashMap<String, SensorSetting>, auxiliary: Vec<Box<dyn SourceStage<Telemetry>>>,
 ) -> Result<Vec<Box<dyn SourceStage<Telemetry>>>> {

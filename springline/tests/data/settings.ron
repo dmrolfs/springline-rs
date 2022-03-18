@@ -94,7 +94,18 @@
                 polling_interval_secs: 10,
             ),
         ),
-        flink: ( polling_interval_secs: 9, savepoint: ( directory: "s3://path/to/savepoints", ), ),
+        flink: (
+            polling_interval_secs: 9,
+            savepoint: ( directory: "s3://path/to/savepoints", ),
+            restart: (
+                operation_timeout_secs: 300,
+                restore_mode: "CLAIM",
+                program_args: [
+                    "--zed=98",
+                    "--alpha=boo",
+                ],
+            ),
+        ),
 ),
 context_stub: (
         all_sinks_healthy: true,

@@ -11,7 +11,7 @@ pub trait UpdateMetrics {
     fn update_metrics_for(name: SharedString) -> UpdateMetricsFn;
 }
 
-#[tracing::instrument(level = "info")]
+#[tracing::instrument(level = "trace")]
 pub fn register_metrics(registry: &Registry) -> Result<()> {
     proctor::metrics::register_proctor_metrics(registry)?;
 

@@ -5,7 +5,7 @@ mod model;
 pub use context::FlinkContext;
 pub use error::FlinkError;
 pub use model::{FailureCause, JobSavepointReport, OperationStatus, SavepointLocation, SavepointStatus};
-pub use model::{JarId, JobDetail, JobId, JobState, JobSummary, TaskState, VertexDetail, VertexId};
+pub use model::{JarId, JobDetail, JobId, JobState, JobSummary, RestoreMode, TaskState, VertexDetail, VertexId};
 pub use model::{JOB_STATES, TASK_STATES};
 
 use crate::model::CorrelationId;

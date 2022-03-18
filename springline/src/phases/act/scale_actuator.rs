@@ -28,7 +28,7 @@ pub struct ScaleActuator<In> {
 }
 
 impl ScaleActuator<ScalePlan> {
-    #[tracing::instrument(level = "debug", skip(kube))]
+    #[tracing::instrument(level = "trace", skip(kube))]
     pub fn new(kube: KubernetesContext, flink: FlinkContext, settings: &Settings) -> Self {
         let flink_action_settings = &settings.action.flink;
 
@@ -124,9 +124,12 @@ where
         let rescaling_lock = tokio::sync::Mutex::new(false);
 
         while let Some(plan) = inlet.recv().await {
+            let span = tracing::info_span!("execute_scaling", ?plan);
+            let _guard = span.enter();
+
             let mut is_rescaling = rescaling_lock.lock().await;
             if *is_rescaling {
-                tracing::info!(?plan, "prior rescale in progress, skipping.");
+                tracing::info!("prior rescale in progress, skipping.");
                 continue;
             }
 
@@ -150,12 +153,12 @@ where
     }
 
     #[tracing::instrument(
-        level = "debug",
+        level = "trace",
         skip(self, plan),
         fields(correlation=%plan.correlation(), recv_timestamp=%plan.recv_timestamp())
     )]
     fn notify_action_started(&self, plan: In) {
-        tracing::debug!(?plan, "scale action started");
+        tracing::info!(?plan, "scale action started");
         match self.tx_action_monitor.send(Arc::new(ActEvent::PlanActionStarted(plan))) {
             Ok(nr_recipients) => tracing::debug!("published PlanActionStarted event to {nr_recipients} recipients."),
             Err(err) => tracing::warn!(error=?err, "failed to publish PlanActionStarted event."),
@@ -163,7 +166,7 @@ where
     }
 
     #[tracing::instrument(
-        level = "debug",
+        level = "trace",
         skip(self, plan, session),
         fields(correlation=%plan.correlation(), recv_timestamp=%plan.recv_timestamp())
     )]
@@ -180,7 +183,7 @@ where
     }
 
     #[tracing::instrument(
-        level = "debug",
+        level = "trace",
         skip(self, plan, session, error),
         fields(correlation=%plan.correlation(), recv_timestamp=%plan.recv_timestamp(), error_label=%error.label(),)
     )]

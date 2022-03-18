@@ -163,10 +163,7 @@ impl Monitor {
                 Ok(e) = self.rx_flink_planning_monitor.recv() => Self::handle_flink_planning_event(e, tx_feedback).await,
                 Ok(e) = self.rx_governance_monitor.recv() => Self::handle_governance_event(e, &mut loaded),
                 Ok(e) = rx_action.recv() => Self::handle_action_event(e, tx_feedback, &mut loaded).await,
-                else => {
-                    tracing::info!("springline monitor stopping...");
-                    break;
-                }
+                else => break,
             }
 
             if !loaded.is_all() {
@@ -200,7 +197,7 @@ impl Monitor {
     fn handle_eligibility_event(event: Arc<EligibilityEvent>, loaded: &mut BitFlags<ReadyPhases>) {
         match &*event {
             EligibilityEvent::ItemPassed(_item, query_result) => {
-                tracing::info!(?event, ?query_result, "data item passed eligibility");
+                tracing::debug!(?event, ?query_result, "data item passed eligibility");
                 ELIGIBILITY_IS_ELIGIBLE_FOR_SCALING.set(true as i64)
             },
             EligibilityEvent::ItemBlocked(_item, query_result) => {
@@ -243,7 +240,7 @@ impl Monitor {
         match &*event {
             PlanEvent::DecisionPlanned(decision, plan) => match decision {
                 DecisionResult::ScaleUp(_) | DecisionResult::ScaleDown(_) => {
-                    tracing::debug!(?event, correlation=?decision.item().correlation_id, "planning for scaling decision");
+                    tracing::info!(?event, correlation=?decision.item().correlation_id, "planning for scaling decision");
                     DECISION_PLAN_CURRENT_NR_TASK_MANAGERS.set(plan.current_nr_task_managers as i64);
                     PLAN_TARGET_NR_TASK_MANAGERS.set(plan.target_nr_task_managers as i64);
                 },
@@ -299,7 +296,7 @@ impl Monitor {
     fn handle_governance_event(event: Arc<GovernanceEvent>, loaded: &mut BitFlags<ReadyPhases>) {
         match &*event {
             GovernanceEvent::ItemPassed(_item, query_result) => {
-                tracing::debug!(?event, ?query_result, "data item passed governance");
+                tracing::info!(?event, ?query_result, "data item passed governance");
                 GOVERNANCE_PLAN_ACCEPTED.set(true as i64)
             },
             GovernanceEvent::ItemBlocked(_item, query_result) => {
@@ -316,7 +313,7 @@ impl Monitor {
         }
     }
 
-    #[tracing::instrument(level="info", skip(tx_feedback), fields(correlation=%event.correlation()))]
+    #[tracing::instrument(level="trace", skip(tx_feedback), fields(correlation=%event.correlation()))]
     async fn handle_action_event(
         event: Arc<ActEvent<GovernanceOutcome>>, tx_feedback: Option<&ActorSourceApi<Telemetry>>,
         _loaded: &mut BitFlags<ReadyPhases>,
@@ -324,28 +321,30 @@ impl Monitor {
         let now = Timestamp::now();
 
         let action_feedback = match &*event {
-            ActEvent::PlanActionStarted(plan) => Self::do_handle_plan_started(plan),
-            ActEvent::PlanExecuted { plan, durations } => Self::do_handle_plan_executed(plan, durations, now),
-            ActEvent::PlanFailed { plan, error_metric_label } => Self::do_handle_plan_failed(plan, error_metric_label),
+            ActEvent::PlanActionStarted(plan) => Self::do_handle_rescale_started(plan),
+            ActEvent::PlanExecuted { plan, durations } => Self::do_handle_rescale_executed(plan, durations, now),
+            ActEvent::PlanFailed { plan, error_metric_label } => {
+                Self::do_handle_rescale_failed(plan, error_metric_label, now)
+            },
         };
 
         if let Some(tx) = tx_feedback {
-            tracing::debug!(?action_feedback, "feedback springline from scale action");
+            tracing::trace!(?action_feedback, "feedback springline from scale action");
             if let Err(err) = ActorSourceCmd::push(tx, action_feedback.into()).await {
                 tracing::error!(error=?err, "failed to send scale deployment notification from monitor -- may impact future eligibility determination.");
             }
         }
     }
 
-    fn do_handle_plan_started(plan: &ScalePlan) -> ActionFeedback {
-        tracing::debug!(?plan, correlation=?plan.correlation_id, "plan action started");
+    fn do_handle_rescale_started(plan: &ScalePlan) -> ActionFeedback {
+        tracing::info!(?plan, correlation=?plan.correlation_id, "rescale action started");
         ActionFeedback { is_rescaling: true, ..ActionFeedback::default() }
     }
 
-    fn do_handle_plan_executed(
+    fn do_handle_rescale_executed(
         plan: &ScalePlan, durations: &HashMap<String, Duration>, now: Timestamp,
     ) -> ActionFeedback {
-        tracing::info!(%now, ?plan, correlation=?plan.correlation_id, ?durations, "plan executed");
+        tracing::info!(%now, ?plan, correlation=?plan.correlation_id, ?durations, "rescale executed");
         ACT_SCALE_ACTION_COUNT
             .with_label_values(&[
                 plan.current_nr_task_managers.to_string().as_str(),
@@ -364,8 +363,8 @@ impl Monitor {
         }
     }
 
-    fn do_handle_plan_failed(plan: &ScalePlan, error_metric_label: &str) -> ActionFeedback {
-        tracing::warn!(%error_metric_label, ?plan, "plan action during act phase failed.");
+    fn do_handle_rescale_failed(plan: &ScalePlan, error_metric_label: &str, _now: Timestamp) -> ActionFeedback {
+        tracing::warn!(%error_metric_label, ?plan, "rescale action during act phase failed.");
         ACT_PHASE_ERRORS
             .with_label_values(&[
                 plan.current_nr_task_managers.to_string().as_str(),

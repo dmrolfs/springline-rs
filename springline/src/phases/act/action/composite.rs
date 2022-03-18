@@ -34,7 +34,7 @@ where
 {
     type In = P;
 
-    #[tracing::instrument(level = "trace", name = "CompositeAction::execute", skip(self))]
+    #[tracing::instrument(level = "info", name = "CompositeAction::execute", skip(self))]
     async fn execute<'s>(&self, plan: &'s Self::In, session: &'s mut ActionSession) -> Result<(), ActError> {
         let timer = act::start_scale_action_timer(session.cluster_label(), super::ACTION_TOTAL_DURATION);
 

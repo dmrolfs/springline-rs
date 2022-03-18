@@ -1,3 +1,4 @@
+use crate::flink::RestoreMode;
 use crate::kubernetes::{KubernetesApiConstraints, KubernetesDeployResource};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
@@ -43,23 +44,17 @@ pub struct FlinkActionSettings {
     #[serde_as(as = "serde_with::DurationSeconds<u64>")]
     pub polling_interval: Duration,
 
-    /// Time allowed restarting and confirm a FLink job. Defaults to 1 minute.
-    #[serde(
-        default = "FlinkActionSettings::default_restart_operation_timeout",
-        rename = "restart_operation_timeout_secs"
-    )]
-    #[serde_as(as = "serde_with::DurationSeconds<u64>")]
-    pub restart_operation_timeout: Duration,
-
     pub savepoint: SavepointSettings,
+
+    pub restart: FlinkRestartSettings,
 }
 
 impl Default for FlinkActionSettings {
     fn default() -> Self {
         Self {
             polling_interval: Self::default_polling_interval(),
-            restart_operation_timeout: Self::default_restart_operation_timeout(),
             savepoint: SavepointSettings::default(),
+            restart: FlinkRestartSettings::default(),
         }
     }
 }
@@ -67,10 +62,6 @@ impl Default for FlinkActionSettings {
 impl FlinkActionSettings {
     pub const fn default_polling_interval() -> Duration {
         Duration::from_secs(1)
-    }
-
-    pub const fn default_restart_operation_timeout() -> Duration {
-        Duration::from_secs(60)
     }
 }
 
@@ -106,6 +97,48 @@ impl SavepointSettings {
     }
 }
 
+#[serde_as]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FlinkRestartSettings {
+    /// Time allowed restarting and confirm a FLink job. Defaults to 1 minute.
+    #[serde(
+        default = "FlinkRestartSettings::default_restart_operation_timeout",
+        rename = "operation_timeout_secs"
+    )]
+    #[serde_as(as = "serde_with::DurationSeconds<u64>")]
+    pub operation_timeout: Duration,
+
+    /// Boolean value that specifies whether the job submission should be rejected if the
+    /// savepoint contains state that cannot be mapped back to the job.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allow_non_restored_state: Option<bool>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde_as(as = "Option<serde_with::DisplayFromStr>")]
+    pub restore_mode: Option<RestoreMode>,
+
+    /// Comma-separated list of program arguments.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub program_args: Option<Vec<String>>,
+}
+
+impl Default for FlinkRestartSettings {
+    fn default() -> Self {
+        Self {
+            operation_timeout: Self::default_restart_operation_timeout(),
+            allow_non_restored_state: None,
+            restore_mode: None,
+            program_args: None,
+        }
+    }
+}
+
+impl FlinkRestartSettings {
+    pub const fn default_restart_operation_timeout() -> Duration {
+        Duration::from_secs(60)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -131,6 +164,11 @@ mod tests {
                 savepoint: SavepointSettings {
                     directory: Some("s3a://flink-98dnkj/foo-bar/savepoints".to_string()),
                     ..SavepointSettings::default()
+                },
+                restart: FlinkRestartSettings {
+                    allow_non_restored_state: Some(true),
+                    program_args: Some(vec!["--foo=13".to_string(), "--bar=3".to_string()]),
+                    ..FlinkRestartSettings::default()
                 },
                 ..FlinkActionSettings::default()
             },
@@ -160,8 +198,6 @@ mod tests {
                 Token::Struct { name: "FlinkActionSettings", len: 3 },
                 Token::Str("polling_interval_secs"),
                 Token::U64(1),
-                Token::Str("restart_operation_timeout_secs"),
-                Token::U64(60),
                 Token::Str("savepoint"),
                 Token::Struct { name: "SavepointSettings", len: 2 },
                 Token::Str("directory"),
@@ -169,6 +205,20 @@ mod tests {
                 Token::Str("s3a://flink-98dnkj/foo-bar/savepoints"),
                 Token::Str("operation_timeout_secs"),
                 Token::U64(600),
+                Token::StructEnd,
+                Token::Str("restart"),
+                Token::Struct { name: "FlinkRestartSettings", len: 3 },
+                Token::Str("operation_timeout_secs"),
+                Token::U64(60),
+                Token::Str("allow_non_restored_state"),
+                Token::Some,
+                Token::Bool(true),
+                Token::Str("program_args"),
+                Token::Some,
+                Token::Seq { len: Some(2) },
+                Token::Str("--foo=13"),
+                Token::Str("--bar=3"),
+                Token::SeqEnd,
                 Token::StructEnd,
                 Token::StructEnd,
                 Token::StructEnd,
@@ -193,6 +243,12 @@ mod tests {
                     directory: Some("/service_namespace_port/v1/jobs/flink_job_id/savepoints".to_string()),
                     ..SavepointSettings::default()
                 },
+                restart: FlinkRestartSettings {
+                    operation_timeout: Duration::from_secs(33),
+                    allow_non_restored_state: Some(false),
+                    program_args: Some(vec!["--foo=13".to_string(), "--bar=3".to_string()]),
+                    ..FlinkRestartSettings::default()
+                },
                 ..FlinkActionSettings::default()
             },
         };
@@ -201,7 +257,7 @@ mod tests {
         assert_eq!(
             json,
             format!(
-                r##"{{"action_timeout_secs":777,"taskmanager":{{"label_selector":"app=flink,component=taskmanager","deploy_resource":{},"kubernetes_api":{{"api_timeout_secs":275,"polling_interval_secs":7}}}},"flink":{{"polling_interval_secs":1,"restart_operation_timeout_secs":60,"savepoint":{{"directory":"/service_namespace_port/v1/jobs/flink_job_id/savepoints","operation_timeout_secs":600}}}}}}"##,
+                r##"{{"action_timeout_secs":777,"taskmanager":{{"label_selector":"app=flink,component=taskmanager","deploy_resource":{},"kubernetes_api":{{"api_timeout_secs":275,"polling_interval_secs":7}}}},"flink":{{"polling_interval_secs":1,"savepoint":{{"directory":"/service_namespace_port/v1/jobs/flink_job_id/savepoints","operation_timeout_secs":600}},"restart":{{"operation_timeout_secs":33,"allow_non_restored_state":false,"program_args":["--foo=13","--bar=3"]}}}}}}"##,
                 EXPECTED_REP
             )
         );
@@ -210,7 +266,7 @@ mod tests {
         assert_eq!(
             ron,
             format!(
-                r##"(action_timeout_secs:777,taskmanager:(label_selector:"app=flink,component=taskmanager",deploy_resource:{},kubernetes_api:(api_timeout_secs:275,polling_interval_secs:7)),flink:(polling_interval_secs:1,restart_operation_timeout_secs:60,savepoint:(directory:Some("/service_namespace_port/v1/jobs/flink_job_id/savepoints"),operation_timeout_secs:600)))"##,
+                r##"(action_timeout_secs:777,taskmanager:(label_selector:"app=flink,component=taskmanager",deploy_resource:{},kubernetes_api:(api_timeout_secs:275,polling_interval_secs:7)),flink:(polling_interval_secs:1,savepoint:(directory:Some("/service_namespace_port/v1/jobs/flink_job_id/savepoints"),operation_timeout_secs:600),restart:(operation_timeout_secs:33,allow_non_restored_state:Some(false),program_args:Some(["--foo=13","--bar=3"]))))"##,
                 EXPECTED_REP
             )
         );

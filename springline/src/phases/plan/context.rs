@@ -6,7 +6,7 @@ use proctor::elements::telemetry::UpdateMetricsFn;
 use proctor::elements::{Telemetry, Timestamp};
 use proctor::error::ProctorError;
 use proctor::phases::sense::SubscriptionRequirements;
-use proctor::SharedString;
+use proctor::{Correlation, SharedString};
 use prometheus::IntGauge;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
@@ -46,8 +46,16 @@ pub struct PlanningContext {
     pub recovery_valid: Option<Duration>,
 }
 
+impl Correlation for PlanningContext {
+    type Correlated = Self;
+
+    fn correlation(&self) -> &Id<Self::Correlated> {
+        &self.correlation_id
+    }
+}
+
 impl PlanningContext {
-    #[tracing::instrument(level = "info")]
+    #[tracing::instrument(level = "trace")]
     pub fn patch_inputs(&self, inputs: &mut ForecastInputs) {
         if let Some(r) = self.rescale_restart {
             tracing::info!(rescale_restart=?r, old_restart_input=?inputs.restart, "patching planning rescale_restart");

@@ -125,7 +125,7 @@ pub struct FlinkSensorSpecification<'a> {
     pub machine_node: MachineNode,
 }
 
-#[tracing::instrument(level = "info")]
+#[tracing::instrument(level = "trace")]
 pub async fn make_sensor(spec: FlinkSensorSpecification<'_>) -> Result<Box<dyn SourceStage<Telemetry>>, SenseError> {
     let name: SharedString = format!("{}_flink_sensor", spec.name).into();
 
@@ -260,7 +260,7 @@ fn merge_into_metric_groups(metric_telemetry: &mut HashMap<String, Vec<Telemetry
     }
 }
 
-#[tracing::instrument(level = "info", skip(orders))]
+#[tracing::instrument(level = "trace", skip(orders))]
 fn consolidate_active_job_telemetry_for_order(
     job_telemetry: HashMap<String, Vec<TelemetryValue>>, orders: &[MetricOrder],
 ) -> Result<Telemetry, TelemetryError> {
@@ -278,7 +278,7 @@ fn consolidate_active_job_telemetry_for_order(
                 None => Ok(Some((metric, TelemetryValue::Seq(values)))),
                 Some((agg, combo)) => {
                     let merger = combo.combine(values.clone()).map(|combined| combined.map(|c| (metric, c)));
-                    tracing::info!(?merger, ?values, %agg, "merging metric values per order aggregator");
+                    tracing::debug!(?merger, ?values, %agg, "merging metric values per order aggregator");
                     merger
                 },
             },

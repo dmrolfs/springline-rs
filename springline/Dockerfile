@@ -48,7 +48,7 @@ ENV APP_ENVIRONMENT production
 COPY ["./hak/hak", "/usr/local/bin/hak"]
 
 #ENV RUST_LOG "info,tokio=trace,runtime=trace"
-ENV RUST_LOG "info"
+ENV RUST_LOG "info,springline::flink=debug,springline::phases::act=debug,proctor::graph::stage::through::reduce_within=debug"
 ENV RUST_BACKTRACE 1
 ENV POLAR_LOG 1
 

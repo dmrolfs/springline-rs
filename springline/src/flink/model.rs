@@ -56,6 +56,10 @@ impl JobState {
     pub const fn is_engaged(&self) -> bool {
         matches!(self, Self::Running | Self::Finished | Self::Reconciling)
     }
+
+    pub const fn is_stopped(&self) -> bool {
+        matches!(self, Self::Failed | Self::Canceled | Self::Finished | Self::Suspended)
+    }
 }
 
 pub const TASK_STATES: [TaskState; 10] = [
@@ -560,6 +564,51 @@ impl From<FailureCause> for TelemetryValue {
         };
 
         tv.into()
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum RestoreMode {
+    /// Flink will take ownership of the given snapshot. It will clean the snapshot once it is
+    /// subsumed by newer ones.
+    Claim,
+
+    /// Flink will not claim ownership of the snapshot files. However it will make sure it does
+    /// not depend on any artifacts from the restored snapshot. In order to do that, Flink will
+    /// take the first checkpoint as a full one, which means it might reupload/duplicate files
+    /// that are part of the restored checkpoint.
+    NoClaim,
+
+    /// This is the mode in which Flink worked so far. It will not claim ownership of the
+    /// snapshot and will not delete the files. However, it can directly depend on the existence
+    /// of the files of the restored checkpoint. It might not be safe to delete checkpoints that
+    /// were restored in legacy mode
+    Legacy,
+}
+
+impl fmt::Display for RestoreMode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Claim => write!(f, "CLAIM"),
+            Self::NoClaim => write!(f, "NO-CLAIM"),
+            Self::Legacy => write!(f, "LEGACY"),
+        }
+    }
+}
+
+impl std::str::FromStr for RestoreMode {
+    type Err = FlinkError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_uppercase().as_str() {
+            "CLAIM" => Ok(Self::Claim),
+            "NO-CLAIM" => Ok(Self::NoClaim),
+            "LEGACY" => Ok(Self::Legacy),
+            _ => Err(FlinkError::UnexpectedValue {
+                expected: "CLAIM, NO-CLAIM, LEGACY".to_string(),
+                given: s.to_string(),
+            }),
+        }
     }
 }
 

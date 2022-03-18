@@ -33,7 +33,7 @@ impl DeployApi {
     }
 
     pub async fn get_scale(&self, correlation: &CorrelationId) -> Result<Option<i32>, KubernetesError> {
-        let span = tracing::info_span!("Kubernetes Admin Server", phase=%"act", action=%"get_scale", ?correlation);
+        let span = tracing::debug_span!("Kubernetes Admin Server", phase=%"act", action=%"get_scale", ?correlation);
         let scale = match self {
             Self::StatefulSet { name, api } => api
                 .get_scale(name)

@@ -8,7 +8,7 @@ use proctor::elements::telemetry::UpdateMetricsFn;
 use proctor::elements::{telemetry, Telemetry, Timestamp};
 use proctor::error::DecisionError;
 use proctor::phases::sense::SubscriptionRequirements;
-use proctor::{ProctorContext, SharedString};
+use proctor::{Correlation, ProctorContext, SharedString};
 use serde::{Deserialize, Serialize};
 
 #[derive(PolarClass, Label, Debug, Clone, Serialize, Deserialize)]
@@ -20,6 +20,14 @@ pub struct DecisionContext {
     #[polar(attribute)]
     #[serde(flatten)] // flatten enables sense of extra properties
     pub custom: telemetry::TableType,
+}
+
+impl Correlation for DecisionContext {
+    type Correlated = Self;
+
+    fn correlation(&self) -> &Id<Self::Correlated> {
+        &self.correlation_id
+    }
 }
 
 impl PartialEq for DecisionContext {

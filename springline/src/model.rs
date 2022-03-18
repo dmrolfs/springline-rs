@@ -1,3 +1,4 @@
+use frunk::{Monoid, Semigroup};
 use std::collections::HashSet;
 use std::fmt::{self, Debug};
 use std::ops::Add;
@@ -5,12 +6,12 @@ use std::ops::Add;
 use crate::metrics::UpdateMetrics;
 use once_cell::sync::Lazy;
 use oso::PolarClass;
-use pretty_snowflake::{Id, Label};
+use pretty_snowflake::{Id, Label, Labeling};
 use proctor::elements::telemetry::UpdateMetricsFn;
 use proctor::elements::{telemetry, Telemetry, Timestamp};
 use proctor::error::{PolicyError, ProctorError};
 use proctor::phases::sense::SubscriptionRequirements;
-use proctor::{ProctorIdGenerator, SharedString};
+use proctor::{Correlation, ProctorIdGenerator, SharedString};
 use prometheus::{Gauge, IntGauge};
 use serde::{Deserialize, Serialize};
 
@@ -55,8 +56,16 @@ impl fmt::Debug for MetricCatalog {
     }
 }
 
+impl Correlation for MetricCatalog {
+    type Correlated = Self;
+
+    fn correlation(&self) -> &Id<Self::Correlated> {
+        &self.correlation_id
+    }
+}
+
 impl MetricCatalog {
-    #[tracing::instrument(level = "info", skip(oso))]
+    #[tracing::instrument(level = "trace", skip(oso))]
     pub fn initialize_policy_engine(oso: &mut oso::Oso) -> Result<(), PolicyError> {
         oso.register_class(Self::get_polar_class())?;
         oso.register_class(JobHealthMetrics::get_polar_class())?;
@@ -76,6 +85,35 @@ impl MetricCatalog {
                 .build(),
         )?;
         Ok(())
+    }
+}
+
+impl Monoid for MetricCatalog {
+    fn empty() -> Self {
+        Self {
+            correlation_id: Id::direct(<Self as Label>::labeler().label(), 0, "<undefined>"),
+            recv_timestamp: Timestamp::ZERO,
+            health: JobHealthMetrics::empty(),
+            flow: FlowMetrics::empty(),
+            cluster: ClusterMetrics::empty(),
+            custom: telemetry::TableType::new(),
+        }
+    }
+}
+
+impl Semigroup for MetricCatalog {
+    fn combine(&self, other: &Self) -> Self {
+        let mut custom = self.custom.clone();
+        custom.extend(other.custom.clone());
+
+        Self {
+            correlation_id: other.correlation_id.clone(),
+            recv_timestamp: other.recv_timestamp,
+            health: self.health.combine(&other.health),
+            flow: self.flow.combine(&other.flow),
+            cluster: self.cluster.combine(&other.cluster),
+            custom,
+        }
     }
 }
 
@@ -110,6 +148,23 @@ pub struct JobHealthMetrics {
     #[polar(attribute)]
     #[serde(rename = "health.job_nr_failed_checkpoints")]
     pub job_nr_failed_checkpoints: i64,
+}
+
+impl Monoid for JobHealthMetrics {
+    fn empty() -> Self {
+        Self {
+            job_uptime_millis: -1,
+            job_nr_restarts: -1,
+            job_nr_completed_checkpoints: -1,
+            job_nr_failed_checkpoints: -1,
+        }
+    }
+}
+
+impl Semigroup for JobHealthMetrics {
+    fn combine(&self, other: &Self) -> Self {
+        other.clone()
+    }
 }
 
 pub const MC_FLOW__RECORDS_IN_PER_SEC: &str = "flow.records_in_per_sec";
@@ -175,6 +230,25 @@ pub struct FlowMetrics {
         skip_serializing_if = "Option::is_none"
     )]
     pub input_millis_behind_latest: Option<i64>,
+}
+
+impl Monoid for FlowMetrics {
+    fn empty() -> Self {
+        Self {
+            records_in_per_sec: -1.0,
+            records_out_per_sec: -1.0,
+            forecasted_timestamp: None,
+            forecasted_records_in_per_sec: None,
+            input_records_lag_max: None,
+            input_millis_behind_latest: None,
+        }
+    }
+}
+
+impl Semigroup for FlowMetrics {
+    fn combine(&self, other: &Self) -> Self {
+        other.clone()
+    }
 }
 
 pub const MC_CLUSTER__NR_ACTIVE_JOBS: &str = "cluster.nr_active_jobs";
@@ -272,6 +346,29 @@ impl fmt::Debug for ClusterMetrics {
                 &self.task_network_output_utilization(),
             )
             .finish()
+    }
+}
+
+impl Monoid for ClusterMetrics {
+    fn empty() -> Self {
+        Self {
+            nr_active_jobs: 0,
+            nr_task_managers: 0,
+            task_cpu_load: -1.0,
+            task_heap_memory_used: -1.0,
+            task_heap_memory_committed: -1.0,
+            task_nr_threads: -1,
+            task_network_input_queue_len: -1.0,
+            task_network_input_pool_usage: -1.0,
+            task_network_output_queue_len: -1.0,
+            task_network_output_pool_usage: -1.0,
+        }
+    }
+}
+
+impl Semigroup for ClusterMetrics {
+    fn combine(&self, other: &Self) -> Self {
+        other.clone()
     }
 }
 

@@ -1,6 +1,5 @@
 use super::{ActionSession, ScaleAction};
 use crate::kubernetes::{self, FlinkComponent, KubernetesContext};
-use crate::model::CorrelationId;
 use crate::phases::act;
 use crate::phases::act::{ActError, ScaleActionPlan};
 use crate::phases::plan::ScalePlan;
@@ -9,6 +8,7 @@ use k8s_openapi::api::core::v1::Pod;
 use std::collections::HashMap;
 use std::time::Duration;
 use tokio::time::Instant;
+use tracing_futures::Instrument;
 
 pub const ACTION_LABEL: &str = "patch_replicas";
 
@@ -26,14 +26,23 @@ impl ScaleAction for PatchReplicas {
         let correlation = session.correlation();
         let nr_target_taskmanagers = plan.target_replicas();
 
-        let original_nr_taskmanager_replicas = session.kube.taskmanager().deploy.get_scale(&correlation).await?;
+        let scale_span = tracing::info_span!("kubernetes::get_scale", ?correlation);
+        let original_nr_taskmanager_replicas = session
+            .kube
+            .taskmanager()
+            .deploy
+            .get_scale(&correlation)
+            .instrument(scale_span)
+            .await?;
         tracing::info!(%nr_target_taskmanagers, ?original_nr_taskmanager_replicas, "patching to scale taskmanager replicas");
 
+        let patch_span = tracing::info_span!("kubernetes::patch_replicas", correlation = ?correlation, %nr_target_taskmanagers, ?original_nr_taskmanager_replicas);
         let patched_nr_taskmanager_replicas = session
             .kube
             .taskmanager()
             .deploy
             .patch_scale(nr_target_taskmanagers, &correlation)
+            .instrument(patch_span)
             .await?;
         tracing::info!(
             %nr_target_taskmanagers, ?original_nr_taskmanager_replicas, ?patched_nr_taskmanager_replicas,
@@ -56,7 +65,7 @@ impl ScaleAction for PatchReplicas {
 }
 
 impl PatchReplicas {
-    #[tracing::instrument(level = "info", skip(kube))]
+    #[tracing::instrument(level = "debug", name = "patch_replicase::block_until_satisfied", skip(kube))]
     async fn block_until_satisfied(kube: &KubernetesContext, plan: &<Self as ScaleAction>::In) -> Result<(), ActError> {
         let correlation = plan.correlation();
         let target_nr_task_managers = plan.target_replicas();
@@ -65,20 +74,26 @@ impl PatchReplicas {
         //TODO: convert to kube::runtime watcher - see pod watch example.
 
         let api_constraints = kube.api_constraints();
-        tracing::info!(
+        tracing::debug!(
             ?correlation,
             "budgeting {:?} to kubernetes for patch replicas with {:?} polling interval.",
-            api_constraints.api_timeout, api_constraints.polling_interval
+            api_constraints.api_timeout,
+            api_constraints.polling_interval
         );
 
         let mut action_satisfied = false;
         while Instant::now().duration_since(start) < api_constraints.api_timeout {
             let task_managers = kube.list_pods(FlinkComponent::TaskManager).await?;
-            tracing::info!("kube: found {} taskmanagers in cluster", task_managers.len());
+            pods_by_status = Some(Self::group_pods_by_status(&task_managers));
 
-            pods_by_status = Some(Self::group_pods_by_status(task_managers));
+            let (nr_running, pod_status_counts) = Self::do_count_running_pods(pods_by_status.as_ref());
 
-            let nr_running = Self::do_count_running_pods(pods_by_status.as_ref(), target_nr_task_managers, correlation);
+            let budget_remaining = api_constraints.api_timeout - Instant::now().duration_since(start);
+            tracing::info!(
+                ?correlation, ?pod_status_counts,
+                "patch_replicas: kube found {} taskmanagers in cluster: {} running of {} requested - budget remaining: {:?}",
+                task_managers.len(), nr_running, target_nr_task_managers, budget_remaining
+            );
 
             if nr_running == target_nr_task_managers {
                 action_satisfied = true;
@@ -107,11 +122,9 @@ impl PatchReplicas {
         Ok(())
     }
 
-    fn do_count_running_pods(
-        pods_by_status: Option<&HashMap<String, Vec<Pod>>>, target_nr_task_managers: usize, correlation: &CorrelationId,
-    ) -> usize {
+    fn do_count_running_pods(pods_by_status: Option<&HashMap<String, Vec<Pod>>>) -> (usize, HashMap<String, usize>) {
         if pods_by_status.is_none() {
-            return 0;
+            return (0, HashMap::new());
         }
 
         let pod_status_counts: HashMap<String, usize> = pods_by_status
@@ -126,26 +139,21 @@ impl PatchReplicas {
             .and_then(|ps| ps.get(kubernetes::RUNNING_STATUS).map(|pods| pods.len()))
             .unwrap_or(0);
 
-        tracing::info!(
-            ?correlation, ?pod_status_counts, %nr_running, %target_nr_task_managers,
-            "patch_replicas: pods by status"
-        );
-
-        nr_running
+        (nr_running, pod_status_counts)
     }
 
-    fn group_pods_by_status(pods: Vec<Pod>) -> HashMap<String, Vec<Pod>> {
+    fn group_pods_by_status(pods: &[Pod]) -> HashMap<String, Vec<Pod>> {
         let mut result = HashMap::new();
 
-        for p in pods.into_iter() {
+        for p in pods {
             let status = p
                 .status
                 .as_ref()
                 .and_then(|ps| ps.phase.clone())
                 .unwrap_or_else(|| kubernetes::UNKNOWN_STATUS.to_string());
 
-            let pods = result.entry(status).or_insert_with(Vec::new);
-            pods.push(p);
+            let pods_entry = result.entry(status).or_insert_with(Vec::new);
+            pods_entry.push(p.clone());
         }
 
         result

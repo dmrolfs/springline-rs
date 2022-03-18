@@ -33,6 +33,10 @@ pub trait ScaleAction: Debug + Send + Sync {
 
 pub const ACTION_TOTAL_DURATION: &str = "total_duration";
 
+fn action_step(action: &str, step: &str) -> String {
+    format!("{}::{}", action, step)
+}
+
 #[derive(Clone)]
 pub struct ActionSession {
     pub correlation: CorrelationId,

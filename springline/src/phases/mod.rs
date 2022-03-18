@@ -1,7 +1,7 @@
 use proctor::graph::{Connect, SourceShape};
 use proctor::phases::policy_phase::PolicyPhase;
 use proctor::phases::sense::{ClearinghouseSubscriptionAgent, SubscriptionChannel, TelemetrySubscription};
-use proctor::{AppData, ProctorContext};
+use proctor::{AppData, Correlation, ProctorContext};
 use serde::Serialize;
 
 use crate::Result;
@@ -20,7 +20,7 @@ pub async fn subscribe_policy_phase<In, Out, C, D, A>(
     subscription: TelemetrySubscription, phase: &PolicyPhase<In, Out, C, D>, agent: &mut A,
 ) -> Result<SubscriptionChannel<C>>
 where
-    In: AppData + oso::ToPolar,
+    In: AppData + Correlation + oso::ToPolar,
     Out: AppData,
     C: ProctorContext,
     D: AppData + Serialize,

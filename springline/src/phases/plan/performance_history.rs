@@ -15,7 +15,7 @@ use crate::phases::plan::MINIMAL_CLUSTER_SIZE;
 pub struct PerformanceHistory(BTreeMap<usize, BenchmarkRange>);
 
 impl PerformanceHistory {
-    #[tracing::instrument(level = "info")]
+    #[tracing::instrument(level = "debug")]
     pub fn add_lower_benchmark(&mut self, b: Benchmark) {
         if let Some(entry) = self.0.get_mut(&b.nr_task_managers) {
             entry.set_lo_rate(b.records_out_per_sec);
@@ -28,7 +28,7 @@ impl PerformanceHistory {
         // self.clear_inconsistencies_for_new_lo(&b);
     }
 
-    #[tracing::instrument(level = "info")]
+    #[tracing::instrument(level = "debug")]
     pub fn add_upper_benchmark(&mut self, b: Benchmark) {
         if let Some(entry) = self.0.get_mut(&b.nr_task_managers) {
             entry.set_hi_rate(b.records_out_per_sec);
@@ -52,7 +52,7 @@ impl PerformanceHistory {
             .map(|neighbors| neighbors.cluster_size_for(workload_rate))
     }
 
-    #[tracing::instrument(level = "debug")]
+    #[tracing::instrument(level = "trace")]
     fn evaluate_neighbors(&self, workload_rate: RecordsPerSecond) -> Option<BenchNeighbors> {
         let mut lo = None;
         let mut hi = None;

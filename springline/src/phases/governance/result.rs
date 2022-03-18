@@ -26,7 +26,7 @@ pub fn make_governance_transform(
                 }
             });
 
-        let transform_span = tracing::info_span!(
+        let transform_span = tracing::trace_span!(
             "apply governance adjustments",
             item=?outcome.item, policy_results=?outcome.policy_results, ?adjusted_target
         );
@@ -55,7 +55,7 @@ pub fn make_governance_transform(
             (Ok(Some(adjusted)), _current, target) if adjusted == target => Some(outcome.item),
 
             (Ok(Some(adjusted)), _current, _target) => {
-                tracing::warn!("governance accepted plan with adjustment.");
+                tracing::info!("governance accepted plan with adjustment.");
                 Some(ScalePlan { target_nr_task_managers: adjusted, ..outcome.item })
             },
         }

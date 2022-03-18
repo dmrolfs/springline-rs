@@ -102,7 +102,7 @@ impl KubernetesContext {
             FlinkComponent::TaskManager => &self.inner.taskmanager.params,
         };
 
-        tracing::info!(?params, "Listing pods for params...");
+        tracing::debug!(?params, "Listing pods for params...");
         self.inner.list_pods(params).await
     }
 

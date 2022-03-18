@@ -102,7 +102,7 @@ mod protocol {
 
     impl IntoResponse for EngineApiError {
         fn into_response(self) -> Response<BoxBody> {
-            tracing::error!(error=?self, "failure in autoscale engine API");
+            tracing::trace!(error=?self, "failure in autoscale engine API");
             let body = body::boxed(body::Full::from(format!("Engine API Failure: {}", self)));
 
             Response::builder()
@@ -208,7 +208,7 @@ impl<'r> Service<'r> {
         self.tx_api.clone()
     }
 
-    #[tracing::instrument(level = "info", skip(self))]
+    #[tracing::instrument(level = "trace", skip(self))]
     pub async fn run(mut self) {
         loop {
             tokio::select! {
@@ -217,7 +217,7 @@ impl<'r> Service<'r> {
                         EngineCmd::GatherMetrics { domain, tx } => {
                             let report = self.get_metrics_report(&domain);
                             if report.is_ok() {
-                                tracing::info!(?domain, "reporting on metrics domain.");
+                                tracing::trace!(?domain, "reporting on metrics domain.");
                             } else {
                                 tracing::warn!(?domain, ?report, "failed to gather metrics report");
                             }
@@ -227,7 +227,7 @@ impl<'r> Service<'r> {
                         EngineCmd::ReportOnClearinghouse { subscription, tx } => {
                             let snapshot = self.get_clearinghouse_snapshot(&subscription).await;
                             if snapshot.is_ok() {
-                                tracing::info!(
+                                tracing::trace!(
                                     ?subscription,
                                     "reporting on clearinghouse subscription{}.",
                                     if subscription.is_none() { "s" } else { "" }
@@ -242,7 +242,7 @@ impl<'r> Service<'r> {
                             let stop_response = self.stop_flink_sensor().await;
 
                             if stop_response.is_ok() {
-                                tracing::info!("Engine stopped Flink sensor by command.");
+                                tracing::trace!("Engine stopped Flink sensor by command.");
                             } else {
                                 tracing::error!(error=?stop_response, "Engine failed to stop Flink sensor.");
                             }
@@ -252,20 +252,17 @@ impl<'r> Service<'r> {
                     }
                 },
 
-                else => {
-                    tracing::info!("springline engine service stopping...");
-                    break;
-                }
+                else => break,
             }
         }
     }
 
-    #[tracing::instrument(level = "info", skip(self))]
+    #[tracing::instrument(level = "trace", skip(self))]
     fn get_metrics_report(&self, span: &MetricsSpan) -> Result<MetricsReport, EngineApiError> {
         fn filter_report(original: String, span: &MetricsSpan) -> String {
             let rs: &RegexSet = span.regex();
             let filtered = original.lines().filter(|ln| rs.is_match(ln)).collect();
-            tracing::info!(%span, %original, %filtered, "filtered metrics report for span.");
+            tracing::debug!(%span, %original, %filtered, "filtered metrics report for span.");
             filtered
         }
 
@@ -284,12 +281,12 @@ impl<'r> Service<'r> {
 
             Ok(MetricsReport(report))
         } else {
-            tracing::warn!("no metrics_registry - creating default");
+            tracing::info!("no metrics_registry - creating default");
             Ok(MetricsReport::default())
         }
     }
 
-    #[tracing::instrument(level = "info", skip(self))]
+    #[tracing::instrument(level = "trace", skip(self))]
     async fn get_clearinghouse_snapshot(
         &self, subscription: &Option<String>,
     ) -> Result<ClearinghouseSnapshot, EngineApiError> {
@@ -301,7 +298,7 @@ impl<'r> Service<'r> {
         snapshot.map_err(|err| err.into())
     }
 
-    #[tracing::instrument(level = "info", skip(self))]
+    #[tracing::instrument(level = "trace", skip(self))]
     async fn stop_flink_sensor(&self) -> Result<(), EngineApiError> {
         tick::TickCmd::stop(&self.tx_stop_flink_sensor)
             .await

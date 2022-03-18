@@ -56,7 +56,7 @@ impl Serialize for MetricOrder {
 }
 
 impl<'de> Deserialize<'de> for MetricOrder {
-    #[tracing::instrument(level = "debug", skip(deserializer))]
+    #[tracing::instrument(level = "trace", skip(deserializer))]
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
@@ -80,7 +80,7 @@ impl<'de> Deserialize<'de> for MetricOrder {
                 f.write_str("struct MetricOrder")
             }
 
-            #[tracing::instrument(level = "debug", skip(self, seq))]
+            #[tracing::instrument(level = "trace", skip(self, seq))]
             fn visit_seq<V>(self, mut seq: V) -> Result<Self::Value, V::Error>
             where
                 V: SeqAccess<'de>,
@@ -94,7 +94,7 @@ impl<'de> Deserialize<'de> for MetricOrder {
                 Ok(MetricOrder { scope, metric, agg, telemetry_path, telemetry_type })
             }
 
-            #[tracing::instrument(level = "debug", skip(self, map))]
+            #[tracing::instrument(level = "trace", skip(self, map))]
             fn visit_map<V>(self, mut map: V) -> Result<Self::Value, V::Error>
             where
                 V: MapAccess<'de>,

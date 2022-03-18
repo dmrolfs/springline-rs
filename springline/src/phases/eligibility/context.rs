@@ -3,14 +3,15 @@ use std::fmt::Debug;
 
 use crate::metrics::UpdateMetrics;
 use chrono::{DateTime, Utc};
+use frunk::{Monoid, Semigroup};
 use once_cell::sync::Lazy;
 use oso::PolarClass;
-use pretty_snowflake::{Id, Label};
+use pretty_snowflake::{Id, Label, Labeling};
 use proctor::elements::telemetry::UpdateMetricsFn;
 use proctor::elements::{telemetry, Telemetry, Timestamp};
 use proctor::error::{EligibilityError, ProctorError};
 use proctor::phases::sense::SubscriptionRequirements;
-use proctor::{ProctorContext, SharedString};
+use proctor::{Correlation, ProctorContext, SharedString};
 use prometheus::IntGauge;
 use serde::{Deserialize, Serialize};
 
@@ -34,6 +35,43 @@ pub struct EligibilityContext {
     #[polar(attribute)]
     #[serde(flatten)] // flatten to collect extra properties.
     pub custom: telemetry::TableType,
+}
+
+impl Correlation for EligibilityContext {
+    type Correlated = Self;
+
+    fn correlation(&self) -> &Id<Self::Correlated> {
+        &self.correlation_id
+    }
+}
+
+impl Monoid for EligibilityContext {
+    fn empty() -> Self {
+        Self {
+            correlation_id: Id::direct(<Self as Label>::labeler().label(), 0, "<undefined>"),
+            recv_timestamp: Timestamp::ZERO,
+            task_status: TaskStatus::empty(),
+            cluster_status: ClusterStatus::empty(),
+            all_sinks_healthy: true,
+            custom: telemetry::TableType::new(),
+        }
+    }
+}
+
+impl Semigroup for EligibilityContext {
+    fn combine(&self, other: &Self) -> Self {
+        let mut custom = self.custom.clone();
+        custom.extend(other.custom.clone());
+
+        Self {
+            correlation_id: other.correlation_id.clone(),
+            recv_timestamp: other.recv_timestamp,
+            task_status: self.task_status.combine(&other.task_status),
+            cluster_status: self.cluster_status.combine(&other.cluster_status),
+            all_sinks_healthy: other.all_sinks_healthy,
+            custom,
+        }
+    }
 }
 
 impl PartialEq for EligibilityContext {
@@ -121,6 +159,25 @@ impl TaskStatus {
     }
 }
 
+impl Monoid for TaskStatus {
+    fn empty() -> Self {
+        Self { last_failure: None }
+    }
+}
+
+impl Semigroup for TaskStatus {
+    fn combine(&self, other: &Self) -> Self {
+        let last_failure = match (&self.last_failure, &other.last_failure) {
+            (Some(a), Some(b)) => Some(a.max(b)),
+            (Some(a), None) => Some(a),
+            (None, Some(b)) => Some(b),
+            (None, None) => None,
+        };
+
+        Self { last_failure: last_failure.cloned() }
+    }
+}
+
 pub const CLUSTER__LAST_DEPLOYMENT: &str = "cluster.last_deployment";
 pub const CLUSTER__IS_RESCALING: &str = "cluster.is_rescaling";
 
@@ -152,6 +209,26 @@ impl ClusterStatus {
     pub fn last_deployment_within_seconds(&self, seconds: i64) -> bool {
         let boundary = Utc::now() - chrono::Duration::seconds(seconds);
         boundary < self.last_deployment
+    }
+}
+
+impl Monoid for ClusterStatus {
+    fn empty() -> Self {
+        Self {
+            is_deploying: false,
+            is_rescaling: false,
+            last_deployment: Timestamp::new(0, 0).as_utc(),
+        }
+    }
+}
+
+impl Semigroup for ClusterStatus {
+    fn combine(&self, other: &Self) -> Self {
+        Self {
+            is_deploying: other.is_deploying,
+            is_rescaling: other.is_rescaling,
+            last_deployment: self.last_deployment.max(other.last_deployment),
+        }
     }
 }
 

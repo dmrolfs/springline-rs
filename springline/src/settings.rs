@@ -20,7 +20,7 @@ mod kubernetes_settings;
 mod plan_settings;
 mod sensor_settings;
 
-pub use action_settings::{ActionSettings, FlinkActionSettings, TaskmanagerContext};
+pub use action_settings::{ActionSettings, FlinkActionSettings, FlinkRestartSettings, TaskmanagerContext};
 pub use engine_settings::EngineSettings;
 pub use flink_settings::FlinkSettings;
 pub use governance_settings::{GovernancePolicySettings, GovernanceRuleSettings, GovernanceSettings};
@@ -164,6 +164,7 @@ mod tests {
     use pretty_assertions::assert_eq;
     use proctor::elements::{PolicySource, TelemetryType, ToTelemetry};
     use proctor::phases::sense::SensorSetting;
+    use crate::flink::RestoreMode;
 
     use super::*;
     use crate::phases::plan::{PerformanceRepositorySettings, PerformanceRepositoryType, SpikeSettings};
@@ -352,6 +353,12 @@ mod tests {
                     savepoint: SavepointSettings {
                         directory: Some("s3://path/to/savepoints".to_string()),
                         ..SavepointSettings::default()
+                    },
+                    restart: FlinkRestartSettings {
+                        operation_timeout: Duration::from_secs(300),
+                        restore_mode: Some(RestoreMode::Claim),
+                        program_args: Some(vec!["--zed=98".to_string(), "--alpha=boo".to_string()]),
+                        ..FlinkRestartSettings::default()
                     },
                     ..FlinkActionSettings::default()
                 },

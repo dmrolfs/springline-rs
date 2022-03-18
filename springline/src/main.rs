@@ -20,7 +20,7 @@ fn main() -> Result<()> {
     let subscriber = get_tracing_subscriber("info");
     proctor::tracing::init_subscriber(subscriber);
 
-    let main_span = tracing::info_span!("main");
+    let main_span = tracing::trace_span!("main");
     let _main_span_guard = main_span.enter();
 
     let options = CliOptions::parse();
@@ -52,7 +52,7 @@ fn main() -> Result<()> {
         engine.block_for_completion().await?;
         api_handle.await??;
 
-        tracing::warn!("autoscaling engine stopped.");
+        tracing::info!("autoscaling engine stopped.");
         Ok(())
     })
 }
@@ -82,7 +82,7 @@ fn make_monitor_sensor_and_api() -> (impl SourceStage<Telemetry>, ActorSourceApi
     (src, tx_api)
 }
 
-#[tracing::instrument(level="info", skip(future), fields(worker_threads=num_cpus::get()))]
+#[tracing::instrument(level="trace", skip(future), fields(worker_threads=num_cpus::get()))]
 fn start_pipeline<F>(future: F) -> Result<()>
 where
     F: Future<Output = Result<()>>,
@@ -101,12 +101,13 @@ fn get_tracing_subscriber(log_directives: impl AsRef<str>) -> impl Subscriber + 
     let console = console_subscriber::ConsoleLayer::builder().spawn();
     let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(log_directives.as_ref()));
-    let formatting = tracing_bunyan_formatter::BunyanFormattingLayer::new("springline".to_string(), std::io::stdout);
+    let bunyan_formatting =
+        tracing_bunyan_formatter::BunyanFormattingLayer::new("springline".to_string(), std::io::stdout);
 
     tracing_subscriber::registry::Registry::default()
         .with(console)
-        .with(tracing_subscriber::fmt::layer())
+        // .with(tracing_subscriber::fmt::layer())
         .with(env_filter)
         .with(tracing_bunyan_formatter::JsonStorageLayer)
-        .with(formatting)
+        .with(bunyan_formatting)
 }

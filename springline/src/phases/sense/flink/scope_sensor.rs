@@ -73,19 +73,19 @@ where
         self.scope.to_string().into()
     }
 
-    #[tracing::instrument(Level = "info", skip(self))]
+    #[tracing::instrument(Level = "trace", skip(self))]
     async fn check(&self) -> ProctorResult<()> {
         self.do_check().await?;
         Ok(())
     }
 
-    #[tracing::instrument(level = "info", name = "run flink scope sensor stage", skip(self))]
+    #[tracing::instrument(level = "trace", name = "run flink scope sensor stage", skip(self))]
     async fn run(&mut self) -> ProctorResult<()> {
         self.do_run().await?;
         Ok(())
     }
 
-    #[tracing::instrument(level = "info", skip(self))]
+    #[tracing::instrument(level = "trace", skip(self))]
     async fn close(mut self: Box<Self>) -> ProctorResult<()> {
         self.do_close().await?;
         Ok(())
@@ -131,14 +131,14 @@ where
         let scope_rep = SharedString::Owned(self.scope.to_string().to_lowercase());
         let metrics = metric_orders.keys();
         let url = self.extend_url_for(metrics, agg_span.iter());
-        tracing::info!("flink sensing url = {:?}", url);
+        tracing::debug!("flink sensing url = {:?}", url);
         let name = self.name();
 
         while self.trigger.recv().await.is_some() {
             let _stage_timer = stage::start_stage_eval_time(name.as_ref());
 
             let correlation = self.correlation_gen.next_id();
-            let span = tracing::info_span!("collect Flink scope sensor telemetry", scope=%self.scope, ?correlation);
+            let span = tracing::trace_span!("collect Flink scope sensor telemetry", scope=%self.scope, ?correlation);
             let send_telemetry: Result<(), SenseError> = self
                 .outlet
                 .reserve_send::<_, SenseError>(async {
@@ -151,19 +151,19 @@ where
                         .request(Method::GET, url.clone())
                         .send()
                         .map_err(|error| {
-                            tracing::error!(?error, "failed Flink API {} response", self.scope);
+                            // tracing::error!(?error, "failed Flink API {} response", self.scope);
                             error.into()
                         })
                         .and_then(|response| {
                             flink::log_response(format!("{} scope response", scope_rep.clone()).as_str(), &response);
                             response.text().map_err(|err| err.into())
                         })
-                        .instrument(tracing::info_span!("Flink scope metrics REST API", scope=%self.scope))
+                        .instrument(tracing::trace_span!("Flink scope metrics REST API", scope=%self.scope))
                         .await
                         // .map_err(|err| err.into())
                         .and_then(|body| {
                             let result = serde_json::from_str(body.as_str()).map_err(|err| err.into());
-                            tracing::info!(%body, ?result, "Flink {} scope metrics response body", self.scope);
+                            tracing::debug!(%body, ?result, "Flink {} scope metrics response body", self.scope);
                             result
                         })
                         .and_then(|metric_response: api_model::FlinkMetricResponse| {
@@ -220,7 +220,7 @@ mod tests {
     }
 
     impl Respond for RetryResponder {
-        #[tracing::instrument(level = "info", skip(self))]
+        #[tracing::instrument(level = "trace", skip(self))]
         fn respond(&self, _request: &wiremock::Request) -> ResponseTemplate {
             let mut attempts = self.0.load(Ordering::SeqCst);
             attempts += 1;

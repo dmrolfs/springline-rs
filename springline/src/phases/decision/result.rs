@@ -5,10 +5,11 @@ use std::fmt::{self, Debug};
 use crate::phases::decision::DECISION_SCALING_DECISION_COUNT_METRIC;
 use crate::phases::REASON;
 use itertools::Itertools;
+use pretty_snowflake::Id;
 use proctor::elements::{PolicyOutcome, TelemetryType, TelemetryValue, ToTelemetry};
 use proctor::error::{DecisionError, TelemetryError};
 use proctor::graph::stage::{self, ThroughStage};
-use proctor::{AppData, ProctorContext, SharedString};
+use proctor::{AppData, Correlation, ProctorContext, SharedString};
 
 pub const DECISION_DIRECTION: &str = "direction";
 pub const SCALE_UP: &str = "up";
@@ -17,12 +18,12 @@ pub const NO_ACTION: &str = "no action";
 
 pub fn make_decision_transform<T, C, S>(name: S) -> impl ThroughStage<PolicyOutcome<T, C>, DecisionResult<T>>
 where
-    T: AppData + PartialEq,
+    T: AppData + Correlation + PartialEq,
     C: ProctorContext,
     S: Into<SharedString>,
 {
     stage::Map::new(name, move |outcome: PolicyOutcome<T, C>| {
-        let transform_span = tracing::info_span!(
+        let transform_span = tracing::trace_span!(
             "distill policy outcome into action",
             item=?outcome.item, policy_results=?outcome.policy_results
         );
@@ -105,19 +106,47 @@ where
 const T_ITEM: &str = "item";
 const T_SCALE_DECISION: &str = "scale_decision";
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub enum DecisionResult<T>
 where
-    T: Debug + Clone + PartialEq,
+    T: Clone + PartialEq,
 {
     ScaleUp(T),
     ScaleDown(T),
     NoAction(T),
 }
 
+impl<T: Debug> fmt::Debug for DecisionResult<T>
+where
+    T: Correlation + Clone + PartialEq,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            DecisionResult::ScaleUp(_) => write!(f, "ScaleUp({:?})", self.correlation()),
+            DecisionResult::ScaleDown(_) => write!(f, "ScaleDown({:?})", self.correlation()),
+            DecisionResult::NoAction(_) => write!(f, "NoAction({:?})", self.correlation()),
+        }
+    }
+}
+
+impl<T> fmt::Display for DecisionResult<T>
+where
+    T: Clone + PartialEq,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let label = match self {
+            Self::ScaleUp(_) => "scale_up",
+            Self::ScaleDown(_) => "scale_down",
+            Self::NoAction(_) => "no_action",
+        };
+
+        write!(f, "{}", label)
+    }
+}
+
 impl<T> DecisionResult<T>
 where
-    T: Debug + Clone + PartialEq,
+    T: Clone + PartialEq,
 {
     pub fn new(item: T, decision_rep: &str) -> Self {
         match decision_rep {
@@ -137,24 +166,24 @@ where
     }
 }
 
-impl<T> fmt::Display for DecisionResult<T>
+impl<T> Correlation for DecisionResult<T>
 where
-    T: Debug + Clone + PartialEq,
+    T: Correlation + Clone + PartialEq,
 {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let label = match self {
-            Self::ScaleUp(_) => "scale_up",
-            Self::ScaleDown(_) => "scale_down",
-            Self::NoAction(_) => "no_action",
-        };
+    type Correlated = <T as Correlation>::Correlated;
 
-        write!(f, "{}", label)
+    fn correlation(&self) -> &Id<Self::Correlated> {
+        match self {
+            Self::ScaleUp(item) => item.correlation(),
+            Self::ScaleDown(item) => item.correlation(),
+            Self::NoAction(item) => item.correlation(),
+        }
     }
 }
 
 impl<T> From<DecisionResult<T>> for TelemetryValue
 where
-    T: Into<Self> + Debug + Clone + PartialEq,
+    T: Into<Self> + Clone + PartialEq,
 {
     fn from(result: DecisionResult<T>) -> Self {
         match result {

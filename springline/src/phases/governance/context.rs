@@ -9,7 +9,7 @@ use proctor::elements::telemetry::UpdateMetricsFn;
 use proctor::elements::{telemetry, Telemetry, Timestamp};
 use proctor::error::GovernanceError;
 use proctor::phases::sense::SubscriptionRequirements;
-use proctor::{ProctorContext, SharedString};
+use proctor::{Correlation, ProctorContext, SharedString};
 use prometheus::IntGauge;
 use serde::{Deserialize, Serialize};
 
@@ -37,6 +37,14 @@ pub struct GovernanceContext {
     #[polar(attribute)]
     #[serde(flatten)]
     pub custom: telemetry::TableType,
+}
+
+impl Correlation for GovernanceContext {
+    type Correlated = Self;
+
+    fn correlation(&self) -> &Id<Self::Correlated> {
+        &self.correlation_id
+    }
 }
 
 impl PartialEq for GovernanceContext {

@@ -18,7 +18,7 @@ pub const RUNNING_STATUS: &str = "Running";
 // pub const FAILED_STATUS: &str = "Failed";
 pub const UNKNOWN_STATUS: &str = "Unknown";
 
-#[tracing::instrument(level = "info", name = "make kubernetes client")]
+#[tracing::instrument(level = "trace", name = "make kubernetes client")]
 async fn make_client(settings: &KubernetesSettings) -> Result<kube::Client, KubernetesError> {
     let config = match &settings.client {
         LoadKubeConfig::Infer => {
@@ -56,11 +56,7 @@ async fn make_client(settings: &KubernetesSettings) -> Result<kube::Client, Kube
         proxy_url=?config.proxy_url,
         "making kubernetes client using config..."
     );
-    let client = kube::Client::try_from(config).map_err(|err| err.into());
-    if let Err(ref error) = client {
-        tracing::error!(?error, "failed to make kubernetes client.");
-    }
-    client
+    kube::Client::try_from(config).map_err(|err| err.into())
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

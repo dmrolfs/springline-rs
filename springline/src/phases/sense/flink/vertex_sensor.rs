@@ -83,19 +83,19 @@ where
         NAME.into()
     }
 
-    #[tracing::instrument(Level = "info", skip(self))]
+    #[tracing::instrument(Level = "trace", skip(self))]
     async fn check(&self) -> ProctorResult<()> {
         self.do_check().await?;
         Ok(())
     }
 
-    #[tracing::instrument(level = "info", name = "run flink vertex sensor stage", skip(self))]
+    #[tracing::instrument(level = "trace", name = "run flink vertex sensor stage", skip(self))]
     async fn run(&mut self) -> ProctorResult<()> {
         self.do_run().await?;
         Ok(())
     }
 
-    #[tracing::instrument(level = "info", skip(self))]
+    #[tracing::instrument(level = "trace", skip(self))]
     async fn close(mut self: Box<Self>) -> ProctorResult<()> {
         self.do_close().await?;
         Ok(())
@@ -128,11 +128,11 @@ where
             let _stage_timer = stage::start_stage_eval_time(self.name().as_ref());
 
             let correlation = self.correlation_gen.next_id();
-            let span = tracing::info_span!("collect Flink vertex telemetry", ?correlation);
+            let span = tracing::trace_span!("collect Flink vertex telemetry", ?correlation);
             let send_telemetry: Result<(), SenseError> = self
                 .outlet
                 .reserve_send(async {
-                    let flink_span = tracing::info_span!("query Flink REST APIs");
+                    let flink_span = tracing::trace_span!("query Flink REST APIs");
 
                     let out: Result<Out, SenseError> = self
                         .context
@@ -177,7 +177,7 @@ where
         Ok(())
     }
 
-    #[tracing::instrument(level = "info", skip(self, metric_telemetry, metric_orders))]
+    #[tracing::instrument(level = "trace", skip(self, metric_telemetry, metric_orders))]
     async fn gather_vertex_telemetry(
         &self, job: JobSummary, metric_telemetry: Arc<Mutex<HashMap<String, Vec<TelemetryValue>>>>,
         metric_orders: &OrdersByMetric, correlation: &CorrelationId,
@@ -195,7 +195,7 @@ where
         }
     }
 
-    #[tracing::instrument(level = "info", skip(self, metric_orders))]
+    #[tracing::instrument(level = "trace", skip(self, metric_orders))]
     async fn query_vertex_telemetry(
         &self, job_id: &JobId, vertex_id: &VertexId, metric_orders: &OrdersByMetric, correlation: &CorrelationId,
     ) -> Result<Telemetry, SenseError> {
@@ -209,7 +209,7 @@ where
             .push("metrics");
 
         let _timer = start_flink_vertex_sensor_timer();
-        let span = tracing::info_span!("query Flink vertex telemetry", ?correlation);
+        let span = tracing::trace_span!("query Flink vertex telemetry", ?correlation);
 
         self.do_query_vertex_metric_picklist(url.clone(), metric_orders, correlation)
             .and_then(|picklist| {
@@ -221,12 +221,12 @@ where
             .await
     }
 
-    #[tracing::instrument(level = "info", skip(self, vertex_metrics_url, metric_orders))]
+    #[tracing::instrument(level = "trace", skip(self, vertex_metrics_url, metric_orders))]
     async fn do_query_vertex_metric_picklist(
         &self, vertex_metrics_url: Url, metric_orders: &OrdersByMetric, correlation: &CorrelationId,
     ) -> Result<Vec<String>, SenseError> {
         let _timer = start_flink_vertex_sensor_metric_picklist_time();
-        let span = tracing::info_span!("query Flink vertex metric picklist", ?correlation);
+        let span = tracing::trace_span!("query Flink vertex metric picklist", ?correlation);
 
         let picklist: Result<Vec<String>, SenseError> = self
             .context
@@ -238,7 +238,7 @@ where
                 error.into()
             })
             .and_then(|response| {
-                flink::log_response("vertex metric picklet", &response);
+                flink::log_response("vertex metric picklist", &response);
                 response.json::<FlinkMetricResponse>().map_err(|err| err.into())
             })
             .instrument(span)
@@ -253,13 +253,13 @@ where
         super::identity_or_track_error(FlinkScope::Task, picklist)
     }
 
-    #[tracing::instrument(level = "info", skip(self, picklist, metric_orders, vertex_metrics_url))]
+    #[tracing::instrument(level = "trace", skip(self, picklist, metric_orders, vertex_metrics_url))]
     async fn do_query_vertex_available_telemetry(
         &self, picklist: Vec<String>, metric_orders: &OrdersByMetric, mut vertex_metrics_url: Url,
         correlation: &CorrelationId,
     ) -> Result<Telemetry, SenseError> {
         let agg_span = Self::agg_span_for(&picklist, metric_orders);
-        tracing::info!(
+        tracing::debug!(
             ?picklist,
             ?agg_span,
             ?correlation,
@@ -279,14 +279,14 @@ where
             }
 
             let _timer = start_flink_vertex_sensor_avail_telemetry_timer();
-            let span = tracing::info_span!("query Flink vertex available telemetry", ?correlation);
+            let span = tracing::trace_span!("query Flink vertex available telemetry", ?correlation);
 
             self.context
                 .client()
                 .request(Method::GET, vertex_metrics_url)
                 .send()
                 .map_err(|error| {
-                    tracing::error!(?error, "failed Flink API job_vertex available_telemetry response");
+                    // tracing::error!(?error, "failed Flink API job_vertex available_telemetry response");
                     error.into()
                 })
                 .and_then(|response| {
@@ -297,7 +297,7 @@ where
                 .await
                 .and_then(|body| {
                     let result = serde_json::from_str(body.as_str()).map_err(|err| err.into());
-                    tracing::info!(%body, ?result, "Flink vertex metrics response body");
+                    tracing::debug!(%body, ?result, "Flink vertex metrics response body");
                     result
                 })
                 .and_then(|metric_response: FlinkMetricResponse| {
@@ -310,7 +310,7 @@ where
         super::identity_or_track_error(FlinkScope::Task, telemetry)
     }
 
-    #[tracing::instrument(level = "info", skip(picklist, metric_orders))]
+    #[tracing::instrument(level = "trace", skip(picklist, metric_orders))]
     fn agg_span_for(picklist: &[String], metric_orders: &OrdersByMetric) -> Vec<Aggregation> {
         picklist
             .iter()

@@ -13,6 +13,7 @@ use proctor::phases::sense::ClearinghouseApi;
 use proctor::{ProctorResult, SharedString};
 use prometheus::Registry;
 use std::fmt;
+use std::time::Duration;
 use tokio::task::JoinHandle;
 
 use crate::engine::service::{EngineServiceApi, Service};
@@ -77,7 +78,7 @@ impl AutoscaleEngine<Building> {
     }
 
     pub fn with_action_stage(self, action_stage: Box<dyn SinkStage<GovernanceOutcome>>) -> Self {
-        tracing::info!(?action_stage, "setting act phase on autoscale engine builder.");
+        tracing::trace!(?action_stage, "setting act phase on autoscale engine builder.");
         Self {
             inner: Building { act: Some(action_stage), ..self.inner },
         }
@@ -97,30 +98,30 @@ impl AutoscaleEngine<Building> {
         I: Iterator<Item = Box<dyn SourceStage<Telemetry>>>,
     {
         let sensors = sensors.collect();
-        tracing::info!(?sensors, "setting sensors on autoscale engine builder.");
+        tracing::trace!(?sensors, "setting sensors on autoscale engine builder.");
         Self { inner: Building { sensors, ..self.inner } }
     }
 
     pub fn add_sensor(mut self, sensor: impl SourceStage<Telemetry>) -> Self {
-        tracing::info!(?sensor, "adding sensor to autoscale engine.");
+        tracing::trace!(?sensor, "adding sensor to autoscale engine.");
         self.inner.sensors.push(Box::new(sensor));
         self
     }
 
     pub fn add_monitor_feedback(mut self, tx_monitor_feedback: ActorSourceApi<Telemetry>) -> Self {
-        tracing::info!("adding feedback api for monitor");
+        tracing::trace!("adding feedback api for monitor");
         self.inner.tx_monitor_feedback = Some(tx_monitor_feedback);
         self
     }
 
     pub fn with_metrics_registry(self, registry: &'static Registry) -> Self {
-        tracing::info!(?registry, "added metrics registry to autoscale engine.");
+        tracing::trace!(?registry, "added metrics registry to autoscale engine.");
         Self {
             inner: Building { metrics_registry: Some(registry), ..self.inner },
         }
     }
 
-    #[tracing::instrument(level = "info", skip(self, settings))]
+    #[tracing::instrument(level = "trace", skip(self, settings))]
     pub async fn finish(self, flink: FlinkContext, settings: &Settings) -> Result<AutoscaleEngine<Ready>> {
         let machine_node = MachineNode::new(settings.engine.machine_id, settings.engine.node_id)?;
 
@@ -154,9 +155,16 @@ impl AutoscaleEngine<Building> {
             ))
             .await?;
 
+        let data_throttle = proctor::graph::stage::ReduceWithin::new(
+            "data_throttle",
+            Duration::ZERO,
+            settings.sensor.flink.metrics_interval,
+        );
+
         let tx_clearinghouse_api = sense.tx_api();
 
-        (sense.outlet(), eligibility_phase.inlet()).connect().await;
+        (sense.outlet(), data_throttle.inlet()).connect().await;
+        (data_throttle.outlet(), eligibility_phase.inlet()).connect().await;
         (eligibility_phase.outlet(), decision_phase.inlet()).connect().await;
         (decision_phase.outlet(), planning_phase.phase.decision_inlet())
             .connect()
@@ -166,6 +174,7 @@ impl AutoscaleEngine<Building> {
 
         let mut graph = Graph::default();
         graph.push_back(Box::new(sense)).await;
+        graph.push_back(Box::new(data_throttle)).await;
         graph.push_back(Box::new(eligibility_channel)).await;
         graph.push_back(Box::new(decision_channel)).await;
         graph.push_back(Box::new(planning_phase.data_channel)).await;
@@ -215,7 +224,7 @@ impl fmt::Debug for Ready {
 }
 
 impl AutoscaleEngine<Ready> {
-    #[tracing::instrument(level = "info", skip(self))]
+    #[tracing::instrument(level = "trace", skip(self))]
     pub fn run(self) -> AutoscaleEngine<Running> {
         let graph_handle = tokio::spawn(async { self.inner.graph.run().await });
 
@@ -259,7 +268,7 @@ impl fmt::Debug for Running {
 }
 
 impl AutoscaleEngine<Running> {
-    #[tracing::instrument(level = "info")]
+    #[tracing::instrument(level = "trace")]
     pub async fn block_for_completion(self) -> Result<()> {
         self.inner.graph_handle.await??;
         Ok(())

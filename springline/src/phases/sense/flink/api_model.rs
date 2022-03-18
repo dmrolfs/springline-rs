@@ -50,7 +50,7 @@ impl FlinkMetric {
     }
 }
 
-#[tracing::instrument(level = "debug", skip(metrics, orders))]
+#[tracing::instrument(level = "trace", skip(metrics, orders))]
 pub fn build_telemetry<M>(metrics: M, orders: &HashMap<String, Vec<MetricOrder>>) -> Result<Telemetry, TelemetryError>
 where
     M: IntoIterator<Item = FlinkMetric>,

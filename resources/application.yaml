@@ -124,9 +124,6 @@ action:
     # Interval in which Flink asynchronous API status is polled. Defaults to 10 seconds.
     polling_interval_secs: 1
 
-    # Time allowed restarting and confirm a FLink job. Defaults to 1 minute.
-    restart_operation_timeout_secs: 60
-
     savepoint:
       # Time allowed for a savepoint to complete. Defaults to 10 minutes.
       operation_timeout_secs: 600
@@ -134,6 +131,19 @@ action:
       # Optional directory for the triggered savepoint. If not set, the default will the savepoint
       # directory configured with Flink.
       # directory: "/path/to/flink/savepoints"
+
+    restart:
+      # Time allowed restarting and confirm a FLink job. Defaults to 1 minute.
+      operation_timeout_secs: 60
+
+      # Optional boolean value that specifies whether the job submission should be rejected if the
+      # savepoint contains state that cannot be mapped back to the job.
+      allow_non_restartable_jobs: false
+
+      # Optional comma-separated list of program arguments
+#      program_args:
+#        - "--yourFirstParam=1"
+#        -  "--yourOtherCustomArg=something"
 
 # Properties for the springline config sensor to inject values that are known at deployment time.
 # Property names and types should directly match corresponding subscription requirements as

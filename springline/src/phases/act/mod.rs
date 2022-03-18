@@ -174,7 +174,7 @@ pub(crate) static ACT_PHASE_ERRORS: Lazy<IntCounterVec> = Lazy::new(|| {
     .expect("failed creating act_phase_errors metric")
 });
 
-#[tracing::instrument(level = "info")]
+#[tracing::instrument(level = "trace")]
 pub fn make_logger_act_phase() -> Box<dyn SinkStage<GovernanceOutcome>> {
     Box::new(stage::Foreach::new("actlogging_act", |plan: GovernanceOutcome| {
         ACT_SCALE_ACTION_COUNT
@@ -183,6 +183,5 @@ pub fn make_logger_act_phase() -> Box<dyn SinkStage<GovernanceOutcome>> {
                 plan.target_nr_task_managers.to_string().as_str(),
             ])
             .inc();
-        tracing::warn!(scale_plan=?plan, "EXECUTE SCALE PLAN!");
     }))
 }

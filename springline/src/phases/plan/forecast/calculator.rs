@@ -97,13 +97,13 @@ impl<F: Forecaster> ForecastCalculator<F> {
     ) -> Result<RecordsPerSecond, PlanError> {
         let recovery = self.calculate_recovery_timestamp_from(trigger_point);
         let valid = self.calculate_valid_timestamp_after_recovery(recovery);
-        tracing::info!( recovery=?recovery.as_utc(), valid=?valid.as_utc(), "cluster scaling timestamp markers estimated." );
+        tracing::debug!( recovery=?recovery.as_utc(), valid=?valid.as_utc(), "cluster scaling timestamp markers estimated." );
 
         let forecast = self.forecaster.forecast()?;
-        tracing::info!(?forecast, "workload forecast model calculated.");
+        tracing::debug!(?forecast, "workload forecast model calculated.");
 
         let total_records = self.total_records_between(&*forecast, trigger_point, recovery)? + buffered_records;
-        tracing::info!(total_records_at_valid_time=%total_records, "estimated total records to process before valid time");
+        tracing::debug!(total_records_at_valid_time=%total_records, "estimated total records to process before valid time");
 
         let recovery_rate = self.recovery_rate(total_records);
         PLANNING_RECOVERY_WORKLOAD_RATE.set(*recovery_rate.as_ref());
@@ -113,7 +113,7 @@ impl<F: Forecaster> ForecastCalculator<F> {
 
         let target_rate = RecordsPerSecond::max(recovery_rate, valid_workload_rate);
 
-        tracing::info!(
+        tracing::debug!(
             %recovery_rate,
             %valid_workload_rate,
             %target_rate,
@@ -135,7 +135,7 @@ impl<F: Forecaster> ForecastCalculator<F> {
         &self, forecast: &dyn WorkloadForecast, start: Timestamp, end: Timestamp,
     ) -> Result<f64, PlanError> {
         let total = forecast.total_records_between(start, end)?;
-        tracing::info!("total records between [{}, {}] = {}", start, end, total);
+        tracing::debug!("total records between [{}, {}] = {}", start, end, total);
         Ok(total)
     }
 

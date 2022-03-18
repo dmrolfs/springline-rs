@@ -1,7 +1,9 @@
 use crate::model::{CorrelationId, MetricCatalog};
 use oso::PolarClass;
 
+use pretty_snowflake::Id;
 use proctor::elements::Timestamp;
+use proctor::Correlation;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
@@ -33,6 +35,14 @@ impl fmt::Debug for ScalePlan {
     }
 }
 
+impl Correlation for ScalePlan {
+    type Correlated = MetricCatalog;
+
+    fn correlation(&self) -> &Id<Self::Correlated> {
+        &self.correlation_id
+    }
+}
+
 impl ScalePlan {
     pub fn new(
         decision: DecisionResult<MetricCatalog>, calculated_nr_task_managers: Option<usize>, min_scaling_step: usize,
@@ -57,7 +67,7 @@ impl ScalePlan {
             (DR::ScaleUp(_), _) => {
                 let corrected_nr_task_managers = current_nr_task_managers + min_scaling_step;
 
-                tracing::warn!(
+                tracing::info!(
                     ?calculated_nr_task_managers,
                     %current_nr_task_managers,
                     %corrected_nr_task_managers,
@@ -77,7 +87,7 @@ impl ScalePlan {
                     MINIMAL_CLUSTER_SIZE
                 };
 
-                tracing::warn!(
+                tracing::info!(
                     ?calculated_nr_task_managers,
                     %current_nr_task_managers,
                     %min_scaling_step,

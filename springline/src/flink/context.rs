@@ -70,19 +70,19 @@ impl FlinkContext {
         self.inner.jars_endpoint.clone()
     }
 
-    #[tracing::instrument(level = "info", skip(self))]
+    #[tracing::instrument(level = "trace", skip(self))]
     pub async fn query_active_jobs(&self, correlation: &CorrelationId) -> Result<Vec<JobSummary>, FlinkError> {
         self.inner.query_active_jobs(correlation).await
     }
 
-    #[tracing::instrument(level = "info", skip(self))]
+    #[tracing::instrument(level = "trace", skip(self))]
     pub async fn query_job_details(
         &self, job_id: &JobId, correlation: &CorrelationId,
     ) -> Result<JobDetail, FlinkError> {
         self.inner.query_job_details(job_id, correlation).await
     }
 
-    #[tracing::instrument(level = "info", skip(self))]
+    #[tracing::instrument(level = "trace", skip(self))]
     pub async fn query_uploaded_jars(&self, correlation: &CorrelationId) -> Result<Vec<JarSummary>, FlinkError> {
         self.inner.query_uploaded_jars(correlation).await
     }
@@ -132,7 +132,7 @@ impl fmt::Debug for FlinkContextRef {
 impl FlinkContextRef {
     pub async fn query_uploaded_jars(&self, correlation: &CorrelationId) -> Result<Vec<JarSummary>, FlinkError> {
         let _timer = flink::start_flink_uploaded_jars_timer(self.cluster_label.as_str());
-        let span = tracing::info_span!("query Flink uploaded jars", ?correlation);
+        let span = tracing::debug_span!("query Flink uploaded jars", ?correlation);
 
         let result: Result<Vec<JarSummary>, FlinkError> = self
             .client
@@ -150,7 +150,7 @@ impl FlinkContextRef {
             .await
             .and_then(|body| {
                 let response = serde_json::from_str(body.as_str());
-                tracing::info!(%body, ?response, "Flink jar summary response body");
+                tracing::debug!(%body, ?response, "Flink jar summary response body");
                 response
                     .map(|resp: jars_protocal::GetJarsResponse| resp.files)
                     .map_err(|err| err.into())
@@ -166,7 +166,7 @@ impl FlinkContextRef {
 
     pub async fn query_active_jobs(&self, correlation: &CorrelationId) -> Result<Vec<JobSummary>, FlinkError> {
         let _timer = flink::start_flink_active_jobs_timer(self.cluster_label.as_str());
-        let span = tracing::info_span!("query Flink active jobs", ?correlation);
+        let span = tracing::debug_span!("query Flink active jobs", ?correlation);
 
         let result: Result<Vec<JobSummary>, FlinkError> = self
             .client
@@ -183,9 +183,9 @@ impl FlinkContextRef {
             .instrument(span)
             .await
             .and_then(|body| {
-                tracing::info!(%body, "Flink job summary response body");
+                tracing::debug!(%body, "Flink job summary response body");
                 let result = serde_json::from_str(body.as_str()).map_err(|err| err.into());
-                tracing::info!(?result, "Flink parsed job summary response json value");
+                tracing::debug!(?result, "Flink parsed job summary response json value");
                 result
             })
             .and_then(|jobs_json_value: serde_json::Value| {
@@ -194,7 +194,7 @@ impl FlinkContextRef {
                     .cloned()
                     .map(|json| serde_json::from_value::<Vec<JobSummary>>(json).map_err(|err| err.into()))
                     .unwrap_or_else(|| Ok(Vec::default()));
-                tracing::info!(?result, "Flink job summary response json parsing");
+                tracing::debug!(?result, "Flink job summary response json parsing");
                 result
             })
             .map(|jobs: Vec<JobSummary>| {
@@ -202,7 +202,7 @@ impl FlinkContextRef {
                     .filter(|job_summary| {
                         let is_job_active = job_summary.status.is_active();
                         if !is_job_active {
-                            tracing::info!(?job_summary, "filtering out job detail since");
+                            tracing::debug!(?job_summary, "filtering out inactive job detail");
                         }
                         is_job_active
                     })
@@ -221,7 +221,7 @@ impl FlinkContextRef {
             .push(job_id.as_ref());
 
         let _timer = flink::start_flink_query_job_detail_timer(self.cluster_label.as_str());
-        let span = tracing::info_span!("query FLink job detail");
+        let span = tracing::debug_span!("query FLink job detail");
 
         let result: Result<JobDetail, FlinkError> = self
             .client
@@ -239,7 +239,7 @@ impl FlinkContextRef {
             .await
             .and_then(|body| {
                 let result = serde_json::from_str(body.as_str()).map_err(|err| err.into());
-                tracing::info!(%body, ?result, "Flink job detail response body");
+                tracing::debug!(%body, ?result, "Flink job detail response body");
                 result
             });
 

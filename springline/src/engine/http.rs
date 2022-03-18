@@ -19,7 +19,7 @@ struct State {
     tx_api: EngineServiceApi,
 }
 
-#[tracing::instrument(level = "info", skip(tx_api))]
+#[tracing::instrument(level = "trace", skip(tx_api))]
 pub fn run_http_server<'s>(
     tx_api: EngineServiceApi, settings: &HttpServerSettings,
 ) -> Result<JoinHandle<Result<(), EngineApiError>>, EngineApiError> {
@@ -48,7 +48,7 @@ pub fn run_http_server<'s>(
         let listener = tokio::net::TcpListener::bind(&address).await?;
         let std_listener = listener.into_std()?;
 
-        tracing::warn!(
+        tracing::info!(
             "{:?} autoscale engine API listening on {}",
             std::env::current_exe(),
             address
@@ -63,7 +63,7 @@ pub fn run_http_server<'s>(
 }
 
 // #[debug_handler]
-#[tracing::instrument(level = "info", skip(engine))]
+#[tracing::instrument(level = "trace", skip(engine))]
 async fn get_metrics<'r>(
     span: Option<Path<MetricsSpan>>, Extension(engine): Extension<Arc<State>>,
 ) -> Result<String, EngineApiError> {
@@ -77,7 +77,7 @@ async fn get_metrics<'r>(
     rx.await?.map(|mr| mr.0)
 }
 
-#[tracing::instrument(level = "info", skip(engine))]
+#[tracing::instrument(level = "trace", skip(engine))]
 async fn get_clearinghouse_snapshot<'r>(
     subscription: Option<Path<String>>, Extension(engine): Extension<Arc<State>>,
 ) -> Result<Json<ClearinghouseSnapshot>, EngineApiError> {
@@ -86,7 +86,7 @@ async fn get_clearinghouse_snapshot<'r>(
     rx.await?.map(Json)
 }
 
-#[tracing::instrument(level = "info", skip())]
+#[tracing::instrument(level = "trace", skip())]
 async fn handle_engine_error(method: Method, uri: Uri, error: BoxError) -> (StatusCode, String) {
     (
         StatusCode::INTERNAL_SERVER_ERROR,

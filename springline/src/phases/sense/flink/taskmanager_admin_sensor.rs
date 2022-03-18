@@ -61,19 +61,19 @@ where
         NAME.into()
     }
 
-    #[tracing::instrument(Level = "info", skip(self))]
+    #[tracing::instrument(Level = "trace", skip(self))]
     async fn check(&self) -> ProctorResult<()> {
         self.do_check().await?;
         Ok(())
     }
 
-    #[tracing::instrument(level = "info", name = "run Flink taskmanager admin sensor stage", skip(self))]
+    #[tracing::instrument(level = "trace", name = "run Flink taskmanager admin sensor stage", skip(self))]
     async fn run(&mut self) -> ProctorResult<()> {
         self.do_run().await?;
         Ok(())
     }
 
-    #[tracing::instrument(level = "info", skip(self))]
+    #[tracing::instrument(level = "trace", skip(self))]
     async fn close(mut self: Box<Self>) -> ProctorResult<()> {
         self.do_close().await?;
         Ok(())
@@ -95,7 +95,7 @@ where
     async fn do_run(&mut self) -> Result<(), SenseError> {
         let mut url = self.context.base_url();
         url.path_segments_mut().unwrap().push("taskmanagers");
-        tracing::info!("url = {:?}", url);
+        tracing::debug!("url = {:?}", url);
 
         let url = url.clone();
         let name = self.name();
@@ -104,7 +104,7 @@ where
             let _stage_timer = stage::start_stage_eval_time(name.as_ref());
 
             let correlation = self.correlation_gen.next_id();
-            let span = tracing::info_span!("collect Flink taskmanager admin telemetry", ?correlation);
+            let span = tracing::trace_span!("collect Flink taskmanager admin telemetry", ?correlation);
             let send_telemetry = self
                 .outlet
                 .reserve_send::<_, SenseError>(async {
@@ -117,20 +117,20 @@ where
                         .request(Method::GET, url.clone())
                         .send()
                         .map_err(|error| {
-                            tracing::error!(?error, "failed Flink API taskmanager_admin response");
+                            // tracing::error!(?error, "failed Flink API taskmanager_admin response");
                             error.into()
                         })
                         .and_then(|response| {
                             flink::log_response("taskmanager admin response", &response);
                             response.text().map_err(|err| err.into())
                         })
-                        .instrument(tracing::info_span!("Flink taskmanager REST API", scope=%SCOPE))
+                        .instrument(tracing::trace_span!("Flink taskmanager REST API", scope=%SCOPE))
                         .await
                         // .map_err(|err| err.into())
                         .and_then(|body| {
                             let result =
                                 serde_json::from_str::<serde_json::Value>(body.as_str()).map_err(|err| err.into());
-                            tracing::info!(%body, ?result, "Flink taskmanager_admin response body");
+                            tracing::debug!(%body, ?result, "Flink taskmanager_admin response body");
                             result
                         })
                         .map(|resp: serde_json::Value| {

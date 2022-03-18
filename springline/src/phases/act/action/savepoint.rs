@@ -39,7 +39,7 @@ impl TriggerSavepoint {
 impl ScaleAction for TriggerSavepoint {
     type In = ScalePlan;
 
-    #[tracing::instrument(level = "trace", name = "StopFlinkWithSavepoint::execute", skip(self, _plan))]
+    #[tracing::instrument(level = "info", name = "StopFlinkWithSavepoint::execute", skip(self, _plan))]
     async fn execute<'s>(&self, _plan: &'s Self::In, session: &'s mut ActionSession) -> Result<(), ActError> {
         let timer = act::start_scale_action_timer(session.cluster_label(), ACTION_LABEL);
 
@@ -94,12 +94,15 @@ impl TriggerSavepoint {
         Ok(job_triggers)
     }
 
-    #[tracing::instrument(level = "debug", skip(session))]
     async fn trigger_savepoint(
         job_id: &JobId, cancel_job: bool, session: &ActionSession,
     ) -> Result<trigger::TriggerId, FlinkError> {
+        let step_label = super::action_step(ACTION_LABEL, "trigger_savepoint");
         let url = Self::trigger_endpoint_url_for(&session.flink, job_id)?;
-        let span = tracing::info_span!("trigger_savepoint", %url, correlation=%session.correlation());
+        let span = tracing::debug_span!(
+            "trigger_savepoint",
+            ?job_id, %cancel_job, %url, correlation=%session.correlation()
+        );
 
         let body = trigger::SavepointRequestBody {
             cancel_job,
@@ -117,7 +120,7 @@ impl TriggerSavepoint {
                 error.into()
             })
             .and_then(|response| {
-                flink::log_response(ACTION_LABEL, &response);
+                flink::log_response(&step_label, &response);
                 response.text().map_err(|err| err.into())
             })
             .instrument(span)
@@ -192,6 +195,7 @@ impl TriggerSavepoint {
     async fn check_savepoint(
         job_id: &JobId, trigger_id: &trigger::TriggerId, session: &ActionSession,
     ) -> Result<SavepointStatus, FlinkError> {
+        let step_label = super::action_step(ACTION_LABEL, "check_savepoint");
         let url = Self::info_endpoint_url_for(&session.flink, job_id, trigger_id)?;
         let span = tracing::trace_span!(
             "check_savepoint", %job_id, %trigger_id, %url, correlation=%session.correlation()
@@ -207,7 +211,7 @@ impl TriggerSavepoint {
                 error.into()
             })
             .and_then(|response| {
-                flink::log_response(ACTION_LABEL, &response);
+                flink::log_response(&step_label, &response);
                 response.text().map_err(|err| err.into())
             })
             .instrument(span)
@@ -223,7 +227,7 @@ impl TriggerSavepoint {
         match info {
             Ok(info) => Ok(info),
             Err(err) => {
-                tracing::warn!(error=?err, "failed to get Flink savepoint info for job {job_id}");
+                // tracing::warn!(error=?err, "failed to get Flink savepoint info for job {job_id}");
                 flink::track_flink_errors(ACTION_LABEL, &err);
                 Err(err)
             },

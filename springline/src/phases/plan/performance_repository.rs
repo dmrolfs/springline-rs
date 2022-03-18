@@ -15,7 +15,7 @@ use serde_json::error::Category;
 
 use crate::phases::plan::performance_history::PerformanceHistory;
 
-#[tracing::instrument(level = "info")]
+#[tracing::instrument(level = "trace")]
 pub fn make_performance_repository(
     settings: &PerformanceRepositorySettings,
 ) -> Result<Box<dyn PerformanceRepository>, PlanError> {
@@ -81,26 +81,26 @@ impl PerformanceMemoryRepository {}
 
 #[async_trait]
 impl PerformanceRepository for PerformanceMemoryRepository {
-    #[tracing::instrument(level = "info", skip(self))]
+    #[tracing::instrument(level = "trace", skip(self))]
     async fn check(&self) -> Result<(), PlanError> {
         Ok(())
     }
 
-    #[tracing::instrument(level = "info", skip(self))]
+    #[tracing::instrument(level = "trace", skip(self))]
     async fn load(&self, job_name: &str) -> Result<Option<PerformanceHistory>, PlanError> {
         let performance_history = self.0.get(job_name).map(|a| a.clone());
         tracing::debug!(?performance_history, "memory loaded performance history.");
         Ok(performance_history)
     }
 
-    #[tracing::instrument(level = "info", skip(self))]
+    #[tracing::instrument(level = "trace", skip(self))]
     async fn save(&mut self, job_name: &str, performance_history: &PerformanceHistory) -> Result<(), PlanError> {
         let old = self.0.insert(job_name.to_string(), performance_history.clone());
         tracing::debug!(?old, "replacing performance history in repository.");
         Ok(())
     }
 
-    #[tracing::instrument(level = "info", skip(self))]
+    #[tracing::instrument(level = "trace", skip(self))]
     async fn close(mut self: Box<Self>) -> Result<(), PlanError> {
         self.0.clear();
         Ok(())
@@ -121,7 +121,7 @@ impl PerformanceFileRepository {
         format!("{}.json", job_name)
     }
 
-    #[tracing::instrument(level = "info")]
+    #[tracing::instrument(level = "trace")]
     fn path_for(&self, filename: &str) -> PathBuf {
         let mut path = self.root_path.clone();
         path.push(filename);
@@ -129,7 +129,7 @@ impl PerformanceFileRepository {
         path
     }
 
-    #[tracing::instrument(level = "info", skip(path), fields(path=?path.as_ref()))]
+    #[tracing::instrument(level = "trace", skip(path), fields(path=?path.as_ref()))]
     fn file_for(&self, path: impl AsRef<Path>, read_write: bool) -> Result<File, std::io::Error> {
         let mut options = OpenOptions::new();
         options.read(true);
@@ -143,12 +143,12 @@ impl PerformanceFileRepository {
 
 #[async_trait]
 impl PerformanceRepository for PerformanceFileRepository {
-    #[tracing::instrument(level = "info", skip(self))]
+    #[tracing::instrument(level = "trace", skip(self))]
     async fn check(&self) -> Result<(), PlanError> {
         let root_meta = match std::fs::metadata(self.root_path.as_path()) {
             Ok(meta) => meta,
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
-                tracing::info!(storage_path=?self.root_path, "planning performance history storage path not found - creating directory.");
+                tracing::debug!(storage_path=?self.root_path, "planning performance history storage path not found - creating directory.");
                 std::fs::create_dir(self.root_path.as_path())?;
                 tracing::info!(storage_path=?self.root_path, "planning performance history storage path created - loading metadata");
                 std::fs::metadata(self.root_path.as_path())?
@@ -174,7 +174,7 @@ impl PerformanceRepository for PerformanceFileRepository {
         Ok(())
     }
 
-    #[tracing::instrument(level = "info", skip(self))]
+    #[tracing::instrument(level = "trace", skip(self))]
     async fn load(&self, job_name: &str) -> Result<Option<PerformanceHistory>, PlanError> {
         let performance_history_path = self.path_for(self.file_name_for(job_name).as_str());
         let performance_history = self.file_for(performance_history_path.clone(), false);
@@ -196,7 +196,7 @@ impl PerformanceRepository for PerformanceFileRepository {
                 Ok(ph?)
             },
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
-                tracing::info!(
+                tracing::warn!(
                     "no performance history record on file at {:?}",
                     performance_history_path
                 );
@@ -206,7 +206,7 @@ impl PerformanceRepository for PerformanceFileRepository {
         }
     }
 
-    #[tracing::instrument(level = "info", skip(self))]
+    #[tracing::instrument(level = "trace", skip(self))]
     async fn save(&mut self, job_name: &str, performance_history: &PerformanceHistory) -> Result<(), PlanError> {
         let performance_history_path = self.path_for(self.file_name_for(job_name).as_str());
         let performance_history_file = self.file_for(performance_history_path.clone(), true)?;
@@ -216,7 +216,7 @@ impl PerformanceRepository for PerformanceFileRepository {
         Ok(())
     }
 
-    #[tracing::instrument(level = "info", skip(self))]
+    #[tracing::instrument(level = "trace", skip(self))]
     async fn close(self: Box<Self>) -> Result<(), PlanError> {
         Ok(())
     }

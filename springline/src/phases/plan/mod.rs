@@ -72,7 +72,7 @@ impl SubscriptionRequirements for PlanningMeasurement {
     }
 }
 
-#[tracing::instrument(level = "info", skip(settings, agent))]
+#[tracing::instrument(level = "trace", skip(settings, agent))]
 pub async fn make_plan_phase<A>(settings: &PlanSettings, agent: &mut A) -> Result<PlanningPhase>
 where
     A: ClearinghouseSubscriptionAgent,
@@ -135,7 +135,7 @@ where
     Ok(channel)
 }
 
-#[tracing::instrument(level = "info")]
+#[tracing::instrument(level = "trace")]
 async fn do_make_planning_strategy(name: &str, plan_settings: &PlanSettings) -> Result<PlanningStrategy> {
     let inputs = ForecastInputs::from_settings(plan_settings)?;
     let planning = PlanningStrategy::new(
