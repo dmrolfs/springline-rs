@@ -9,6 +9,7 @@ flink:
 kubernetes:
 #  client: cluser_env
   client: infer
+  patch_settle_secs: 10
 
 http:
   host: localhost

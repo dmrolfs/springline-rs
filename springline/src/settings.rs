@@ -762,6 +762,10 @@ mod tests {
                         headers: Vec::default(),
                         ..SETTINGS.flink.clone()
                     },
+                    kubernetes: KubernetesSettings {
+                        patch_settle_duration: Duration::from_secs(10),
+                        ..SETTINGS.kubernetes.clone()
+                    },
                     eligibility: EligibilitySettings {
                         template_data: Some(EligibilityTemplateData {
                             cooling_secs: Some(60),

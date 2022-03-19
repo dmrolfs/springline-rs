@@ -22,7 +22,7 @@ pub struct PatchReplicas {
 impl PatchReplicas {
     pub const fn from_settings(settings: &Settings) -> Self {
         Self {
-            settle_duration: settings.kubernetes.settle_duration,
+            settle_duration: settings.kubernetes.patch_settle_duration,
         }
     }
 }

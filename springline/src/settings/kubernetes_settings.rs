@@ -4,7 +4,7 @@ use std::time::Duration;
 use url::Url;
 
 #[serde_as]
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 #[cfg_attr(test, derive(PartialEq))]
 pub struct KubernetesSettings {
@@ -12,8 +12,17 @@ pub struct KubernetesSettings {
 
     /// Period to allow cluster to stabilize after a patch operation. Defaults to 5 seconds.
     #[serde_as(as = "serde_with::DurationSeconds<u64>")]
-    #[serde(rename = "settle_secs", default = "KubernetesSettings::default_settle_secs")]
-    pub settle_duration: Duration,
+    #[serde(rename = "patch_settle_secs", default = "KubernetesSettings::default_settle_secs")]
+    pub patch_settle_duration: Duration,
+}
+
+impl Default for KubernetesSettings {
+    fn default() -> Self {
+        Self {
+            client: LoadKubeConfig::default(),
+            patch_settle_duration: Self::default_settle_secs(),
+        }
+    }
 }
 
 impl KubernetesSettings {
@@ -162,13 +171,18 @@ mod tests {
 
     #[test]
     fn test_load_kube_config_serde_tokens() {
-        let s1 = KubernetesSettings { client: LoadKubeConfig::Infer };
+        let s1 = KubernetesSettings {
+            client: LoadKubeConfig::Infer,
+            patch_settle_duration: Duration::from_secs(1),
+        };
         assert_tokens(
             &s1,
             &vec![
-                Token::Struct { name: "KubernetesSettings", len: 1 },
+                Token::Struct { name: "KubernetesSettings", len: 2 },
                 Token::Str("client"),
                 Token::UnitVariant { name: "LoadKubeConfig", variant: "infer" },
+                Token::Str("patch_settle_secs"),
+                Token::U64(1),
                 Token::StructEnd,
             ],
         );
@@ -179,11 +193,12 @@ mod tests {
                 cluster: Some("cluster-1".to_string()),
                 user: None,
             }),
+            patch_settle_duration: Duration::from_secs(2),
         };
         assert_tokens(
             &s2,
             &vec![
-                Token::Struct { name: "KubernetesSettings", len: 1 },
+                Token::Struct { name: "KubernetesSettings", len: 2 },
                 Token::Str("client"),
                 Token::NewtypeVariant { name: "LoadKubeConfig", variant: "kube_config" },
                 Token::Struct { name: "KubeConfigOptions", len: 2 },
@@ -194,6 +209,8 @@ mod tests {
                 Token::Some,
                 Token::Str("cluster-1"),
                 Token::StructEnd,
+                Token::Str("patch_settle_secs"),
+                Token::U64(2),
                 Token::StructEnd,
             ],
         );
