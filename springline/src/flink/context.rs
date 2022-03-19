@@ -144,23 +144,18 @@ impl FlinkContextRef {
             })
             .and_then(|response| {
                 flink::log_response("uploaded jars", &response);
-                response
-                    .text()
-                    .map(|body| {
-                        body
+                response.text().map(|body| {
+                    body.map_err(|err| err.into()).and_then(|b| {
+                        let response = serde_json::from_str(&b);
+                        tracing::debug!(body=%b, ?response, "Flink jar summary response body");
+                        response
+                            .map(|resp: jars_protocal::GetJarsResponse| resp.files)
                             .map_err(|err| err.into())
-                            .and_then(|b| {
-                                let response = serde_json::from_str(&b);
-                                tracing::debug!(body=%b, ?response, "Flink jar summary response body");
-                                response
-                                    .map(|resp: jars_protocal::GetJarsResponse| resp.files)
-                                    .map_err(|err| err.into())
-                            })
                     })
+                })
             })
-        .instrument(span)
-            .await
-        ;
+            .instrument(span)
+            .await;
 
         flink::track_result(
             "uploaded_jars",
@@ -184,18 +179,14 @@ impl FlinkContextRef {
             })
             .and_then(|response| {
                 flink::log_response("active jobs", &response);
-                response
-                    .text()
-                    .map(|body| {
-                        body
-                            .map_err(|err| err.into())
-                            .and_then(|b| {
-                                tracing::debug!(body=%b, "Flink job summary response body");
-                                let result = serde_json::from_str(&b).map_err(|err| err.into());
-                                tracing::debug!(response=?result, "Flink parsed job summary response json value");
-                                result
-                            })
+                response.text().map(|body| {
+                    body.map_err(|err| err.into()).and_then(|b| {
+                        tracing::debug!(body=%b, "Flink job summary response body");
+                        let result = serde_json::from_str(&b).map_err(|err| err.into());
+                        tracing::debug!(response=?result, "Flink parsed job summary response json value");
+                        result
                     })
+                })
             })
             .instrument(span)
             .await
@@ -244,21 +235,16 @@ impl FlinkContextRef {
             })
             .and_then(|response| {
                 flink::log_response("job detail", &response);
-                response
-                    .text()
-                    .map(|body| {
-                        body
-                            .map_err(|err| err.into())
-                            .and_then(|b| {
-                                let result = serde_json::from_str(&b).map_err(|err| err.into());
-                                tracing::debug!(body=%b, response=?result, "Flink job detail response body");
-                                result
-                            })
+                response.text().map(|body| {
+                    body.map_err(|err| err.into()).and_then(|b| {
+                        let result = serde_json::from_str(&b).map_err(|err| err.into());
+                        tracing::debug!(body=%b, response=?result, "Flink job detail response body");
+                        result
                     })
+                })
             })
             .instrument(span)
-            .await
-        ;
+            .await;
 
         flink::track_result("job_detail", result, "failed to query Flink job detail", correlation)
     }

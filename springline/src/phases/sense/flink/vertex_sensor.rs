@@ -285,20 +285,16 @@ where
                 .client()
                 .request(Method::GET, vertex_metrics_url)
                 .send()
-                .map_err(|error| { error.into() })
+                .map_err(|error| error.into())
                 .and_then(|response| {
                     flink::log_response("job_vertex available telemetry", &response);
-                    response
-                        .text()
-                        .map(|body| {
-                            body
-                                .map_err(|err| err.into())
-                                .and_then(|b| {
-                                    let result = serde_json::from_str(&b).map_err(|err| err.into());
-                                    tracing::debug!(body=%b, response=?result, "Flink vertex metrics response body");
-                                    result
-                                })
+                    response.text().map(|body| {
+                        body.map_err(|err| err.into()).and_then(|b| {
+                            let result = serde_json::from_str(&b).map_err(|err| err.into());
+                            tracing::debug!(body=%b, response=?result, "Flink vertex metrics response body");
+                            result
                         })
+                    })
                 })
                 .instrument(span)
                 .await

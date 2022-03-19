@@ -1,11 +1,25 @@
 use serde::{Deserialize, Serialize};
+use serde_with::serde_as;
+use std::time::Duration;
 use url::Url;
 
+#[serde_as]
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 #[serde(default)]
 #[cfg_attr(test, derive(PartialEq))]
 pub struct KubernetesSettings {
     pub client: LoadKubeConfig,
+
+    /// Period to allow cluster to stabilize after a patch operation. Defaults to 5 seconds.
+    #[serde_as(as = "serde_with::DurationSeconds<u64>")]
+    #[serde(rename = "settle_secs", default = "KubernetesSettings::default_settle_secs")]
+    pub settle_duration: Duration,
+}
+
+impl KubernetesSettings {
+    pub const fn default_settle_secs() -> Duration {
+        Duration::from_secs(5)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

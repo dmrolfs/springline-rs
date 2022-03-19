@@ -1,8 +1,10 @@
 use super::{ActionSession, ScaleAction};
 use crate::kubernetes::{self, FlinkComponent, KubernetesContext};
 use crate::phases::act;
+use crate::phases::act::CorrelationId;
 use crate::phases::act::{ActError, ScaleActionPlan};
 use crate::phases::plan::ScalePlan;
+use crate::settings::Settings;
 use async_trait::async_trait;
 use k8s_openapi::api::core::v1::Pod;
 use std::collections::HashMap;
@@ -13,7 +15,17 @@ use tracing_futures::Instrument;
 pub const ACTION_LABEL: &str = "patch_replicas";
 
 #[derive(Debug)]
-pub struct PatchReplicas;
+pub struct PatchReplicas {
+    pub settle_duration: Duration,
+}
+
+impl PatchReplicas {
+    pub const fn from_settings(settings: &Settings) -> Self {
+        Self {
+            settle_duration: settings.kubernetes.settle_duration,
+        }
+    }
+}
 
 #[async_trait]
 impl ScaleAction for PatchReplicas {
@@ -49,7 +61,7 @@ impl ScaleAction for PatchReplicas {
             "patched taskmanager replicas"
         );
 
-        if let Err(error) = Self::block_until_satisfied(&session.kube, plan).await {
+        if let Err(error) = self.block_until_satisfied(plan, &session.kube).await {
             match error {
                 ActError::Timeout(duration, message) => tracing::error!(
                     patch_replicas_budget=?duration,
@@ -66,7 +78,9 @@ impl ScaleAction for PatchReplicas {
 
 impl PatchReplicas {
     #[tracing::instrument(level = "debug", name = "patch_replicase::block_until_satisfied", skip(kube))]
-    async fn block_until_satisfied(kube: &KubernetesContext, plan: &<Self as ScaleAction>::In) -> Result<(), ActError> {
+    async fn block_until_satisfied(
+        &self, plan: &<Self as ScaleAction>::In, kube: &KubernetesContext,
+    ) -> Result<(), ActError> {
         let correlation = plan.correlation();
         let target_nr_task_managers = plan.target_replicas();
         let start = Instant::now();
@@ -119,14 +133,18 @@ impl PatchReplicas {
             ));
         }
 
-        let settle_duration = Duration::from_secs(10);
-        let settle_span = tracing::debug_span!(
-            "letting the cluster settle for {settle_duration:?} to avoid flink restart failure",
-            correlation = ?correlation
-        );
-        tokio::time::sleep(settle_duration).instrument(settle_span).await;
+        self.do_let_patch_settle(correlation).await;
 
         Ok(())
+    }
+
+    async fn do_let_patch_settle(&self, correlation: &CorrelationId) {
+        let settle_span = tracing::debug_span!(
+        "letting the cluster settle to minimize flink restart failures",
+            settle_duration=?self.settle_duration,
+            correlation = ?correlation,
+        );
+        tokio::time::sleep(self.settle_duration).instrument(settle_span).await;
     }
 
     fn do_count_running_pods(pods_by_status: Option<&HashMap<String, Vec<Pod>>>) -> (usize, HashMap<String, usize>) {

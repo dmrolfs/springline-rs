@@ -121,22 +121,17 @@ impl TriggerSavepoint {
             })
             .and_then(|response| {
                 flink::log_response(&step_label, &response);
-                response
-                    .text()
-                    .map(|body| {
-                        body
-                            .map_err(|err| err.into())
-                            .and_then(|b| {
-                                let trigger_response: Result<trigger::SavepointTriggerResponseBody, FlinkError> =
-                                    serde_json::from_str(&b).map_err(|err| err.into());
-                                tracing::info!(body=%b, ?trigger_response, "Savepoint triggered response body.");
-                                trigger_response.map(|r| r.request_id)
-                            })
+                response.text().map(|body| {
+                    body.map_err(|err| err.into()).and_then(|b| {
+                        let trigger_response: Result<trigger::SavepointTriggerResponseBody, FlinkError> =
+                            serde_json::from_str(&b).map_err(|err| err.into());
+                        tracing::info!(body=%b, ?trigger_response, "Savepoint triggered response body.");
+                        trigger_response.map(|r| r.request_id)
                     })
+                })
             })
             .instrument(span)
-            .await
-        ;
+            .await;
 
         match trigger_id {
             Ok(tid) => Ok(tid),
@@ -218,23 +213,18 @@ impl TriggerSavepoint {
             })
             .and_then(|response| {
                 flink::log_response(&step_label, &response);
-                response
-                    .text()
-                    .map(|body| {
-                        body
-                            .map_err(|err| err.into())
-                            .and_then(|b| {
-                                tracing::debug!(body=%b, "savepoint body");
-                                let info_response: Result<query::SavepointInfoResponseBody, FlinkError> =
-                                    serde_json::from_str(&b).map_err(|err| err.into());
-                                tracing::debug!(?info_response, "Savepoint info received");
-                                info_response.and_then(|resp| resp.try_into())
-                            })
+                response.text().map(|body| {
+                    body.map_err(|err| err.into()).and_then(|b| {
+                        tracing::debug!(body=%b, "savepoint body");
+                        let info_response: Result<query::SavepointInfoResponseBody, FlinkError> =
+                            serde_json::from_str(&b).map_err(|err| err.into());
+                        tracing::debug!(?info_response, "Savepoint info received");
+                        info_response.and_then(|resp| resp.try_into())
                     })
+                })
             })
             .instrument(span)
-            .await
-        ;
+            .await;
 
         match info {
             Ok(info) => Ok(info),

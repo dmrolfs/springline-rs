@@ -156,6 +156,7 @@ mod tests {
     use std::time::Duration;
     use std::{env, panic};
 
+    use crate::flink::RestoreMode;
     use crate::kubernetes::{KubernetesApiConstraints, KubernetesDeployResource};
     use chrono::TimeZone;
     use claim::*;
@@ -164,7 +165,6 @@ mod tests {
     use pretty_assertions::assert_eq;
     use proctor::elements::{PolicySource, TelemetryType, ToTelemetry};
     use proctor::phases::sense::SensorSetting;
-    use crate::flink::RestoreMode;
 
     use super::*;
     use crate::phases::plan::{PerformanceRepositorySettings, PerformanceRepositoryType, SpikeSettings};

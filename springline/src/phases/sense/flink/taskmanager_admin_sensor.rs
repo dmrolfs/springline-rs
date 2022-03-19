@@ -116,20 +116,16 @@ where
                         .client()
                         .request(Method::GET, url.clone())
                         .send()
-                        .map_err(|error| { error.into() })
+                        .map_err(|error| error.into())
                         .and_then(|response| {
                             flink::log_response("taskmanager admin response", &response);
-                            response
-                                .text()
-                                .map(|body| {
-                                    body
-                                        .map_err(|err| err.into())
-                                        .and_then(|b| {
-                                            let result = serde_json::from_str(&b).map_err(|err| err.into());
-                                            tracing::debug!(body=%b, response=?result, "Flink taskmanager_admin response body");
-                                            result
-                                        })
+                            response.text().map(|body| {
+                                body.map_err(|err| err.into()).and_then(|b| {
+                                    let result = serde_json::from_str(&b).map_err(|err| err.into());
+                                    tracing::debug!(body=%b, response=?result, "Flink taskmanager_admin response body");
+                                    result
                                 })
+                            })
                         })
                         .instrument(tracing::trace_span!("Flink taskmanager REST API", scope=%SCOPE))
                         .await
