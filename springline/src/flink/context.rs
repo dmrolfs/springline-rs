@@ -3,7 +3,7 @@ use crate::flink::model::JarSummary;
 use crate::flink::{self, model::JobSummary, JobDetail, JobId};
 use crate::model::CorrelationId;
 use crate::settings::FlinkSettings;
-use futures_util::TryFutureExt;
+use futures_util::{FutureExt, TryFutureExt};
 use http::Method;
 use proctor::error::UrlError;
 use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
@@ -144,17 +144,23 @@ impl FlinkContextRef {
             })
             .and_then(|response| {
                 flink::log_response("uploaded jars", &response);
-                response.text().map_err(|err| err.into())
-            })
-            .instrument(span)
-            .await
-            .and_then(|body| {
-                let response = serde_json::from_str(body.as_str());
-                tracing::debug!(%body, ?response, "Flink jar summary response body");
                 response
-                    .map(|resp: jars_protocal::GetJarsResponse| resp.files)
-                    .map_err(|err| err.into())
-            });
+                    .text()
+                    .map(|body| {
+                        body
+                            .map_err(|err| err.into())
+                            .and_then(|b| {
+                                let response = serde_json::from_str(&b);
+                                tracing::debug!(body=%b, ?response, "Flink jar summary response body");
+                                response
+                                    .map(|resp: jars_protocal::GetJarsResponse| resp.files)
+                                    .map_err(|err| err.into())
+                            })
+                    })
+            })
+        .instrument(span)
+            .await
+        ;
 
         flink::track_result(
             "uploaded_jars",
@@ -178,16 +184,21 @@ impl FlinkContextRef {
             })
             .and_then(|response| {
                 flink::log_response("active jobs", &response);
-                response.text().map_err(|err| err.into())
+                response
+                    .text()
+                    .map(|body| {
+                        body
+                            .map_err(|err| err.into())
+                            .and_then(|b| {
+                                tracing::debug!(body=%b, "Flink job summary response body");
+                                let result = serde_json::from_str(&b).map_err(|err| err.into());
+                                tracing::debug!(response=?result, "Flink parsed job summary response json value");
+                                result
+                            })
+                    })
             })
             .instrument(span)
             .await
-            .and_then(|body| {
-                tracing::debug!(%body, "Flink job summary response body");
-                let result = serde_json::from_str(body.as_str()).map_err(|err| err.into());
-                tracing::debug!(?result, "Flink parsed job summary response json value");
-                result
-            })
             .and_then(|jobs_json_value: serde_json::Value| {
                 let result = jobs_json_value
                     .get("jobs")
@@ -233,15 +244,21 @@ impl FlinkContextRef {
             })
             .and_then(|response| {
                 flink::log_response("job detail", &response);
-                response.text().map_err(|err| err.into())
+                response
+                    .text()
+                    .map(|body| {
+                        body
+                            .map_err(|err| err.into())
+                            .and_then(|b| {
+                                let result = serde_json::from_str(&b).map_err(|err| err.into());
+                                tracing::debug!(body=%b, response=?result, "Flink job detail response body");
+                                result
+                            })
+                    })
             })
             .instrument(span)
             .await
-            .and_then(|body| {
-                let result = serde_json::from_str(body.as_str()).map_err(|err| err.into());
-                tracing::debug!(%body, ?result, "Flink job detail response body");
-                result
-            });
+        ;
 
         flink::track_result("job_detail", result, "failed to query Flink job detail", correlation)
     }

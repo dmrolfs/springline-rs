@@ -4,7 +4,7 @@ use crate::model::MC_CLUSTER__NR_TASK_MANAGERS;
 use crate::phases::sense::flink::{CorrelationGenerator, FlinkContext};
 use async_trait::async_trait;
 use cast_trait_object::dyn_upcast;
-use futures_util::TryFutureExt;
+use futures_util::{FutureExt, TryFutureExt};
 use proctor::elements::telemetry;
 use proctor::error::SenseError;
 use proctor::graph::stage::{self, Stage};
@@ -116,23 +116,23 @@ where
                         .client()
                         .request(Method::GET, url.clone())
                         .send()
-                        .map_err(|error| {
-                            // tracing::error!(?error, "failed Flink API taskmanager_admin response");
-                            error.into()
-                        })
+                        .map_err(|error| { error.into() })
                         .and_then(|response| {
                             flink::log_response("taskmanager admin response", &response);
-                            response.text().map_err(|err| err.into())
+                            response
+                                .text()
+                                .map(|body| {
+                                    body
+                                        .map_err(|err| err.into())
+                                        .and_then(|b| {
+                                            let result = serde_json::from_str(&b).map_err(|err| err.into());
+                                            tracing::debug!(body=%b, response=?result, "Flink taskmanager_admin response body");
+                                            result
+                                        })
+                                })
                         })
                         .instrument(tracing::trace_span!("Flink taskmanager REST API", scope=%SCOPE))
                         .await
-                        // .map_err(|err| err.into())
-                        .and_then(|body| {
-                            let result =
-                                serde_json::from_str::<serde_json::Value>(body.as_str()).map_err(|err| err.into());
-                            tracing::debug!(%body, ?result, "Flink taskmanager_admin response body");
-                            result
-                        })
                         .map(|resp: serde_json::Value| {
                             resp["taskmanagers"].as_array().map(|tms| tms.len()).unwrap_or(0)
                         })

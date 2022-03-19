@@ -6,7 +6,7 @@ use crate::phases::sense::flink::api_model::FlinkMetricResponse;
 use crate::phases::sense::flink::{CorrelationGenerator, FlinkContext, OrdersByMetric, JOB_SCOPE, TASK_SCOPE};
 use async_trait::async_trait;
 use cast_trait_object::dyn_upcast;
-use futures_util::TryFutureExt;
+use futures_util::{FutureExt, TryFutureExt};
 use itertools::Itertools;
 use once_cell::sync::Lazy;
 use proctor::elements::{Telemetry, TelemetryValue};
@@ -285,21 +285,23 @@ where
                 .client()
                 .request(Method::GET, vertex_metrics_url)
                 .send()
-                .map_err(|error| {
-                    // tracing::error!(?error, "failed Flink API job_vertex available_telemetry response");
-                    error.into()
-                })
+                .map_err(|error| { error.into() })
                 .and_then(|response| {
                     flink::log_response("job_vertex available telemetry", &response);
-                    response.text().map_err(|err| err.into())
+                    response
+                        .text()
+                        .map(|body| {
+                            body
+                                .map_err(|err| err.into())
+                                .and_then(|b| {
+                                    let result = serde_json::from_str(&b).map_err(|err| err.into());
+                                    tracing::debug!(body=%b, response=?result, "Flink vertex metrics response body");
+                                    result
+                                })
+                        })
                 })
                 .instrument(span)
                 .await
-                .and_then(|body| {
-                    let result = serde_json::from_str(body.as_str()).map_err(|err| err.into());
-                    tracing::debug!(%body, ?result, "Flink vertex metrics response body");
-                    result
-                })
                 .and_then(|metric_response: FlinkMetricResponse| {
                     api_model::build_telemetry(metric_response, metric_orders).map_err(|err| err.into())
                 })

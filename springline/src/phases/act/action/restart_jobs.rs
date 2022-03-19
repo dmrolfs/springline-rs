@@ -232,6 +232,7 @@ impl RestartJobs {
             restore_mode: self.restore_mode,
             ..restart::RestartJarRequestBody::default()
         };
+        tracing::debug!(request_body=?body, ?correlation, ?url, "restarting jar({jar}) with savepoint({location:?})...");
 
         let result: Result<Either<JobId, StatusCode>, FlinkError> = session
             .flink
@@ -255,7 +256,12 @@ impl RestartJobs {
 
                 response
                     .text()
-                    .map(move |body: reqwest::Result<String>| body.map(|b| (b, status)))
+                    .map(move |body: reqwest::Result<String>| {
+                        body.map(|b| {
+                            tracing::debug!(body=%b, "Flink restart jar with savepoint response body.");
+                            (b, status)
+                        })
+                    })
                     .map_err(|err| err.into())
             })
             .instrument(span)
@@ -266,8 +272,6 @@ impl RestartJobs {
     }
 
     fn do_assess_restart_response(body: &str, status: StatusCode) -> Result<Either<JobId, StatusCode>, FlinkError> {
-        tracing::debug!(%body, ?status, "flink job try_restart response body received");
-
         if status.is_success() {
             serde_json::from_str(body)
                 .map(|r: restart::RestartJarResponseBody| Left(r.job_id))
@@ -331,7 +335,8 @@ impl RestartJobs {
                         break detail.state;
                     },
                     Ok(detail) if detail.state == JS::Failed || detail.state == JS::Failing => {
-                        tracing::error!(?detail, "job failed after restart -- may need manual intervention");
+                        // tracing::error!(?detail, "job failed after restart -- may need manual intervention");
+                        tracing::debug!(?detail, "job detail received");
                         break detail.state;
                     },
                     Ok(detail) if detail.state.is_stopped() => {

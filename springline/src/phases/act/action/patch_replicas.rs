@@ -119,6 +119,13 @@ impl PatchReplicas {
             ));
         }
 
+        let settle_duration = Duration::from_secs(10);
+        let settle_span = tracing::debug_span!(
+            "letting the cluster settle for {settle_duration:?} to avoid flink restart failure",
+            correlation = ?correlation
+        );
+        tokio::time::sleep(settle_duration).instrument(settle_span).await;
+
         Ok(())
     }
 

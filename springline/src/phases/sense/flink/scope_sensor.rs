@@ -4,7 +4,7 @@ use crate::flink::{self, FlinkContext};
 use crate::phases::sense::flink::CorrelationGenerator;
 use async_trait::async_trait;
 use cast_trait_object::dyn_upcast;
-use futures_util::TryFutureExt;
+use futures_util::{FutureExt, TryFutureExt};
 use heck::ToSnakeCase;
 use itertools::Itertools;
 use proctor::error::SenseError;
@@ -150,22 +150,23 @@ where
                         .client()
                         .request(Method::GET, url.clone())
                         .send()
-                        .map_err(|error| {
-                            // tracing::error!(?error, "failed Flink API {} response", self.scope);
-                            error.into()
-                        })
+                        .map_err(|error| { error.into() })
                         .and_then(|response| {
                             flink::log_response(format!("{} scope response", scope_rep.clone()).as_str(), &response);
-                            response.text().map_err(|err| err.into())
+                            response
+                                .text()
+                                .map(|body| {
+                                    body
+                                        .map_err(|err| err.into())
+                                        .and_then(|b| {
+                                            let result = serde_json::from_str(&b).map_err(|err| err.into());
+                                            tracing::debug!(body=%b, response=?result, "Flink {} scope metrics response body", self.scope);
+                                            result
+                                        })
+                                })
                         })
                         .instrument(tracing::trace_span!("Flink scope metrics REST API", scope=%self.scope))
                         .await
-                        // .map_err(|err| err.into())
-                        .and_then(|body| {
-                            let result = serde_json::from_str(body.as_str()).map_err(|err| err.into());
-                            tracing::debug!(%body, ?result, "Flink {} scope metrics response body", self.scope);
-                            result
-                        })
                         .and_then(|metric_response: api_model::FlinkMetricResponse| {
                             api_model::build_telemetry(metric_response, &metric_orders)
                                 // this is only needed because async_trait forcing me to parameterize this stage
