@@ -44,8 +44,10 @@ pub struct FlinkActionSettings {
     #[serde_as(as = "serde_with::DurationSeconds<u64>")]
     pub polling_interval: Duration,
 
+    #[serde(default)]
     pub savepoint: SavepointSettings,
 
+    #[serde(default)]
     pub restart: FlinkRestartSettings,
 }
 

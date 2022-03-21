@@ -46,7 +46,7 @@ pub struct KubernetesApiConstraints {
 
 impl KubernetesApiConstraints {
     const fn default_api_timeout() -> Duration {
-        Duration::from_secs(295)
+        Duration::from_secs(290)
     }
 }
 
