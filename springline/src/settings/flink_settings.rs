@@ -56,10 +56,10 @@ impl Default for FlinkSettings {
 }
 
 impl FlinkSettings {
+    pub const DEFAULT_JOB_MANAGER_HOST: &'static str = "localhost";
+    pub const DEFAULT_JOB_MANAGER_PORT: u16 = 8081;
+    pub const DEFAULT_JOB_MANAGER_SCHEME: &'static str = "http";
     const DEFAULT_LABEL: &'static str = "unspecified_flink";
-    const DEFAULT_JOB_MANAGER_HOST: &'static str = "localhost";
-    const DEFAULT_JOB_MANAGER_PORT: u16 = 8081;
-    const DEFAULT_JOB_MANAGER_SCHEME: &'static str = "http";
     const DEFAULT_MAX_RETRIES: u32 = 3;
 
     pub fn default_label() -> String {

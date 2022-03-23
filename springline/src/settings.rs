@@ -83,33 +83,51 @@ pub struct ContextStubSettings {
 // #[clap(version = "0.1.0", author = "Damon Rolfs")]
 #[cfg_attr(test, derive(PartialEq))]
 pub struct CliOptions {
-    /// override environment-based configuration file to load.
-    /// Default behavior is to load configuration based on `APP_ENVIRONMENT` envvar.
-    #[clap(short, long)]
+    /// Explicit configuration to load, bypassing inferred configuration load mechanism. If this
+    /// option is used, the application + environment will be ignored; however, secrets, env var,
+    /// and explicit overrides will still be used.
+    ///
+    /// Default behavior is to infer-load configuration based on `APP_ENVIRONMENT` envvar.
+    #[clap(short, long, value_name = "PATH_TO_CONFIG_FILE")]
     pub config: Option<PathBuf>,
 
     /// specify path to secrets configuration file
-    #[clap(short, long)]
+    #[clap(long, value_name = "PATH_TO_SECRETS_FILE")]
     pub secrets: Option<PathBuf>,
 
-    #[clap(short, long)]
+    /// specify the environment configuration override used in inferred configuration load.
+    #[clap(short = 'e', long = "env")]
     pub environment: Option<Environment>,
 
     /// Override default location from which to load configuration files. Default directory is
     /// ./resources.
-    #[clap(short, long)]
+    #[clap(short, long, value_name = "PATH_TO_RESOURCES_DIRECTORY")]
     pub resources: Option<PathBuf>,
+
+    /// Flink jobmanager scheme, optionally overrides flink.job_manager_uri_scheme setting.
+    #[clap(short = 's', long = "scheme", value_name = "SCHEME")]
+    pub jobmanager_scheme: Option<String>,
+
+    /// Flink jobmanager host, optionally overrides flink.job_manager_host setting.
+    #[clap(short = 'h', long = "host", value_name = "HOST")]
+    pub jobmanager_host: Option<String>,
+
+    /// Flink jobmanager port, optionally overrides flink.job_manager_port setting.
+    #[clap(short = 'p', long = "port", value_name = "PORT")]
+    pub jobmanager_port: Option<u16>,
 
     /// Specify the machine id [0, 31) used in correlation id generation, overriding what may be set
     /// in an environment variable. This id should be unique for the entity type within a cluster
     /// environment. Different entity types can use the same machine id.
-    #[clap(short, long)]
+    /// Optionally overrides the engine.machine_id setting.
+    #[clap(short, long, value_name = "[0, 31)")]
     pub machine_id: Option<i8>,
 
     /// Specify the node id [0, 31) used in correlation id generation, overriding what may be set
     /// in an environment variable. This id should be unique for the entity type within a cluster
     /// environment. Different entity types can use the same machine id.
-    #[clap(short, long)]
+    /// Optionally override the engine.node_id setting.
+    #[clap(short, long, value_name = "[0, 31)")]
     pub node_id: Option<i8>,
 }
 
@@ -129,21 +147,36 @@ impl LoadingOptions for CliOptions {
     }
 
     fn load_overrides(&self, config: ConfigBuilder<DefaultState>) -> Result<ConfigBuilder<DefaultState>, Self::Error> {
+        let config = match self.jobmanager_scheme.as_ref() {
+            None => config,
+            Some(scheme) => config.set_override("flink.job_manager_uri_scheme", scheme.clone())?,
+        };
+
+        let config = match self.jobmanager_host.as_ref() {
+            None => config,
+            Some(host) => config.set_override("flink.job_manager_host", host.clone())?,
+        };
+
+        let config = match self.jobmanager_port.as_ref() {
+            None => config,
+            Some(port) => config.set_override("flink.job_manager_port", i64::from(*port))?,
+        };
+
         let config = match self.machine_id {
             None => config,
-            Some(machine_id) => config.set_override("machine_id", machine_id as i64)?,
+            Some(machine_id) => config.set_override("machine_id", i64::from(machine_id))?,
         };
 
         let config = match self.node_id {
             None => config,
-            Some(node_id) => config.set_override("node_id", node_id as i64)?,
+            Some(node_id) => config.set_override("node_id", i64::from(node_id))?,
         };
 
         Ok(config)
     }
 
     fn environment_override(&self) -> Option<Environment> {
-        self.environment
+        self.environment.clone()
     }
 }
 
@@ -549,6 +582,7 @@ mod tests {
             "test_settings_applications_load",
             vec![
                 ("APP_ENVIRONMENT", None),
+                ("APP__FLINK__JOB_MANAGER_HOST", Some("host.lima.internal")),
                 ("APP__ENGINE__MACHINE_ID", Some("17")),
                 ("APP__ENGINE__NODE_ID", Some("13")),
             ],
@@ -561,7 +595,7 @@ mod tests {
                     flink: FlinkSettings {
                         label: "unspecified_flink".to_string(),
                         job_manager_uri_scheme: "http".to_string(),
-                        job_manager_host: "host.springline".to_string(),
+                        job_manager_host: "host.lima.internal".to_string(),
                         pool_idle_timeout: Some(Duration::from_secs(60)),
                         pool_max_idle_per_host: Some(5),
                         headers: Vec::default(),
@@ -756,7 +790,8 @@ mod tests {
                     },
                     flink: FlinkSettings {
                         job_manager_uri_scheme: "http".to_string(),
-                        job_manager_host: "host.lima.internal".to_string(),
+                        // job_manager_host: "host.lima.internal".to_string(),
+                        job_manager_host: "localhost".to_string(),
                         pool_idle_timeout: Some(Duration::from_secs(60)),
                         pool_max_idle_per_host: Some(5),
                         headers: Vec::default(),

@@ -27,6 +27,27 @@ while (( "$#" )); do
         exit 1
       fi
       ;;
+    -e|--env)
+      if [ -n "$2" ] && [ ${2:0:1} != "-" ]; then
+        ENV="$2"
+        shift 2
+      else
+        echo "Error: Argument for $1 is missing" >&2
+        exit 1
+      fi
+      ;;
+    -h|--host)
+      if [ -n "$2" ] && [ ${2:0:1} != "-" ]; then
+        PARAMS="$PARAMS --host=$2"
+        shift 2
+      fi
+      ;;
+    -p|--port)
+      if [ -n "$2" ] && [ ${2:0:1} != "-" ]; then
+        PARAMS="$PARAMS --port=$2"
+        shift 2
+      fi
+      ;;
     --rm)
       RM_OPT="--rm"
       PARAMS="$2"
@@ -50,12 +71,13 @@ docker run -d -it \
   -m ${MEM_OPT} \
   ${RM_OPT} \
   --name springline \
-  --mount type=bind,source="${RESOURCES}",target="/app/resources" \
+  --env KUBECONFIG="/secrets/environment.kubeconfig" \
+  --env HA_CREDENTIALS="/secrets/credentials.properties" \
   --mount type=bind,source="${KUBECONFIG}",target="/secrets/environment.kubeconfig" \
   --mount type=bind,source="${HA_CREDENTIALS}",target="/secrets/credentials.properties" \
   --expose 8000 \
   --network host \
-  springline:latest
+  springline:latest --env "${ENV}" ${PARAMS}
 
 
 #todo: enable host networking?? point to host-gateway, other?

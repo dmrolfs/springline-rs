@@ -1,6 +1,7 @@
 # springline #
 
 ----
+### Autoscale Flink ###
 
 ## Motivation ##  
 Springline provides highly tailorable and robust autoscaling to Flink clusters. Flink does not 

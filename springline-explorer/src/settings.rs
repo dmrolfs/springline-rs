@@ -1,8 +1,8 @@
 use config::builder::DefaultState;
 use config::ConfigBuilder;
 use dialoguer::console::style;
-use dialoguer::{Confirm, Editor, FuzzySelect};
-use settings_loader::{Environment, LoadingOptions, SettingsLoader};
+use dialoguer::{Confirm, Editor, FuzzySelect, Input};
+use settings_loader::{environment, LoadingOptions, SettingsLoader};
 use springline::settings::Settings;
 
 use crate::{ExplorerState, MenuAction, Result, THEME};
@@ -67,27 +67,26 @@ impl ReviseSettings {
 
     fn change_environment(state: &mut ExplorerState) -> Result<()> {
         let original = state.options.environment();
-        let environments = Environment::all();
-        let mut selections: Vec<String> = environments.iter().map(|e| e.to_string()).collect();
-        selections.push("none".to_string());
+        // let environments = Environment::all();
+        // let mut selections: Vec<String> = environments.iter().map(|e| e.to_string()).collect();
+        // selections.push("none".to_string());
 
-        let default_pos = state
-            .options
-            .environment()
-            .and_then(|original| environments.iter().position(|e| e == &original))
-            .unwrap_or(selections.len() - 1);
+        // let default_pos = state
+        //     .options
+        //     .environment()
+        //     .and_then(|original| environments.iter().position(|e| e == &original))
+        //     .unwrap_or(selections.len() - 1);
 
-        let idx = FuzzySelect::with_theme(&*THEME)
-            .with_prompt("\nWhich environment do you want simulate?")
-            .default(default_pos)
-            .items(&selections)
-            .interact()?;
+        let value: String = Input::with_theme(&*THEME)
+            .with_prompt("\nEnter the environment you want simulate?")
+            .with_initial_text(environment::PRODUCTION.clone())
+            .interact_text()?;
 
-        if idx == selections.len() - 1 {
-            state.options.environment = None;
-        } else {
-            state.options.environment = environments.get(idx).copied();
-        }
+        // if idx == selections.len() - 1 {
+        //     state.options.environment = None;
+        // } else {
+        state.options.environment = Some(value.into()); //environments.get(idx).copied();
+                                                        // }
 
         eprintln!(
             "{}",
@@ -110,6 +109,7 @@ impl ReviseSettings {
                     state
                         .options
                         .environment
+                        .as_ref()
                         .map(|e| style(e.to_string()).bold().blue())
                         .unwrap_or_else(|| style("none specified".to_string()).dim())
                 ))

@@ -8,6 +8,20 @@ use url::Url;
 #[serde(default)]
 #[cfg_attr(test, derive(PartialEq))]
 pub struct KubernetesSettings {
+    /// The Kubernetes clients supports several different configuration strategies:
+    /// - `infer`: Infers configuration from the environment. First attempting to load in-cluster
+    /// environment variables, then if that fails, trying the local kubeconfig. Infer is the common
+    /// setting.
+    /// - `local_url`: Constructs client where only the cluster_url is set and everything else is
+    /// set to default values.
+    /// - `cluster_env`: Creates configuration from the cluster's environment variables following
+    /// the standard API Access from a Pod and relies on you having the service account's token
+    /// mounted, as well as having given the service account rbac access to what you need.
+    /// - `kube_config`: Create configuration from the default local configu file, respecting the
+    /// `$KUBECONFIG` evar, but otherwise default to ~/.kube/config. You can also customize what
+    /// context/cluster/user you want to use here, but it will default to the current-context.
+    /// - `custom_kube_config`: Create configuration from a Kubeconfig struct. This bypasses the n
+    /// normal config parsing to obtain custom functionality.
     pub client: LoadKubeConfig,
 
     /// Period to allow cluster to stabilize after a patch operation. Defaults to 5 seconds.

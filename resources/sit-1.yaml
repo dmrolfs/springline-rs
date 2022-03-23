@@ -5,19 +5,14 @@ engine:
 
 flink:
   label: dr-springline-demo
-#  job_manager_host: host.lima.internal
+#  job_manager_host: host.docker.internal
 
 kubernetes:
-#  client: cluser_env
   client: infer
   patch_settle_secs: 10
 
 http:
   host: localhost
-
-eligibility:
-  template_data:
-    cooling_secs: 60
 
 decision:
   template_data:

@@ -1,3 +1,4 @@
+---
 engine:
   machine_id: 1
   node_id: 1
@@ -7,7 +8,7 @@ http:
 
 flink:
   label: local_flink
-  job_manager_host: localhost
+#  job_manager_host: localhost
   max_retries: 0
   pool_idle_timeout_secs: 60
   pool_max_idle_per_host: 5
