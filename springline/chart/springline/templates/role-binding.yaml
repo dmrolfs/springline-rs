@@ -1,0 +1,14 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "springline.fullname" }}
+  labels:
+{{ include "springline.labels" | indent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "springline.fullname" }}
+subjects:
+- kind: ServiceAccount
+  name: {{ include "springline.fullname" }}
+  namespace: {{ include "springline.namespace" }}

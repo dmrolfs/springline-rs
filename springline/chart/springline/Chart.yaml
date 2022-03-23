@@ -1,0 +1,6 @@
+name: springline
+description: Autoscale Flink
+appVersion: "0.12.0"
+apiVersion: v2
+version: 0.12.0
+kubeVersion: ">= 1.22.0"

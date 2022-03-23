@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "springline.fullname" . }}
+  labels:
+{{ include "springline.labels" . | indent 4 }}
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - port: {{ .Values.service.port }}
+      targetPort: {{ .Values.service.targetPort }}
+      protocol: TCP
+      name: {{ .Values.service.portName }}
+  selector:
+    app: {{ include "springline.name" }}
+    release: {{ .Release.Name }}
+    component: springline
+    app.kubernetes.io/name: {{ include "springline.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
