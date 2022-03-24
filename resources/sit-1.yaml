@@ -8,7 +8,7 @@ flink:
 #  job_manager_host: host.docker.internal
 
 kubernetes:
-  client: infer
+  client: cluster_env
   patch_settle_secs: 10
 
 http:
