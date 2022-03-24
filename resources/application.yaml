@@ -30,7 +30,7 @@ kubernetes:
   client: infer
 
   # Period to allow cluster to stabilize after a patch operation. Defaults to 5 seconds.
-#  patch_settle_secs: 5
+#  patch_settle_timeout_secs: 5
 
 sensor:
   # The `flink` sensor is more complicated that the modular sensors that can be specified via the

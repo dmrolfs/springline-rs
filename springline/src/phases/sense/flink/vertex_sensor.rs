@@ -182,16 +182,21 @@ where
         &self, job: JobSummary, metric_telemetry: Arc<Mutex<HashMap<String, Vec<TelemetryValue>>>>,
         metric_orders: &OrdersByMetric, correlation: &CorrelationId,
     ) {
-        if let Ok(detail) = self.context.query_job_details(&job.id, correlation).await {
-            for vertex in detail.vertices.into_iter().filter(|v| v.status.is_active()) {
-                if let Ok(vertex_telemetry) = self
-                    .query_vertex_telemetry(&job.id, &vertex.id, metric_orders, correlation)
-                    .await
-                {
-                    let mut groups = metric_telemetry.lock().await;
-                    super::merge_into_metric_groups(&mut *groups, vertex_telemetry);
+        match self.context.query_job_details(&job.id, correlation).await {
+            Ok(detail) => {
+                for vertex in detail.vertices.into_iter().filter(|v| v.status.is_active()) {
+                    if let Ok(vertex_telemetry) = self
+                        .query_vertex_telemetry(&job.id, &vertex.id, metric_orders, correlation)
+                        .await
+                    {
+                        let mut groups = metric_telemetry.lock().await;
+                        super::merge_into_metric_groups(&mut *groups, vertex_telemetry);
+                    }
                 }
-            }
+            },
+            Err(err) => {
+                tracing::warn!(error=?err, ?correlation, "failed to query Flink job details");
+            },
         }
     }
 
@@ -316,7 +321,7 @@ where
                 metric_orders
                     .get(metric)
                     .cloned()
-                    .unwrap_or_else(Vec::new)
+                    .unwrap_or_default()
                     .into_iter()
                     .map(|order| order.agg)
                     .filter(|agg| *agg != Aggregation::Value)

@@ -1,4 +1,5 @@
 use super::{ActionSession, ScaleAction};
+use crate::flink::FlinkContext;
 use crate::kubernetes::{self, FlinkComponent, KubernetesContext};
 use crate::phases::act;
 use crate::phases::act::CorrelationId;
@@ -14,16 +15,17 @@ use tracing_futures::Instrument;
 
 pub const ACTION_LABEL: &str = "patch_replicas";
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct PatchReplicas {
-    pub settle_duration: Duration,
+    pub taskmanager_settle_timeout: Duration,
+    pub flink_polling_interval: Duration,
 }
 
 impl PatchReplicas {
     pub const fn from_settings(settings: &Settings) -> Self {
-        Self {
-            settle_duration: settings.kubernetes.patch_settle_duration,
-        }
+        let taskmanager_settle_timeout = settings.kubernetes.patch_settle_timeout;
+        let flink_polling_interval = settings.action.flink.polling_interval;
+        Self { taskmanager_settle_timeout, flink_polling_interval }
     }
 }
 
@@ -71,19 +73,21 @@ impl ScaleAction for PatchReplicas {
             }
         }
 
+        let confirmed_nr_taskmanagers = self.block_for_rescaled_taskmanagers(plan, &session.flink).await;
+        session.nr_confirmed_rescaled_taskmanagers = Some(confirmed_nr_taskmanagers);
+
         session.mark_duration(ACTION_LABEL, Duration::from_secs_f64(timer.stop_and_record()));
         Ok(())
     }
 }
 
 impl PatchReplicas {
-    #[tracing::instrument(level = "debug", name = "patch_replicase::block_until_satisfied", skip(kube))]
+    #[tracing::instrument(level = "debug", name = "patch_replicase::block_until_satisfied", skip(plan, kube))]
     async fn block_until_satisfied(
         &self, plan: &<Self as ScaleAction>::In, kube: &KubernetesContext,
     ) -> Result<(), ActError> {
         let correlation = plan.correlation();
         let target_nr_task_managers = plan.target_replicas();
-        let start = Instant::now();
         let mut pods_by_status = None;
         //TODO: convert to kube::runtime watcher - see pod watch example.
 
@@ -96,6 +100,7 @@ impl PatchReplicas {
         );
 
         let mut action_satisfied = false;
+        let start = Instant::now();
         while Instant::now().duration_since(start) < api_constraints.api_timeout {
             let task_managers = kube.list_pods(FlinkComponent::TaskManager).await?;
             pods_by_status = Some(Self::group_pods_by_status(&task_managers));
@@ -119,7 +124,7 @@ impl PatchReplicas {
 
         if !action_satisfied {
             let status_counts: HashMap<String, usize> = pods_by_status
-                .unwrap_or_else(HashMap::new)
+                .unwrap_or_default()
                 .into_iter()
                 .map(|(status, pods)| (status, pods.len()))
                 .collect();
@@ -133,18 +138,61 @@ impl PatchReplicas {
             ));
         }
 
-        self.do_let_patch_settle(correlation).await;
+        // self.do_let_patch_settle(correlation).await;
 
         Ok(())
     }
 
-    async fn do_let_patch_settle(&self, correlation: &CorrelationId) {
-        let settle_span = tracing::debug_span!(
-        "letting the cluster settle to minimize flink restart failures",
-            settle_duration=?self.settle_duration,
-            correlation = ?correlation,
+    #[tracing::instrument(
+        level = "debug",
+        name = "patch_replicas::block_for_rescaled_taskmanagers"
+        skip(self, plan, flink)
+    )]
+    async fn block_for_rescaled_taskmanagers(&self, plan: &<Self as ScaleAction>::In, flink: &FlinkContext) -> usize {
+        let correlation = plan.correlation();
+        let nr_target_taskmanagers = plan.target_replicas();
+
+        tracing::debug!(
+            ?correlation,
+            "budgeting {:?} for Flink rescaled taskmanagers to register with job manager.",
+            self.taskmanager_settle_timeout
         );
-        tokio::time::sleep(self.settle_duration).instrument(settle_span).await;
+
+        let mut nr_confirmed_taskmanagers = 0;
+        let start = Instant::now();
+        while Instant::now().duration_since(start) < self.taskmanager_settle_timeout {
+            match flink.query_nr_taskmanagers(correlation).await {
+                Ok(nr_taskmanagers) => {
+                    nr_confirmed_taskmanagers = nr_taskmanagers;
+                    if nr_confirmed_taskmanagers == nr_target_taskmanagers {
+                        tracing::debug!(
+                            %nr_confirmed_taskmanagers, %nr_target_taskmanagers, ?correlation,
+                            "confirmed rescaled taskmanagers connected with Flink JobManager"
+                        );
+                        break;
+                    }
+                },
+                Err(err) => {
+                    tracing::error!(
+                        error=?err, ?correlation,
+                        "failed to query number of taskmanagers - retrying in {:?}", self.flink_polling_interval
+                    );
+                    break;
+                },
+            }
+
+            tokio::time::sleep(self.flink_polling_interval).await;
+        }
+
+        if nr_confirmed_taskmanagers != nr_target_taskmanagers {
+            tracing::error!(
+                %nr_confirmed_taskmanagers, %nr_target_taskmanagers, ?correlation,
+                "could not confirm rescaled taskmanager connected with Flink JobManager with {:?} - continuing with next action.",
+                self.taskmanager_settle_timeout
+            );
+        }
+
+        nr_confirmed_taskmanagers
     }
 
     fn do_count_running_pods(pods_by_status: Option<&HashMap<String, Vec<Pod>>>) -> (usize, HashMap<String, usize>) {

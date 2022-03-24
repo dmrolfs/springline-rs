@@ -9,7 +9,7 @@ flink:
 
 kubernetes:
   client: cluster_env
-  patch_settle_secs: 10
+  patch_settle_timeout_secs: 10
 
 http:
   host: localhost

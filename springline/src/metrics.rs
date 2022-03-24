@@ -52,6 +52,7 @@ pub fn register_metrics(registry: &Registry) -> Result<()> {
     registry.register(Box::new(flink::FLINK_UPLOADED_JARS_TIME.clone()))?;
     registry.register(Box::new(flink::FLINK_ACTIVE_JOBS_TIME.clone()))?;
     registry.register(Box::new(flink::FLINK_QUERY_JOB_DETAIL_TIME.clone()))?;
+    registry.register(Box::new(flink::FLINK_QUERY_TASKMANAGER_ADMIN_TIME.clone()))?;
 
     registry.register(Box::new(sense::flink::FLINK_SENSOR_TIME.clone()))?;
     registry.register(Box::new(sense::flink::FLINK_VERTEX_SENSOR_TIME.clone()))?;

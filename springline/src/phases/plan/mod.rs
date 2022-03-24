@@ -84,7 +84,7 @@ where
 
     let flink_planning = do_make_planning_strategy(name.as_ref(), settings).await?;
     let rx_flink_planning_monitor = flink_planning.rx_monitor();
-    let phase = Box::new(Plan::new(name.into_owned(), flink_planning));
+    let phase = Box::new(Plan::new(&name, flink_planning));
 
     (data_channel.outlet(), phase.inlet()).connect().await;
     (context_channel.outlet(), phase.context_inlet()).connect().await;

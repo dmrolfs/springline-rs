@@ -46,10 +46,15 @@ impl ScaleAction for RestartJobs {
 
     #[tracing::instrument(level = "info", name = "RestartFlinkWithNewParallelism::execute", skip(self))]
     async fn execute<'s>(&self, plan: &'s Self::In, session: &'s mut ActionSession) -> Result<(), ActError> {
-        let timer = act::start_scale_action_timer(session.cluster_label(), ACTION_LABEL);
-        let correlation = session.correlation();
+        let span = tracing::debug_span!(
+            "RestartFlinkWithNewParallelism::execute",
+            correlation=?session.correlation(), ?session,
+        );
+        let _span_guard = span.enter();
 
-        let parallelism = plan.target_replicas();
+        let timer = act::start_scale_action_timer(session.cluster_label(), ACTION_LABEL);
+
+        let parallelism = Self::parallelism_from_plan_session(plan, session);
 
         if let Some(locations) = Self::locations_from(session) {
             if let Some(ref uploaded_jars) = session.uploaded_jars {
@@ -77,12 +82,14 @@ impl ScaleAction for RestartJobs {
                         .await;
 
                     if !failures.is_empty() {
-                        tracing::error!(nr_restart_failures=%failures.len(), ?failures, "Failed to restart all Flink jobs");
+                        tracing::error!(
+                            nr_restart_failures=%failures.len(), ?failures,
+                            "Failed to restart all Flink jobs"
+                        );
                     }
                 }
             } else {
                 tracing::warn!(
-                    ?session, ?correlation,
                     "No uploaded jars to start jobs from -- skipping {ACTION_LABEL}. Flink standalone not supported. Todo: add identification of standalone mode and once detected apply Reactive Flink approach (with necessary assumption that Reactive mode is configured."
                 );
             };
@@ -94,6 +101,28 @@ impl ScaleAction for RestartJobs {
 }
 
 impl RestartJobs {
+    fn parallelism_from_plan_session(plan: &ScalePlan, session: &ActionSession) -> usize {
+        let mut parallelism = plan.target_replicas();
+
+        if let Some(nr_tm_confirmed) = session.nr_confirmed_rescaled_taskmanagers {
+            if parallelism != nr_tm_confirmed {
+                let effective_parallelism = usize::min(parallelism, nr_tm_confirmed);
+
+                tracing::warn!(
+                    nr_target_parallelism=%parallelism,
+                    nr_confirmed_rescaled_taskmanagers=?session.nr_confirmed_rescaled_taskmanagers,
+                    effective_parallelism=%effective_parallelism,
+                    correlation=?plan.correlation(),
+                    "Target parallelism does not match confirmed rescaled taskmanagers - setting parallelism to minimum of the two."
+                );
+
+                parallelism = effective_parallelism;
+            }
+        }
+
+        parallelism
+    }
+
     async fn try_jar_restarts_for_parallelism(
         &self, parallelism: usize, jars: &[JarId], mut locations: HashSet<SavepointLocation>, session: &ActionSession,
     ) -> Vec<(JarId, SavepointLocation)> {

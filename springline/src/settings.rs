@@ -798,7 +798,7 @@ mod tests {
                         ..SETTINGS.flink.clone()
                     },
                     kubernetes: KubernetesSettings {
-                        patch_settle_duration: Duration::from_secs(10),
+                        patch_settle_timeout: Duration::from_secs(10),
                         ..SETTINGS.kubernetes.clone()
                     },
                     eligibility: EligibilitySettings {

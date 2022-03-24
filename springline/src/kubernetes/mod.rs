@@ -56,7 +56,10 @@ async fn make_client(settings: &KubernetesSettings) -> Result<kube::Client, Kube
         proxy_url=?config.proxy_url,
         "making kubernetes client using config..."
     );
-    kube::Client::try_from(config).map_err(|err| err.into())
+    kube::Client::try_from(config).map_err(|err| {
+        tracing::error!(error=?err, "failed to create kubernetes client.");
+        err.into()
+    })
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

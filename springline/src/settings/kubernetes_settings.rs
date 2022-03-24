@@ -26,21 +26,24 @@ pub struct KubernetesSettings {
 
     /// Period to allow cluster to stabilize after a patch operation. Defaults to 5 seconds.
     #[serde_as(as = "serde_with::DurationSeconds<u64>")]
-    #[serde(rename = "patch_settle_secs", default = "KubernetesSettings::default_settle_secs")]
-    pub patch_settle_duration: Duration,
+    #[serde(
+        rename = "patch_settle_timeout_secs",
+        default = "KubernetesSettings::default_settle_timeout_secs"
+    )]
+    pub patch_settle_timeout: Duration,
 }
 
 impl Default for KubernetesSettings {
     fn default() -> Self {
         Self {
             client: LoadKubeConfig::default(),
-            patch_settle_duration: Self::default_settle_secs(),
+            patch_settle_timeout: Self::default_settle_timeout_secs(),
         }
     }
 }
 
 impl KubernetesSettings {
-    pub const fn default_settle_secs() -> Duration {
+    pub const fn default_settle_timeout_secs() -> Duration {
         Duration::from_secs(5)
     }
 }
@@ -187,7 +190,7 @@ mod tests {
     fn test_load_kube_config_serde_tokens() {
         let s1 = KubernetesSettings {
             client: LoadKubeConfig::Infer,
-            patch_settle_duration: Duration::from_secs(1),
+            patch_settle_timeout: Duration::from_secs(1),
         };
         assert_tokens(
             &s1,
@@ -195,7 +198,7 @@ mod tests {
                 Token::Struct { name: "KubernetesSettings", len: 2 },
                 Token::Str("client"),
                 Token::UnitVariant { name: "LoadKubeConfig", variant: "infer" },
-                Token::Str("patch_settle_secs"),
+                Token::Str("patch_settle_timeout_secs"),
                 Token::U64(1),
                 Token::StructEnd,
             ],
@@ -207,7 +210,7 @@ mod tests {
                 cluster: Some("cluster-1".to_string()),
                 user: None,
             }),
-            patch_settle_duration: Duration::from_secs(2),
+            patch_settle_timeout: Duration::from_secs(2),
         };
         assert_tokens(
             &s2,
@@ -223,7 +226,7 @@ mod tests {
                 Token::Some,
                 Token::Str("cluster-1"),
                 Token::StructEnd,
-                Token::Str("patch_settle_secs"),
+                Token::Str("patch_settle_timeout_secs"),
                 Token::U64(2),
                 Token::StructEnd,
             ],

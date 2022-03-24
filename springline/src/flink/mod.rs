@@ -77,6 +77,25 @@ fn start_flink_query_job_detail_timer(label: &str) -> HistogramTimer {
     FLINK_QUERY_JOB_DETAIL_TIME.with_label_values(&[label]).start_timer()
 }
 
+pub static FLINK_QUERY_TASKMANAGER_ADMIN_TIME: Lazy<HistogramVec> = Lazy::new(|| {
+    HistogramVec::new(
+        HistogramOpts::new(
+            "flink_query_taskmanager_admin_time",
+            "Time spent querying Flink taskmanager admin in seconds",
+        )
+        .buckets(vec![0.2, 0.225, 0.25, 0.275, 0.3, 0.35, 0.4, 0.45, 0.5, 0.75, 1.0]),
+        &["action"],
+    )
+    .expect("failed creating flink_query_taskmanager_admin_time metric")
+});
+
+#[inline]
+fn start_flink_query_taskmanager_admin_timer(label: &str) -> HistogramTimer {
+    FLINK_QUERY_TASKMANAGER_ADMIN_TIME
+        .with_label_values(&[label])
+        .start_timer()
+}
+
 pub(crate) static FLINK_ERRORS: Lazy<IntCounterVec> = Lazy::new(|| {
     IntCounterVec::new(
         Opts::new("flink_errors", "Number of errors calling the Flink API"),

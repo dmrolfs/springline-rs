@@ -1,16 +1,14 @@
 use super::{FlinkScope, Unpack};
-use crate::flink;
 use crate::model::MC_CLUSTER__NR_TASK_MANAGERS;
 use crate::phases::sense::flink::{CorrelationGenerator, FlinkContext};
 use async_trait::async_trait;
 use cast_trait_object::dyn_upcast;
-use futures_util::{FutureExt, TryFutureExt};
+use futures_util::TryFutureExt;
 use proctor::elements::telemetry;
 use proctor::error::SenseError;
 use proctor::graph::stage::{self, Stage};
 use proctor::graph::{Inlet, Outlet, Port, SinkShape, SourceShape};
 use proctor::{AppData, ProctorResult, SharedString};
-use reqwest::Method;
 use std::collections::HashMap;
 use std::fmt::Debug;
 use tracing::Instrument;
@@ -97,7 +95,6 @@ where
         url.path_segments_mut().unwrap().push("taskmanagers");
         tracing::debug!("url = {:?}", url);
 
-        let url = url.clone();
         let name = self.name();
 
         while self.trigger.recv().await.is_some() {
@@ -110,31 +107,14 @@ where
                 .reserve_send::<_, SenseError>(async {
                     // timer spans all retries
                     let _flink_timer = super::start_flink_sensor_timer(&SCOPE);
-
-                    let result: Result<Out, SenseError> = self
+                    let result = self
                         .context
-                        .client()
-                        .request(Method::GET, url.clone())
-                        .send()
-                        .map_err(|error| error.into())
-                        .and_then(|response| {
-                            flink::log_response("taskmanager admin response", &response);
-                            response.text().map(|body| {
-                                body.map_err(|err| err.into()).and_then(|b| {
-                                    let result = serde_json::from_str(&b).map_err(|err| err.into());
-                                    tracing::debug!(body=%b, response=?result, "Flink taskmanager_admin response body");
-                                    result
-                                })
-                            })
-                        })
-                        .instrument(tracing::trace_span!("Flink taskmanager REST API", scope=%SCOPE))
+                        .query_nr_taskmanagers(&correlation)
+                        .map_err(|err| SenseError::Api("query_nr_taskmanagers".to_string(), err.into()))
                         .await
-                        .map(|resp: serde_json::Value| {
-                            resp["taskmanagers"].as_array().map(|tms| tms.len()).unwrap_or(0)
-                        })
-                        .and_then(|taskmanagers| {
+                        .and_then(|nr_taskmanagers| {
                             let mut telemetry: telemetry::TableType = HashMap::default();
-                            telemetry.insert(MC_CLUSTER__NR_TASK_MANAGERS.to_string(), taskmanagers.into());
+                            telemetry.insert(MC_CLUSTER__NR_TASK_MANAGERS.to_string(), nr_taskmanagers.into());
                             Out::unpack(telemetry.into()).map_err(|err| err.into())
                         });
 

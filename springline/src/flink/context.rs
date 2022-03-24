@@ -33,6 +33,12 @@ impl FlinkContext {
             .map_err(|_| UrlError::UrlCannotBeBase(base_url.clone()))?
             .push("jars");
 
+        let mut tm_admin_endpoint = base_url.clone();
+        tm_admin_endpoint
+            .path_segments_mut()
+            .map_err(|_| UrlError::UrlCannotBeBase(base_url.clone()))?
+            .push("taskmanagers");
+
         Ok(Self {
             inner: Arc::new(FlinkContextRef {
                 cluster_label: label.into(),
@@ -40,6 +46,7 @@ impl FlinkContext {
                 base_url,
                 jobs_endpoint,
                 jars_endpoint,
+                tm_admin_endpoint,
             }),
         })
     }
@@ -70,6 +77,10 @@ impl FlinkContext {
         self.inner.jars_endpoint.clone()
     }
 
+    pub fn taskmanagers_admin_endpoint(&self) -> Url {
+        self.inner.tm_admin_endpoint.clone()
+    }
+
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn query_active_jobs(&self, correlation: &CorrelationId) -> Result<Vec<JobSummary>, FlinkError> {
         self.inner.query_active_jobs(correlation).await
@@ -85,6 +96,11 @@ impl FlinkContext {
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn query_uploaded_jars(&self, correlation: &CorrelationId) -> Result<Vec<JarSummary>, FlinkError> {
         self.inner.query_uploaded_jars(correlation).await
+    }
+
+    #[tracing::instrument(level = "trace", skip(self))]
+    pub async fn query_nr_taskmanagers(&self, correlation: &CorrelationId) -> Result<usize, FlinkError> {
+        self.inner.query_nr_taskmanagers(correlation).await
     }
 }
 
@@ -116,6 +132,7 @@ struct FlinkContextRef {
     pub base_url: Url,
     pub jobs_endpoint: Url,
     pub jars_endpoint: Url,
+    pub tm_admin_endpoint: Url,
 }
 
 impl fmt::Debug for FlinkContextRef {
@@ -125,6 +142,7 @@ impl fmt::Debug for FlinkContextRef {
             .field("base_url", &self.base_url)
             .field("jobs_endpoint", &self.jobs_endpoint)
             .field("jars_endpoint", &self.jars_endpoint)
+            .field("tm_admin_endpoint", &self.tm_admin_endpoint)
             .finish()
     }
 }
@@ -247,6 +265,40 @@ impl FlinkContextRef {
             .await;
 
         flink::track_result("job_detail", result, "failed to query Flink job detail", correlation)
+    }
+
+    pub async fn query_nr_taskmanagers(&self, correlation: &CorrelationId) -> Result<usize, FlinkError> {
+        let _timer = flink::start_flink_query_taskmanager_admin_timer(self.cluster_label.as_str());
+        let span = tracing::trace_span!("query Flink taskmanager admin telemetry", ?correlation);
+
+        let result: Result<usize, FlinkError> = self
+            .client
+            .request(Method::GET, self.tm_admin_endpoint.clone())
+            .send()
+            .map_err(|error| error.into())
+            .and_then(|response| {
+                flink::log_response("taskmanager admin response", &response);
+                response.text().map(|body| {
+                    body.map_err(|err| err.into())
+                        .and_then(|b| {
+                            let result = serde_json::from_str(&b).map_err(|err| err.into());
+                            tracing::debug!(body=%b, response=?result, "Flink taskmanager_admin response body");
+                            result
+                        })
+                        .map(|resp: serde_json::Value| {
+                            resp["taskmanagers"].as_array().map(|tms| tms.len()).unwrap_or(0)
+                        })
+                })
+            })
+            .instrument(span)
+            .await;
+
+        flink::track_result(
+            "taskmanager_admin",
+            result,
+            "failed to query Flink taskmanager admin",
+            correlation,
+        )
     }
 }
 

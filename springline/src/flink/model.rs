@@ -424,7 +424,7 @@ impl JobSavepointReport {
     ) -> Result<Self, FlinkError> {
         let completed = completed_statuses
             .into_iter()
-            .map::<Result<_, FlinkError>, _>(|(job_id, status)| {
+            .flat_map(|(job_id, status)| {
                 let location = status
                     .operation
                     .ok_or_else(|| FlinkError::UnexpectedValue {
@@ -433,14 +433,13 @@ impl JobSavepointReport {
                     })?
                     .either(Ok, |cause| Err(FlinkError::Savepoint { job_id: job_id.clone(), cause }))?;
 
-                Ok((job_id, location))
+                Result::<_, FlinkError>::Ok((job_id, location))
             })
-            .flatten()
             .collect();
 
         let failed = failed_statuses
             .into_iter()
-            .map::<Result<_, FlinkError>, _>(|(job, status)| {
+            .flat_map(|(job_id, status)| {
                 let failure = status
                     .operation
                     .ok_or_else(|| FlinkError::UnexpectedValue {
@@ -458,9 +457,8 @@ impl JobSavepointReport {
                         Ok,
                     )?;
 
-                Ok((job, failure))
+                Result::<_, FlinkError>::Ok((job_id, failure))
             })
-            .flatten()
             .collect();
 
         Ok(Self { completed, failed })
