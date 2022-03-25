@@ -2,7 +2,6 @@ use super::{ActionSession, ScaleAction};
 use crate::flink::FlinkContext;
 use crate::kubernetes::{self, FlinkComponent, KubernetesContext};
 use crate::phases::act;
-use crate::phases::act::CorrelationId;
 use crate::phases::act::{ActError, ScaleActionPlan};
 use crate::phases::plan::ScalePlan;
 use crate::settings::Settings;
