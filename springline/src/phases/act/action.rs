@@ -78,12 +78,26 @@ impl ActionSession {
 
 impl Debug for ActionSession {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ActionSession")
-            .field("correlation", &format!("{}", self.correlation))
-            .field("durations", &self.durations)
-            .field("active_jobs", &self.active_jobs)
-            .field("uploaded_jars", &self.uploaded_jars)
-            .field("savepoints", &self.savepoints)
-            .finish()
+        let mut debug = f.debug_struct("ActionSession");
+        debug.field("correlation", &format!("{}", self.correlation))
+            .field("durations", &self.durations);
+
+        if let Some(active_jobs) = &self.active_jobs {
+            debug.field("active_jobs", &active_jobs);
+        }
+
+        if  let Some(uploaded_jars) = &self.uploaded_jars {
+            debug.field("uploaded_jars", &self.uploaded_jars);
+        }
+
+        if let Some(savepoints) = &self.savepoints {
+            debug.field("savepoints", &savepoints);
+        }
+
+        if let Some(nr_confirmed_rescaled_taskmanagers) = &self.nr_confirmed_rescaled_taskmanagers {
+            debug.field("nr_confirmed_rescaled_taskmanagers", &self.nr_confirmed_rescaled_taskmanagers)
+        }
+
+        debug.finish()
     }
 }
