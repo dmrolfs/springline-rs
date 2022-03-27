@@ -6,10 +6,10 @@ use proctor::elements::Telemetry;
 use proctor::graph::stage::{ActorSourceApi, SourceStage, WithApi, WithMonitor};
 use prometheus::Registry;
 use settings_loader::SettingsLoader;
-use springline::engine::{http, Autoscaler};
+use springline::engine::Autoscaler;
 use springline::phases::act::ScaleActuator;
 use springline::settings::{CliOptions, Settings};
-use springline::Result;
+use springline::{engine, Result};
 use tracing::Subscriber;
 
 static METRICS_REGISTRY: Lazy<Registry> = Lazy::new(|| {
@@ -46,7 +46,7 @@ fn main() -> Result<()> {
             .run();
 
         tracing::info!("Starting autoscale management server API...");
-        let api_handle = http::run_http_server(engine.inner.tx_service_api.clone(), &settings.http)?;
+        let api_handle = engine::run_http_server(engine.inner.tx_service_api.clone(), &settings.http)?;
 
         tracing::info!("autoscale engine fully running...");
         engine.block_for_completion().await?;

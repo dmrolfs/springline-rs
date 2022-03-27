@@ -96,7 +96,10 @@ impl Debug for ActionSession {
         }
 
         if let Some(nr_confirmed_rescaled_taskmanagers) = &self.nr_confirmed_rescaled_taskmanagers {
-            debug.field("nr_confirmed_rescaled_taskmanagers", &nr_confirmed_rescaled_taskmanagers);
+            debug.field(
+                "nr_confirmed_rescaled_taskmanagers",
+                &nr_confirmed_rescaled_taskmanagers,
+            );
         }
 
         debug.finish()

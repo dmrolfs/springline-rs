@@ -2,9 +2,8 @@ use proctor::elements::telemetry::UpdateMetricsFn;
 use proctor::SharedString;
 use prometheus::Registry;
 
-use crate::engine::monitor;
 use crate::phases::{act, decision, eligibility, governance, plan, sense};
-use crate::Result;
+use crate::{engine, Result};
 use crate::{flink, model};
 
 pub trait UpdateMetrics {
@@ -81,12 +80,12 @@ pub fn register_metrics(registry: &Registry) -> Result<()> {
     registry.register(Box::new(governance::GOVERNANCE_CTX_MAX_CLUSTER_SIZE.clone()))?;
     registry.register(Box::new(governance::GOVERNANCE_CTX_MAX_SCALING_STEP.clone()))?;
 
-    registry.register(Box::new(monitor::ELIGIBILITY_IS_ELIGIBLE_FOR_SCALING.clone()))?;
-    registry.register(Box::new(monitor::DECISION_SHOULD_PLAN_FOR_SCALING.clone()))?;
-    registry.register(Box::new(monitor::PLAN_OBSERVATION_COUNT.clone()))?;
-    registry.register(Box::new(monitor::DECISION_PLAN_CURRENT_NR_TASK_MANAGERS.clone()))?;
-    registry.register(Box::new(monitor::PLAN_TARGET_NR_TASK_MANAGERS.clone()))?;
-    registry.register(Box::new(monitor::GOVERNANCE_PLAN_ACCEPTED.clone()))?;
+    registry.register(Box::new(engine::ELIGIBILITY_IS_ELIGIBLE_FOR_SCALING.clone()))?;
+    registry.register(Box::new(engine::DECISION_SHOULD_PLAN_FOR_SCALING.clone()))?;
+    registry.register(Box::new(engine::PLAN_OBSERVATION_COUNT.clone()))?;
+    registry.register(Box::new(engine::DECISION_PLAN_CURRENT_NR_TASK_MANAGERS.clone()))?;
+    registry.register(Box::new(engine::PLAN_TARGET_NR_TASK_MANAGERS.clone()))?;
+    registry.register(Box::new(engine::GOVERNANCE_PLAN_ACCEPTED.clone()))?;
 
     registry.register(Box::new(act::ACT_SCALE_ACTION_TIME.clone()))?;
     registry.register(Box::new(act::ACT_SCALE_ACTION_COUNT.clone()))?;

@@ -18,3 +18,5 @@ tmp/
 .vscode/
 *.iml
 *~
+
+.env

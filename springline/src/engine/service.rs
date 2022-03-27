@@ -1,9 +1,10 @@
 use std::fmt;
 
+use crate::engine::PhaseFlags;
 use proctor::graph::stage::tick;
 use proctor::phases::sense::{ClearinghouseApi, ClearinghouseCmd, ClearinghouseSnapshot};
 use prometheus::{Encoder, Registry, TextEncoder};
-pub use protocol::{EngineApiError, EngineCmd, EngineServiceApi, MetricsReport, MetricsSpan};
+pub use protocol::{EngineApiError, EngineCmd, EngineServiceApi, Health, HealthReport, MetricsReport, MetricsSpan};
 use regex::RegexSet;
 use tokio::sync::mpsc;
 
@@ -11,6 +12,7 @@ mod protocol {
     use std::collections::HashMap;
     use std::fmt::Display;
 
+    use crate::engine::PhaseFlags;
     use axum::body::{self, BoxBody};
     use axum::http::{Response, StatusCode};
     use axum::response::IntoResponse;
@@ -43,34 +45,60 @@ mod protocol {
         StopFlinkSensor {
             tx: oneshot::Sender<Result<(), EngineApiError>>,
         },
+        CheckHealth(oneshot::Sender<Result<HealthReport, EngineApiError>>),
+        UpdateHealth(Health, oneshot::Sender<Result<(), EngineApiError>>),
     }
 
     #[allow(dead_code)]
     impl EngineCmd {
-        #[inline]
-        pub fn gather_metrics(domain: MetricsSpan) -> (Self, oneshot::Receiver<Result<MetricsReport, EngineApiError>>) {
+        pub async fn gather_metrics(
+            api: &EngineServiceApi, domain: MetricsSpan,
+        ) -> Result<MetricsReport, EngineApiError> {
             let (tx, rx) = oneshot::channel();
-            (Self::GatherMetrics { domain, tx }, rx)
+            api.send(Self::GatherMetrics { domain, tx })?;
+            rx.await?
         }
 
-        #[inline]
-        pub fn report_on_clearinghouse(
-            subscription: Option<impl Into<String>>,
-        ) -> (Self, oneshot::Receiver<Result<ClearinghouseSnapshot, EngineApiError>>) {
+        pub async fn report_on_clearinghouse(
+            api: &EngineServiceApi, subscription: Option<String>,
+        ) -> Result<ClearinghouseSnapshot, EngineApiError> {
             let (tx, rx) = oneshot::channel();
-            let subscription = subscription.map(|s| s.into());
-            (Self::ReportOnClearinghouse { subscription, tx }, rx)
+            api.send(Self::ReportOnClearinghouse { subscription, tx })?;
+            rx.await?
         }
 
-        #[inline]
-        pub fn stop_flink_sensor() -> (Self, oneshot::Receiver<Result<(), EngineApiError>>) {
+        pub async fn stop_flink_sensor(api: &EngineServiceApi) -> Result<(), EngineApiError> {
             let (tx, rx) = oneshot::channel();
-            (Self::StopFlinkSensor { tx }, rx)
+            api.send(Self::StopFlinkSensor { tx })?;
+            rx.await?
+        }
+
+        pub async fn check_health(api: &EngineServiceApi) -> Result<HealthReport, EngineApiError> {
+            let (tx, rx) = oneshot::channel();
+            api.send(Self::CheckHealth(tx))?;
+            rx.await?
+        }
+
+        pub async fn update_health(api: &EngineServiceApi, health: Health) -> Result<(), EngineApiError> {
+            let (tx, rx) = oneshot::channel();
+            api.send(Self::UpdateHealth(health, tx))?;
+            rx.await?
         }
     }
 
-    #[derive(Debug, Default)]
+    #[derive(Debug, Clone, Default, PartialEq)]
     pub struct MetricsReport(pub String);
+
+    #[derive(Debug, Clone, PartialEq)]
+    pub enum HealthReport {
+        Ok,
+        NotReady(PhaseFlags),
+    }
+
+    #[derive(Debug, Clone, PartialEq)]
+    pub enum Health {
+        Ready(PhaseFlags),
+    }
 
     /// Engine API failed to satisfy request.
     #[derive(Debug, Error)]
@@ -210,6 +238,8 @@ impl<'r> Service<'r> {
 
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn run(mut self) {
+        let mut ready_phases = PhaseFlags::default();
+
         loop {
             tokio::select! {
                 Some(cmd) = self.rx_api.recv() => {
@@ -248,7 +278,23 @@ impl<'r> Service<'r> {
                             }
 
                             let _ = tx.send(stop_response);
-                        }
+                        },
+
+                        EngineCmd::UpdateHealth(health, tx) => {
+                            Self::handle_health_update(health, &mut ready_phases);
+                            let _ = tx.send(Ok(()));
+                        },
+
+                        EngineCmd::CheckHealth(tx) => {
+                            tracing::warn!(?ready_phases, "checking health...");
+                            if ready_phases.is_all() {
+                                tracing::warn!(?ready_phases, "DMR: Engine is ready to autoscale.");
+                                let _ = tx.send(Ok(HealthReport::Ok));
+                            } else {
+                                tracing::warn!(?ready_phases, "DMR: Engine is not ready to autoscale.");
+                                let _ = tx.send(Ok(HealthReport::NotReady(!ready_phases)));
+                            }
+                        },
                     }
                 },
 
@@ -303,5 +349,12 @@ impl<'r> Service<'r> {
         tick::TickCmd::stop(&self.tx_stop_flink_sensor)
             .await
             .map_err(|err| EngineApiError::Handler(err.into()))
+    }
+
+    #[tracing::instrument(level = "trace")]
+    fn handle_health_update(health: Health, ready_phases: &mut PhaseFlags) {
+        match health {
+            Health::Ready(phases) => *ready_phases = phases,
+        }
     }
 }

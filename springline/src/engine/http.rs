@@ -4,15 +4,17 @@ use std::time::Duration;
 use axum::error_handling::HandleErrorLayer;
 use axum::extract::{Extension, Path};
 use axum::http::{Method, StatusCode, Uri};
+use axum::response::IntoResponse;
 use axum::routing::get;
 use axum::{BoxError, Json, Router};
 use proctor::phases::sense::ClearinghouseSnapshot;
+use serde_json::json;
 use settings_loader::common::http::HttpServerSettings;
 use tokio::task::JoinHandle;
 use tower::ServiceBuilder;
 use tower_http::trace::TraceLayer;
 
-use crate::engine::service::{EngineApiError, EngineCmd, EngineServiceApi, MetricsSpan};
+use crate::engine::service::{EngineApiError, EngineCmd, EngineServiceApi, HealthReport, MetricsSpan};
 
 #[allow(dead_code)]
 struct State {
@@ -34,6 +36,7 @@ pub fn run_http_server<'s>(
         .into_inner();
 
     let app = Router::new()
+        .route("/health", get(health))
         .route("/metrics", get(get_metrics))
         .route("/clearinghouse", get(get_clearinghouse_snapshot))
         .layer(middleware_stack);
@@ -62,9 +65,27 @@ pub fn run_http_server<'s>(
     Ok(handle)
 }
 
+#[tracing::instrument(level = "trace", skip(engine))]
+async fn health(Extension(engine): Extension<Arc<State>>) -> impl IntoResponse {
+    match EngineCmd::check_health(&engine.tx_api).await {
+        Ok(HealthReport::Ok) => (StatusCode::OK, Json(json!({ "status": "ok" }))),
+        Ok(HealthReport::NotReady(phases_waiting)) => {
+            let phases: Vec<String> = phases_waiting.iter().map(|p| p.to_string()).collect();
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(json!({ "status": "not_ready", "phases": phases })),
+            )
+        },
+        Err(err) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "status": "error", "error": err.to_string() })),
+        ),
+    }
+}
+
 // #[debug_handler]
 #[tracing::instrument(level = "trace", skip(engine))]
-async fn get_metrics<'r>(
+async fn get_metrics(
     span: Option<Path<MetricsSpan>>, Extension(engine): Extension<Arc<State>>,
 ) -> Result<String, EngineApiError> {
     let span = match span {
@@ -72,18 +93,16 @@ async fn get_metrics<'r>(
         None => MetricsSpan::default(),
     };
 
-    let (cmd, rx) = EngineCmd::gather_metrics(span);
-    engine.tx_api.send(cmd)?;
-    rx.await?.map(|mr| mr.0)
+    EngineCmd::gather_metrics(&engine.tx_api, span).await.map(|mr| mr.0)
 }
 
 #[tracing::instrument(level = "trace", skip(engine))]
-async fn get_clearinghouse_snapshot<'r>(
+async fn get_clearinghouse_snapshot(
     subscription: Option<Path<String>>, Extension(engine): Extension<Arc<State>>,
 ) -> Result<Json<ClearinghouseSnapshot>, EngineApiError> {
-    let (cmd, rx) = EngineCmd::report_on_clearinghouse(subscription.map(|s| s.0));
-    engine.tx_api.send(cmd)?;
-    rx.await?.map(Json)
+    EngineCmd::report_on_clearinghouse(&engine.tx_api, subscription.map(|s| s.0))
+        .await
+        .map(Json)
 }
 
 #[tracing::instrument(level = "trace", skip())]

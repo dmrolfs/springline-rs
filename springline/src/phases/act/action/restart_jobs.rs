@@ -101,6 +101,10 @@ impl ScaleAction for RestartJobs {
 }
 
 impl RestartJobs {
+    /// Returns the parallelism to use for the restart. In the case of a scale up, this will most
+    /// likely be the new parallelism. In the case of a scale down, this will most likely be the
+    /// current parallelism. Discrepancies between the two cases are due to rescaling the cluster
+    /// partially completed within budgeted time.
     fn parallelism_from_plan_session(plan: &ScalePlan, session: &ActionSession) -> usize {
         let mut parallelism = plan.target_replicas();
 

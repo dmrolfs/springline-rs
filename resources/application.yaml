@@ -42,7 +42,15 @@ sensor:
   flink:
     metrics_initial_delay_secs: 0
     metrics_interval_secs: 15
-    metric_orders: []
+
+    # User can add metrics to be collected from Flink beyond the default set. Each metric is defined
+    # as an "order" of the form:
+    metric_orders:
+      - scope: Jobs
+        metric: lastCheckpointDuration
+        agg: max
+        telemetry_path: health.last_checkpoint_duration
+        telemetry_type: Float
 
   # Sensors may be specified and loaded from this block. Currently, two form are supported:
   # 1. `csv` Sensors loaded at startup for the given `path` file.

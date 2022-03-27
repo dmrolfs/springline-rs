@@ -1,18 +1,23 @@
-pub mod http;
-pub mod monitor;
+mod http;
+mod monitor;
 mod service;
 
+pub use self::http::run_http_server;
+pub use self::monitor::{
+    DECISION_PLAN_CURRENT_NR_TASK_MANAGERS, DECISION_SHOULD_PLAN_FOR_SCALING, ELIGIBILITY_IS_ELIGIBLE_FOR_SCALING,
+    GOVERNANCE_PLAN_ACCEPTED, PLAN_OBSERVATION_COUNT, PLAN_TARGET_NR_TASK_MANAGERS,
+};
+
 use cast_trait_object::DynCastExt;
+use enumflags2::{bitflags, BitFlags};
 use monitor::Monitor;
 use pretty_snowflake::MachineNode;
 use proctor::elements::Telemetry;
-use proctor::graph::stage::tick::TickApi;
 use proctor::graph::stage::{ActorSourceApi, SinkStage, SourceStage, WithApi, WithMonitor};
 use proctor::graph::{Connect, Graph, SinkShape, SourceShape};
-use proctor::phases::sense::ClearinghouseApi;
 use proctor::{ProctorResult, SharedString};
 use prometheus::Registry;
-use std::fmt;
+use std::fmt::{self, Display};
 use std::time::Duration;
 use tokio::task::JoinHandle;
 
@@ -42,6 +47,20 @@ impl Default for AutoscaleEngine<Building> {
     fn default() -> Self {
         Self { inner: Building::default() }
     }
+}
+
+pub type PhaseFlags = BitFlags<PhaseFlag>;
+
+#[bitflags(default = Sense | Plan | Act)]
+#[repr(u8)]
+#[derive(Debug, Display, Copy, Clone, PartialEq)]
+pub enum PhaseFlag {
+    Sense = 1 << 0,
+    Eligibility = 1 << 1,
+    Decision = 1 << 2,
+    Plan = 1 << 3,
+    Governance = 1 << 4,
+    Act = 1 << 5,
 }
 
 /// Represents Autoscaler state.
@@ -148,6 +167,10 @@ impl AutoscaleEngine<Building> {
         let rx_governance_monitor = governance_phase.rx_monitor();
 
         let act = self.inner.act.unwrap_or_else(act::make_logger_act_phase);
+        let rx_action_monitor = self.inner.rx_action_monitor.unwrap_or_else(|| {
+            let (_, rx_dummy) = tokio::sync::broadcast::channel(0);
+            rx_dummy
+        });
 
         let sense = sense_builder
             .build_for_out_w_metrics(MetricCatalog::update_metrics_for(
@@ -162,6 +185,10 @@ impl AutoscaleEngine<Building> {
         );
 
         let tx_clearinghouse_api = sense.tx_api();
+
+        let service = Service::new(tx_stop_flink_sensor, tx_clearinghouse_api, self.inner.metrics_registry);
+        let tx_service_api = service.tx_api();
+        let service_handle = tokio::spawn(async move { service.run().await });
 
         (sense.outlet(), data_throttle.inlet()).connect().await;
         (data_throttle.outlet(), eligibility_phase.inlet()).connect().await;
@@ -188,20 +215,20 @@ impl AutoscaleEngine<Building> {
 
         Ok(AutoscaleEngine {
             inner: Ready {
-                // name: self.inner.name,
                 graph,
-                tx_stop_flink_sensor,
-                tx_clearinghouse_api,
-                monitor: Monitor::new(
+                monitor: Monitor {
                     rx_eligibility_monitor,
                     rx_decision_monitor,
                     rx_plan_monitor,
                     rx_flink_planning_monitor,
                     rx_governance_monitor,
-                    self.inner.rx_action_monitor,
-                    self.inner.tx_monitor_feedback,
-                ),
+                    rx_action_monitor,
+                    tx_feedback: self.inner.tx_monitor_feedback,
+                    tx_engine: tx_service_api.clone(),
+                },
                 metrics_registry: self.inner.metrics_registry,
+                service_handle,
+                tx_service_api,
             },
         })
     }
@@ -210,9 +237,9 @@ impl AutoscaleEngine<Building> {
 pub struct Ready {
     graph: Graph,
     monitor: Monitor,
-    tx_stop_flink_sensor: TickApi,
-    tx_clearinghouse_api: ClearinghouseApi,
     metrics_registry: Option<&'static Registry>,
+    service_handle: JoinHandle<()>,
+    tx_service_api: EngineServiceApi,
 }
 
 impl EngineState for Ready {}
@@ -227,23 +254,14 @@ impl AutoscaleEngine<Ready> {
     #[tracing::instrument(level = "trace", skip(self))]
     pub fn run(self) -> AutoscaleEngine<Running> {
         let graph_handle = tokio::spawn(async { self.inner.graph.run().await });
-
         let monitor_handle = tokio::spawn(async { self.inner.monitor.run().await });
-
-        let service = Service::new(
-            self.inner.tx_stop_flink_sensor,
-            self.inner.tx_clearinghouse_api,
-            self.inner.metrics_registry,
-        );
-        let tx_service_api = service.tx_api();
-        let service_handle = tokio::spawn(async move { service.run().await });
 
         AutoscaleEngine {
             inner: Running {
-                tx_service_api,
+                tx_service_api: self.inner.tx_service_api,
                 graph_handle,
                 monitor_handle,
-                service_handle,
+                service_handle: self.inner.service_handle,
                 metrics_registry: self.inner.metrics_registry,
             },
         }
