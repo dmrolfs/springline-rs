@@ -18,7 +18,9 @@ build-docker:
   cargo t
   docker build --tag springline --file springline/Dockerfile .
 
+# expects QUAY_TAG to be set in `.env`
 push-docker:
+  echo "Labeling then pushing springline:latest docker image with tag: $QUAY_TAG"
   docker tag springline:latest $QUAY_TAG
   docker push $QUAY_TAG
 

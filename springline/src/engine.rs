@@ -21,7 +21,7 @@ use std::fmt::{self, Display};
 use std::time::Duration;
 use tokio::task::JoinHandle;
 
-use crate::engine::service::{EngineServiceApi, Service};
+use crate::engine::service::{EngineCmd, EngineServiceApi, Health, Service};
 use crate::flink::FlinkContext;
 use crate::metrics::{self, UpdateMetrics};
 use crate::model::MetricCatalog;
@@ -253,12 +253,19 @@ impl fmt::Debug for Ready {
 impl AutoscaleEngine<Ready> {
     #[tracing::instrument(level = "trace", skip(self))]
     pub fn run(self) -> AutoscaleEngine<Running> {
-        let graph_handle = tokio::spawn(async { self.inner.graph.run().await });
+        let tx_service_api = self.inner.tx_service_api.clone();
+        let graph_handle = tokio::spawn(async move {
+            let result = self.inner.graph.run().await;
+            if let Err(err) = EngineCmd::update_health(&self.inner.tx_service_api, Health::GraphStopped).await {
+                tracing::error!(error=?err, "Graph stopped but failed to notify engine of health status.");
+            }
+            result
+        });
         let monitor_handle = tokio::spawn(async { self.inner.monitor.run().await });
 
         AutoscaleEngine {
             inner: Running {
-                tx_service_api: self.inner.tx_service_api,
+                tx_service_api,
                 graph_handle,
                 monitor_handle,
                 service_handle: self.inner.service_handle,

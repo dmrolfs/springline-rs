@@ -91,13 +91,15 @@ mod protocol {
 
     #[derive(Debug, Clone, PartialEq)]
     pub enum HealthReport {
-        Ok,
+        Up,
         NotReady(PhaseFlags),
+        Down,
     }
 
     #[derive(Debug, Clone, PartialEq)]
     pub enum Health {
         Ready(PhaseFlags),
+        GraphStopped,
     }
 
     /// Engine API failed to satisfy request.
@@ -239,6 +241,7 @@ impl<'r> Service<'r> {
     #[tracing::instrument(level = "trace", skip(self))]
     pub async fn run(mut self) {
         let mut ready_phases = PhaseFlags::default();
+        let mut is_up = true;
 
         loop {
             tokio::select! {
@@ -281,18 +284,23 @@ impl<'r> Service<'r> {
                         },
 
                         EngineCmd::UpdateHealth(health, tx) => {
-                            Self::handle_health_update(health, &mut ready_phases);
+                            Self::handle_health_update(health, &mut ready_phases, &mut is_up);
                             let _ = tx.send(Ok(()));
                         },
 
                         EngineCmd::CheckHealth(tx) => {
-                            tracing::warn!(?ready_phases, "checking health...");
-                            if ready_phases.is_all() {
-                                tracing::warn!(?ready_phases, "DMR: Engine is ready to autoscale.");
-                                let _ = tx.send(Ok(HealthReport::Ok));
+                            if is_up {
+                                tracing::warn!(?ready_phases, "checking health...");
+                                if ready_phases.is_all() {
+                                    tracing::warn!(?ready_phases, "DMR: Engine is ready to autoscale.");
+                                    let _ = tx.send(Ok(HealthReport::Up));
+                                } else {
+                                    tracing::warn!(?ready_phases, "DMR: Engine is not ready to autoscale.");
+                                    let _ = tx.send(Ok(HealthReport::NotReady(!ready_phases)));
+                                }
                             } else {
-                                tracing::warn!(?ready_phases, "DMR: Engine is not ready to autoscale.");
-                                let _ = tx.send(Ok(HealthReport::NotReady(!ready_phases)));
+                                tracing::warn!(?ready_phases, "DMR: engine is down.");
+                                let _ = tx.send(Ok(HealthReport::Down));
                             }
                         },
                     }
@@ -352,9 +360,12 @@ impl<'r> Service<'r> {
     }
 
     #[tracing::instrument(level = "trace")]
-    fn handle_health_update(health: Health, ready_phases: &mut PhaseFlags) {
+    fn handle_health_update(health: Health, ready_phases: &mut PhaseFlags, is_up: &mut bool) {
         match health {
             Health::Ready(phases) => *ready_phases = phases,
+            Health::GraphStopped => {
+                *is_up = false;
+            },
         }
     }
 }

@@ -37,6 +37,8 @@ pub fn run_http_server<'s>(
 
     let app = Router::new()
         .route("/health", get(health))
+        .route("/health/ready", get(readiness))
+        .route("/health/live", get(liveness))
         .route("/metrics", get(get_metrics))
         .route("/clearinghouse", get(get_clearinghouse_snapshot))
         .layer(middleware_stack);
@@ -65,21 +67,51 @@ pub fn run_http_server<'s>(
     Ok(handle)
 }
 
+const STATUS_UP: &str = "up";
+const STATUS_NOT_READY: &str = "not_ready";
+const STATUS_ERROR: &str = "error";
+const STATUS_DOWN: &str = "down";
+
 #[tracing::instrument(level = "trace", skip(engine))]
 async fn health(Extension(engine): Extension<Arc<State>>) -> impl IntoResponse {
     match EngineCmd::check_health(&engine.tx_api).await {
-        Ok(HealthReport::Ok) => (StatusCode::OK, Json(json!({ "status": "ok" }))),
+        Ok(HealthReport::Up) => (StatusCode::OK, Json(json!({ "status": STATUS_UP }))),
         Ok(HealthReport::NotReady(phases_waiting)) => {
             let phases: Vec<String> = phases_waiting.iter().map(|p| p.to_string()).collect();
             (
                 StatusCode::SERVICE_UNAVAILABLE,
-                Json(json!({ "status": "not_ready", "phases": phases })),
+                Json(json!({ "status": STATUS_NOT_READY, "phases": phases })),
             )
         },
+        Ok(HealthReport::Down) => (StatusCode::SERVICE_UNAVAILABLE, Json(json!({ "status": STATUS_DOWN }))),
         Err(err) => (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "status": "error", "error": err.to_string() })),
+            Json(json!({ "status": STATUS_ERROR, "error": err.to_string() })),
         ),
+    }
+}
+
+#[tracing::instrument(level = "trace", skip(engine))]
+async fn readiness(Extension(engine): Extension<Arc<State>>) -> impl IntoResponse {
+    match EngineCmd::check_health(&engine.tx_api).await {
+        Ok(HealthReport::Down) => StatusCode::SERVICE_UNAVAILABLE,
+        Err(err) => {
+            tracing::error!(error=?err, "readiness check failed");
+            StatusCode::INTERNAL_SERVER_ERROR
+        },
+        _ => StatusCode::OK,
+    }
+}
+
+#[tracing::instrument(level = "trace", skip(engine))]
+async fn liveness(Extension(engine): Extension<Arc<State>>) -> impl IntoResponse {
+    match EngineCmd::check_health(&engine.tx_api).await {
+        Ok(HealthReport::Down) => StatusCode::SERVICE_UNAVAILABLE,
+        Err(err) => {
+            tracing::error!(error=?err, "liveness check failed");
+            StatusCode::INTERNAL_SERVER_ERROR
+        },
+        _ => StatusCode::OK,
     }
 }
 
