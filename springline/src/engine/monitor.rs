@@ -104,9 +104,6 @@ impl Monitor {
         Self::mark_ready_phases(&mut ready_phases);
 
         loop {
-            let span = tracing::trace_span!("monitor event cycle");
-            let _span_guard = span.enter();
-
             tokio::select! {
                 Ok(e) = self.rx_eligibility_monitor.recv() => self.handle_eligibility_event(e, &mut ready_phases).await,
                 Ok(e) = self.rx_decision_monitor.recv() => self.handle_decision_event(e, &mut ready_phases).await,

@@ -21,39 +21,39 @@ fn main() -> Result<()> {
     proctor::tracing::init_subscriber(subscriber);
 
     let main_span = tracing::trace_span!("main");
-    let _main_span_guard = main_span.enter();
+    main_span.in_scope(|| {
+        let options = CliOptions::parse();
+        let settings = Settings::load(&options)?;
+        let flink = springline::flink::FlinkContext::from_settings(&settings.flink)?;
 
-    let options = CliOptions::parse();
-    let settings = Settings::load(&options)?;
-    let flink = springline::flink::FlinkContext::from_settings(&settings.flink)?;
+        start_pipeline(async move {
+            let kube = springline::kubernetes::KubernetesContext::from_settings(&settings).await?;
+            let patch_replicas = ScaleActuator::new(kube, flink.clone(), &settings);
+            let rx_action_monitor = patch_replicas.rx_monitor();
 
-    start_pipeline(async move {
-        let kube = springline::kubernetes::KubernetesContext::from_settings(&settings).await?;
-        let patch_replicas = ScaleActuator::new(kube, flink.clone(), &settings);
-        let rx_action_monitor = patch_replicas.rx_monitor();
+            let (monitor_feedback_sensor, tx_monitor_feedback) = make_monitor_sensor_and_api();
 
-        let (monitor_feedback_sensor, tx_monitor_feedback) = make_monitor_sensor_and_api();
+            let engine = Autoscaler::builder("springline")
+                .add_sensor(make_settings_sensor(&settings))
+                .add_sensor(monitor_feedback_sensor)
+                .add_monitor_feedback(tx_monitor_feedback)
+                .with_metrics_registry(&METRICS_REGISTRY)
+                .with_action_stage(Box::new(patch_replicas))
+                .with_action_monitor(rx_action_monitor)
+                .finish(flink, &settings)
+                .await?
+                .run();
 
-        let engine = Autoscaler::builder("springline")
-            .add_sensor(make_settings_sensor(&settings))
-            .add_sensor(monitor_feedback_sensor)
-            .add_monitor_feedback(tx_monitor_feedback)
-            .with_metrics_registry(&METRICS_REGISTRY)
-            .with_action_stage(Box::new(patch_replicas))
-            .with_action_monitor(rx_action_monitor)
-            .finish(flink, &settings)
-            .await?
-            .run();
+            tracing::info!("Starting autoscale management server API...");
+            let api_handle = engine::run_http_server(engine.inner.tx_service_api.clone(), &settings.http)?;
 
-        tracing::info!("Starting autoscale management server API...");
-        let api_handle = engine::run_http_server(engine.inner.tx_service_api.clone(), &settings.http)?;
+            tracing::info!("autoscale engine fully running...");
+            engine.block_for_completion().await?;
+            api_handle.await??;
 
-        tracing::info!("autoscale engine fully running...");
-        engine.block_for_completion().await?;
-        api_handle.await??;
-
-        tracing::info!("autoscaling engine stopped.");
-        Ok(())
+            tracing::info!("autoscaling engine stopped.");
+            Ok(())
+        })
     })
 }
 

@@ -77,14 +77,14 @@ pub async fn make_plan_phase<A>(settings: &PlanSettings, agent: &mut A) -> Resul
 where
     A: ClearinghouseSubscriptionAgent,
 {
-    let name: SharedString = "planning".into();
-    let data_channel = do_subscribe_channel(name.clone(), agent).await?;
+    let name = "planning";
+    let data_channel = do_subscribe_channel(format!("{name}_observations").into(), agent).await?;
 
-    let context_channel = do_subscribe_channel(name.clone(), agent).await?;
+    let context_channel = do_subscribe_channel(format!("{name}_context").into(), agent).await?;
 
-    let flink_planning = do_make_planning_strategy(name.as_ref(), settings).await?;
+    let flink_planning = do_make_planning_strategy(name, settings).await?;
     let rx_flink_planning_monitor = flink_planning.rx_monitor();
-    let phase = Box::new(Plan::new(&name, flink_planning));
+    let phase = Box::new(Plan::new(name, flink_planning));
 
     (data_channel.outlet(), phase.inlet()).connect().await;
     (context_channel.outlet(), phase.context_inlet()).connect().await;

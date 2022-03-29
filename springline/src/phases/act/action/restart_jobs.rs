@@ -46,12 +46,6 @@ impl ScaleAction for RestartJobs {
 
     #[tracing::instrument(level = "info", name = "RestartFlinkWithNewParallelism::execute", skip(self))]
     async fn execute<'s>(&self, plan: &'s Self::In, session: &'s mut ActionSession) -> Result<(), ActError> {
-        let span = tracing::debug_span!(
-            "RestartFlinkWithNewParallelism::execute",
-            correlation=?session.correlation(), ?session,
-        );
-        let _span_guard = span.enter();
-
         let timer = act::start_scale_action_timer(session.cluster_label(), ACTION_LABEL);
 
         let parallelism = Self::parallelism_from_plan_session(plan, session);

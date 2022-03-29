@@ -16,6 +16,7 @@ use proctor::graph::stage::Stage;
 use proctor::graph::{Inlet, Port, SinkShape, PORT_DATA};
 use proctor::{AppData, ProctorResult, SharedString};
 use tokio::sync::broadcast;
+use tracing::Instrument;
 
 const STAGE_NAME: &str = "execute_scaling";
 
@@ -124,9 +125,6 @@ where
         let rescaling_lock = tokio::sync::Mutex::new(false);
 
         while let Some(plan) = inlet.recv().await {
-            let span = tracing::info_span!("execute_scaling", ?plan);
-            let _guard = span.enter();
-
             let mut is_rescaling = rescaling_lock.lock().await;
             if *is_rescaling {
                 tracing::info!("prior rescale in progress, skipping.");
@@ -137,10 +135,11 @@ where
             self.notify_action_started(plan.clone());
             let _timer = proctor::graph::stage::start_stage_eval_time(STAGE_NAME);
             let mut session = ActionSession::new(plan.correlation().clone(), self.kube.clone(), self.flink.clone());
-            match self.action.execute(&plan, &mut session).await {
-                Ok(_) => {
-                    self.notify_action_succeeded(plan, session);
-                },
+
+            let span = tracing::info_span!("execute_scaling", ?plan);
+            let outcome = self.action.execute(&plan, &mut session).instrument(span).await;
+            match outcome {
+                Ok(_) => self.notify_action_succeeded(plan, session),
                 Err(err) => {
                     tracing::warn!(error=?err, ?session, "failure in scale action - dropping.");
                     self.notify_action_failed(plan, session, err);
