@@ -1,10 +1,11 @@
 set dotenv-load
 
 alias c := full-check
-alias d := build-docker
-alias rl := run-docker-local
-alias f := docker-follow
-alias p := push-docker
+alias u := update
+alias db := build-docker
+alias drl := run-docker-local
+alias df := docker-follow
+alias dp := push-docker
 
 default:
   just --list
@@ -13,6 +14,10 @@ full-check:
   cargo fmt
   cargo c
   cargo clippy
+
+update:
+  cargo upgrade --workspace
+  cargo update
 
 build-docker:
   cargo t

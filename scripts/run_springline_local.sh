@@ -12,8 +12,9 @@ if [ -z "$HA_CREDENTIALS" ]; then
   exit 1
 fi
 
-MEM_OPT="64m"
+MEM_OPT="40m"
 RM_OPT=""
+LOG_OPT='--env RUST_LOG="info,springline::flink=debug,springline::kubernetes=debug,springline::phases::act=debug,proctor::graph::stage::through::reduce_within"'
 
 PARAMS=""
 while (( "$#" )); do
@@ -53,6 +54,12 @@ while (( "$#" )); do
       PARAMS="$2"
       shift 1
       ;;
+    -l|--log)
+      if [ -n "$2" ] && [ ${2:0:1} != "-" ]; then
+        LOG_OPT="--env RUST_LOG=$2"
+        shift 2
+      fi
+      ;;
     -*|--*=) # unsupported flags
       echo "Error: Unsupported flag $1" >&2
       exit 1
@@ -73,6 +80,7 @@ docker run -d -it \
   --name springline \
   --env KUBECONFIG="/secrets/environment.kubeconfig" \
   --env HA_CREDENTIALS="/secrets/credentials.properties" \
+  ${LOG_OPT} \
   --mount type=bind,source="${KUBECONFIG}",target="/secrets/environment.kubeconfig" \
   --mount type=bind,source="${HA_CREDENTIALS}",target="/secrets/credentials.properties" \
   --expose 8000 \

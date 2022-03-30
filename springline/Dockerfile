@@ -47,7 +47,7 @@ COPY ["./resources", "resources"]
 COPY ["./hak/hak", "/usr/local/bin/hak"]
 
 #ENV RUST_LOG "info,tokio=trace,runtime=trace"
-ENV RUST_LOG "info,springline::flink=debug,springline::kubernetes=debug,springline::phases::act=debug"
+ENV RUST_LOG "info"
 ENV RUST_BACKTRACE 1
 ENV POLAR_LOG 1
 
