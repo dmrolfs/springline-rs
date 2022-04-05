@@ -1,22 +1,515 @@
 use frunk::{Monoid, Semigroup};
-use std::collections::HashSet;
+use itertools::Itertools;
+use std::collections::{HashSet, VecDeque};
 use std::fmt::{self, Debug};
-use std::ops::Add;
+use std::ops::{Add, Deref};
+use std::time::Duration;
 
 use crate::metrics::UpdateMetrics;
 use once_cell::sync::Lazy;
-use oso::PolarClass;
+use oso::{Oso, PolarClass};
 use pretty_snowflake::{Id, Label, Labeling};
 use proctor::elements::telemetry::UpdateMetricsFn;
-use proctor::elements::{telemetry, Telemetry, Timestamp};
+use proctor::elements::{telemetry, Interval, PolicyContributor, Telemetry, Timestamp};
 use proctor::error::{PolicyError, ProctorError};
 use proctor::phases::sense::SubscriptionRequirements;
-use proctor::{Correlation, ProctorIdGenerator, SharedString};
+use proctor::{AppData, Correlation, ProctorIdGenerator, SharedString};
 use prometheus::{Gauge, IntGauge};
 use serde::{Deserialize, Serialize};
 
 pub type CorrelationId = Id<MetricCatalog>;
 pub type CorrelationGenerator = ProctorIdGenerator<MetricCatalog>;
+
+pub trait Portfolio: AppData + Monoid + std::ops::Add<Self::Item, Output = Self> {
+    type Item: AppData;
+    fn set_time_window(&mut self, time_window: Duration);
+    fn window_interval(&self) -> Option<Interval>;
+}
+
+#[derive(PolarClass, Clone, PartialEq)]
+pub struct MetricPortfolio {
+    portfolio: VecDeque<MetricCatalog>,
+    time_window: Duration,
+}
+
+impl fmt::Debug for MetricPortfolio {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("MetricPortfolio")
+            .field("interval", &self.window_interval())
+            .field("time_window", &self.time_window)
+            .field("portfolio_size", &self.portfolio.len())
+            .field("head", &self.deref().recv_timestamp.to_string())
+            .field("portfolio", &self.portfolio.iter().map(|m| m.recv_timestamp.to_string()).collect::<Vec<_>>())
+            // .field("head", self.deref())
+            .finish()
+    }
+}
+
+impl MetricPortfolio {
+    pub fn from_size(metrics: MetricCatalog, window: usize, interval: Duration) -> Self {
+        let mut portfolio = VecDeque::with_capacity(window);
+        portfolio.push_back(metrics);
+        let time_window = interval * window as u32;
+        Self { portfolio, time_window }
+    }
+
+    pub fn from_time_window(metrics: MetricCatalog, time_window: Duration) -> Self {
+        let mut portfolio = VecDeque::new();
+        portfolio.push_back(metrics);
+        Self { portfolio, time_window }
+    }
+
+    pub fn builder() -> MetricPortfolioBuilder {
+        MetricPortfolioBuilder::default()
+    }
+}
+
+#[derive(Debug, Default, Clone, PartialEq)]
+pub struct MetricPortfolioBuilder {
+    metrics: VecDeque<MetricCatalog>,
+    time_window: Option<Duration>,
+}
+
+impl MetricPortfolioBuilder {
+    pub const fn with_time_window(mut self, time_window: Duration) -> Self {
+        self.time_window = Some(time_window);
+        self
+    }
+
+    pub fn with_size_and_interval(mut self, size: usize, interval: Duration) -> Self {
+        self.time_window = Some(interval * size as u32);
+        self
+    }
+
+    pub fn push(&mut self, catalog: MetricCatalog) -> &mut Self {
+        self.metrics.push_back(catalog);
+        self
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.metrics.is_empty()
+    }
+
+    pub fn len(&self) -> usize {
+        self.metrics.len()
+    }
+
+    pub fn build(self) -> MetricPortfolio {
+        let mut portfolio: Vec<MetricCatalog> = self.metrics.into_iter().collect();
+        portfolio.sort_by(|lhs, rhs| lhs.recv_timestamp.cmp(&rhs.recv_timestamp)); // sort to reverse
+        tracing::trace!(
+            portfolio=?portfolio.iter().map(|m| m.recv_timestamp.to_string()).collect::<Vec<_>>(),
+            "DMR: PORTFOLIO BUILD - make sure goes from oldest to newest"
+        );
+
+        MetricPortfolio {
+            portfolio: portfolio.into_iter().collect(),
+            time_window: self.time_window.expect("must supply time window before final build"),
+        }
+    }
+}
+
+impl MetricPortfolio {
+    pub fn is_empty(&self) -> bool {
+        self.portfolio.is_empty()
+    }
+
+    pub fn len(&self) -> usize {
+        self.portfolio.len()
+    }
+
+    //todo: assumes monotonically increasing recv_timestamp -- check if not true and insert accordingly or sort after push and before pop?
+    pub fn push(&mut self, metrics: MetricCatalog) {
+        let oldest_allowed = metrics.recv_timestamp - self.time_window;
+
+        self.portfolio.push_back(metrics);
+
+        while let Some(metric) = self.portfolio.front() {
+            if metric.recv_timestamp < oldest_allowed {
+                let too_old = self.portfolio.pop_front();
+                tracing::debug!(?too_old, %oldest_allowed, "popping metric outside of time window");
+            } else {
+                break;
+            }
+        }
+    }
+
+    #[tracing::instrument(level = "trace", skip(self, f))]
+    pub fn looking_back_from_head<F>(&self, looking_back: Duration, f: F) -> bool
+    where
+        F: FnMut(&MetricCatalog) -> bool,
+    {
+        let head_ts = self.recv_timestamp;
+        self.for_interval((head_ts - looking_back, head_ts).into(), f)
+    }
+
+    #[tracing::instrument(level = "trace", skip(self, f))]
+    pub fn for_interval<F>(&self, interval: Interval, mut f: F) -> bool
+    where
+        F: FnMut(&MetricCatalog) -> bool,
+    {
+        if self.is_empty() {
+            tracing::debug!("empty portfolio");
+            false
+        } else if self.len() == 1 && interval.duration() == Duration::ZERO {
+            tracing::debug!("single metric portfolio");
+            interval.contains_timestamp(self.recv_timestamp) && f(self.deref())
+        } else {
+            tracing::debug!(portfolio_window=?self.window_interval(), ?interval, "Checking for interval");
+
+            let mut range_start: Option<Timestamp> = None;
+            let mut range_end: Option<Timestamp> = None;
+
+            let range: Vec<&MetricCatalog> = self
+                .portfolio
+                .iter()
+                .rev()
+                .take_while(|m| {
+                    let include = interval.contains_timestamp(m.recv_timestamp);
+                    if include {
+                        range_start = Some(m.recv_timestamp);
+                        if range_end.is_none() {
+                            range_end = Some(m.recv_timestamp);
+                        }
+                    }
+                    tracing::trace!("is portfolio catalog[{}] in {interval:?}: {include}", m.recv_timestamp);
+                    include
+                })
+                .collect();
+
+            tracing::debug!(
+                "start:{:?} end:{:?}",
+                range_start.map(|ts| ts.to_string()),
+                range_end.map(|ts| ts.to_string())
+            );
+            let range_interval = range_start.zip(range_end).map(|(start, end)| Interval::new(start, end));
+            let coverage = range_interval
+                .map(|coverage| coverage.duration().as_secs_f64() / interval.duration().as_secs_f64())
+                .unwrap_or(0.0);
+
+            if coverage < 0.5 {
+                tracing::debug!(%coverage, "not enough coverage for meaningful evaluation.");
+                return false;
+            }
+
+            tracing::debug!(
+                ?range_interval,
+                range=?range.iter().map(|m| (m.recv_timestamp.to_string(), m.flow.records_in_per_sec)).collect::<Vec<_>>(),
+                %coverage,
+                "evaluating for interval: {interval:?}",
+            );
+
+            range.into_iter().all(f)
+        }
+    }
+}
+
+impl Portfolio for MetricPortfolio {
+    type Item = MetricCatalog;
+
+    fn window_interval(&self) -> Option<Interval> {
+        // portfolio runs oldest to youngest
+        let start = self.portfolio.front().map(|m| m.recv_timestamp);
+        let end = self.portfolio.back().map(|m| m.recv_timestamp);
+        start.zip(end).map(|i| i.into())
+    }
+
+    fn set_time_window(&mut self, time_window: Duration) {
+        self.time_window = time_window;
+    }
+}
+
+impl MetricPortfolio {
+    pub fn flow_input_records_lag_max_within(&self, looking_back_secs: u32, max_value: i64) -> bool {
+        self.looking_back_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+            m.flow
+                .input_records_lag_max
+                .map(|lag| {
+                    tracing::info!(
+                        catalog_lag=%lag, %max_value,
+                        "checking lag in catalog[{}]: {lag} <= {max_value} = {}",
+                        m.recv_timestamp, lag <= max_value
+                    );
+                    lag <= max_value
+                })
+                .unwrap_or(false)
+        })
+    }
+
+    pub fn flow_input_millis_behind_latest_within(&self, looking_back_secs: u32, max_value: i64) -> bool {
+        self.looking_back_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+            m.flow
+                .input_millis_behind_latest
+                .map(|lag| lag <= max_value)
+                .unwrap_or(false)
+        })
+    }
+
+    pub fn cluster_task_cpu_load_within(&self, looking_back_secs: u32, max_value: f64) -> bool {
+        self.looking_back_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+            m.cluster.task_cpu_load <= max_value
+        })
+    }
+
+    pub fn cluster_task_heap_memory_used_within(&self, looking_back_secs: u32, max_value: f64) -> bool {
+        self.looking_back_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+            m.cluster.task_heap_memory_used <= max_value
+        })
+    }
+
+    pub fn cluster_task_heap_memory_load_within(&self, looking_back_secs: u32, max_value: f64) -> bool {
+        self.looking_back_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+            max_value < m.cluster.task_heap_memory_load()
+        })
+    }
+}
+
+impl std::ops::Deref for MetricPortfolio {
+    type Target = MetricCatalog;
+
+    fn deref(&self) -> &Self::Target {
+        self.portfolio.back().expect("MetricCatalogBook should not be empty")
+    }
+}
+
+impl std::ops::Add<MetricCatalog> for MetricPortfolio {
+    type Output = Self;
+
+    fn add(mut self, rhs: MetricCatalog) -> Self::Output {
+        self.push(rhs);
+        self
+    }
+}
+
+impl std::ops::Add for MetricPortfolio {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        self.combine(&rhs)
+    }
+}
+
+impl Monoid for MetricPortfolio {
+    fn empty() -> Self {
+        Self {
+            portfolio: VecDeque::new(),
+            time_window: Duration::ZERO,
+        }
+    }
+}
+
+impl Semigroup for MetricPortfolio {
+    #[tracing::instrument(level = "trace")]
+    fn combine(&self, other: &Self) -> Self {
+        let book = Self::do_ordered_combine(self, other);
+        Self { portfolio: book, time_window: self.time_window }
+    }
+}
+
+impl MetricPortfolio {
+    #[tracing::instrument(level = "trace", skip(older, younger))]
+    fn block_combine(
+        time_window: Duration, older: &VecDeque<MetricCatalog>, younger: &VecDeque<MetricCatalog>,
+    ) -> VecDeque<MetricCatalog> {
+        younger.back().map_or_else(
+            || older.clone(), // if younger has no back, then it must be empty.
+            |youngest| {
+                let cutoff = youngest.recv_timestamp - time_window;
+                let older_iter = older.iter().cloned();
+                let younger_iter = younger.iter().cloned();
+                let result: VecDeque<MetricCatalog> = older_iter
+                    .chain(younger_iter)
+                    .filter(|m| cutoff <= m.recv_timestamp)
+                    .collect();
+
+                tracing::error!(
+                    ?time_window,
+                    older=?older.iter().map(|m| m.recv_timestamp).collect::<Vec<_>>(),
+                    younger=?younger.iter().map(|m| m.recv_timestamp).collect::<Vec<_>>(),
+                    ?youngest, ?cutoff,
+                    "filtering catalogs by time window: {:?}",
+                    result.iter().map(|m| m.recv_timestamp).collect::<Vec<_>>(),
+                );
+
+                result
+            },
+        )
+
+        // if let Some(youngest) = younger.back() {
+        //     let cutoff = youngest.recv_timestamp - time_window;
+        //     let older_iter = older.iter().cloned();
+        //     let younger_iter = younger.iter().cloned();
+        //     let result: VecDeque<MetricCatalog> = older_iter
+        //         .chain(younger_iter)
+        //         .filter(|m| cutoff <= m.recv_timestamp)
+        //         .collect();
+        //     tracing::error!(
+        //         ?time_window,
+        //         older=?older.iter().map(|m| m.recv_timestamp).collect::<Vec<_>>(),
+        //         younger=?younger.iter().map(|m| m.recv_timestamp).collect::<Vec<_>>(),
+        //         ?youngest, ?cutoff,
+        //         "filtering catalogs by time window: {:?}",
+        //         result.iter().map(|m| m.recv_timestamp).collect::<Vec<_>>(),
+        //     );
+        //     result
+        // } else {
+        // //     if younger has no back, then it must be empty.
+        // older.clone()
+        // }
+    }
+
+    #[tracing::instrument(level = "trace", skip(lhs_portfolio, rhs_portfolio))]
+    fn do_ordered_combine(lhs_portfolio: &Self, rhs_portfolio: &Self) -> VecDeque<MetricCatalog> {
+        let (lhs_interval, rhs_interval) = match (lhs_portfolio.window_interval(), rhs_portfolio.window_interval()) {
+            (None, None) => return VecDeque::new(),
+            (Some(_), None) => return lhs_portfolio.portfolio.clone(),
+            (None, Some(_)) => return rhs_portfolio.portfolio.clone(),
+            (Some(lhs), Some(rhs)) => (lhs, rhs),
+        };
+
+        let time_window = lhs_portfolio.time_window;
+        if lhs_interval.is_before(rhs_interval) {
+            Self::block_combine(time_window, &lhs_portfolio.portfolio, &rhs_portfolio.portfolio)
+        } else if rhs_interval.is_before(lhs_interval) {
+            Self::block_combine(time_window, &rhs_portfolio.portfolio, &lhs_portfolio.portfolio)
+        } else {
+            tracing::trace_span!("interspersed combination", ?time_window).in_scope(|| {
+                let mut combined = lhs_portfolio
+                    .portfolio
+                    .iter()
+                    .chain(rhs_portfolio.portfolio.iter())
+                    .sorted_by(|lhs, rhs| lhs.recv_timestamp.cmp(&rhs.recv_timestamp))
+                    .cloned()
+                    .collect::<VecDeque<_>>();
+
+                tracing::trace!(
+                    "combined portfolio: {:?}",
+                    combined.iter().map(|m| m.recv_timestamp).collect::<Vec<_>>()
+                );
+                if let Some(cutoff) = combined.back().map(|m| m.recv_timestamp - time_window) {
+                    tracing::debug!("cutoff: {cutoff:?}");
+                    combined.retain(|m| cutoff <= m.recv_timestamp);
+                }
+
+                tracing::debug!(
+                    "final combined: {:?}",
+                    combined.iter().map(|m| m.recv_timestamp).collect::<Vec<_>>()
+                );
+                combined
+            })
+
+            // let mut new_book = lhs_portfolio.portfolio.iter().collect::<VecDeque<_>>();
+
+            // let mut lhs_iter = lhs_portfolio.portfolio.iter();
+            // let mut rhs_iter = rhs_portfolio.portfolio.iter();
+            // let mut new_book = VecDeque::with_capacity(lhs_portfolio.portfolio.len() + rhs_portfolio.portfolio.len());
+
+            // let mut lhs = lhs_iter.next();
+            // let mut rhs = rhs_iter.next();
+
+            // loop {
+            //     match (lhs, rhs) {
+            //         (None, None) => break,
+            //
+            //         (Some(l), None) => {
+            //             tracing::trace!("finishing with lhs");
+            //             new_book.push_back(l);
+            //             new_book.extend(lhs_iter);
+            //             break;
+            //         },
+            //
+            //         (None, Some(r)) => {
+            //             tracing::trace!("finishing with rhs");
+            //             new_book.push_back(r);
+            //             new_book.extend(rhs_iter);
+            //             break;
+            //         },
+            //
+            //         (Some(l), Some(r)) => {
+            //             if l.recv_timestamp < r.recv_timestamp {
+            //                 tracing::trace!(pushing=%r.correlation_id, passing_on=%l.correlation_id, "pushing rhs catalog into portfolio");
+            //                 new_book.push_back(r);
+            //                 rhs = rhs_iter.next();
+            //             } else {
+            //                 tracing::trace!(pushing=%l.correlation_id, passing_on=%r.correlation_id, "pushing lhs catalog into portfolio");
+            //                 new_book.push_back(l);
+            //                 lhs = lhs_iter.next();
+            //             }
+            //         },
+            //     }
+            // }
+
+            // if let Some(youngest) = new_book.back() {
+            //     let cutoff = youngest.recv_timestamp - time_window;
+            //     new_book.retain(|m| cutoff <= m.recv_timestamp);
+            // }
+
+            // new_book.into_iter().cloned().collect()
+
+            // let mut lhs_iter = lhs_portfolio.portfolio.iter();
+            // let mut rhs_iter = rhs_portfolio.portfolio.iter();
+            // let mut new_book = VecDeque::with_capacity(limit);
+            //
+            // let mut lhs = lhs_iter.next();
+            // let mut rhs = rhs_iter.next();
+            //
+            // while new_book.len() < limit {
+            //     match (lhs, rhs) {
+            //         (None, None) => break,
+            //
+            //         (Some(l), None) => {
+            //             tracing::trace!("finishing with lhs");
+            //             new_book.push_back(l.clone());
+            //             let need = limit - new_book.len();
+            //             new_book.extend(lhs_iter.take(need).cloned());
+            //             break;
+            //         },
+            //
+            //         (None, Some(r)) => {
+            //             tracing::trace!("finishing with rhs");
+            //             new_book.push_back(r.clone());
+            //             let need = limit - new_book.len();
+            //             new_book.extend(rhs_iter.take(need).cloned());
+            //             break;
+            //         },
+            //
+            //         (Some(l), Some(r)) => {
+            //             if l.recv_timestamp < r.recv_timestamp {
+            //                 tracing::trace!(catalog=%r.correlation_id, passing_on=%l.correlation_id, "pushing rhs catalog into portfolio");
+            //                 new_book.push_back(r.clone());
+            //                 rhs = rhs_iter.next();
+            //             } else {
+            //                 tracing::trace!(catalog=%l.correlation_id, passing_on=%r.correlation_id, "pushing lhs catalog into portfolio");
+            //                 new_book.push_back(l.clone());
+            //                 lhs = lhs_iter.next();
+            //             }
+            //         },
+            //     }
+            // }
+            //
+            // new_book
+        }
+    }
+}
+
+impl PolicyContributor for MetricPortfolio {
+    #[tracing::instrument(level = "trace", skip(engine))]
+    fn register_with_policy_engine(engine: &mut Oso) -> Result<(), PolicyError> {
+        MetricCatalog::register_with_policy_engine(engine)?;
+
+        engine.register_class(
+            Self::get_polar_class_builder()
+                .add_attribute_getter("recv_timestamp", |m| m.recv_timestamp)
+                .add_attribute_getter("health", |m| m.health.clone())
+                .add_attribute_getter("flow", |m| m.flow.clone())
+                .add_attribute_getter("cluster", |m| m.cluster.clone())
+                .add_attribute_getter("custom", |m| m.custom.clone())
+                .build(),
+        )?;
+
+        Ok(())
+    }
+}
 
 // #[serde_as]
 #[derive(PolarClass, Label, PartialEq, Clone, Serialize, Deserialize)]
@@ -64,13 +557,13 @@ impl Correlation for MetricCatalog {
     }
 }
 
-impl MetricCatalog {
-    #[tracing::instrument(level = "trace", skip(oso))]
-    pub fn initialize_policy_engine(oso: &mut oso::Oso) -> Result<(), PolicyError> {
-        oso.register_class(Self::get_polar_class())?;
-        oso.register_class(JobHealthMetrics::get_polar_class())?;
-        oso.register_class(FlowMetrics::get_polar_class())?;
-        oso.register_class(
+impl PolicyContributor for MetricCatalog {
+    #[tracing::instrument(level = "trace", skip(engine))]
+    fn register_with_policy_engine(engine: &mut Oso) -> Result<(), PolicyError> {
+        engine.register_class(Self::get_polar_class())?;
+        engine.register_class(JobHealthMetrics::get_polar_class())?;
+        engine.register_class(FlowMetrics::get_polar_class())?;
+        engine.register_class(
             ClusterMetrics::get_polar_class_builder()
                 .name("ClusterMetrics")
                 .add_method("task_heap_memory_load", ClusterMetrics::task_heap_memory_load)
@@ -636,6 +1129,8 @@ pub(crate) static METRIC_CATALOG_CLUSTER_TASK_NETWORK_OUTPUT_POOL_USAGE: Lazy<Ga
 
 #[cfg(test)]
 mod tests {
+    use rand::seq::SliceRandom;
+    use rand::thread_rng;
     use std::collections::HashMap;
     use std::convert::TryFrom;
     use std::sync::Mutex;
@@ -1053,4 +1548,269 @@ mod tests {
     //     let actual: f64 = m.into();
     //     assert_eq!(actual, expected);
     // }
+
+    #[tracing::instrument(level = "info")]
+    fn make_test_catalog(ts: Timestamp, value: u32) -> MetricCatalog {
+        MetricCatalog {
+            correlation_id: Id::direct(
+                <MetricCatalog as Label>::labeler().label(),
+                ts.as_secs(),
+                ts.as_f64().to_string(),
+            ),
+            recv_timestamp: ts,
+            health: JobHealthMetrics::default(),
+            flow: FlowMetrics {
+                records_in_per_sec: f64::from(value),
+                ..FlowMetrics::default()
+            },
+            cluster: ClusterMetrics::default(),
+            custom: HashMap::new(),
+        }
+    }
+
+    #[tracing::instrument(level = "info", skip(catalogs))]
+    fn make_test_portfolio(
+        limit: usize, interval: Duration, catalogs: &[MetricCatalog],
+    ) -> (MetricPortfolio, Vec<MetricCatalog>) {
+        let mut portfolio = MetricPortfolio::builder().with_size_and_interval(limit, interval);
+        let mut used = Vec::new();
+        let mut remaining = Vec::new();
+        for c in catalogs {
+            if used.len() < limit {
+                used.push(c.clone());
+            } else {
+                remaining.push(c.clone());
+            }
+        }
+
+        for c in used {
+            tracing::debug!(portfolio_len=%(portfolio.len()+1), catalog=%c.correlation_id,"pushing catalog into portfolio.");
+            portfolio.push(c);
+        }
+
+        (portfolio.build(), remaining)
+    }
+
+    #[test]
+    fn test_metric_portfolio_head() {
+        let m1 = make_test_catalog(Timestamp::new(1, 0), 1);
+        let m2 = make_test_catalog(Timestamp::new(2, 0), 2);
+
+        let mut portfolio = MetricPortfolio::from_size(m1.clone(), 3, Duration::from_secs(1));
+        assert_eq!(portfolio.correlation_id, m1.correlation_id);
+        assert_eq!(portfolio.recv_timestamp, m1.recv_timestamp);
+
+        portfolio.push(m2.clone());
+        assert_eq!(portfolio.correlation_id, m2.correlation_id);
+        assert_eq!(portfolio.recv_timestamp, m2.recv_timestamp);
+    }
+
+    #[test]
+    fn test_metric_portfolio_combine() {
+        once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
+        let main_span = tracing::info_span!("test_metric_portfolio_combine");
+        let _main_span_guard = main_span.enter();
+
+        let interval = Duration::from_secs(1);
+
+        let m1 = make_test_catalog(Timestamp::new(1, 0), 1);
+        let m2 = make_test_catalog(Timestamp::new(2, 0), 2);
+        let m3 = make_test_catalog(Timestamp::new(3, 0), 3);
+        let m4 = make_test_catalog(Timestamp::new(4, 0), 4);
+        let m5 = make_test_catalog(Timestamp::new(5, 0), 5);
+        let m6 = make_test_catalog(Timestamp::new(6, 0), 6);
+        let m7 = make_test_catalog(Timestamp::new(7, 0), 7);
+        let ms = [
+            m1.clone(),
+            m2.clone(),
+            m3.clone(),
+            m4.clone(),
+            m5.clone(),
+            m6.clone(),
+            m7.clone(),
+        ];
+
+        let (port_1, remaining) = make_test_portfolio(3, interval, &ms);
+        assert_eq!(port_1.len(), 3);
+        assert_eq!(
+            port_1.portfolio.clone().into_iter().collect::<Vec<_>>(),
+            vec![m1.clone(), m2.clone(), m3.clone()]
+        );
+        let (port_2, _) = make_test_portfolio(4, interval, &remaining);
+        assert_eq!(port_2.len(), 4);
+        assert_eq!(
+            port_2.portfolio.clone().into_iter().collect::<Vec<_>>(),
+            vec![m4.clone(), m5.clone(), m6.clone(), m7.clone()]
+        );
+        let combined = port_1.clone().combine(&port_2);
+        assert_eq!(combined.time_window, port_1.time_window);
+        let actual: Vec<MetricCatalog> = combined.portfolio.into();
+        assert_eq!(actual, vec![m4.clone(), m5.clone(), m6.clone(), m7.clone()]);
+        let combined = port_2.combine(&port_1);
+        assert_eq!(combined.time_window, port_2.time_window);
+        let actual: Vec<MetricCatalog> = combined.portfolio.into();
+        assert_eq!(actual, vec![m3.clone(), m4.clone(), m5.clone(), m6.clone(), m7.clone()]);
+
+        let (port_3, remaining) = make_test_portfolio(4, interval, &ms);
+        let (port_4, _) = make_test_portfolio(2, interval, &remaining);
+        let combined = port_3.clone().combine(&port_4);
+        assert_eq!(combined.time_window, port_3.time_window);
+        let actual: Vec<MetricCatalog> = combined.portfolio.into();
+        assert_eq!(actual, vec![m2.clone(), m3.clone(), m4.clone(), m5.clone(), m6.clone()]);
+        let combined = port_4.clone().combine(&port_3);
+        assert_eq!(combined.time_window, port_4.time_window);
+        let actual: Vec<MetricCatalog> = combined.portfolio.into();
+        assert_eq!(actual, vec![m4.clone(), m5.clone(), m6.clone()]);
+    }
+
+    #[test]
+    fn test_metric_portfolio_shuffled_combine() {
+        once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
+        let main_span = tracing::info_span!("test_metric_portfolio_shuffled_combine");
+        let _main_span_guard = main_span.enter();
+
+        let interval = Duration::from_secs(1);
+
+        let m1 = make_test_catalog(Timestamp::new(1, 0), 1);
+        let m2 = make_test_catalog(Timestamp::new(2, 0), 2);
+        let m3 = make_test_catalog(Timestamp::new(3, 0), 3);
+        let m4 = make_test_catalog(Timestamp::new(4, 0), 4);
+        let m5 = make_test_catalog(Timestamp::new(5, 0), 5);
+        let m6 = make_test_catalog(Timestamp::new(6, 0), 6);
+        let m7 = make_test_catalog(Timestamp::new(7, 0), 7);
+        let ms = [
+            m1.clone(),
+            m2.clone(),
+            m3.clone(),
+            m4.clone(),
+            m5.clone(),
+            m6.clone(),
+            m7.clone(),
+        ];
+        let mut shuffled = ms.to_vec();
+        shuffled.shuffle(&mut thread_rng());
+        assert_ne!(shuffled.as_slice(), &ms);
+
+        let (port_1, remaining) = make_test_portfolio(3, interval, &shuffled);
+        let (port_2, _) = make_test_portfolio(4, interval, &remaining);
+        let combined = port_1.clone().combine(&port_2);
+        let actual: Vec<MetricCatalog> = combined.portfolio.into();
+        assert_eq!(actual, vec![m4.clone(), m5.clone(), m6.clone(), m7.clone()]);
+        let combined = port_2.clone().combine(&port_1);
+        let actual: Vec<MetricCatalog> = combined.portfolio.into();
+        assert_eq!(actual, vec![m3.clone(), m4.clone(), m5.clone(), m6.clone(), m7.clone()]);
+
+        let (port_3, remaining) = make_test_portfolio(6, interval, &shuffled);
+        assert_eq!(port_3.len(), 6);
+        let (port_4, _) = make_test_portfolio(1, interval, &remaining);
+        assert_eq!(port_4.len(), 1);
+        let combined = port_3.clone().combine(&port_4);
+        tracing::debug!(
+            lhs=?port_3.portfolio.iter().map(|p| p.correlation_id.to_string()).collect::<Vec<_>>(),
+            rhs=?port_4.portfolio.iter().map(|p| p.correlation_id.to_string()).collect::<Vec<_>>(),
+            combined=?combined.portfolio.iter().map(|p| p.correlation_id.to_string()).collect::<Vec<_>>(),
+            "port_3.combine(port_4)"
+        );
+        assert_eq!(combined.len(), port_3.len() + 1);
+        assert_eq!(assert_some!(combined.window_interval()).duration(), port_3.time_window);
+        let actual: Vec<MetricCatalog> = combined.portfolio.into();
+        assert_eq!(
+            actual,
+            vec![
+                m1.clone(),
+                m2.clone(),
+                m3.clone(),
+                m4.clone(),
+                m5.clone(),
+                m6.clone(),
+                m7.clone()
+            ]
+        );
+        let combined = port_4.clone().combine(&port_3);
+        assert_eq!(combined.len(), port_4.len() + 1);
+        assert_eq!(assert_some!(combined.window_interval()).duration(), port_4.time_window);
+        let actual: Vec<MetricCatalog> = combined.portfolio.into();
+        assert_eq!(actual, vec![m6.clone(), m7.clone()]);
+    }
+
+    #[test]
+    fn test_metric_portfolio_for_period() {
+        once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
+        let main_span = tracing::info_span!("test_metric_portfolio_for_period");
+        let _main_span_guard = main_span.enter();
+
+        let interval = Duration::from_secs(10);
+
+        let now = Timestamp::now();
+        // flow.records_in_per_sec *decline* over time
+        let m1 = make_test_catalog(now - Duration::from_secs(1 * 10), 1);
+        let m2 = make_test_catalog(now - Duration::from_secs(2 * 10), 2);
+        let m3 = make_test_catalog(now - Duration::from_secs(3 * 10), 3);
+        let m4 = make_test_catalog(now - Duration::from_secs(4 * 10), 4);
+        let m5 = make_test_catalog(now - Duration::from_secs(5 * 10), 5);
+        let m6 = make_test_catalog(now - Duration::from_secs(6 * 10), 6);
+        let m7 = make_test_catalog(now - Duration::from_secs(7 * 10), 7);
+        let ms = [
+            m1.clone(),
+            m2.clone(),
+            m3.clone(),
+            m4.clone(),
+            m5.clone(),
+            m6.clone(),
+            m7.clone(),
+        ];
+
+        let f = |c: &MetricCatalog| {
+            tracing::debug!(
+                "[test] testing catalog[{}]: ({} <= {}) is {}",
+                c.recv_timestamp.to_string(),
+                c.flow.records_in_per_sec,
+                5.0,
+                c.flow.records_in_per_sec <= 5.0,
+            );
+            c.flow.records_in_per_sec <= 5.0
+        };
+
+        let (portfolio, _) = make_test_portfolio(10, interval, &ms);
+        tracing::info!(
+            portfolio=?portfolio.portfolio.iter().map(|m| (m.recv_timestamp.to_string(), m.flow.records_in_per_sec)).collect::<Vec<_>>(),
+            "*** PORTFOLIO CREATED"
+        );
+
+        tracing::info_span!("looking back for 5 seconds").in_scope(|| {
+            assert_eq!(portfolio.looking_back_from_head(Duration::from_secs(5), f), false);
+        });
+
+        tracing::info_span!("looking back for 11 seconds").in_scope(|| {
+            assert_eq!(portfolio.looking_back_from_head(Duration::from_secs(11), f), true);
+        });
+
+        tracing::info_span!("looking back for 21 seconds").in_scope(|| {
+            assert_eq!(portfolio.looking_back_from_head(Duration::from_secs(21), f), true);
+        });
+
+        tracing::info_span!("looking back for 31 seconds").in_scope(|| {
+            assert_eq!(portfolio.looking_back_from_head(Duration::from_secs(31), f), true);
+        });
+
+        tracing::info_span!("looking back for 41 seconds").in_scope(|| {
+            assert_eq!(portfolio.looking_back_from_head(Duration::from_secs(41), f), true);
+        });
+
+        tracing::info_span!("looking back for 51 seconds").in_scope(|| {
+            assert_eq!(portfolio.looking_back_from_head(Duration::from_secs(51), f), false);
+        });
+
+        tracing::info_span!("looking back for 61 seconds").in_scope(|| {
+            assert_eq!(portfolio.looking_back_from_head(Duration::from_secs(61), f), false);
+        });
+
+        tracing::info_span!("looking back for 71 seconds").in_scope(|| {
+            assert_eq!(portfolio.looking_back_from_head(Duration::from_secs(71), f), false);
+        });
+
+        tracing::info_span!("looking back for 2000 seconds").in_scope(|| {
+            assert_eq!(portfolio.looking_back_from_head(Duration::from_secs(2000), f), false);
+        });
+    }
 }

@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet};
 use crate::metrics::UpdateMetrics;
 use crate::model::MetricCatalog;
 use oso::{Oso, PolarClass, PolarValue};
-use proctor::elements::{PolicySource, PolicySubscription, QueryPolicy, QueryResult, Telemetry};
+use proctor::elements::{PolicyContributor, PolicySource, PolicySubscription, QueryPolicy, QueryResult, Telemetry};
 use proctor::error::PolicyError;
 use proctor::phases::sense::TelemetrySubscription;
 use proctor::{ProctorContext, SharedString};
@@ -88,9 +88,9 @@ impl QueryPolicy for EligibilityPolicy {
     type Item = MetricCatalog;
     type TemplateData = EligibilityTemplateData;
 
-    fn initialize_policy_engine(&mut self, oso: &mut Oso) -> Result<(), PolicyError> {
-        Telemetry::initialize_policy_engine(oso)?;
-        MetricCatalog::initialize_policy_engine(oso)?;
+    fn initialize_policy_engine(&self, oso: &mut Oso) -> Result<(), PolicyError> {
+        Telemetry::register_with_policy_engine(oso)?;
+        MetricCatalog::register_with_policy_engine(oso)?;
 
         oso.register_class(
             EligibilityContext::get_polar_class_builder()

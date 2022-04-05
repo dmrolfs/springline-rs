@@ -11,7 +11,10 @@ pub mod decision;
 pub mod eligibility;
 pub mod governance;
 pub mod plan;
+mod portfolio;
 pub mod sense;
+
+pub use portfolio::CollectMetricPortfolio;
 
 pub const REASON: &str = "reason";
 

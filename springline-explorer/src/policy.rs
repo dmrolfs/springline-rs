@@ -150,7 +150,7 @@ where
         let (data, context) = data_context.unwrap();
 
         eprintln!("\nLoading {} policy...", state.phase);
-        let mut policy = <P as MakePolicy>::make(&state.app_state.settings);
+        let policy = <P as MakePolicy>::make(&state.app_state.settings);
         let sources = policy.render_policy_sources()?;
         for s in sources.iter() {
             let mut buffer = String::new();

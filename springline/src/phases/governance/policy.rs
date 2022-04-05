@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::model::MetricCatalog;
 use oso::{Oso, PolarClass, PolarValue};
-use proctor::elements::{PolicySource, PolicySubscription, QueryPolicy, QueryResult, Telemetry};
+use proctor::elements::{PolicyContributor, PolicySource, PolicySubscription, QueryPolicy, QueryResult, Telemetry};
 use proctor::error::PolicyError;
 use proctor::phases::sense::TelemetrySubscription;
 use proctor::{ProctorContext, SharedString};
@@ -68,9 +68,9 @@ impl QueryPolicy for GovernancePolicy {
     type Item = ScalePlan;
     type TemplateData = GovernanceTemplateData;
 
-    fn initialize_policy_engine(&mut self, engine: &mut Oso) -> Result<(), PolicyError> {
-        Telemetry::initialize_policy_engine(engine)?;
-        MetricCatalog::initialize_policy_engine(engine)?;
+    fn initialize_policy_engine(&self, engine: &mut Oso) -> Result<(), PolicyError> {
+        Telemetry::register_with_policy_engine(engine)?;
+        MetricCatalog::register_with_policy_engine(engine)?;
 
         engine.register_class(
             GovernanceContext::get_polar_class_builder()

@@ -3,7 +3,9 @@ use std::collections::{HashMap, HashSet};
 
 use crate::model::MetricCatalog;
 use oso::{Oso, PolarClass, PolarValue};
-use proctor::elements::{PolicySource, PolicySubscription, QueryPolicy, QueryResult, Telemetry, Timestamp};
+use proctor::elements::{
+    PolicyContributor, PolicySource, PolicySubscription, QueryPolicy, QueryResult, Telemetry, Timestamp,
+};
 use proctor::error::PolicyError;
 use proctor::phases::sense::TelemetrySubscription;
 use proctor::{ProctorContext, ProctorIdGenerator, SharedString};
@@ -127,9 +129,9 @@ impl QueryPolicy for DecisionPolicy {
         &mut self.sources
     }
 
-    fn initialize_policy_engine(&mut self, engine: &mut Oso) -> Result<(), PolicyError> {
-        Telemetry::initialize_policy_engine(engine)?;
-        MetricCatalog::initialize_policy_engine(engine)?;
+    fn initialize_policy_engine(&self, engine: &mut Oso) -> Result<(), PolicyError> {
+        Telemetry::register_with_policy_engine(engine)?;
+        MetricCatalog::register_with_policy_engine(engine)?;
 
         engine.register_class(
             DecisionContext::get_polar_class_builder()
