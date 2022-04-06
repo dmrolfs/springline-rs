@@ -90,10 +90,20 @@ mod tests {
     use super::*;
     use crate::model::{ClusterMetrics, FlowMetrics, JobHealthMetrics};
     use claim::*;
+    use oso::Oso;
+    use oso::PolarClass;
     use pretty_assertions::assert_eq;
     use pretty_snowflake::{Id, Label, Labeling};
-    use proctor::elements::Timestamp;
-    use std::collections::HashMap;
+    use proctor::elements::{telemetry, PolicyOutcome, PolicySource, QueryPolicy, QueryResult, Timestamp};
+    use proctor::elements::{PolicyContributor, PolicyFilterEvent};
+    use proctor::error::{PolicyError, ProctorError};
+    use proctor::graph::stage::WithMonitor;
+    use proctor::graph::Connect;
+    use proctor::phases::policy_phase::PolicyPhase;
+    use proctor::phases::sense::SubscriptionRequirements;
+    use proctor::{Correlation, ProctorContext};
+    use serde::{Deserialize, Serialize};
+    use std::collections::{HashMap, HashSet};
     use std::time::Duration;
     use tokio::sync::mpsc;
     use tokio_test::block_on;
@@ -104,7 +114,7 @@ mod tests {
             correlation_id: Id::direct(
                 <MetricCatalog as Label>::labeler().label(),
                 ts.as_secs(),
-                ts.as_f64().to_string(),
+                ts.as_secs_f64().to_string(),
             ),
             recv_timestamp: ts,
             health: JobHealthMetrics::default(),
@@ -173,6 +183,7 @@ mod tests {
                 true,  // 18s - coverage: 0.6 [2,3,4,5]
                 true,  // 19s - coverage: 0.6 [1,2,3,4]
             ];
+
             for i in 0..data.len() {
                 async {
                     assert_ok!(tx_in.send(data[i].clone()).await);
@@ -183,11 +194,200 @@ mod tests {
                 .await;
             }
 
-            tracing::info!("DMR: EEE");
             stage_handle.abort();
-            tracing::info!("DMR: FFF");
             inlet.close().await;
-            tracing::info!("DMR: GGG");
+        })
+    }
+
+    #[derive(PolarClass, Label, Debug, Clone, Serialize, Deserialize)]
+    struct TestContext {
+        pub recv_timestamp: Timestamp,
+        pub correlation_id: Id<Self>,
+    }
+
+    impl PartialEq for TestContext {
+        fn eq(&self, _other: &Self) -> bool {
+            true
+        }
+    }
+
+    impl Correlation for TestContext {
+        type Correlated = Self;
+
+        fn correlation(&self) -> &Id<Self::Correlated> {
+            &self.correlation_id
+        }
+    }
+
+    #[async_trait]
+    impl ProctorContext for TestContext {
+        type Error = ProctorError;
+        fn custom(&self) -> telemetry::TableType {
+            telemetry::TableType::default()
+        }
+    }
+
+    impl SubscriptionRequirements for TestContext {
+        fn required_fields() -> HashSet<SharedString> {
+            HashSet::new()
+        }
+    }
+
+    #[derive(Debug)]
+    struct TestPolicy {
+        pub policies: Vec<PolicySource>,
+    }
+
+    impl QueryPolicy for TestPolicy {
+        type Item = MetricPortfolio;
+        type Context = TestContext;
+        type Args = (Self::Item, Self::Context);
+        type TemplateData = ();
+
+        fn base_template_name() -> &'static str {
+            "test_policy"
+        }
+
+        fn policy_template_data(&self) -> Option<&Self::TemplateData> {
+            None
+        }
+
+        fn policy_template_data_mut(&mut self) -> Option<&mut Self::TemplateData> {
+            None
+        }
+
+        fn sources(&self) -> &[PolicySource] {
+            self.policies.as_slice()
+        }
+
+        fn sources_mut(&mut self) -> &mut Vec<PolicySource> {
+            &mut self.policies
+        }
+
+        fn initialize_policy_engine(&self, engine: &mut Oso) -> Result<(), PolicyError> {
+            MetricPortfolio::register_with_policy_engine(engine)
+        }
+
+        fn make_query_args(&self, item: &Self::Item, context: &Self::Context) -> Self::Args {
+            (item.clone(), context.clone())
+        }
+
+        fn query_policy(&self, engine: &Oso, args: Self::Args) -> Result<QueryResult, PolicyError> {
+            let q = assert_ok!(engine.query_rule("healthy", args));
+            QueryResult::from_query(q)
+        }
+    }
+
+    #[test]
+    fn test_portfolio_in_policy() {
+        once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
+        let main_span = tracing::info_span!("test_portfolio_in_policy");
+        let _main_span_guard = main_span.enter();
+
+        let now = Timestamp::now();
+        let start = now - Duration::from_secs(10);
+        tracing::info!("NOW = {now:?} == {now}");
+        tracing::info!("START = {start:?} == {start}");
+
+        let data: Vec<MetricCatalog> = (0..20)
+            .map(|i: u32| {
+                let value = if i < 10 { (i + 1) as i32 } else { (20 - i) as i32 };
+                make_test_catalog(start + Duration::from_secs(i as u64), value)
+            })
+            .collect();
+
+        let (tx_ctx_in, rx_ctx_in) = mpsc::channel(8);
+        let (tx_in, rx_in) = mpsc::channel(8);
+        let (tx_out, mut rx_out) = mpsc::channel(8);
+
+        let mut collect_stage =
+            CollectMetricPortfolio::new("test_collect_metric_portfolio", Duration::from_secs(1) * 3);
+        let policy = TestPolicy {
+            policies: vec![assert_ok!(PolicySource::from_complete_string(
+                "test_policy",
+                r##"healthy(item, _) if item.flow_input_records_lag_max_within(5, 8);"##
+            ))],
+        };
+
+        block_on(async {
+            let mut inlet = collect_stage.inlet();
+            let mut policy_stage = assert_ok!(PolicyPhase::carry_policy_outcome("test_policy", policy).await);
+            let mut rx_monitor = policy_stage.rx_monitor();
+            let mut ctx_inlet = policy_stage.context_inlet();
+            let mut outlet = policy_stage.outlet();
+
+            collect_stage.inlet.attach("test_source".into(), rx_in).await;
+            ctx_inlet.attach("test_context".into(), rx_ctx_in).await;
+            (collect_stage.outlet.clone(), policy_stage.inlet()).connect().await;
+            outlet.attach("test_sink".into(), tx_out).await;
+
+            let collect_stage_handle = tokio::spawn(async move { assert_ok!(collect_stage.run().await) });
+            let policy_stage_handle = tokio::spawn(async move { assert_ok!(policy_stage.run().await) });
+
+            let expected = [
+                None,
+                None,
+                None,
+                Some(4),
+                Some(5),
+                Some(6),
+                Some(7),
+                Some(8),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(5),
+                Some(4),
+                Some(3),
+                Some(2),
+                Some(1),
+            ];
+
+            assert_ok!(
+                tx_ctx_in
+                    .send(TestContext {
+                        recv_timestamp: Timestamp::now(),
+                        correlation_id: Id::direct("text_context", 123, "abc"),
+                    })
+                    .await
+            );
+
+            assert_matches!(
+                &*assert_ok!(rx_monitor.recv().await),
+                &PolicyFilterEvent::ContextChanged(_)
+            );
+
+            for i in 0..data.len() {
+                async {
+                    assert_ok!(tx_in.send(data[i].clone()).await);
+
+                    if let Some(expected) = expected[i] {
+                        assert_matches!(
+                            &*assert_ok!(rx_monitor.recv().await),
+                            &PolicyFilterEvent::ItemPassed(_, _)
+                        );
+
+                        let actual: PolicyOutcome<MetricPortfolio, TestContext> = assert_some!(rx_out.recv().await);
+
+                        assert_eq!((i, assert_some!(actual.item.flow.input_records_lag_max)), (i, expected));
+                    } else {
+                        assert_matches!(
+                            &*assert_ok!(rx_monitor.recv().await),
+                            &PolicyFilterEvent::ItemBlocked(_, _)
+                        );
+                    }
+                }
+                .instrument(tracing::info_span!("test item", INDEX=%i))
+                .await;
+            }
+
+            collect_stage_handle.abort();
+            assert_ok!(policy_stage_handle.await);
+            inlet.close().await;
         })
     }
 }

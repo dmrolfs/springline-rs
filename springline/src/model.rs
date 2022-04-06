@@ -64,6 +64,14 @@ impl MetricPortfolio {
     }
 }
 
+impl Correlation for MetricPortfolio {
+    type Correlated = MetricCatalog;
+
+    fn correlation(&self) -> &Id<Self::Correlated> {
+        &self.correlation_id
+    }
+}
+
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct MetricPortfolioBuilder {
     metrics: VecDeque<MetricCatalog>,
@@ -140,7 +148,7 @@ impl MetricPortfolio {
         F: FnMut(&MetricCatalog) -> bool,
     {
         let head_ts = self.recv_timestamp;
-        self.for_interval((head_ts - looking_back, head_ts).into(), f)
+        self.for_interval((head_ts - looking_back, head_ts).try_into().unwrap(), f)
     }
 
     #[tracing::instrument(level = "trace", skip(self, f))]
@@ -182,7 +190,15 @@ impl MetricPortfolio {
                 range_start.map(|ts| ts.to_string()),
                 range_end.map(|ts| ts.to_string())
             );
-            let range_interval = range_start.zip(range_end).map(|(start, end)| Interval::new(start, end));
+            let range_interval = range_start
+                .zip(range_end)
+                .map(|(start, end)| Interval::new(start, end))
+                .transpose()
+                .unwrap_or_else(|err| {
+                    tracing::warn!(error=?err, "portfolio represents an invalid interval - using None");
+                    None
+                });
+
             let coverage = range_interval
                 .map(|coverage| coverage.duration().as_secs_f64() / interval.duration().as_secs_f64())
                 .unwrap_or(0.0);
@@ -211,7 +227,10 @@ impl Portfolio for MetricPortfolio {
         // portfolio runs oldest to youngest
         let start = self.portfolio.front().map(|m| m.recv_timestamp);
         let end = self.portfolio.back().map(|m| m.recv_timestamp);
-        start.zip(end).map(|i| i.into())
+        start.zip(end).map(|i| {
+            i.try_into()
+                .expect("portfolio represents invalid interval (end before start): {i:?}")
+        })
     }
 
     fn set_time_window(&mut self, time_window: Duration) {
@@ -334,28 +353,6 @@ impl MetricPortfolio {
                 result
             },
         )
-
-        // if let Some(youngest) = younger.back() {
-        //     let cutoff = youngest.recv_timestamp - time_window;
-        //     let older_iter = older.iter().cloned();
-        //     let younger_iter = younger.iter().cloned();
-        //     let result: VecDeque<MetricCatalog> = older_iter
-        //         .chain(younger_iter)
-        //         .filter(|m| cutoff <= m.recv_timestamp)
-        //         .collect();
-        //     tracing::error!(
-        //         ?time_window,
-        //         older=?older.iter().map(|m| m.recv_timestamp).collect::<Vec<_>>(),
-        //         younger=?younger.iter().map(|m| m.recv_timestamp).collect::<Vec<_>>(),
-        //         ?youngest, ?cutoff,
-        //         "filtering catalogs by time window: {:?}",
-        //         result.iter().map(|m| m.recv_timestamp).collect::<Vec<_>>(),
-        //     );
-        //     result
-        // } else {
-        // //     if younger has no back, then it must be empty.
-        // older.clone()
-        // }
     }
 
     #[tracing::instrument(level = "trace", skip(lhs_portfolio, rhs_portfolio))]
@@ -397,97 +394,6 @@ impl MetricPortfolio {
                 );
                 combined
             })
-
-            // let mut new_book = lhs_portfolio.portfolio.iter().collect::<VecDeque<_>>();
-
-            // let mut lhs_iter = lhs_portfolio.portfolio.iter();
-            // let mut rhs_iter = rhs_portfolio.portfolio.iter();
-            // let mut new_book = VecDeque::with_capacity(lhs_portfolio.portfolio.len() + rhs_portfolio.portfolio.len());
-
-            // let mut lhs = lhs_iter.next();
-            // let mut rhs = rhs_iter.next();
-
-            // loop {
-            //     match (lhs, rhs) {
-            //         (None, None) => break,
-            //
-            //         (Some(l), None) => {
-            //             tracing::trace!("finishing with lhs");
-            //             new_book.push_back(l);
-            //             new_book.extend(lhs_iter);
-            //             break;
-            //         },
-            //
-            //         (None, Some(r)) => {
-            //             tracing::trace!("finishing with rhs");
-            //             new_book.push_back(r);
-            //             new_book.extend(rhs_iter);
-            //             break;
-            //         },
-            //
-            //         (Some(l), Some(r)) => {
-            //             if l.recv_timestamp < r.recv_timestamp {
-            //                 tracing::trace!(pushing=%r.correlation_id, passing_on=%l.correlation_id, "pushing rhs catalog into portfolio");
-            //                 new_book.push_back(r);
-            //                 rhs = rhs_iter.next();
-            //             } else {
-            //                 tracing::trace!(pushing=%l.correlation_id, passing_on=%r.correlation_id, "pushing lhs catalog into portfolio");
-            //                 new_book.push_back(l);
-            //                 lhs = lhs_iter.next();
-            //             }
-            //         },
-            //     }
-            // }
-
-            // if let Some(youngest) = new_book.back() {
-            //     let cutoff = youngest.recv_timestamp - time_window;
-            //     new_book.retain(|m| cutoff <= m.recv_timestamp);
-            // }
-
-            // new_book.into_iter().cloned().collect()
-
-            // let mut lhs_iter = lhs_portfolio.portfolio.iter();
-            // let mut rhs_iter = rhs_portfolio.portfolio.iter();
-            // let mut new_book = VecDeque::with_capacity(limit);
-            //
-            // let mut lhs = lhs_iter.next();
-            // let mut rhs = rhs_iter.next();
-            //
-            // while new_book.len() < limit {
-            //     match (lhs, rhs) {
-            //         (None, None) => break,
-            //
-            //         (Some(l), None) => {
-            //             tracing::trace!("finishing with lhs");
-            //             new_book.push_back(l.clone());
-            //             let need = limit - new_book.len();
-            //             new_book.extend(lhs_iter.take(need).cloned());
-            //             break;
-            //         },
-            //
-            //         (None, Some(r)) => {
-            //             tracing::trace!("finishing with rhs");
-            //             new_book.push_back(r.clone());
-            //             let need = limit - new_book.len();
-            //             new_book.extend(rhs_iter.take(need).cloned());
-            //             break;
-            //         },
-            //
-            //         (Some(l), Some(r)) => {
-            //             if l.recv_timestamp < r.recv_timestamp {
-            //                 tracing::trace!(catalog=%r.correlation_id, passing_on=%l.correlation_id, "pushing rhs catalog into portfolio");
-            //                 new_book.push_back(r.clone());
-            //                 rhs = rhs_iter.next();
-            //             } else {
-            //                 tracing::trace!(catalog=%l.correlation_id, passing_on=%r.correlation_id, "pushing lhs catalog into portfolio");
-            //                 new_book.push_back(l.clone());
-            //                 lhs = lhs_iter.next();
-            //             }
-            //         },
-            //     }
-            // }
-            //
-            // new_book
         }
     }
 }
@@ -499,11 +405,28 @@ impl PolicyContributor for MetricPortfolio {
 
         engine.register_class(
             Self::get_polar_class_builder()
-                .add_attribute_getter("recv_timestamp", |m| m.recv_timestamp)
-                .add_attribute_getter("health", |m| m.health.clone())
-                .add_attribute_getter("flow", |m| m.flow.clone())
-                .add_attribute_getter("cluster", |m| m.cluster.clone())
-                .add_attribute_getter("custom", |m| m.custom.clone())
+                .add_attribute_getter("recv_timestamp", |p| p.recv_timestamp)
+                .add_attribute_getter("health", |p| p.health.clone())
+                .add_attribute_getter("flow", |p| p.flow.clone())
+                .add_attribute_getter("cluster", |p| p.cluster.clone())
+                .add_attribute_getter("custom", |p| p.custom.clone())
+                .add_method(
+                    "flow_input_records_lag_max_within",
+                    Self::flow_input_records_lag_max_within,
+                )
+                .add_method(
+                    "flow_input_millis_behind_latest_within",
+                    Self::flow_input_millis_behind_latest_within,
+                )
+                .add_method("cluster_task_cpu_load_within", Self::cluster_task_cpu_load_within)
+                .add_method(
+                    "cluster_task_heap_memory_used_within",
+                    Self::cluster_task_heap_memory_used_within,
+                )
+                .add_method(
+                    "cluster_task_memory_load_within",
+                    Self::cluster_task_heap_memory_load_within,
+                )
                 .build(),
         )?;
 
@@ -1209,7 +1132,7 @@ mod tests {
         telemetry.insert("health.job_uptime_millis".to_string(), TelemetryValue::Integer(201402));
         telemetry.insert(
             "flow.forecasted_timestamp".to_string(),
-            TelemetryValue::Float(Timestamp::new(1647307440, 378969192).as_f64()),
+            TelemetryValue::Float(Timestamp::new(1647307440, 378969192).as_secs_f64()),
         );
         telemetry.insert(
             "cluster.task_network_output_queue_len".to_string(),
@@ -1282,7 +1205,7 @@ mod tests {
                 flow: FlowMetrics {
                     records_in_per_sec: 20.0,
                     records_out_per_sec: 19.966666666666665,
-                    forecasted_timestamp: Some(Timestamp::new(1647307440, 378969192).as_f64()),
+                    forecasted_timestamp: Some(Timestamp::new(1647307440, 378969192).as_secs_f64()),
                     forecasted_records_in_per_sec: Some(21.4504261933966),
                     input_records_lag_max: None,
                     input_millis_behind_latest: None,
@@ -1373,7 +1296,7 @@ mod tests {
             },
             flow: FlowMetrics {
                 records_in_per_sec: 17.,
-                forecasted_timestamp: Some(ts.as_f64()),
+                forecasted_timestamp: Some(ts.as_secs_f64()),
                 forecasted_records_in_per_sec: Some(23.),
                 input_records_lag_max: Some(314),
                 input_millis_behind_latest: None,
@@ -1426,7 +1349,7 @@ mod tests {
                 Token::F64(0.),
                 Token::Str("flow.forecasted_timestamp"),
                 Token::Some,
-                Token::F64(ts.as_f64()),
+                Token::F64(ts.as_secs_f64()),
                 Token::Str("flow.forecasted_records_in_per_sec"),
                 Token::Some,
                 Token::F64(23.),
@@ -1555,7 +1478,7 @@ mod tests {
             correlation_id: Id::direct(
                 <MetricCatalog as Label>::labeler().label(),
                 ts.as_secs(),
-                ts.as_f64().to_string(),
+                ts.as_secs_f64().to_string(),
             ),
             recv_timestamp: ts,
             health: JobHealthMetrics::default(),

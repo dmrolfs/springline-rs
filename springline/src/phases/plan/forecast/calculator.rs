@@ -84,7 +84,9 @@ impl<F: Forecaster> ForecastCalculator<F> {
     pub fn calculate_next_workload(
         &mut self, trigger_point: Timestamp,
     ) -> Result<(Timestamp, RecordsPerSecond), PlanError> {
-        let next = self.forecaster.expected_next_observation_timestamp(trigger_point.as_f64());
+        let next = self
+            .forecaster
+            .expected_next_observation_timestamp(trigger_point.as_secs_f64());
         self.forecaster
             .forecast()?
             .workload_at(next.into())

@@ -31,7 +31,7 @@ impl From<PlanningFeedback> for Telemetry {
 
         telemetry.insert(
             model::MC_FLOW__FORECASTED_TIMESTAMP.to_string(),
-            feedback.forecasted_timestamp.as_f64().into(),
+            feedback.forecasted_timestamp.as_secs_f64().into(),
         );
 
         telemetry.insert(
@@ -307,7 +307,7 @@ impl Monitor {
             .inc();
 
         let start = plan.recv_timestamp;
-        let cycle_time_seconds = now.as_f64() - start.as_f64();
+        let cycle_time_seconds = now.as_secs_f64() - start.as_secs_f64();
         PIPELINE_CYCLE_TIME.observe(cycle_time_seconds);
 
         ActionFeedback {
