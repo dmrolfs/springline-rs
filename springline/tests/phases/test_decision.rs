@@ -14,7 +14,7 @@ use proctor::phases::policy_phase::PolicyPhase;
 use proctor::phases::sense::{self, Sense, SubscriptionRequirements, TelemetrySubscription};
 use proctor::{AppData, ProctorContext};
 use serde::de::DeserializeOwned;
-use springline::model::{MetricCatalog, MC_CLUSTER__NR_ACTIVE_JOBS, MC_CLUSTER__NR_TASK_MANAGERS};
+use springline::model::{MetricCatalog, MetricPortfolio, MC_CLUSTER__NR_ACTIVE_JOBS, MC_CLUSTER__NR_TASK_MANAGERS};
 use springline::phases::decision::{make_decision_transform, DecisionResult, DECISION_DIRECTION};
 use springline::phases::decision::{DecisionContext, DecisionPolicy, DecisionTemplateData};
 use springline::settings::DecisionSettings;
@@ -37,28 +37,28 @@ lazy_static::lazy_static! {
 }
 
 #[allow(dead_code)]
-struct TestFlow<In, Out, C> {
+struct TestFlow<Out, C> {
     pub graph_handle: JoinHandle<()>,
     pub tx_data_sensor_api: stage::ActorSourceApi<Telemetry>,
     pub tx_context_sensor_api: stage::ActorSourceApi<Telemetry>,
     pub tx_clearinghouse_api: sense::ClearinghouseApi,
     pub tx_decision_api: elements::PolicyFilterApi<C, DecisionTemplateData>,
-    pub rx_decision_monitor: elements::PolicyFilterMonitor<In, C>,
+    pub rx_decision_monitor: elements::PolicyFilterMonitor<MetricPortfolio, C>,
     pub tx_sink_api: stage::FoldApi<Vec<Out>>,
     pub rx_sink: Option<oneshot::Receiver<Vec<Out>>>,
 }
 
-impl<In, Out, C> TestFlow<In, Out, C>
+impl<Out, C> TestFlow<Out, C>
 where
-    In: AppData + Clone + DeserializeOwned + ToPolar,
+    // In: AppData + Clone + DeserializeOwned + ToPolar,
     Out: AppData + Clone,
     C: ProctorContext,
 {
     pub async fn new(
         sensor_out_subscription: TelemetrySubscription, context_subscription: TelemetrySubscription,
-        decision_stage: impl ThroughStage<In, Out>, decision_context_inlet: Inlet<C>,
+        decision_stage: impl ThroughStage<MetricPortfolio, Out>, decision_context_inlet: Inlet<C>,
         tx_decision_api: elements::PolicyFilterApi<C, DecisionTemplateData>,
-        rx_decision_monitor: elements::PolicyFilterMonitor<In, C>,
+        rx_decision_monitor: elements::PolicyFilterMonitor<MetricPortfolio, C>,
     ) -> anyhow::Result<Self> {
         let telemetry_sensor = stage::ActorSource::<Telemetry>::new("telemetry_sensor");
         let tx_data_sensor_api = telemetry_sensor.tx_api();
@@ -78,6 +78,7 @@ where
             sense::SubscriptionChannel::<C>::connect_subscription(context_subscription, (&mut builder).into()).await?;
         let sense = builder.build_for_out_subscription(sensor_out_subscription).await?;
 
+        let collect = springline::phases::CollectMetricPortfolio::new("collect_portfolio", Duration::from_secs(600));
         let mut sink = stage::Fold::<_, Out, _>::new("sink", Vec::new(), |mut acc, item| {
             acc.push(item);
             acc
@@ -85,7 +86,8 @@ where
         let tx_sink_api = sink.tx_api();
         let rx_sink = sink.take_final_rx();
 
-        (sense.outlet(), decision_stage.inlet()).connect().await;
+        (sense.outlet(), collect.inlet()).connect().await;
+        (collect.outlet(), decision_stage.inlet()).connect().await;
         (context_channel.outlet(), decision_context_inlet).connect().await;
         (decision_stage.outlet(), sink.inlet()).connect().await;
 
@@ -95,6 +97,7 @@ where
 
         let mut graph = Graph::default();
         graph.push_back(Box::new(sense)).await;
+        graph.push_back(Box::new(collect)).await;
         graph.push_back(Box::new(context_channel)).await;
         graph.push_back(Box::new(decision_stage)).await;
         graph.push_back(Box::new(sink)).await;
@@ -150,7 +153,7 @@ where
         command_rx.1.await.map_err(|err| err.into())
     }
 
-    pub async fn recv_policy_event(&mut self) -> anyhow::Result<Arc<elements::PolicyFilterEvent<In, C>>> {
+    pub async fn recv_policy_event(&mut self) -> anyhow::Result<Arc<elements::PolicyFilterEvent<MetricPortfolio, C>>> {
         self.rx_decision_monitor.recv().await.map_err(|err| err.into())
     }
 
@@ -257,9 +260,8 @@ async fn test_decision_carry_policy_result() -> anyhow::Result<()> {
 
     let decision_stage = PolicyPhase::carry_policy_outcome("carry_policy_decision", policy).await?;
     let decision_context_inlet = decision_stage.context_inlet();
-    let tx_decision_api: elements::PolicyFilterApi<DecisionContext, DecisionTemplateData> = decision_stage.tx_api();
-    let rx_decision_monitor: elements::PolicyFilterMonitor<MetricCatalog, DecisionContext> =
-        decision_stage.rx_monitor();
+    let tx_decision_api = decision_stage.tx_api();
+    let rx_decision_monitor = decision_stage.rx_monitor();
 
     let mut flow = TestFlow::new(
         telemetry_subscription,
@@ -314,7 +316,7 @@ async fn test_decision_carry_policy_result() -> anyhow::Result<()> {
             .await?
     );
 
-    let actual: Vec<PolicyOutcome<MetricCatalog, DecisionContext>> = flow.close().await?;
+    let actual: Vec<PolicyOutcome<MetricPortfolio, DecisionContext>> = flow.close().await?;
     tracing::warn!(?actual, "DMR: 08. Verify final accumulation...");
     let actual_vals: Vec<(f64, Option<String>)> = actual
         .into_iter()
@@ -343,7 +345,7 @@ async fn test_decision_carry_policy_result() -> anyhow::Result<()> {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn test_decision_common() -> anyhow::Result<()> {
     once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
-    let main_span = tracing::info_span!("test_decision_basic");
+    let main_span = tracing::info_span!("test_decision_common");
     let _ = main_span.enter();
 
     let telemetry_subscription = TelemetrySubscription::new("measurements")
@@ -374,7 +376,7 @@ async fn test_decision_common() -> anyhow::Result<()> {
     .await?;
     let decision_context_inlet = decision_stage.context_inlet();
     let tx_decision_api: elements::PolicyFilterApi<DecisionContext, DecisionTemplateData> = decision_stage.tx_api();
-    let rx_decision_monitor: elements::PolicyFilterMonitor<MetricCatalog, DecisionContext> =
+    let rx_decision_monitor: elements::PolicyFilterMonitor<MetricPortfolio, DecisionContext> =
         decision_stage.rx_monitor();
 
     let mut flow = TestFlow::new(
@@ -431,7 +433,7 @@ async fn test_decision_common() -> anyhow::Result<()> {
             .await?
     );
 
-    let actual: Vec<DecisionResult<MetricCatalog>> = flow.close().await?;
+    let actual: Vec<DecisionResult<MetricPortfolio>> = flow.close().await?;
     tracing::warn!(?actual, "DMR: 08. Verify final accumulation...");
     let actual_vals: Vec<(f64, &'static str)> = actual
         .into_iter()

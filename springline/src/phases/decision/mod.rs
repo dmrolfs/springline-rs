@@ -9,7 +9,7 @@ pub use result::make_decision_transform;
 pub use result::DecisionResult;
 pub use result::DECISION_DIRECTION;
 
-use crate::model::MetricCatalog;
+use crate::model::MetricPortfolio;
 use proctor::elements::PolicySubscription;
 use proctor::phases::policy_phase::PolicyPhase;
 use proctor::phases::sense::{ClearinghouseSubscriptionAgent, SubscriptionChannel};
@@ -20,10 +20,10 @@ use crate::phases::eligibility::EligibilityOutcome;
 use crate::settings::DecisionSettings;
 use crate::Result;
 
-pub type DecisionOutcome = DecisionResult<MetricCatalog>;
+pub type DecisionOutcome = DecisionResult<MetricPortfolio>;
 pub type DecisionApi = proctor::elements::PolicyFilterApi<DecisionContext, DecisionTemplateData>;
-pub type DecisionMonitor = proctor::elements::PolicyFilterMonitor<MetricCatalog, DecisionContext>;
-pub type DecisionEvent = proctor::elements::PolicyFilterEvent<MetricCatalog, DecisionContext>;
+pub type DecisionMonitor = proctor::elements::PolicyFilterMonitor<MetricPortfolio, DecisionContext>;
+pub type DecisionEvent = proctor::elements::PolicyFilterEvent<MetricPortfolio, DecisionContext>;
 
 pub type DecisionPhase = (
     Box<PolicyPhase<EligibilityOutcome, DecisionOutcome, DecisionContext, DecisionTemplateData>>,

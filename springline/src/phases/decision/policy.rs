@@ -1,7 +1,7 @@
 use once_cell::sync::Lazy;
 use std::collections::{HashMap, HashSet};
 
-use crate::model::MetricCatalog;
+use crate::model::MetricPortfolio;
 use oso::{Oso, PolarClass, PolarValue};
 use proctor::elements::{
     PolicyContributor, PolicySource, PolicySubscription, QueryPolicy, QueryResult, Telemetry, Timestamp,
@@ -106,7 +106,7 @@ impl PolicySubscription for DecisionPolicy {
 impl QueryPolicy for DecisionPolicy {
     type Args = (Self::Item, Self::Context, PolarValue, PolarValue);
     type Context = DecisionContext;
-    type Item = MetricCatalog;
+    type Item = MetricPortfolio;
     type TemplateData = DecisionTemplateData;
 
     fn base_template_name() -> &'static str {
@@ -131,7 +131,7 @@ impl QueryPolicy for DecisionPolicy {
 
     fn initialize_policy_engine(&self, engine: &mut Oso) -> Result<(), PolicyError> {
         Telemetry::register_with_policy_engine(engine)?;
-        MetricCatalog::register_with_policy_engine(engine)?;
+        MetricPortfolio::register_with_policy_engine(engine)?;
 
         engine.register_class(
             DecisionContext::get_polar_class_builder()

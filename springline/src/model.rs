@@ -26,7 +26,7 @@ pub trait Portfolio: AppData + Monoid + std::ops::Add<Self::Item, Output = Self>
     fn window_interval(&self) -> Option<Interval>;
 }
 
-#[derive(PolarClass, Clone, PartialEq)]
+#[derive(PolarClass, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MetricPortfolio {
     portfolio: VecDeque<MetricCatalog>,
     time_window: Duration,
@@ -38,7 +38,7 @@ impl fmt::Debug for MetricPortfolio {
             .field("interval", &self.window_interval())
             .field("time_window", &self.time_window)
             .field("portfolio_size", &self.portfolio.len())
-            .field("head", &self.deref().recv_timestamp.to_string())
+            .field("head", &self.head().map(|c| c.recv_timestamp.to_string()))
             .field("portfolio", &self.portfolio.iter().map(|m| m.recv_timestamp.to_string()).collect::<Vec<_>>())
             // .field("head", self.deref())
             .finish()
@@ -64,6 +64,42 @@ impl MetricPortfolio {
     }
 }
 
+impl PolicyContributor for MetricPortfolio {
+    #[tracing::instrument(level = "trace", skip(engine))]
+    fn register_with_policy_engine(engine: &mut Oso) -> Result<(), PolicyError> {
+        MetricCatalog::register_with_policy_engine(engine)?;
+
+        engine.register_class(
+            Self::get_polar_class_builder()
+                .add_attribute_getter("recv_timestamp", |p| p.recv_timestamp)
+                .add_attribute_getter("health", |p| p.health.clone())
+                .add_attribute_getter("flow", |p| p.flow.clone())
+                .add_attribute_getter("cluster", |p| p.cluster.clone())
+                .add_attribute_getter("custom", |p| p.custom.clone())
+                .add_method(
+                    "flow_input_records_lag_max_within",
+                    Self::flow_input_records_lag_max_within,
+                )
+                .add_method(
+                    "flow_input_millis_behind_latest_within",
+                    Self::flow_input_millis_behind_latest_within,
+                )
+                .add_method("cluster_task_cpu_load_within", Self::cluster_task_cpu_load_within)
+                .add_method(
+                    "cluster_task_heap_memory_used_within",
+                    Self::cluster_task_heap_memory_used_within,
+                )
+                .add_method(
+                    "cluster_task_memory_load_within",
+                    Self::cluster_task_heap_memory_load_within,
+                )
+                .build(),
+        )?;
+
+        Ok(())
+    }
+}
+
 impl Correlation for MetricPortfolio {
     type Correlated = MetricCatalog;
 
@@ -72,52 +108,15 @@ impl Correlation for MetricPortfolio {
     }
 }
 
-#[derive(Debug, Default, Clone, PartialEq)]
-pub struct MetricPortfolioBuilder {
-    metrics: VecDeque<MetricCatalog>,
-    time_window: Option<Duration>,
-}
-
-impl MetricPortfolioBuilder {
-    pub const fn with_time_window(mut self, time_window: Duration) -> Self {
-        self.time_window = Some(time_window);
-        self
-    }
-
-    pub fn with_size_and_interval(mut self, size: usize, interval: Duration) -> Self {
-        self.time_window = Some(interval * size as u32);
-        self
-    }
-
-    pub fn push(&mut self, catalog: MetricCatalog) -> &mut Self {
-        self.metrics.push_back(catalog);
-        self
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.metrics.is_empty()
-    }
-
-    pub fn len(&self) -> usize {
-        self.metrics.len()
-    }
-
-    pub fn build(self) -> MetricPortfolio {
-        let mut portfolio: Vec<MetricCatalog> = self.metrics.into_iter().collect();
-        portfolio.sort_by(|lhs, rhs| lhs.recv_timestamp.cmp(&rhs.recv_timestamp)); // sort to reverse
-        tracing::trace!(
-            portfolio=?portfolio.iter().map(|m| m.recv_timestamp.to_string()).collect::<Vec<_>>(),
-            "DMR: PORTFOLIO BUILD - make sure goes from oldest to newest"
-        );
-
-        MetricPortfolio {
-            portfolio: portfolio.into_iter().collect(),
-            time_window: self.time_window.expect("must supply time window before final build"),
-        }
-    }
-}
-
 impl MetricPortfolio {
+    pub fn head(&self) -> Option<&MetricCatalog> {
+        self.portfolio.back()
+    }
+
+    pub fn unchecked_head(&self) -> &MetricCatalog {
+        self.head().expect("MetricCatalogBook should not be empty")
+    }
+
     pub fn is_empty(&self) -> bool {
         self.portfolio.is_empty()
     }
@@ -287,7 +286,7 @@ impl std::ops::Deref for MetricPortfolio {
     type Target = MetricCatalog;
 
     fn deref(&self) -> &Self::Target {
-        self.portfolio.back().expect("MetricCatalogBook should not be empty")
+        self.unchecked_head()
     }
 }
 
@@ -398,39 +397,48 @@ impl MetricPortfolio {
     }
 }
 
-impl PolicyContributor for MetricPortfolio {
-    #[tracing::instrument(level = "trace", skip(engine))]
-    fn register_with_policy_engine(engine: &mut Oso) -> Result<(), PolicyError> {
-        MetricCatalog::register_with_policy_engine(engine)?;
+#[derive(Debug, Default, Clone, PartialEq)]
+pub struct MetricPortfolioBuilder {
+    metrics: VecDeque<MetricCatalog>,
+    time_window: Option<Duration>,
+}
 
-        engine.register_class(
-            Self::get_polar_class_builder()
-                .add_attribute_getter("recv_timestamp", |p| p.recv_timestamp)
-                .add_attribute_getter("health", |p| p.health.clone())
-                .add_attribute_getter("flow", |p| p.flow.clone())
-                .add_attribute_getter("cluster", |p| p.cluster.clone())
-                .add_attribute_getter("custom", |p| p.custom.clone())
-                .add_method(
-                    "flow_input_records_lag_max_within",
-                    Self::flow_input_records_lag_max_within,
-                )
-                .add_method(
-                    "flow_input_millis_behind_latest_within",
-                    Self::flow_input_millis_behind_latest_within,
-                )
-                .add_method("cluster_task_cpu_load_within", Self::cluster_task_cpu_load_within)
-                .add_method(
-                    "cluster_task_heap_memory_used_within",
-                    Self::cluster_task_heap_memory_used_within,
-                )
-                .add_method(
-                    "cluster_task_memory_load_within",
-                    Self::cluster_task_heap_memory_load_within,
-                )
-                .build(),
-        )?;
+impl MetricPortfolioBuilder {
+    pub const fn with_time_window(mut self, time_window: Duration) -> Self {
+        self.time_window = Some(time_window);
+        self
+    }
 
-        Ok(())
+    pub fn with_size_and_interval(mut self, size: usize, interval: Duration) -> Self {
+        self.time_window = Some(interval * size as u32);
+        self
+    }
+
+    pub fn push(&mut self, catalog: MetricCatalog) -> &mut Self {
+        self.metrics.push_back(catalog);
+        self
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.metrics.is_empty()
+    }
+
+    pub fn len(&self) -> usize {
+        self.metrics.len()
+    }
+
+    pub fn build(self) -> MetricPortfolio {
+        let mut portfolio: Vec<MetricCatalog> = self.metrics.into_iter().collect();
+        portfolio.sort_by(|lhs, rhs| lhs.recv_timestamp.cmp(&rhs.recv_timestamp)); // sort to reverse
+        tracing::trace!(
+            portfolio=?portfolio.iter().map(|m| m.recv_timestamp.to_string()).collect::<Vec<_>>(),
+            "DMR: PORTFOLIO BUILD - make sure goes from oldest to newest"
+        );
+
+        MetricPortfolio {
+            portfolio: portfolio.into_iter().collect(),
+            time_window: self.time_window.expect("must supply time window before final build"),
+        }
     }
 }
 

@@ -455,7 +455,11 @@ mod tests {
             pool_max_idle_per_host: None,
         },
         kubernetes: KubernetesSettings::default(),
-        engine: EngineSettings { machine_id: 7, node_id: 3 },
+        engine: EngineSettings {
+            machine_id: 7,
+            node_id: 3,
+            telemetry_portfolio_window: Duration::from_secs(600),
+        },
         sensor: SensorSettings {
             flink: FlinkSensorSettings {
                 metrics_initial_delay: Duration::from_secs(300),
@@ -588,10 +592,21 @@ mod tests {
             ],
             || {
                 let actual: Settings = assert_ok!(Settings::load(&options));
-                assert_eq!(actual.engine, EngineSettings { machine_id: 17, node_id: 13 });
+                assert_eq!(
+                    actual.engine,
+                    EngineSettings {
+                        machine_id: 17,
+                        node_id: 13,
+                        telemetry_portfolio_window: Duration::from_secs(600)
+                    }
+                );
 
                 let expected = Settings {
-                    engine: EngineSettings { machine_id: 17, node_id: 13 },
+                    engine: EngineSettings {
+                        machine_id: 17,
+                        node_id: 13,
+                        telemetry_portfolio_window: Duration::from_secs(600),
+                    },
                     flink: FlinkSettings {
                         label: "unspecified_flink".to_string(),
                         job_manager_uri_scheme: "http".to_string(),
@@ -689,7 +704,14 @@ mod tests {
 
         with_env_vars("test_local_load", vec![("APP_ENVIRONMENT", Some("local"))], || {
             let actual: Settings = assert_ok!(Settings::load(&options));
-            assert_eq!(actual.engine, EngineSettings { machine_id: 1, node_id: 1 });
+            assert_eq!(
+                actual.engine,
+                EngineSettings {
+                    machine_id: 1,
+                    node_id: 1,
+                    telemetry_portfolio_window: Duration::from_secs(600),
+                }
+            );
 
             let expected = Settings {
                 http: HttpServerSettings {
@@ -706,7 +728,11 @@ mod tests {
                     pool_max_idle_per_host: Some(5),
                     ..SETTINGS.flink.clone()
                 },
-                engine: EngineSettings { machine_id: 1, node_id: 1 },
+                engine: EngineSettings {
+                    machine_id: 1,
+                    node_id: 1,
+                    telemetry_portfolio_window: Duration::from_secs(600),
+                },
                 sensor: SensorSettings {
                     flink: FlinkSensorSettings {
                         metrics_initial_delay: Duration::from_secs(10),
@@ -793,7 +819,14 @@ mod tests {
             vec![("APP_ENVIRONMENT", Some("production"))],
             || {
                 let actual: Settings = assert_ok!(Settings::load(&options));
-                assert_eq!(actual.engine, EngineSettings { machine_id: 7, node_id: 3 });
+                assert_eq!(
+                    actual.engine,
+                    EngineSettings {
+                        machine_id: 7,
+                        node_id: 3,
+                        telemetry_portfolio_window: Duration::from_secs(600),
+                    }
+                );
 
                 let expected = Settings {
                     http: HttpServerSettings {

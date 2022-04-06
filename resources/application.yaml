@@ -32,6 +32,14 @@ kubernetes:
   # Period to allow cluster to stabilize after a patch operation. Defaults to 5 seconds.
 #  patch_settle_timeout_secs: 5
 
+engine:
+  # Specify the span for telemetry collection into a portfolio available to eligibility and decision
+  # policies. It's more transparent if this span is set to a duration above what is used in a policy
+  # rule, but it is not required. If a policy rule exceeds this configured span, then coverage of
+  # the portfolio must be more than half, otherwise the condition is not met.
+  # The default is 10 minutes.
+  telemetry_portfolio_window_secs: 600
+
 sensor:
   # The `flink` sensor is more complicated that the modular sensors that can be specified via the
   # `sensor` configuration. The `flink` sensor will query the job manager's REST API for the Job

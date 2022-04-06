@@ -2,7 +2,7 @@ use once_cell::sync::Lazy;
 use std::collections::{HashMap, HashSet};
 
 use crate::metrics::UpdateMetrics;
-use crate::model::MetricCatalog;
+use crate::model::MetricPortfolio;
 use oso::{Oso, PolarClass, PolarValue};
 use proctor::elements::{PolicyContributor, PolicySource, PolicySubscription, QueryPolicy, QueryResult, Telemetry};
 use proctor::error::PolicyError;
@@ -85,12 +85,12 @@ const INELIGIBLE: &str = "ineligible";
 impl QueryPolicy for EligibilityPolicy {
     type Args = (Self::Item, Self::Context, PolarValue);
     type Context = EligibilityContext;
-    type Item = MetricCatalog;
+    type Item = MetricPortfolio;
     type TemplateData = EligibilityTemplateData;
 
     fn initialize_policy_engine(&self, oso: &mut Oso) -> Result<(), PolicyError> {
         Telemetry::register_with_policy_engine(oso)?;
-        MetricCatalog::register_with_policy_engine(oso)?;
+        MetricPortfolio::register_with_policy_engine(oso)?;
 
         oso.register_class(
             EligibilityContext::get_polar_class_builder()

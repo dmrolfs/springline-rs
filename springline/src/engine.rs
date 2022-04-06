@@ -24,8 +24,9 @@ use tokio::task::JoinHandle;
 use crate::engine::service::{EngineCmd, EngineServiceApi, Health, Service};
 use crate::flink::FlinkContext;
 use crate::metrics::{self, UpdateMetrics};
-use crate::model::MetricCatalog;
+use crate::model::{MetricCatalog, MetricPortfolio};
 use crate::phases::act::ActMonitor;
+use crate::phases::decision::DecisionResult;
 use crate::phases::governance::{self, GovernanceOutcome};
 use crate::phases::{act, decision, eligibility, plan, sense};
 use crate::settings::Settings;
@@ -184,6 +185,18 @@ impl AutoscaleEngine<Building> {
             settings.sensor.flink.metrics_interval,
         );
 
+        let collect_portfolio =
+            crate::phases::CollectMetricPortfolio::new("collect_portfolio", settings.engine.telemetry_portfolio_window);
+
+        let reduce_portfolio = proctor::graph::stage::Map::new(
+            "catalog_from_portfolio",
+            |decision_portfolio: DecisionResult<MetricPortfolio>| match decision_portfolio {
+                DecisionResult::ScaleUp(portfolio) => DecisionResult::ScaleUp(portfolio.unchecked_head().clone()),
+                DecisionResult::ScaleDown(portfolio) => DecisionResult::ScaleDown(portfolio.unchecked_head().clone()),
+                DecisionResult::NoAction(portfolio) => DecisionResult::NoAction(portfolio.unchecked_head().clone()),
+            },
+        );
+
         let tx_clearinghouse_api = sense.tx_api();
 
         let service = Service::new(tx_stop_flink_sensor, tx_clearinghouse_api, self.inner.metrics_registry);
@@ -191,9 +204,11 @@ impl AutoscaleEngine<Building> {
         let service_handle = tokio::spawn(async move { service.run().await });
 
         (sense.outlet(), data_throttle.inlet()).connect().await;
-        (data_throttle.outlet(), eligibility_phase.inlet()).connect().await;
+        (data_throttle.outlet(), collect_portfolio.inlet()).connect().await;
+        (collect_portfolio.outlet(), eligibility_phase.inlet()).connect().await;
         (eligibility_phase.outlet(), decision_phase.inlet()).connect().await;
-        (decision_phase.outlet(), planning_phase.phase.decision_inlet())
+        (decision_phase.outlet(), reduce_portfolio.inlet()).connect().await;
+        (reduce_portfolio.outlet(), planning_phase.phase.decision_inlet())
             .connect()
             .await;
         (planning_phase.phase.outlet(), governance_phase.inlet()).connect().await;
@@ -202,8 +217,10 @@ impl AutoscaleEngine<Building> {
         let mut graph = Graph::default();
         graph.push_back(Box::new(sense)).await;
         graph.push_back(Box::new(data_throttle)).await;
+        graph.push_back(Box::new(collect_portfolio)).await;
         graph.push_back(Box::new(eligibility_channel)).await;
         graph.push_back(Box::new(decision_channel)).await;
+        graph.push_back(Box::new(reduce_portfolio)).await;
         graph.push_back(Box::new(planning_phase.data_channel)).await;
         graph.push_back(Box::new(planning_phase.context_channel)).await;
         graph.push_back(Box::new(governance_channel)).await;
