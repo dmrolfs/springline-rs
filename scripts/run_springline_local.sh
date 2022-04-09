@@ -14,7 +14,7 @@ fi
 
 MEM_OPT="40m"
 RM_OPT=""
-LOG_OPT='--env RUST_LOG="info,springline::flink=debug,springline::kubernetes=debug,springline::phases::act=debug,proctor::graph::stage::through::reduce_within"'
+LOG_OPT='--env RUST_LOG="info,springline::flink=debug,springline::kubernetes=debug,springline::phases::act=debug,springline::model=debug"'
 
 PARAMS=""
 while (( "$#" )); do

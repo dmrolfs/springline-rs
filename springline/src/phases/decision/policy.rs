@@ -228,7 +228,7 @@ mod tests {
             )))
             .build());
 
-        let actual: DecisionSettings = assert_ok!(c.try_into());
+        let actual: DecisionSettings = assert_ok!(c.try_deserialize());
         assert_eq!(
             actual,
             DecisionSettings {

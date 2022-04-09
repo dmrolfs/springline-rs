@@ -290,16 +290,16 @@ impl<'r> Service<'r> {
 
                         EngineCmd::CheckHealth(tx) => {
                             if is_up {
-                                tracing::warn!(?ready_phases, "checking health...");
+                                tracing::trace!(?ready_phases, "checking health...");
                                 if ready_phases.is_all() {
-                                    tracing::warn!(?ready_phases, "DMR: Engine is ready to autoscale.");
+                                    tracing::debug!(?ready_phases, "Engine is ready to autoscale.");
                                     let _ = tx.send(Ok(HealthReport::Up));
                                 } else {
-                                    tracing::warn!(?ready_phases, "DMR: Engine is not ready to autoscale.");
+                                    tracing::info!(?ready_phases, "Engine is not ready to autoscale.");
                                     let _ = tx.send(Ok(HealthReport::NotReady(!ready_phases)));
                                 }
                             } else {
-                                tracing::warn!(?ready_phases, "DMR: engine is down.");
+                                tracing::warn!(?ready_phases, "engine is down.");
                                 let _ = tx.send(Ok(HealthReport::Down));
                             }
                         },

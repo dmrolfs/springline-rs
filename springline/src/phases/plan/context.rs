@@ -13,7 +13,7 @@ use serde_with::serde_as;
 use std::collections::HashSet;
 use std::time::Duration;
 
-pub const PLANNING__RESCALE_RESTART: &str = "planning.rescale_restart";
+pub const PLANNING__RESCALE_RESTART: &str = "planning.rescale_restart_secs";
 
 #[serde_as]
 #[derive(Label, Debug, Clone, Serialize, Deserialize)]

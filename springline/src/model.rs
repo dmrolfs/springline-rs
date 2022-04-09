@@ -77,21 +77,48 @@ impl PolicyContributor for MetricPortfolio {
                 .add_attribute_getter("cluster", |p| p.cluster.clone())
                 .add_attribute_getter("custom", |p| p.custom.clone())
                 .add_method(
-                    "flow_input_records_lag_max_within",
-                    Self::flow_input_records_lag_max_within,
+                    "has_sufficient_coverage_looking_back_secs",
+                    Self::has_sufficient_coverage_looking_back_secs,
                 )
                 .add_method(
-                    "flow_input_millis_behind_latest_within",
-                    Self::flow_input_millis_behind_latest_within,
-                )
-                .add_method("cluster_task_cpu_load_within", Self::cluster_task_cpu_load_within)
-                .add_method(
-                    "cluster_task_heap_memory_used_within",
-                    Self::cluster_task_heap_memory_used_within,
+                    "flow_input_records_lag_max_below_mark",
+                    Self::flow_input_records_lag_max_below_mark,
                 )
                 .add_method(
-                    "cluster_task_memory_load_within",
-                    Self::cluster_task_heap_memory_load_within,
+                    "flow_input_records_lag_max_above_mark",
+                    Self::flow_input_records_lag_max_above_mark,
+                )
+                .add_method(
+                    "flow_input_millis_behind_latest_below_mark",
+                    Self::flow_input_millis_behind_latest_below_mark,
+                )
+                .add_method(
+                    "flow_input_millis_behind_latest_above_mark",
+                    Self::flow_input_millis_behind_latest_above_mark,
+                )
+                .add_method(
+                    "cluster_task_cpu_load_below_mark",
+                    Self::cluster_task_cpu_load_below_mark,
+                )
+                .add_method(
+                    "cluster_task_cpu_load_above_mark",
+                    Self::cluster_task_cpu_load_above_mark,
+                )
+                .add_method(
+                    "cluster_task_heap_memory_used_below_mark",
+                    Self::cluster_task_heap_memory_used_below_mark,
+                )
+                .add_method(
+                    "cluster_task_heap_memory_used_above_mark",
+                    Self::cluster_task_heap_memory_used_above_mark,
+                )
+                .add_method(
+                    "cluster_task_memory_load_below_mark",
+                    Self::cluster_task_heap_memory_load_below_mark,
+                )
+                .add_method(
+                    "cluster_task_memory_load_above_mark",
+                    Self::cluster_task_heap_memory_load_above_mark,
                 )
                 .build(),
         )?;
@@ -125,6 +152,48 @@ impl MetricPortfolio {
         self.portfolio.len()
     }
 
+    pub fn has_sufficient_coverage_looking_back_secs(&self, looking_back_secs: u32) -> bool {
+        let head_ts = self.recv_timestamp;
+        let looking_back = Duration::from_secs(looking_back_secs as u64);
+        self.has_sufficient_coverage(Interval::new(head_ts - looking_back, head_ts).unwrap())
+    }
+
+    pub fn has_sufficient_coverage(&self, interval: Interval) -> bool {
+        let coverage = self.coverage_for(interval).0;
+        0.5 <= coverage
+    }
+
+    pub fn coverage_for(&self, interval: Interval) -> (f64, impl Iterator<Item = &MetricCatalog>) {
+        let mut coverage_start: Option<Timestamp> = None;
+        let mut coverage_end: Option<Timestamp> = None;
+        let mut range = Vec::new();
+        for m in self.portfolio.iter().rev() {
+            if interval.contains_timestamp(m.recv_timestamp) {
+                coverage_start = Some(m.recv_timestamp);
+                if coverage_end.is_none() {
+                    coverage_end = coverage_start;
+                }
+                tracing::trace!("portfolio catalog[{}] lies in {interval:?}", m.recv_timestamp);
+                range.push(m);
+            }
+        }
+
+        let coverage_interval = coverage_start
+            .zip(coverage_end)
+            .map(|(start, end)| Interval::new(start, end))
+            .transpose()
+            .unwrap_or_else(|err| {
+                tracing::warn!(error=?err, "portfolio represents an invalid interval - using None");
+                None
+            });
+
+        let coverage = coverage_interval
+            .map(|coverage| coverage.duration().as_secs_f64() / interval.duration().as_secs_f64())
+            .unwrap_or(0.0);
+
+        (coverage, range.into_iter())
+    }
+
     //todo: assumes monotonically increasing recv_timestamp -- check if not true and insert accordingly or sort after push and before pop?
     pub fn push(&mut self, metrics: MetricCatalog) {
         let oldest_allowed = metrics.recv_timestamp - self.time_window;
@@ -141,17 +210,44 @@ impl MetricPortfolio {
         }
     }
 
+    /// Extracts metric properties from the head of the portfolio (i.e., the current catalog) toward
+    /// the past.
+    #[tracing::instrument(level = "trace", skip(self, extractor))]
+    pub fn extract_from_head<F, T>(&self, looking_back: Duration, extractor: F) -> impl Iterator<Item = T>
+    where
+        F: FnMut(&MetricCatalog) -> T,
+    {
+        let head_ts = self.recv_timestamp;
+        self.extract_in_interval(Interval::new(head_ts - looking_back, head_ts).unwrap(), extractor)
+    }
+
+    /// Extracts metric properties from the end of the interval (i.e., the youngest catalog
+    /// contained in the interval) toward the past.
+    #[tracing::instrument(level = "trace", skip(self, extractor))]
+    pub fn extract_in_interval<F, T>(&self, interval: Interval, extractor: F) -> impl Iterator<Item = T>
+    where
+        F: FnMut(&MetricCatalog) -> T,
+    {
+        self.portfolio
+            .iter()
+            .rev()
+            .take_while(|m| interval.contains_timestamp(m.recv_timestamp))
+            .map(extractor)
+            .collect::<Vec<_>>()
+            .into_iter()
+    }
+
     #[tracing::instrument(level = "trace", skip(self, f))]
-    pub fn looking_back_from_head<F>(&self, looking_back: Duration, f: F) -> bool
+    pub fn forall_from_head<F>(&self, looking_back: Duration, f: F) -> bool
     where
         F: FnMut(&MetricCatalog) -> bool,
     {
         let head_ts = self.recv_timestamp;
-        self.for_interval((head_ts - looking_back, head_ts).try_into().unwrap(), f)
+        self.forall_in_interval(Interval::new(head_ts - looking_back, head_ts).unwrap(), f)
     }
 
     #[tracing::instrument(level = "trace", skip(self, f))]
-    pub fn for_interval<F>(&self, interval: Interval, mut f: F) -> bool
+    pub fn forall_in_interval<F>(&self, interval: Interval, mut f: F) -> bool
     where
         F: FnMut(&MetricCatalog) -> bool,
     {
@@ -164,51 +260,18 @@ impl MetricPortfolio {
         } else {
             tracing::debug!(portfolio_window=?self.window_interval(), ?interval, "Checking for interval");
 
-            let mut range_start: Option<Timestamp> = None;
-            let mut range_end: Option<Timestamp> = None;
-
-            let range: Vec<&MetricCatalog> = self
-                .portfolio
-                .iter()
-                .rev()
-                .take_while(|m| {
-                    let include = interval.contains_timestamp(m.recv_timestamp);
-                    if include {
-                        range_start = Some(m.recv_timestamp);
-                        if range_end.is_none() {
-                            range_end = Some(m.recv_timestamp);
-                        }
-                    }
-                    tracing::trace!("is portfolio catalog[{}] in {interval:?}: {include}", m.recv_timestamp);
-                    include
-                })
-                .collect();
-
-            tracing::debug!(
-                "start:{:?} end:{:?}",
-                range_start.map(|ts| ts.to_string()),
-                range_end.map(|ts| ts.to_string())
-            );
-            let range_interval = range_start
-                .zip(range_end)
-                .map(|(start, end)| Interval::new(start, end))
-                .transpose()
-                .unwrap_or_else(|err| {
-                    tracing::warn!(error=?err, "portfolio represents an invalid interval - using None");
-                    None
-                });
-
-            let coverage = range_interval
-                .map(|coverage| coverage.duration().as_secs_f64() / interval.duration().as_secs_f64())
-                .unwrap_or(0.0);
-
+            let (coverage, range_iter) = self.coverage_for(interval);
             if coverage < 0.5 {
-                tracing::debug!(%coverage, "not enough coverage for meaningful evaluation.");
+                tracing::debug!(
+                    ?interval,
+                    included_range=?range_iter.map(|m| m.recv_timestamp.to_string()).collect::<Vec<_>>(),
+                    %coverage, "not enough coverage for meaningful evaluation."
+                );
                 return false;
             }
 
+            let range: Vec<&MetricCatalog> = range_iter.collect();
             tracing::debug!(
-                ?range_interval,
                 range=?range.iter().map(|m| (m.recv_timestamp.to_string(), m.flow.records_in_per_sec)).collect::<Vec<_>>(),
                 %coverage,
                 "evaluating for interval: {interval:?}",
@@ -238,15 +301,15 @@ impl Portfolio for MetricPortfolio {
 }
 
 impl MetricPortfolio {
-    pub fn flow_input_records_lag_max_within(&self, looking_back_secs: u32, max_value: i64) -> bool {
-        self.looking_back_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+    pub fn flow_input_records_lag_max_below_mark(&self, looking_back_secs: u32, max_value: i64) -> bool {
+        self.forall_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
             m.flow
                 .input_records_lag_max
                 .map(|lag| {
-                    tracing::info!(
-                        catalog_lag=%lag, %max_value,
-                        "checking lag in catalog[{}]: {lag} <= {max_value} = {}",
-                        m.recv_timestamp, lag <= max_value
+                    tracing::debug!(
+                        "eval lag in catalog[{}]: {lag} <= {max_value} = {}",
+                        m.recv_timestamp,
+                        lag <= max_value
                     );
                     lag <= max_value
                 })
@@ -254,30 +317,123 @@ impl MetricPortfolio {
         })
     }
 
-    pub fn flow_input_millis_behind_latest_within(&self, looking_back_secs: u32, max_value: i64) -> bool {
-        self.looking_back_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+    pub fn flow_input_records_lag_max_above_mark(&self, looking_back_secs: u32, min_value: i64) -> bool {
+        self.forall_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
             m.flow
-                .input_millis_behind_latest
-                .map(|lag| lag <= max_value)
+                .input_records_lag_max
+                .map(|lag| {
+                    tracing::debug!(
+                        "eval lag in catalog[{}]: {min_value} <= {lag} = {}",
+                        m.recv_timestamp,
+                        min_value <= lag
+                    );
+                    min_value <= lag
+                })
                 .unwrap_or(false)
         })
     }
 
-    pub fn cluster_task_cpu_load_within(&self, looking_back_secs: u32, max_value: f64) -> bool {
-        self.looking_back_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+    pub fn flow_input_millis_behind_latest_below_mark(&self, looking_back_secs: u32, max_value: i64) -> bool {
+        self.forall_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+            m.flow
+                .input_millis_behind_latest
+                .map(|millis_behind_latest| {
+                    tracing::debug!(
+                        "eval millis_behind_latest in catalog[{}]: {millis_behind_latest} <= {max_value} = {}",
+                        m.recv_timestamp,
+                        millis_behind_latest <= max_value
+                    );
+                    millis_behind_latest <= max_value
+                })
+                .unwrap_or(false)
+        })
+    }
+
+    pub fn flow_input_millis_behind_latest_above_mark(&self, looking_back_secs: u32, min_value: i64) -> bool {
+        self.forall_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+            m.flow
+                .input_millis_behind_latest
+                .map(|millis_behind_latest| {
+                    tracing::debug!(
+                        "eval millis_behind_latest in catalog[{}]: {min_value} <= {millis_behind_latest} = {}",
+                        m.recv_timestamp,
+                        min_value <= millis_behind_latest
+                    );
+                    min_value <= millis_behind_latest
+                })
+                .unwrap_or(false)
+        })
+    }
+
+    pub fn cluster_task_cpu_load_below_mark(&self, looking_back_secs: u32, max_value: f64) -> bool {
+        self.forall_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+            tracing::debug!(
+                "eval task_cpu_load in catalog[{}]: {} <= {max_value} = {}",
+                m.recv_timestamp,
+                m.cluster.task_cpu_load,
+                m.cluster.task_cpu_load <= max_value
+            );
             m.cluster.task_cpu_load <= max_value
         })
     }
 
-    pub fn cluster_task_heap_memory_used_within(&self, looking_back_secs: u32, max_value: f64) -> bool {
-        self.looking_back_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+    pub fn cluster_task_cpu_load_above_mark(&self, looking_back_secs: u32, min_value: f64) -> bool {
+        self.forall_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+            tracing::debug!(
+                "eval task_cpu_load in catalog[{}]: {min_value} <= {} = {}",
+                m.recv_timestamp,
+                m.cluster.task_cpu_load,
+                min_value <= m.cluster.task_cpu_load
+            );
+            min_value <= m.cluster.task_cpu_load
+        })
+    }
+
+    pub fn cluster_task_heap_memory_used_below_mark(&self, looking_back_secs: u32, max_value: f64) -> bool {
+        self.forall_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+            tracing::debug!(
+                "eval task_heap_memory_used in catalog[{}]: {} <= {max_value} = {}",
+                m.recv_timestamp,
+                m.cluster.task_heap_memory_used,
+                m.cluster.task_heap_memory_used <= max_value
+            );
             m.cluster.task_heap_memory_used <= max_value
         })
     }
 
-    pub fn cluster_task_heap_memory_load_within(&self, looking_back_secs: u32, max_value: f64) -> bool {
-        self.looking_back_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
-            max_value < m.cluster.task_heap_memory_load()
+    pub fn cluster_task_heap_memory_used_above_mark(&self, looking_back_secs: u32, min_value: f64) -> bool {
+        self.forall_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+            tracing::debug!(
+                "eval task_heap_memory_used in catalog[{}]: {min_value} <= {} = {}",
+                m.recv_timestamp,
+                m.cluster.task_heap_memory_used,
+                min_value <= m.cluster.task_heap_memory_used
+            );
+            min_value <= m.cluster.task_heap_memory_used
+        })
+    }
+
+    pub fn cluster_task_heap_memory_load_below_mark(&self, looking_back_secs: u32, max_value: f64) -> bool {
+        self.forall_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+            tracing::debug!(
+                "eval task_heap_memory_load in catalog[{}]: {} <= {max_value} = {}",
+                m.recv_timestamp,
+                m.cluster.task_cpu_load,
+                m.cluster.task_cpu_load <= max_value
+            );
+            m.cluster.task_heap_memory_load() <= max_value
+        })
+    }
+
+    pub fn cluster_task_heap_memory_load_above_mark(&self, looking_back_secs: u32, min_value: f64) -> bool {
+        self.forall_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+            tracing::debug!(
+                "eval task_heap_memory_load in catalog[{}]: {min_value} <= {} = {}",
+                m.recv_timestamp,
+                m.cluster.task_cpu_load,
+                min_value <= m.cluster.task_cpu_load
+            );
+            min_value <= m.cluster.task_heap_memory_load()
         })
     }
 }
@@ -430,10 +586,6 @@ impl MetricPortfolioBuilder {
     pub fn build(self) -> MetricPortfolio {
         let mut portfolio: Vec<MetricCatalog> = self.metrics.into_iter().collect();
         portfolio.sort_by(|lhs, rhs| lhs.recv_timestamp.cmp(&rhs.recv_timestamp)); // sort to reverse
-        tracing::trace!(
-            portfolio=?portfolio.iter().map(|m| m.recv_timestamp.to_string()).collect::<Vec<_>>(),
-            "DMR: PORTFOLIO BUILD - make sure goes from oldest to newest"
-        );
 
         MetricPortfolio {
             portfolio: portfolio.into_iter().collect(),
@@ -1709,39 +1861,39 @@ mod tests {
         );
 
         tracing::info_span!("looking back for 5 seconds").in_scope(|| {
-            assert_eq!(portfolio.looking_back_from_head(Duration::from_secs(5), f), false);
+            assert_eq!(portfolio.forall_from_head(Duration::from_secs(5), f), false);
         });
 
         tracing::info_span!("looking back for 11 seconds").in_scope(|| {
-            assert_eq!(portfolio.looking_back_from_head(Duration::from_secs(11), f), true);
+            assert_eq!(portfolio.forall_from_head(Duration::from_secs(11), f), true);
         });
 
         tracing::info_span!("looking back for 21 seconds").in_scope(|| {
-            assert_eq!(portfolio.looking_back_from_head(Duration::from_secs(21), f), true);
+            assert_eq!(portfolio.forall_from_head(Duration::from_secs(21), f), true);
         });
 
         tracing::info_span!("looking back for 31 seconds").in_scope(|| {
-            assert_eq!(portfolio.looking_back_from_head(Duration::from_secs(31), f), true);
+            assert_eq!(portfolio.forall_from_head(Duration::from_secs(31), f), true);
         });
 
         tracing::info_span!("looking back for 41 seconds").in_scope(|| {
-            assert_eq!(portfolio.looking_back_from_head(Duration::from_secs(41), f), true);
+            assert_eq!(portfolio.forall_from_head(Duration::from_secs(41), f), true);
         });
 
         tracing::info_span!("looking back for 51 seconds").in_scope(|| {
-            assert_eq!(portfolio.looking_back_from_head(Duration::from_secs(51), f), false);
+            assert_eq!(portfolio.forall_from_head(Duration::from_secs(51), f), false);
         });
 
         tracing::info_span!("looking back for 61 seconds").in_scope(|| {
-            assert_eq!(portfolio.looking_back_from_head(Duration::from_secs(61), f), false);
+            assert_eq!(portfolio.forall_from_head(Duration::from_secs(61), f), false);
         });
 
         tracing::info_span!("looking back for 71 seconds").in_scope(|| {
-            assert_eq!(portfolio.looking_back_from_head(Duration::from_secs(71), f), false);
+            assert_eq!(portfolio.forall_from_head(Duration::from_secs(71), f), false);
         });
 
         tracing::info_span!("looking back for 2000 seconds").in_scope(|| {
-            assert_eq!(portfolio.looking_back_from_head(Duration::from_secs(2000), f), false);
+            assert_eq!(portfolio.forall_from_head(Duration::from_secs(2000), f), false);
         });
     }
 }

@@ -165,7 +165,7 @@ mod tests {
                 false, // 0s, point check but checked range is not a point in time.
                 false, // 1s - coverage: 0.2 - not enough coverage
                 false, // 2s - coverage: 0.4 - not enough coverage
-                true,  // 3s - coverage: 0.6 [4,3,2,1
+                true,  // 3s - coverage: 0.6 [4,3,2,1]
                 true,  // 4s - coverage: 0.6 [5,4,3,2]
                 true,  // 5s - coverage: 0.6 [6,5,4,3]
                 true,  // 6s - coverage: 0.6 [7,6,5,4]
@@ -188,7 +188,10 @@ mod tests {
                 async {
                     assert_ok!(tx_in.send(data[i].clone()).await);
                     let actual = assert_some!(rx_out.recv().await);
-                    assert_eq!((i, actual.flow_input_records_lag_max_within(5, 8)), (i, expected[i]));
+                    assert_eq!(
+                        (i, actual.flow_input_records_lag_max_below_mark(5, 8)),
+                        (i, expected[i])
+                    );
                 }
                 .instrument(tracing::info_span!("test item", INDEX=%i))
                 .await;
@@ -305,7 +308,10 @@ mod tests {
         let policy = TestPolicy {
             policies: vec![assert_ok!(PolicySource::from_complete_string(
                 "test_policy",
-                r##"healthy(item, _) if item.flow_input_records_lag_max_within(5, 8);"##
+                r##"|healthy(item, c) if above_low_water(item, c) and below_high_water(item, c);
+                    |below_high_water(item, _) if item.flow_input_records_lag_max_below_mark(5, 8);
+                    |above_low_water(item, _) if item.flow_input_records_lag_max_above_mark(5, 3);
+                    |"##
             ))],
         };
 
@@ -325,26 +331,26 @@ mod tests {
             let policy_stage_handle = tokio::spawn(async move { assert_ok!(policy_stage.run().await) });
 
             let expected = [
-                None,
-                None,
-                None,
-                Some(4),
-                Some(5),
-                Some(6),
-                Some(7),
-                Some(8),
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                Some(5),
-                Some(4),
-                Some(3),
-                Some(2),
-                Some(1),
+                None,    // [1x] - point check conditions not met
+                None,    // [x2, x1] - not enough coverage
+                None,    // [3, x2, 1] - not enough coverage
+                None,    // [4, 3, x2, x1]
+                None,    // [5, 4, 3, x2]
+                Some(6), // [6, 5, 4, 3]
+                Some(7), // [7, 6, 5, 4]
+                Some(8), // [8, 7, 6, 5]
+                None,    // [9x, 8, 7, 6]
+                None,    // [10x, 9x, 8, 7]
+                None,    // [10x, 10x, 9x, 8]
+                None,    // [9x, 10x, 10x, 9x]
+                None,    // [8, 9x, 10x, 10x]
+                None,    // [7, 8, 9x, 10x]
+                None,    // [6, 7, 8, 9x]
+                Some(5), // [5, 6, 7, 8]
+                Some(4), // [4, 5, 6, 7]
+                Some(3), // [3, 4, 5, 6]
+                None,    // [x2, 3, 4, 5]
+                None,    // [x1, x2, 3, 4]
             ];
 
             assert_ok!(
@@ -363,6 +369,7 @@ mod tests {
 
             for i in 0..data.len() {
                 async {
+                    tracing::warn!("**** ITERATION {i} ****");
                     assert_ok!(tx_in.send(data[i].clone()).await);
 
                     if let Some(expected) = expected[i] {
@@ -376,8 +383,8 @@ mod tests {
                         assert_eq!((i, assert_some!(actual.item.flow.input_records_lag_max)), (i, expected));
                     } else {
                         assert_matches!(
-                            &*assert_ok!(rx_monitor.recv().await),
-                            &PolicyFilterEvent::ItemBlocked(_, _)
+                            (i, &*assert_ok!(rx_monitor.recv().await)),
+                            (i, &PolicyFilterEvent::ItemBlocked(_, _))
                         );
                     }
                 }

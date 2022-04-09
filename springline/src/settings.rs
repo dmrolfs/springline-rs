@@ -2,8 +2,7 @@ use std::path::PathBuf;
 
 use chrono::{DateTime, Utc};
 use clap::Parser;
-use config::builder::DefaultState;
-use config::ConfigBuilder;
+use config::builder::{ConfigBuilder, DefaultState};
 use proctor::elements::PolicySettings;
 use serde::{Deserialize, Serialize};
 use settings_loader::common::http::HttpServerSettings;
@@ -408,7 +407,7 @@ mod tests {
         // let exp_rep = assert_ok!(ron::ser::to_string_pretty(&expected,
         // ron::ser::PrettyConfig::default())); assert_eq!(exp_rep.as_str(), "");
 
-        let actual: Settings = assert_ok!(c.try_into());
+        let actual: Settings = assert_ok!(c.try_deserialize());
         assert_eq!(actual, expected);
     }
 
@@ -435,7 +434,7 @@ mod tests {
 
         tracing::info!(?config, "eligibility config loaded.");
 
-        let actual: EligibilitySettings = assert_ok!(config.try_into());
+        let actual: EligibilitySettings = assert_ok!(config.try_deserialize());
         let expected = EligibilitySettings::default()
             .with_source(PolicySource::from_complete_file("./resources/eligibility.polar")?);
         assert_eq!(actual, expected);
@@ -500,7 +499,7 @@ mod tests {
                 basis: "decision_basis".to_string(),
                 max_healthy_lag: Some(133_f64),
                 min_healthy_lag: Some(0.0),
-                max_healthy_cpu_load: Some(0.7),
+                max_healthy_cpu_load: Some(0.02),
                 min_healthy_cpu_load: None,
                 max_healthy_heap_memory_load: None,
                 max_healthy_network_io_utilization: Some(0.6),
@@ -870,8 +869,8 @@ mod tests {
                     },
                     decision: DecisionSettings {
                         template_data: Some(DecisionTemplateData {
-                            max_healthy_cpu_load: Some(0.0006),
-                            min_healthy_cpu_load: Some(0.0003),
+                            max_healthy_cpu_load: Some(0.02),
+                            min_healthy_cpu_load: Some(0.003),
                             ..SETTINGS.decision.template_data.clone().unwrap()
                         }),
                         ..SETTINGS.decision.clone()

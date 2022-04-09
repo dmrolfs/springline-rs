@@ -21,5 +21,5 @@ eligibility:
 
 decision:
   template_data:
-    max_healthy_cpu_load: 0.0006
-    min_healthy_cpu_load: 0.0003
+    max_healthy_cpu_load: 0.02
+    min_healthy_cpu_load: 0.003

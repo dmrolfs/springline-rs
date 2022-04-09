@@ -1,7 +1,6 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use oso::ToPolar;
 use pretty_assertions::assert_eq;
 use pretty_snowflake::MachineNode;
 use proctor::elements::{
@@ -13,7 +12,6 @@ use proctor::graph::{Connect, Graph, Inlet, SinkShape, SourceShape};
 use proctor::phases::policy_phase::PolicyPhase;
 use proctor::phases::sense::{self, Sense, SubscriptionRequirements, TelemetrySubscription};
 use proctor::{AppData, ProctorContext};
-use serde::de::DeserializeOwned;
 use springline::model::{MetricCatalog, MetricPortfolio, MC_CLUSTER__NR_ACTIVE_JOBS, MC_CLUSTER__NR_TASK_MANAGERS};
 use springline::phases::decision::{make_decision_transform, DecisionResult, DECISION_DIRECTION};
 use springline::phases::decision::{DecisionContext, DecisionPolicy, DecisionTemplateData};

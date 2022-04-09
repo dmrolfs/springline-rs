@@ -95,7 +95,7 @@ decision:
     basis: decision_basis
     max_healthy_lag: 133.0
     min_healthy_lag: 0.0
-    max_healthy_cpu_load: 0.7
+    max_healthy_cpu_load: 0.02
     max_healthy_network_io_utilization: 0.6
 
 plan:

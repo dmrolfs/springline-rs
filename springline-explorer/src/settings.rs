@@ -206,7 +206,7 @@ impl ReviseSettings {
         builder = state.options.load_overrides(builder)?;
 
         let config = builder.build()?;
-        let settings: Settings = config.try_into()?;
+        let settings: Settings = config.try_deserialize()?;
         Ok(settings)
     }
 }

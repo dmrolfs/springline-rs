@@ -9,8 +9,9 @@ scale_up(item, _context, _, reason) if
 
 {{#if max_healthy_cpu_load}}
 scale_up(item, _context, _, reason) if
-    {{max_healthy_cpu_load}} < (item.cluster.task_cpu_load / item.cluster.nr_task_managers)
+    item.cluster_task_cpu_load_below_mark(300, {{max_healthy_cpu_load}})
     and reason = "cpu_load";
+#    {{max_healthy_cpu_load}} < (item.cluster.task_cpu_load / item.cluster.nr_task_managers)
 {{/if}}
 
 {{#if max_healthy_heap_memory_load}}
@@ -38,6 +39,7 @@ scale_down(item, _context, _, reason) if
 
 {{#if min_healthy_cpu_load}}
 scale_down(item, _, _, reason) if
-    (item.cluster.task_cpu_load / item.cluster.nr_task_managers) < {{min_healthy_cpu_load}}
+    item.cluster_task_cpu_load_above_mark(300, {{min_healthy_cpu_load}})
     and reason = "cpu_load";
+# (item.cluster.task_cpu_load / item.cluster.nr_task_managers) < {{min_healthy_cpu_load}}
 {{/if}}
