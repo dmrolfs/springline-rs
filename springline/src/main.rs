@@ -6,7 +6,7 @@ use proctor::elements::Telemetry;
 use proctor::graph::stage::{ActorSourceApi, SourceStage, WithApi, WithMonitor};
 use prometheus::Registry;
 use settings_loader::SettingsLoader;
-use springline::engine::Autoscaler;
+use springline::engine::{Autoscaler, BoxedTelemetrySource, FeedbackSource};
 use springline::phases::act::ScaleActuator;
 use springline::settings::{CliOptions, Settings};
 use springline::{engine, Result};
@@ -24,22 +24,22 @@ fn main() -> Result<()> {
     main_span.in_scope(|| {
         let options = CliOptions::parse();
         let settings = Settings::load(&options)?;
-        let flink = springline::flink::FlinkContext::from_settings(&settings.flink)?;
 
         start_pipeline(async move {
+            let flink = springline::flink::FlinkContext::from_settings(&settings.flink)?;
             let kube = springline::kubernetes::KubernetesContext::from_settings(&settings).await?;
-            let patch_replicas = ScaleActuator::new(kube, flink.clone(), &settings);
-            let rx_action_monitor = patch_replicas.rx_monitor();
-
-            let (monitor_feedback_sensor, tx_monitor_feedback) = make_monitor_sensor_and_api();
+            let action_flink = flink.clone();
+            let action_kube = kube.clone();
 
             let engine = Autoscaler::builder("springline")
-                .add_sensor(make_settings_sensor(&settings))
-                .add_sensor(monitor_feedback_sensor)
-                .add_monitor_feedback(tx_monitor_feedback)
+                .add_sensor_factory(make_settings_sensor)
+                .add_monitor_feedback_factory(make_monitor_sensor_and_api)
                 .with_metrics_registry(&METRICS_REGISTRY)
-                .with_action_stage(Box::new(patch_replicas))
-                .with_action_monitor(rx_action_monitor)
+                .with_action_factory(move |settings| {
+                    let actuator = ScaleActuator::new(action_kube.clone(), action_flink.clone(), settings);
+                    let rx = actuator.rx_monitor();
+                    (Box::new(actuator), rx)
+                })
                 .finish(flink, &settings)
                 .await?
                 .run();
@@ -57,7 +57,7 @@ fn main() -> Result<()> {
     })
 }
 
-fn make_settings_sensor(settings: &Settings) -> impl SourceStage<Telemetry> {
+fn make_settings_sensor(settings: &Settings) -> BoxedTelemetrySource {
     let mut settings_telemetry: proctor::elements::telemetry::TableType = maplit::hashmap! {
         "min_cluster_size".to_string() => settings.governance.rules.min_cluster_size.into(),
         "max_cluster_size".to_string() => settings.governance.rules.max_cluster_size.into(),
@@ -73,13 +73,13 @@ fn make_settings_sensor(settings: &Settings) -> impl SourceStage<Telemetry> {
         "cluster.last_deployment".to_string() => format!("{}", settings.context_stub.cluster_last_deployment.format(proctor::serde::date::FORMAT)).into(),
     });
 
-    proctor::graph::stage::Sequence::new("settings_telemetry", vec![settings_telemetry.into()])
+    Box::new(proctor::graph::stage::Sequence::new("settings_telemetry", vec![settings_telemetry.into()]))
 }
 
-fn make_monitor_sensor_and_api() -> (impl SourceStage<Telemetry>, ActorSourceApi<Telemetry>) {
+fn make_monitor_sensor_and_api(_settings: &Settings) -> FeedbackSource {
     let src = proctor::graph::stage::ActorSource::new("monitor_sensor");
     let tx_api = src.tx_api();
-    (src, tx_api)
+    (Box::new(src), tx_api)
 }
 
 #[tracing::instrument(level="trace", skip(future), fields(worker_threads=num_cpus::get()))]

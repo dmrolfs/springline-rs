@@ -8,6 +8,8 @@ pub use self::monitor::{
     GOVERNANCE_PLAN_ACCEPTED, PLAN_OBSERVATION_COUNT, PLAN_TARGET_NR_TASK_MANAGERS,
 };
 
+use std::rc::Rc;
+use std::cell::RefCell;
 use cast_trait_object::DynCastExt;
 use enumflags2::{bitflags, BitFlags};
 use monitor::Monitor;
@@ -67,25 +69,32 @@ pub enum PhaseFlag {
 /// Represents Autoscaler state.
 pub trait EngineState {}
 
-#[derive(Default)]
+pub type BoxedTelemetrySource = Box<dyn SourceStage<Telemetry>>;
+pub type BoxedSourceFactory = Box<dyn Fn(&Settings) -> BoxedTelemetrySource + 'static>;
+pub type FeedbackSource = (BoxedTelemetrySource, ActorSourceApi<Telemetry>);
+pub type BoxedFeedbackFactory = Box<dyn Fn(&Settings) -> FeedbackSource + 'static>;
+pub type ActionWithMonitor = (Box<dyn SinkStage<GovernanceOutcome>>, ActMonitor<GovernanceOutcome>);
+pub type ActionWithMontiorFactory = Box<dyn Fn(&Settings) -> ActionWithMonitor + 'static>;
+
+#[derive(Default, Clone)]
 pub struct Building {
     name: SharedString,
-    sensors: Vec<Box<dyn SourceStage<Telemetry>>>,
-    act: Option<Box<dyn SinkStage<GovernanceOutcome>>>,
-    rx_action_monitor: Option<act::ActMonitor<GovernanceOutcome>>,
+    sensors: Rc<RefCell<Vec<BoxedSourceFactory>>>,
+    action_factory: Option<Rc<ActionWithMontiorFactory>>,
+//    rx_action_monitor: Option<act::ActMonitor<GovernanceOutcome>>,
     metrics_registry: Option<&'static Registry>,
-    tx_monitor_feedback: Option<ActorSourceApi<Telemetry>>,
+    feedback_factory: Option<Rc<BoxedFeedbackFactory>>,
 }
+
 impl EngineState for Building {}
 
 impl fmt::Debug for Building {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Building")
             .field("name", &self.name)
-            .field("nr_custom_sensors", &self.sensors.len())
+            .field("nr_custom_sensors", &self.sensors.borrow().len())
             .field("metrics_registry", &self.metrics_registry)
-            .field("rx_act_monitor", &self.rx_action_monitor)
-            .field("tx_monitor_feedback", &self.tx_monitor_feedback)
+//            .field("rx_act_monitor", &self.rx_action_monitor)
             .finish()
     }
 }
@@ -97,43 +106,47 @@ impl AutoscaleEngine<Building> {
         }
     }
 
-    pub fn with_action_stage(self, action_stage: Box<dyn SinkStage<GovernanceOutcome>>) -> Self {
-        tracing::trace!(?action_stage, "setting act phase on autoscale engine builder.");
-        Self {
-            inner: Building { act: Some(action_stage), ..self.inner },
-        }
-    }
-
-    pub fn with_action_monitor(self, rx_act_monitor: ActMonitor<GovernanceOutcome>) -> Self {
-        Self {
-            inner: Building {
-                rx_action_monitor: Some(rx_act_monitor),
-                ..self.inner
-            },
-        }
-    }
-
-    pub fn with_sensors<I>(self, sensors: I) -> Self
+    pub fn with_action_factory<F>(self, action_factory: F) -> Self
     where
-        I: Iterator<Item = Box<dyn SourceStage<Telemetry>>>,
+        F: Fn(&Settings) -> ActionWithMonitor + 'static,
     {
-        let sensors = sensors.collect();
-        tracing::trace!(?sensors, "setting sensors on autoscale engine builder.");
-        Self { inner: Building { sensors, ..self.inner } }
-    }
-
-    pub fn add_sensor(mut self, sensor: impl SourceStage<Telemetry>) -> Self {
-        tracing::trace!(?sensor, "adding sensor to autoscale engine.");
-        self.inner.sensors.push(Box::new(sensor));
+        Self {
+            inner: Building { action_factory: Some(Rc::new(Box::new(action_factory))), ..self.inner }
+        }
+    }   
+     
+//    pub fn with_action_stage(self, action_stage: Box<dyn SinkStage<GovernanceOutcome>>) -> Self {
+//        tracing::trace!(?action_stage, "setting act phase on autoscale engine builder.");
+//        Self {
+//            inner: Building { act: Some(Rc::new(action_stage), ..self.inner },
+//        }
+//    }
+//
+//    pub fn with_action_monitor(self, rx_act_monitor: ActMonitor<GovernanceOutcome>) -> Self {
+//        Self {
+//            inner: Building {
+//                rx_action_monitor: Some(rx_act_monitor),
+//                ..self.inner
+//            },
+//        }
+//    }
+//
+    pub fn add_sensor_factory<F>(mut self, sensor_factory: F) -> Self
+    where
+        F: Fn(&Settings) -> BoxedTelemetrySource + 'static,
+    {
+        self.inner.sensors.borrow_mut().push(Box::new(sensor_factory));
         self
     }
-
-    pub fn add_monitor_feedback(mut self, tx_monitor_feedback: ActorSourceApi<Telemetry>) -> Self {
-        tracing::trace!("adding feedback api for monitor");
-        self.inner.tx_monitor_feedback = Some(tx_monitor_feedback);
+    
+    pub fn add_monitor_feedback_factory<F>(mut self, feedback_factory: F) -> Self
+    where
+        F: Fn(&Settings) -> FeedbackSource + 'static,
+    {
+        self.inner.feedback_factory = Some(Rc::new(Box::new(feedback_factory)));
         self
     }
-
+    
     pub fn with_metrics_registry(self, registry: &'static Registry) -> Self {
         tracing::trace!(?registry, "added metrics registry to autoscale engine.");
         Self {
@@ -149,8 +162,18 @@ impl AutoscaleEngine<Building> {
             metrics::register_metrics(registry)?;
         }
 
+        let mut sensors = self.inner.sensors.borrow().iter().map(|s| s(settings)).collect::<Vec<_>>();
+
+        let tx_feedback = self.inner.feedback_factory
+            .as_ref()
+            .map(|f| {
+                let (source, tx) = f(settings);
+                sensors.push(source);
+                tx
+            });
+
         let (mut sense_builder, tx_stop_flink_sensor) =
-            sense::make_sense_phase("data", flink, &settings.sensor, self.inner.sensors, machine_node).await?;
+            sense::make_sense_phase("data", flink, &settings.sensor, sensors, machine_node).await?;
         let (eligibility_phase, eligibility_channel) =
             eligibility::make_eligibility_phase(&settings.eligibility, &mut sense_builder).await?;
         let rx_eligibility_monitor = eligibility_phase.rx_monitor();
@@ -167,11 +190,25 @@ impl AutoscaleEngine<Building> {
             governance::make_governance_phase(&settings.governance, &mut sense_builder).await?;
         let rx_governance_monitor = governance_phase.rx_monitor();
 
-        let act = self.inner.act.unwrap_or_else(act::make_logger_act_phase);
-        let rx_action_monitor = self.inner.rx_action_monitor.unwrap_or_else(|| {
-            let (_, rx_dummy) = tokio::sync::broadcast::channel(0);
-            rx_dummy
-        });
+        let (act, rx_action_monitor): ActionWithMonitor = self.inner.action_factory
+            .as_ref()
+            .map(|f| {
+                let foo = f(settings);
+                foo
+            })
+            .unwrap_or_else(|| {
+                let stage = act::make_logger_act_phase();
+                let (_, rx) = tokio::sync::broadcast::channel(0);
+                (stage, rx)
+            });
+        
+        
+        
+        // let act = self.inner.act.unwrap_or_else(act::make_logger_act_phase);
+        // let rx_action_monitor = self.inner.rx_action_monitor.unwrap_or_else(|| {
+        //     let (_, rx_dummy) = tokio::sync::broadcast::channel(0);
+        //     rx_dummy
+        // });
 
         let sense = sense_builder
             .build_for_out_w_metrics(MetricCatalog::update_metrics_for(
@@ -240,7 +277,7 @@ impl AutoscaleEngine<Building> {
                     rx_flink_planning_monitor,
                     rx_governance_monitor,
                     rx_action_monitor,
-                    tx_feedback: self.inner.tx_monitor_feedback,
+                    tx_feedback,
                     tx_engine: tx_service_api.clone(),
                 },
                 metrics_registry: self.inner.metrics_registry,
