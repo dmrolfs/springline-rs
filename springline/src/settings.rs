@@ -188,17 +188,18 @@ mod tests {
     use std::time::Duration;
     use std::{env, panic};
 
-    use crate::flink::RestoreMode;
-    use crate::kubernetes::{KubernetesApiConstraints, KubernetesDeployResource};
     use chrono::TimeZone;
     use claim::*;
     use config::{Config, FileFormat};
     use once_cell::sync::Lazy;
     use pretty_assertions::assert_eq;
     use proctor::elements::{PolicySource, TelemetryType, ToTelemetry};
+    use proctor::phases::sense::clearinghouse::TelemetryCacheSettings;
     use proctor::phases::sense::SensorSetting;
 
     use super::*;
+    use crate::flink::RestoreMode;
+    use crate::kubernetes::{KubernetesApiConstraints, KubernetesDeployResource};
     use crate::phases::plan::{PerformanceRepositorySettings, PerformanceRepositoryType, SpikeSettings};
     use crate::phases::sense::flink::{Aggregation, FlinkScope, MetricOrder};
     use crate::settings::action_settings::SavepointSettings;
@@ -285,6 +286,7 @@ mod tests {
             kubernetes: KubernetesSettings::default(),
             engine: Default::default(),
             sensor: SensorSettings {
+                clearinghouse: TelemetryCacheSettings::default(),
                 flink: FlinkSensorSettings {
                     metrics_initial_delay: Duration::from_secs(300),
                     metrics_interval: Duration::from_secs(15),
@@ -460,6 +462,7 @@ mod tests {
             telemetry_portfolio_window: Duration::from_secs(600),
         },
         sensor: SensorSettings {
+            clearinghouse: TelemetryCacheSettings::default(),
             flink: FlinkSensorSettings {
                 metrics_initial_delay: Duration::from_secs(300),
                 metrics_interval: Duration::from_secs(15),
@@ -536,7 +539,7 @@ mod tests {
         action: ActionSettings {
             action_timeout: Duration::from_secs(600),
             taskmanager: TaskmanagerContext {
-                label_selector: "component=taskmanager".to_string(),
+                label_selector: "component=taskmanager,release=dr-springline".to_string(),
                 deploy_resource: KubernetesDeployResource::StatefulSet { name: "dr-springline-tm".to_string() },
                 kubernetes_api: KubernetesApiConstraints {
                     api_timeout: Duration::from_secs(295),
@@ -842,7 +845,7 @@ mod tests {
                         ..SETTINGS.flink.clone()
                     },
                     kubernetes: KubernetesSettings {
-                        patch_settle_timeout: Duration::from_secs(10),
+                        patch_settle_timeout: Duration::from_secs(60),
                         ..SETTINGS.kubernetes.clone()
                     },
                     eligibility: EligibilitySettings {

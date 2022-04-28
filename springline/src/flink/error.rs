@@ -1,9 +1,9 @@
-use crate::flink::{FailureCause, JobId, SavepointStatus};
 use either::{Either, Left, Right};
 use proctor::elements::{TelemetryType, TelemetryValue};
 use proctor::error::MetricLabel;
-use proctor::SharedString;
 use thiserror::Error;
+
+use crate::flink::{FailureCause, JobId, SavepointStatus};
 
 #[derive(Debug, Error)]
 pub enum FlinkError {
@@ -42,11 +42,11 @@ pub enum FlinkError {
 }
 
 impl MetricLabel for FlinkError {
-    fn slug(&self) -> SharedString {
+    fn slug(&self) -> String {
         "flink".into()
     }
 
-    fn next(&self) -> Either<SharedString, Box<&dyn MetricLabel>> {
+    fn next(&self) -> Either<String, Box<&dyn MetricLabel>> {
         match self {
             Self::Url(err) => Right(Box::new(err)),
             Self::NotABaseUrl(_) => Left("http::url::NotABaseUrl".into()),
@@ -54,11 +54,11 @@ impl MetricLabel for FlinkError {
             Self::HttpMiddleware(_) => Left("http::middleware".into()),
             Self::InvalidRequestHeaderDetail(_) => Left("http::header".into()),
             Self::Json(_) => Left("http::json".into()),
-            Self::ExpectedTelemetryType(_, _) => Left("telemetry".into()),
+            Self::ExpectedTelemetryType(..) => Left("telemetry".into()),
             Self::UnexpectedValue { .. } => Left("http::unexpected".into()),
-            Self::UnexpectedSavepointStatus(_, _) => Left("savepoint".into()),
+            Self::UnexpectedSavepointStatus(..) => Left("savepoint".into()),
             Self::Savepoint { .. } => Left("savepoint".into()),
-            Self::Timeout(_, _) => Left("http::timeout".into()),
+            Self::Timeout(..) => Left("http::timeout".into()),
         }
     }
 }

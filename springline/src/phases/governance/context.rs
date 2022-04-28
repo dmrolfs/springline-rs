@@ -1,7 +1,6 @@
 use std::collections::HashSet;
 use std::fmt::Debug;
 
-use crate::metrics::UpdateMetrics;
 use once_cell::sync::Lazy;
 use oso::PolarClass;
 use pretty_snowflake::{Id, Label};
@@ -9,9 +8,11 @@ use proctor::elements::telemetry::UpdateMetricsFn;
 use proctor::elements::{telemetry, Telemetry, Timestamp};
 use proctor::error::GovernanceError;
 use proctor::phases::sense::SubscriptionRequirements;
-use proctor::{Correlation, ProctorContext, SharedString};
+use proctor::{Correlation, ProctorContext};
 use prometheus::IntGauge;
 use serde::{Deserialize, Serialize};
+
+use crate::metrics::UpdateMetrics;
 
 #[derive(PolarClass, Label, Debug, Clone, Serialize, Deserialize)]
 pub struct GovernanceContext {
@@ -20,7 +21,6 @@ pub struct GovernanceContext {
     pub recv_timestamp: Timestamp,
 
     /// Minimal cluster size autoscaling will allow to scale down to.
-    //
     // - source from governance settings
     #[polar(attribute)]
     pub min_cluster_size: u32,
@@ -58,7 +58,7 @@ impl PartialEq for GovernanceContext {
 }
 
 impl SubscriptionRequirements for GovernanceContext {
-    fn required_fields() -> HashSet<proctor::SharedString> {
+    fn required_fields() -> HashSet<String> {
         maplit::hashset! {
             "min_cluster_size".into(),
             "max_cluster_size".into(),
@@ -77,7 +77,8 @@ impl ProctorContext for GovernanceContext {
 }
 
 impl UpdateMetrics for GovernanceContext {
-    fn update_metrics_for(phase_name: SharedString) -> UpdateMetricsFn {
+    fn update_metrics_for(phase_name: &str) -> UpdateMetricsFn {
+        let phase_name = phase_name.to_string();
         let update_fn = move |subscription_name: &str, telemetry: &Telemetry| match telemetry.clone().try_into::<Self>()
         {
             Ok(ctx) => {
@@ -88,10 +89,7 @@ impl UpdateMetrics for GovernanceContext {
 
             Err(err) => {
                 tracing::warn!(error=?err, %phase_name, "failed to update governance context metrics on subscription: {}", subscription_name);
-                proctor::track_errors(
-                    phase_name.as_ref(),
-                    &proctor::error::ProctorError::GovernancePhase(err.into()),
-                );
+                proctor::track_errors(&phase_name, &proctor::error::ProctorError::GovernancePhase(err.into()));
             },
         };
 

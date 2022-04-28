@@ -1,5 +1,4 @@
 use proctor::elements::telemetry::UpdateMetricsFn;
-use proctor::SharedString;
 use prometheus::Registry;
 
 use crate::phases::{act, decision, eligibility, governance, plan, sense};
@@ -7,7 +6,7 @@ use crate::{engine, Result};
 use crate::{flink, model};
 
 pub trait UpdateMetrics {
-    fn update_metrics_for(name: SharedString) -> UpdateMetricsFn;
+    fn update_metrics_for(name: &str) -> UpdateMetricsFn;
 }
 
 #[tracing::instrument(level = "trace")]

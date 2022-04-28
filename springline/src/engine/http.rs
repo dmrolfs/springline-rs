@@ -7,7 +7,7 @@ use axum::http::{Method, StatusCode, Uri};
 use axum::response::IntoResponse;
 use axum::routing::get;
 use axum::{BoxError, Json, Router};
-use proctor::phases::sense::ClearinghouseSnapshot;
+use proctor::phases::sense::clearinghouse::ClearinghouseSnapshot;
 use serde_json::json;
 use settings_loader::common::http::HttpServerSettings;
 use tokio::task::JoinHandle;

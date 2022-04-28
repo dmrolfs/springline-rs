@@ -1,6 +1,5 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::model::MetricCatalog;
 use oso::{Oso, PolarClass, PolarValue};
 use proctor::elements::{PolicyContributor, PolicySource, PolicySubscription, QueryPolicy, QueryResult, Telemetry};
 use proctor::error::PolicyError;
@@ -10,6 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use super::context::GovernanceContext;
 use crate::metrics::UpdateMetrics;
+use crate::model::MetricCatalog;
 use crate::phases::plan::ScalePlan;
 use crate::settings::GovernanceSettings;
 

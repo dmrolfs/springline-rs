@@ -2,8 +2,7 @@ use std::future::Future;
 
 use clap::Parser;
 use once_cell::sync::Lazy;
-use proctor::elements::Telemetry;
-use proctor::graph::stage::{ActorSourceApi, SourceStage, WithApi, WithMonitor};
+use proctor::graph::stage::{WithApi, WithMonitor};
 use prometheus::Registry;
 use settings_loader::SettingsLoader;
 use springline::engine::{Autoscaler, BoxedTelemetrySource, FeedbackSource};
@@ -21,7 +20,7 @@ fn main() -> Result<()> {
     proctor::tracing::init_subscriber(subscriber);
 
     let main_span = tracing::trace_span!("main");
-    main_span.in_scope(|| {
+    let outcome = main_span.in_scope(|| {
         let options = CliOptions::parse();
         let settings = Settings::load(&options)?;
 
@@ -31,30 +30,42 @@ fn main() -> Result<()> {
             let action_flink = flink.clone();
             let action_kube = kube.clone();
 
-            let engine = Autoscaler::builder("springline")
+            let engine_builder = Autoscaler::builder("springline")
                 .add_sensor_factory(make_settings_sensor)
+                .await
                 .add_monitor_feedback_factory(make_monitor_sensor_and_api)
                 .with_metrics_registry(&METRICS_REGISTRY)
                 .with_action_factory(move |settings| {
                     let actuator = ScaleActuator::new(action_kube.clone(), action_flink.clone(), settings);
                     let rx = actuator.rx_monitor();
                     (Box::new(actuator), rx)
-                })
-                .finish(flink, &settings)
-                .await?
-                .run();
+                });
+
+            let engine = engine_builder.clone().finish(flink, &settings).await?.run();
 
             tracing::info!("Starting autoscale management server API...");
             let api_handle = engine::run_http_server(engine.inner.tx_service_api.clone(), &settings.http)?;
 
             tracing::info!("autoscale engine fully running...");
-            engine.block_for_completion().await?;
-            api_handle.await??;
+            if let Err(err) = engine.block_for_completion().await {
+                tracing::error!(error=?err, "autoscale engine failed: {}", err);
+            }
+
+            if let Err(err) = api_handle.await {
+                tracing::error!(error=?err, "autoscale management server API failed: {}", err);
+            }
 
             tracing::info!("autoscaling engine stopped.");
             Ok(())
         })
-    })
+    });
+
+    if let Err(ref err) = outcome {
+        tracing::error!(error=?err, "autoscaling engine failed: {}", err);
+    }
+
+    tracing::info!("stopping autoscaler application.");
+    outcome
 }
 
 fn make_settings_sensor(settings: &Settings) -> BoxedTelemetrySource {
@@ -73,7 +84,10 @@ fn make_settings_sensor(settings: &Settings) -> BoxedTelemetrySource {
         "cluster.last_deployment".to_string() => format!("{}", settings.context_stub.cluster_last_deployment.format(proctor::serde::date::FORMAT)).into(),
     });
 
-    Box::new(proctor::graph::stage::Sequence::new("settings_telemetry", vec![settings_telemetry.into()]))
+    Box::new(proctor::graph::stage::Sequence::new(
+        "settings_telemetry",
+        vec![settings_telemetry.into()],
+    ))
 }
 
 fn make_monitor_sensor_and_api(_settings: &Settings) -> FeedbackSource {

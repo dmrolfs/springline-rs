@@ -5,16 +5,14 @@ mod result;
 pub use context::DecisionContext;
 pub(crate) use policy::DECISION_SCALING_DECISION_COUNT_METRIC;
 pub use policy::{DecisionPolicy, DecisionTemplateData};
+use proctor::elements::PolicySubscription;
+use proctor::phases::policy_phase::PolicyPhase;
+use proctor::phases::sense::{ClearinghouseSubscriptionAgent, SubscriptionChannel};
 pub use result::make_decision_transform;
 pub use result::DecisionResult;
 pub use result::DECISION_DIRECTION;
 
 use crate::model::MetricPortfolio;
-use proctor::elements::PolicySubscription;
-use proctor::phases::policy_phase::PolicyPhase;
-use proctor::phases::sense::{ClearinghouseSubscriptionAgent, SubscriptionChannel};
-use proctor::SharedString;
-
 use crate::phases;
 use crate::phases::eligibility::EligibilityOutcome;
 use crate::settings::DecisionSettings;
@@ -35,12 +33,10 @@ pub async fn make_decision_phase<A>(settings: &DecisionSettings, agent: &mut A) 
 where
     A: ClearinghouseSubscriptionAgent,
 {
-    let name: SharedString = "decision".into();
+    let name = "decision";
     let policy = DecisionPolicy::new(settings);
-    let subscription = policy.subscription(name.as_ref(), settings);
-    let decision =
-        Box::new(PolicyPhase::with_transform(name.clone(), policy, make_decision_transform(name.into_owned())).await?);
-
+    let subscription = policy.subscription(name, settings);
+    let decision = Box::new(PolicyPhase::with_transform(name, policy, make_decision_transform(name)).await?);
     let channel = phases::subscribe_policy_phase(subscription, &decision, agent).await?;
     Ok((decision, channel))
 }

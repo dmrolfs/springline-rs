@@ -1,17 +1,18 @@
-use chrono::{DateTime, Utc};
-use enumflags2::BitFlags;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::engine::service::{EngineCmd, EngineServiceApi, Health};
-use crate::engine::{PhaseFlag, PhaseFlags};
+use chrono::{DateTime, Utc};
+use enumflags2::BitFlags;
 use once_cell::sync::Lazy;
 use proctor::elements::{RecordsPerSecond, Telemetry, Timestamp, FORMAT};
 use proctor::graph::stage::{ActorSourceApi, ActorSourceCmd};
 use proctor::phases::plan::{PlanEvent, PlanMonitor};
+use proctor::phases::sense::{ClearinghouseApi, ClearinghouseCmd};
 use prometheus::{IntCounter, IntGauge};
 
+use crate::engine::service::{EngineCmd, EngineServiceApi, Health};
+use crate::engine::{PhaseFlag, PhaseFlags};
 use crate::model;
 use crate::phases::act::{ActEvent, ActMonitor, ACT_PHASE_ERRORS, ACT_SCALE_ACTION_COUNT, PIPELINE_CYCLE_TIME};
 use crate::phases::decision::{DecisionContext, DecisionEvent, DecisionMonitor, DecisionResult};
@@ -95,6 +96,7 @@ pub struct Monitor {
     pub rx_action_monitor: ActMonitor<GovernanceOutcome>,
     pub tx_feedback: Option<ActorSourceApi<Telemetry>>,
     pub tx_engine: EngineServiceApi,
+    pub tx_clearinghouse_api: ClearinghouseApi,
 }
 
 impl Monitor {
@@ -276,7 +278,7 @@ impl Monitor {
 
         let action_feedback = match &*event {
             ActEvent::PlanActionStarted(plan) => Self::do_handle_rescale_started(plan),
-            ActEvent::PlanExecuted { plan, durations } => Self::do_handle_rescale_executed(plan, durations, now),
+            ActEvent::PlanExecuted { plan, durations } => self.do_handle_rescale_executed(plan, durations, now).await,
             ActEvent::PlanFailed { plan, error_metric_label } => {
                 Self::do_handle_rescale_failed(plan, error_metric_label, now)
             },
@@ -295,8 +297,8 @@ impl Monitor {
         ActionFeedback { is_rescaling: true, ..ActionFeedback::default() }
     }
 
-    fn do_handle_rescale_executed(
-        plan: &ScalePlan, durations: &HashMap<String, Duration>, now: Timestamp,
+    async fn do_handle_rescale_executed(
+        &self, plan: &ScalePlan, durations: &HashMap<String, Duration>, now: Timestamp,
     ) -> ActionFeedback {
         tracing::info!(%now, ?plan, correlation=?plan.correlation_id, ?durations, "rescale executed");
         ACT_SCALE_ACTION_COUNT
@@ -309,6 +311,10 @@ impl Monitor {
         let start = plan.recv_timestamp;
         let cycle_time_seconds = now.as_secs_f64() - start.as_secs_f64();
         PIPELINE_CYCLE_TIME.observe(cycle_time_seconds);
+
+        if let Err(err) = ClearinghouseCmd::clear(&self.tx_clearinghouse_api).await {
+            tracing::warn!(error=?err, "failed to clear clearinghouse on rescaling.");
+        }
 
         ActionFeedback {
             is_rescaling: false,

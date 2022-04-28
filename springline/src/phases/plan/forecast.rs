@@ -10,12 +10,12 @@ use std::fmt::Debug;
 
 pub use calculator::{ForecastCalculator, ForecastInputs};
 pub use least_squares::{LeastSquaresWorkloadForecaster, SpikeSettings};
-
-use crate::phases::plan::PlanningMeasurement;
 #[cfg(test)]
 use mockall::{automock, predicate::*};
 use proctor::elements::{Point, RecordsPerSecond, Timestamp};
 use serde::{Deserialize, Serialize};
+
+use crate::phases::plan::PlanningMeasurement;
 
 #[cfg_attr(test, automock)]
 pub trait Forecaster: Debug + Sync + Send {

@@ -1,19 +1,19 @@
-use once_cell::sync::Lazy;
 use std::collections::{HashMap, HashSet};
 
-use crate::model::MetricPortfolio;
+use once_cell::sync::Lazy;
 use oso::{Oso, PolarClass, PolarValue};
 use proctor::elements::{
     PolicyContributor, PolicySource, PolicySubscription, QueryPolicy, QueryResult, Telemetry, Timestamp,
 };
 use proctor::error::PolicyError;
 use proctor::phases::sense::TelemetrySubscription;
-use proctor::{ProctorContext, ProctorIdGenerator, SharedString};
+use proctor::{ProctorContext, ProctorIdGenerator};
 use prometheus::{IntCounterVec, Opts};
 use serde::{Deserialize, Serialize};
 
 use super::context::DecisionContext;
 use crate::metrics::UpdateMetrics;
+use crate::model::MetricPortfolio;
 use crate::phases::decision::result::DECISION_DIRECTION;
 use crate::phases::REASON;
 use crate::settings::DecisionSettings;
@@ -67,27 +67,17 @@ impl Default for DecisionTemplateData {
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct DecisionPolicy {
-    pub required_subscription_fields: HashSet<SharedString>,
-    pub optional_subscription_fields: HashSet<SharedString>,
+    pub required_subscription_fields: HashSet<String>,
+    pub optional_subscription_fields: HashSet<String>,
     pub sources: Vec<PolicySource>,
     pub template_data: Option<DecisionTemplateData>,
 }
 
 impl DecisionPolicy {
     pub fn new(settings: &DecisionSettings) -> Self {
-        let required_subscription_fields = settings
-            .required_subscription_fields
-            .iter()
-            .map(|f| SharedString::from(f.to_string()))
-            .collect();
-        let optional_subscription_fields = settings
-            .optional_subscription_fields
-            .iter()
-            .map(|f| SharedString::from(f.to_string()))
-            .collect();
         Self {
-            required_subscription_fields,
-            optional_subscription_fields,
+            required_subscription_fields: settings.required_subscription_fields.clone(),
+            optional_subscription_fields: settings.optional_subscription_fields.clone(),
             sources: settings.policies.clone(),
             template_data: settings.template_data.clone(),
         }

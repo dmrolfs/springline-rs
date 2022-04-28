@@ -1,10 +1,12 @@
+use std::time::Duration;
+
+use async_trait::async_trait;
+
 use super::{ActionSession, ScaleAction};
 use crate::flink::{JarId, JobId};
 use crate::phases::act;
 use crate::phases::act::ActError;
 use crate::phases::plan::ScalePlan;
-use async_trait::async_trait;
-use std::time::Duration;
 
 pub const ACTION_LABEL: &str = "prepare_data";
 
@@ -20,7 +22,7 @@ impl ScaleAction for PrepareData {
         let timer = act::start_scale_action_timer(session.cluster_label(), ACTION_LABEL);
 
         let correlation = session.correlation();
-        //todo: consider moving this to context channel?? would support keeping track of jar and job?
+        // todo: consider moving this to context channel?? would support keeping track of jar and job?
         let active_jobs: Vec<JobId> = session
             .flink
             .query_active_jobs(&correlation)

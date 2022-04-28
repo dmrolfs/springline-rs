@@ -1,14 +1,21 @@
-use crate::model::{CorrelationId, MetricCatalog};
-use oso::PolarClass;
+use std::fmt::{self, Display};
 
+use oso::PolarClass;
 use pretty_snowflake::Id;
 use proctor::elements::Timestamp;
 use proctor::Correlation;
 use serde::{Deserialize, Serialize};
-use std::fmt;
 
+use crate::model::{CorrelationId, MetricCatalog};
 use crate::phases::decision::DecisionResult;
 use crate::phases::plan::MINIMAL_CLUSTER_SIZE;
+
+#[derive(Debug, Display, Copy, Clone, PartialEq, Eq, Hash)]
+pub enum ScaleDirection {
+    Up,
+    Down,
+    None,
+}
 
 #[derive(PolarClass, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ScalePlan {
@@ -99,6 +106,14 @@ impl ScalePlan {
             },
 
             (DR::NoAction(_), _) => None,
+        }
+    }
+
+    pub const fn direction(&self) -> ScaleDirection {
+        match (self.current_nr_task_managers, self.target_nr_task_managers) {
+            (current, target) if current < target => ScaleDirection::Up,
+            (current, target) if target < current => ScaleDirection::Down,
+            (..) => ScaleDirection::None,
         }
     }
 }

@@ -1,7 +1,9 @@
-use crate::settings::{KubernetesSettings, LoadKubeConfig};
+use std::fmt;
+
 use itertools::Itertools;
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
-use std::fmt;
+
+use crate::settings::{KubernetesSettings, LoadKubeConfig};
 
 mod context;
 mod deploy;
@@ -11,7 +13,7 @@ pub use context::{FlinkComponent, KubernetesApiConstraints, KubernetesContext};
 pub use deploy::DeployApi;
 pub use error::{convert_kube_error, KubernetesError};
 
-//todo: consider representing as enum with Display and AsRef<str>
+// todo: consider representing as enum with Display and AsRef<str>
 pub const RUNNING_STATUS: &str = "Running";
 // pub const PENDING_STATUS: &str = "Pending";
 // pub const SUCCEEDED_STATUS: &str = "Succeeded";
@@ -35,7 +37,10 @@ async fn make_client(settings: &KubernetesSettings) -> Result<kube::Client, Kube
             KubeUrl(url.clone()).try_into().map(kube::Config::new)?
         },
         LoadKubeConfig::ClusterEnv => {
-            tracing::info!("configuring kubernetes client from cluster's environment variables, following the standard API Access from a Pod.");
+            tracing::info!(
+                "configuring kubernetes client from cluster's environment variables, following the standard API \
+                 Access from a Pod."
+            );
             kube::Config::from_cluster_env()?
         },
         LoadKubeConfig::KubeConfig(options) => {
@@ -171,10 +176,11 @@ impl TryFrom<KubeUrl> for http::Uri {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use claim::*;
     use pretty_assertions::assert_eq;
     use serde_test::{assert_tokens, Token};
+
+    use super::*;
 
     const EXPECTED_REP: &str = "\"statefulset/springline\"";
 
@@ -232,24 +238,24 @@ mod tests {
 
 // let kube = match k8s_settings.client_config {
 // LoadKubeConfig::Infer =>  {
-// tracing::info!("inferring kubernetes configuration from in-cluster environment or fallback to local kubeconfig.");
-// kube::Client::try_default().await
+// tracing::info!("inferring kubernetes configuration from in-cluster environment or fallback to
+// local kubeconfig."); kube::Client::try_default().await
 // },
 // LoadKubeConfig::LocalUrl(url) => {
 // tracing::info!(?url, "Config kube with only cluster_url, everything thing else is default.")
 // kube::Client::try_from(kube::Config::new(url.into()))
 // },
 // LoadKubeConfig::ClusterEnv => {
-// tracing::info!("configuring kubernetes client from cluster's environment variables, following the standard API Access from a Pod.")
-// kube::Config::from_cluster_env().and_then(kube::Client::try_from)
-// },
+// tracing::info!("configuring kubernetes client from cluster's environment variables, following the
+// standard API Access from a Pod.") kube::Config::from_cluster_env().and_then(kube::Client::
+// try_from) },
 // LoadKubeConfig::KubeConfig(options) => {
 // tracing::info!("create kuberenetes client config from the default local kubeconfig file.")
 // kube::Config::from_kubeconfig(&options.into()).and_then(kube::Client::try_from)
 // },
 // LoadKubeConfig::CustomKubeConfig { kubeconfig, options } => {
-// tracing::info!("Configure the kubernetes client with custom kubeconfig, bypassing the normal config parsing.");
-// kube::Config::from_custom_kubeconfig(kubeconfig.into(), &options.into())
+// tracing::info!("Configure the kubernetes client with custom kubeconfig, bypassing the normal
+// config parsing."); kube::Config::from_custom_kubeconfig(kubeconfig.into(), &options.into())
 // .and_then(|config| kube::Client::try_from)
 // }
 // }

@@ -1,9 +1,6 @@
-use crate::flink::{self, FlinkContext, FlinkError, JarId, JobId, JobState, RestoreMode, SavepointLocation};
-use crate::phases::act;
-use crate::phases::act::action::{ActionSession, ScaleAction};
-use crate::phases::act::{ActError, ScaleActionPlan};
-use crate::phases::plan::ScalePlan;
-use crate::settings::FlinkActionSettings;
+use std::collections::{HashMap, HashSet};
+use std::time::Duration;
+
 use async_trait::async_trait;
 use either::{Either, Left, Right};
 use futures_util::stream::FuturesUnordered;
@@ -12,10 +9,15 @@ use http::{Method, StatusCode};
 use once_cell::sync::Lazy;
 use proctor::error::UrlError;
 use prometheus::IntCounter;
-use std::collections::{HashMap, HashSet};
-use std::time::Duration;
 use tracing_futures::Instrument;
 use url::Url;
+
+use crate::flink::{self, FlinkContext, FlinkError, JarId, JobId, JobState, RestoreMode, SavepointLocation};
+use crate::phases::act;
+use crate::phases::act::action::{ActionSession, ScaleAction};
+use crate::phases::act::{ActError, ScaleActionPlan};
+use crate::phases::plan::ScalePlan;
+use crate::settings::FlinkActionSettings;
 
 pub const ACTION_LABEL: &str = "restart_jobs";
 
@@ -84,7 +86,9 @@ impl ScaleAction for RestartJobs {
                 }
             } else {
                 tracing::warn!(
-                    "No uploaded jars to start jobs from -- skipping {ACTION_LABEL}. Flink standalone not supported. Todo: add identification of standalone mode and once detected apply Reactive Flink approach (with necessary assumption that Reactive mode is configured."
+                    "No uploaded jars to start jobs from -- skipping {ACTION_LABEL}. Flink standalone not supported. \
+                     Todo: add identification of standalone mode and once detected apply Reactive Flink approach \
+                     (with necessary assumption that Reactive mode is configured."
                 );
             };
         }
@@ -378,7 +382,7 @@ impl RestartJobs {
                         )
                     },
                     Err(err) => {
-                        //todo: consider capping attempts
+                        // todo: consider capping attempts
                         tracing::warn!(
                             %err,
                             "failed to query job details - checking again in {:?}",
@@ -435,8 +439,10 @@ impl RestartJobs {
             let completed_inactive_jobs: HashSet<&JobId> = completed_jobs.difference(&active_jobs).collect();
             if !completed_inactive_jobs.is_empty() {
                 tracing::warn!(
-                    ?completed_inactive_jobs, ?correlation,
-                    "Found completed savepoints for jobs that were not active. This is unexpected and may indicate a bug in the application."
+                    ?completed_inactive_jobs,
+                    ?correlation,
+                    "Found completed savepoints for jobs that were not active. This is unexpected and may indicate a \
+                     bug in the application."
                 );
             }
             true
@@ -445,9 +451,10 @@ impl RestartJobs {
 }
 
 mod restart {
-    use crate::flink::{JobId, RestoreMode, SavepointLocation};
     use serde::{Deserialize, Serialize};
     use serde_with::serde_as;
+
+    use crate::flink::{JobId, RestoreMode, SavepointLocation};
 
     #[serde_as]
     #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -510,10 +517,11 @@ pub static FLINK_MISSED_JAR_RESTARTS: Lazy<IntCounter> = Lazy::new(|| {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use claim::*;
     use pretty_assertions::assert_eq;
     use serde_test::{assert_tokens, Token};
+
+    use super::*;
 
     #[test]
     fn test_common_restart_jar_restart_body_ser_json() {

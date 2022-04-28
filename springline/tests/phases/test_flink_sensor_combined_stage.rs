@@ -1,3 +1,7 @@
+use std::borrow::Cow;
+use std::collections::{HashMap, HashSet};
+use std::time::Duration;
+
 use cast_trait_object::DynCastExt;
 use claim::*;
 use fake::{Fake, Faker};
@@ -11,9 +15,6 @@ use springline::flink::{FlinkContext, JobId, JobState, TaskState, VertexId, JOB_
 use springline::model::{MC_CLUSTER__NR_ACTIVE_JOBS, MC_CLUSTER__NR_TASK_MANAGERS, MC_FLOW__RECORDS_IN_PER_SEC};
 use springline::phases::sense::flink::{make_sensor, FlinkSensorSpecification, STD_METRIC_ORDERS};
 use springline::settings::{FlinkSensorSettings, FlinkSettings};
-use std::borrow::Cow;
-use std::collections::{HashMap, HashSet};
-use std::time::Duration;
 use url::Url;
 use wiremock::matchers::{method, path};
 use wiremock::{Match, Mock, MockServer, Request, ResponseTemplate, Times};

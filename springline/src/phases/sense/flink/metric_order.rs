@@ -1,8 +1,6 @@
 use std::collections::HashMap;
 use std::fmt::{self, Display};
 
-use crate::phases::sense::flink::STD_METRIC_ORDERS;
-use crate::settings::FlinkSensorSettings;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
 use proctor::elements::telemetry::combine::{self, TelemetryCombinator};
@@ -10,6 +8,9 @@ use proctor::elements::TelemetryType;
 use serde::de::{self, Deserializer, MapAccess, SeqAccess, Visitor};
 use serde::ser::SerializeTupleStruct;
 use serde::{Deserialize, Serialize, Serializer};
+
+use crate::phases::sense::flink::STD_METRIC_ORDERS;
+use crate::settings::FlinkSensorSettings;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct MetricOrder {

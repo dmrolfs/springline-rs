@@ -1,7 +1,6 @@
 use std::collections::HashSet;
 use std::fmt::Debug;
 
-use crate::metrics::UpdateMetrics;
 use chrono::{DateTime, Utc};
 use frunk::{Monoid, Semigroup};
 use once_cell::sync::Lazy;
@@ -11,9 +10,11 @@ use proctor::elements::telemetry::UpdateMetricsFn;
 use proctor::elements::{telemetry, Telemetry, Timestamp};
 use proctor::error::{EligibilityError, ProctorError};
 use proctor::phases::sense::SubscriptionRequirements;
-use proctor::{Correlation, ProctorContext, SharedString};
+use proctor::{Correlation, ProctorContext};
 use prometheus::IntGauge;
 use serde::{Deserialize, Serialize};
+
+use crate::metrics::UpdateMetrics;
 
 #[derive(PolarClass, Label, Debug, Clone, Serialize, Deserialize)]
 pub struct EligibilityContext {
@@ -83,7 +84,7 @@ impl PartialEq for EligibilityContext {
 }
 
 impl SubscriptionRequirements for EligibilityContext {
-    fn required_fields() -> HashSet<proctor::SharedString> {
+    fn required_fields() -> HashSet<String> {
         maplit::hashset! {
             // this works because we rename the property via #serde field attributes
             "cluster.is_deploying".into(),
@@ -93,7 +94,7 @@ impl SubscriptionRequirements for EligibilityContext {
         }
     }
 
-    fn optional_fields() -> HashSet<SharedString> {
+    fn optional_fields() -> HashSet<String> {
         maplit::hashset! {
             "task.last_failure".into(),
             CLUSTER__IS_RESCALING.into(),
@@ -110,7 +111,8 @@ impl ProctorContext for EligibilityContext {
 }
 
 impl UpdateMetrics for EligibilityContext {
-    fn update_metrics_for(phase_name: SharedString) -> UpdateMetricsFn {
+    fn update_metrics_for(phase_name: &str) -> UpdateMetricsFn {
+        let phase_name = phase_name.to_string();
         let update_fn = move |subscription_name: &str, telemetry: &Telemetry| match telemetry.clone().try_into::<Self>()
         {
             Ok(ctx) => {
@@ -128,7 +130,7 @@ impl UpdateMetrics for EligibilityContext {
                     error=?err, %phase_name,
                     "failed to update eligibility context metrics on subscription: {}", subscription_name
                 );
-                proctor::track_errors(phase_name.as_ref(), &ProctorError::EligibilityPhase(err.into()));
+                proctor::track_errors(&phase_name, &ProctorError::EligibilityPhase(err.into()));
             },
         };
 

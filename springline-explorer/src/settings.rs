@@ -85,7 +85,7 @@ impl ReviseSettings {
         // if idx == selections.len() - 1 {
         //     state.options.environment = None;
         // } else {
-        state.options.environment = Some(value.into()); //environments.get(idx).copied();
+        state.options.environment = Some(value.into()); // environments.get(idx).copied();
                                                         // }
 
         eprintln!(

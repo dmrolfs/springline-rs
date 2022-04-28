@@ -1,8 +1,10 @@
-use super::{ActionSession, ScaleAction};
-use crate::phases::act::{self, ActError, ScaleActionPlan};
+use std::time::Duration;
+
 use async_trait::async_trait;
 use proctor::AppData;
-use std::time::Duration;
+
+use super::{ActionSession, ScaleAction};
+use crate::phases::act::{self, ActError, ScaleActionPlan};
 
 // pub const ACTION_LABEL: &str = "composite";
 

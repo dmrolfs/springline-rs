@@ -41,6 +41,25 @@ engine:
   telemetry_portfolio_window_secs: 600
 
 sensor:
+  clearinghouse:
+    # Optional setting for the time to live for each clearinghouse field. The default is 5 minutes.
+    # The clearinghouse is cleared during rescaling, so this value should be set to a duration
+    # reflecting a break in connectivity or the job not running.
+    ttl_secs: 300
+
+    # Optional setting for the cache access counter kept for admission and eviction. The default is
+    # 1000. A good  value is to set nr_counters to be 10x the number of *unique* fields expected to
+    # be kept in the clearinghouse cache when full, not necessarily "cost" related.
+    nr_counters: 1000
+
+    # Optional setting for maximum cost of the items stored in the cache. The default is 100,
+    # which assumes the normal case where the per-item cost is 1.
+    max_cost: 100
+
+    # Optional setting to direct how frequent the cache is checked for eviction. The default is 5
+    # seconds. A good setting should consider the frequency of data pushed into the clearinghouse.
+    cleanup_interval_millis: 5000
+
   # The `flink` sensor is more complicated that the modular sensors that can be specified via the
   # `sensor` configuration. The `flink` sensor will query the job manager's REST API for the Job
   # scope, TaskManager scope, TaskManager admin. Then it queries for the active jobs, and for each
@@ -138,7 +157,7 @@ action:
   taskmanager:
     # A selector to identify taskmanagers the list of returned objects by the scaling target; e.g.,
     # "component=taskmanager"
-    label_selector: "component=taskmanager"
+    label_selector: "component=taskmanager,release=dr-springline"
 
     # Resource name of the deployment resource used to deploy taskmanagers; e.g. "statefulset/my-taskmanager".
     deploy_resource: statefulset/dr-springline-tm

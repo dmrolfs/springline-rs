@@ -1,15 +1,17 @@
-use crate::flink::RestoreMode;
-use crate::kubernetes::{KubernetesApiConstraints, KubernetesDeployResource};
+use std::time::Duration;
+
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
-use std::time::Duration;
+
+use crate::flink::RestoreMode;
+use crate::kubernetes::{KubernetesApiConstraints, KubernetesDeployResource};
 
 #[serde_as]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(test, derive(PartialEq))]
 pub struct ActionSettings {
-    /// Timeout for confirmation of scaling actions. Until this timeout expires, springline will poll
-    /// the kubernetes API to check if the scaling action has been satisfied.
+    /// Timeout for confirmation of scaling actions. Until this timeout expires, springline will
+    /// poll the kubernetes API to check if the scaling action has been satisfied.
     #[serde(default, rename = "action_timeout_secs")]
     #[serde_as(as = "serde_with::DurationSeconds<u64>")]
     pub action_timeout: Duration,
@@ -22,11 +24,12 @@ pub struct ActionSettings {
 #[serde_as]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TaskmanagerContext {
-    /// A selector to identify taskmanagers the list of returned objects by the scaling target; e.g.,
-    /// "app=flink,component=taskmanager"
+    /// A selector to identify taskmanagers the list of returned objects by the scaling target;
+    /// e.g., "app=flink,component=taskmanager"
     pub label_selector: String,
 
-    /// Resource name of the deployment resource used to deploy taskmanagers; e.g. "statefulset/my-taskmanager".
+    /// Resource name of the deployment resource used to deploy taskmanagers; e.g.
+    /// "statefulset/my-taskmanager".
     pub deploy_resource: KubernetesDeployResource,
 
     /// Constraints used when using the kubernetes API to scale the taskmanagers.
@@ -143,10 +146,11 @@ impl FlinkRestartSettings {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use claim::*;
     use pretty_assertions::assert_eq;
     use serde_test::{assert_tokens, Token};
+
+    use super::*;
 
     const EXPECTED_REP: &str = "\"statefulset/springline\"";
 

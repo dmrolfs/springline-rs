@@ -344,7 +344,7 @@ async fn test_flink_planning_linear() {
         vec![ScalePlan {
             recv_timestamp: timestamp,
             correlation_id,
-            target_nr_task_managers: 6, //todo: also allow 5???
+            target_nr_task_managers: 6, // todo: also allow 5???
             current_nr_task_managers: 2,
         }]
     )

@@ -1,18 +1,20 @@
-use crate::flink::error::FlinkError;
-use crate::flink::model::JarSummary;
-use crate::flink::{self, model::JobSummary, JobDetail, JobId};
-use crate::model::CorrelationId;
-use crate::settings::FlinkSettings;
+use std::fmt;
+use std::sync::Arc;
+
 use futures_util::{FutureExt, TryFutureExt};
 use http::Method;
 use proctor::error::UrlError;
 use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
 use reqwest_retry::policies::ExponentialBackoff;
 use reqwest_retry::RetryTransientMiddleware;
-use std::fmt;
-use std::sync::Arc;
 use tracing::Instrument;
 use url::Url;
+
+use crate::flink::error::FlinkError;
+use crate::flink::model::JarSummary;
+use crate::flink::{self, model::JobSummary, JobDetail, JobId};
+use crate::model::CorrelationId;
+use crate::settings::FlinkSettings;
 
 #[derive(Debug, Clone)]
 pub struct FlinkContext {
@@ -303,9 +305,10 @@ impl FlinkContextRef {
 }
 
 mod jars_protocal {
-    use crate::flink::model::JarSummary;
     use serde::{Deserialize, Serialize};
     use url::Url;
+
+    use crate::flink::model::JarSummary;
 
     #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
     pub struct GetJarsResponse {
@@ -320,9 +323,8 @@ mod jars_protocal {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::flink::model::JarEntry;
-    use crate::flink::{JarId, JobId, JobState, TaskState, VertexDetail, VertexId};
+    use std::time::Duration;
+
     use claim::*;
     use pretty_assertions::assert_eq;
     use pretty_snowflake::Id;
@@ -333,11 +335,14 @@ mod tests {
     use reqwest_retry::RetryTransientMiddleware;
     use serde_json::json;
     use serde_test::{assert_tokens, Token};
-    use std::time::Duration;
     use tokio_test::block_on;
     use url::Url;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    use super::*;
+    use crate::flink::model::JarEntry;
+    use crate::flink::{JarId, JobId, JobState, TaskState, VertexDetail, VertexId};
 
     fn context_for(mock_server: &MockServer) -> anyhow::Result<FlinkContext> {
         let client = reqwest::Client::builder().default_headers(HeaderMap::default()).build()?;
@@ -790,7 +795,7 @@ mod tests {
                 VertexDetail {
                     id: VertexId::new("90bea66de1c231edf33913ecd54406c1"),
                     name: "Window(GlobalWindows(), DeltaTrigger, TimeEvictor, ComparableAggregator, \
-                                   PassThroughWindowFunction) -> Sink: Print to Std. Out"
+                           PassThroughWindowFunction) -> Sink: Print to Std. Out"
                         .to_string(),
                     max_parallelism: Some(128),
                     parallelism: 1,

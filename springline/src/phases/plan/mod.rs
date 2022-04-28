@@ -1,5 +1,5 @@
-use crate::settings::PlanSettings;
-use crate::Result;
+use std::collections::HashSet;
+
 use once_cell::sync::Lazy;
 use pretty_snowflake::{Id, Label};
 use proctor::elements::{RecordsPerSecond, Timestamp};
@@ -8,11 +8,13 @@ use proctor::phases::plan::{Plan, Planning};
 use proctor::phases::sense::{
     ClearinghouseSubscriptionAgent, SubscriptionChannel, SubscriptionRequirements, TelemetrySubscription,
 };
-use proctor::{AppData, SharedString};
+use proctor::AppData;
 use prometheus::Gauge;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+
+use crate::settings::PlanSettings;
+use crate::Result;
 
 mod benchmark;
 mod context;
@@ -22,17 +24,18 @@ mod performance_history;
 mod performance_repository;
 mod planning;
 
-use crate::model::{MetricCatalog, MC_FLOW__RECORDS_IN_PER_SEC};
 pub use context::{PlanningContext, PLANNING__RESCALE_RESTART};
 pub use context::{
     PLANNING_CTX_FORECASTING_MAX_CATCH_UP_SECS, PLANNING_CTX_FORECASTING_RECOVERY_VALID_SECS,
     PLANNING_CTX_FORECASTING_RESTART_SECS, PLANNING_CTX_MIN_SCALING_STEP,
 };
 pub use forecast::{ForecastInputs, Forecaster, LeastSquaresWorkloadForecaster, SpikeSettings, WorkloadMeasurement};
-pub use model::ScalePlan;
+pub use model::{ScaleDirection, ScalePlan};
 pub use performance_repository::make_performance_repository;
 pub use performance_repository::{PerformanceRepositorySettings, PerformanceRepositoryType};
 pub use planning::{FlinkPlanning, FlinkPlanningEvent, FlinkPlanningMonitor};
+
+use crate::model::{MetricCatalog, MC_FLOW__RECORDS_IN_PER_SEC};
 
 const MINIMAL_CLUSTER_SIZE: usize = 1;
 
@@ -65,9 +68,9 @@ impl From<MetricCatalog> for PlanningMeasurement {
 }
 
 impl SubscriptionRequirements for PlanningMeasurement {
-    fn required_fields() -> HashSet<SharedString> {
+    fn required_fields() -> HashSet<String> {
         maplit::hashset! {
-            MC_FLOW__RECORDS_IN_PER_SEC.to_string().into(),
+            MC_FLOW__RECORDS_IN_PER_SEC.into(),
         }
     }
 }
@@ -78,10 +81,8 @@ where
     A: ClearinghouseSubscriptionAgent,
 {
     let name = "planning";
-    let data_channel = do_subscribe_channel(format!("{name}_observations").into(), agent).await?;
-
-    let context_channel = do_subscribe_channel(format!("{name}_context").into(), agent).await?;
-
+    let data_channel = do_subscribe_channel(&format!("{name}_observations"), agent).await?;
+    let context_channel = do_subscribe_channel(&format!("{name}_context"), agent).await?;
     let flink_planning = do_make_planning_strategy(name, settings).await?;
     let rx_flink_planning_monitor = flink_planning.rx_monitor();
     let phase = Box::new(Plan::new(name, flink_planning));
@@ -122,12 +123,12 @@ pub(crate) static PLANNING_VALID_WORKLOAD_RATE: Lazy<Gauge> = Lazy::new(|| {
 });
 
 #[tracing::instrument(level = "trace", skip(agent))]
-async fn do_subscribe_channel<T, A>(name: SharedString, agent: &mut A) -> Result<SubscriptionChannel<T>>
+async fn do_subscribe_channel<T, A>(name: &str, agent: &mut A) -> Result<SubscriptionChannel<T>>
 where
     T: AppData + SubscriptionRequirements + DeserializeOwned,
     A: ClearinghouseSubscriptionAgent,
 {
-    let subscription = TelemetrySubscription::new(name.as_ref()).for_requirements::<T>();
+    let subscription = TelemetrySubscription::new(name).for_requirements::<T>();
     let channel = SubscriptionChannel::new(name).await?;
     agent
         .subscribe(subscription, channel.subscription_receiver.clone())

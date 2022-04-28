@@ -1,8 +1,6 @@
-use crate::flink::{self, FlinkContext};
-use crate::phases::sense::flink::scope_sensor::ScopeSensor;
-use crate::phases::sense::flink::taskmanager_admin_sensor::TaskmanagerAdminSensor;
-use crate::phases::sense::flink::vertex_sensor::VertexSensor;
-use crate::settings::FlinkSensorSettings;
+use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
+
 use cast_trait_object::DynCastExt;
 use once_cell::sync::Lazy;
 use pretty_snowflake::{AlphabetCodec, IdPrettifier, MachineNode};
@@ -10,10 +8,13 @@ use proctor::elements::telemetry::{self, Telemetry, TelemetryValue};
 use proctor::error::{SenseError, TelemetryError};
 use proctor::graph::stage::{self, SourceStage, ThroughStage};
 use proctor::graph::{Connect, Graph, SinkShape, SourceShape, UniformFanInShape, UniformFanOutShape};
-use proctor::SharedString;
 use prometheus::{HistogramOpts, HistogramTimer, HistogramVec};
-use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
+
+use crate::flink::{self, FlinkContext};
+use crate::phases::sense::flink::scope_sensor::ScopeSensor;
+use crate::phases::sense::flink::taskmanager_admin_sensor::TaskmanagerAdminSensor;
+use crate::phases::sense::flink::vertex_sensor::VertexSensor;
+use crate::settings::FlinkSensorSettings;
 
 mod api_model;
 mod metric_order;
@@ -21,11 +22,12 @@ mod scope_sensor;
 mod taskmanager_admin_sensor;
 mod vertex_sensor;
 
-use crate::model::{CorrelationGenerator, MC_FLOW__RECORDS_IN_PER_SEC};
 pub use metric_order::{Aggregation, FlinkScope, MetricOrder};
 pub use vertex_sensor::{
     FLINK_VERTEX_SENSOR_AVAIL_TELEMETRY_TIME, FLINK_VERTEX_SENSOR_METRIC_PICKLIST_TIME, FLINK_VERTEX_SENSOR_TIME,
 };
+
+use crate::model::{CorrelationGenerator, MC_FLOW__RECORDS_IN_PER_SEC};
 
 // note: `cluster.nr_task_managers` is a standard metric pulled from Flink's admin API. The order
 // mechanism may need to be expanded to consider further meta information outside of Flink Metrics
@@ -127,7 +129,7 @@ pub struct FlinkSensorSpecification<'a> {
 
 #[tracing::instrument(level = "trace")]
 pub async fn make_sensor(spec: FlinkSensorSpecification<'_>) -> Result<Box<dyn SourceStage<Telemetry>>, SenseError> {
-    let name: SharedString = format!("{}_flink_sensor", spec.name).into();
+    let name = format!("{}_flink_sensor", spec.name);
 
     let orders = Arc::new(MetricOrder::extend_standard_with_settings(spec.settings));
 
@@ -154,9 +156,9 @@ pub async fn make_sensor(spec: FlinkSensorSpecification<'_>) -> Result<Box<dyn S
         Box::new(vertex_sensor),
     ];
 
-    let broadcast = stage::Broadcast::new(name.clone(), flink_sensors.len());
+    let broadcast = stage::Broadcast::new(&name, flink_sensors.len());
 
-    let merge_combine = stage::MergeCombine::new(name.clone(), flink_sensors.len());
+    let merge_combine = stage::MergeCombine::new(&name, flink_sensors.len());
     let composite_outlet = merge_combine.outlet();
 
     (spec.scheduler.outlet(), broadcast.inlet()).connect().await;
@@ -178,13 +180,13 @@ pub async fn make_sensor(spec: FlinkSensorSpecification<'_>) -> Result<Box<dyn S
     composite_graph.push_back(Box::new(merge_combine)).await;
 
     let composite: Box<dyn SourceStage<Telemetry>> =
-        Box::new(stage::CompositeSource::new(name, composite_graph, composite_outlet).await);
+        Box::new(stage::CompositeSource::new(&name, composite_graph, composite_outlet).await);
 
     Ok(composite)
 }
 
-// This type is also only needed to circumvent the issue cast_trait_object places on forcing the generic Out type.
-// Since Telemetry is only used for this stage, The generic variation is dead.
+// This type is also only needed to circumvent the issue cast_trait_object places on forcing the
+// generic Out type. Since Telemetry is only used for this stage, The generic variation is dead.
 pub trait Unpack: Default + Sized {
     fn unpack(telemetry: Telemetry) -> Result<Self, TelemetryError>;
 }

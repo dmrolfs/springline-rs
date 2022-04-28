@@ -1,17 +1,19 @@
-use crate::metrics::UpdateMetrics;
-use crate::phases::plan::ForecastInputs;
+use std::collections::HashSet;
+use std::time::Duration;
+
 use once_cell::sync::Lazy;
 use pretty_snowflake::{Id, Label};
 use proctor::elements::telemetry::UpdateMetricsFn;
 use proctor::elements::{Telemetry, Timestamp};
 use proctor::error::ProctorError;
 use proctor::phases::sense::SubscriptionRequirements;
-use proctor::{Correlation, SharedString};
+use proctor::Correlation;
 use prometheus::IntGauge;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
-use std::collections::HashSet;
-use std::time::Duration;
+
+use crate::metrics::UpdateMetrics;
+use crate::phases::plan::ForecastInputs;
 
 pub const PLANNING__RESCALE_RESTART: &str = "planning.rescale_restart_secs";
 
@@ -84,11 +86,11 @@ impl PartialEq for PlanningContext {
 }
 
 impl SubscriptionRequirements for PlanningContext {
-    fn required_fields() -> HashSet<SharedString> {
+    fn required_fields() -> HashSet<String> {
         HashSet::default()
     }
 
-    fn optional_fields() -> HashSet<SharedString> {
+    fn optional_fields() -> HashSet<String> {
         maplit::hashset! {
             "planning.min_scaling_step".into(),
             PLANNING__RESCALE_RESTART.into(),
@@ -99,7 +101,8 @@ impl SubscriptionRequirements for PlanningContext {
 }
 
 impl UpdateMetrics for PlanningContext {
-    fn update_metrics_for(phase_name: SharedString) -> UpdateMetricsFn {
+    fn update_metrics_for(phase_name: &str) -> UpdateMetricsFn {
+        let phase_name = phase_name.to_string();
         let update_fn = move |subscription_name: &str, telemetry: &Telemetry| match telemetry.clone().try_into::<Self>()
         {
             Ok(ctx) => {
@@ -125,7 +128,7 @@ impl UpdateMetrics for PlanningContext {
                     error=?err, %phase_name,
                     "failed to update eligibility context metrics on subscription: {}", subscription_name
                 );
-                proctor::track_errors(phase_name.as_ref(), &ProctorError::PlanPhase(err.into()));
+                proctor::track_errors(&phase_name, &ProctorError::PlanPhase(err.into()));
             },
         };
 
@@ -167,8 +170,9 @@ pub static PLANNING_CTX_FORECASTING_RECOVERY_VALID_SECS: Lazy<IntGauge> = Lazy::
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use serde_test::{assert_tokens, Token};
+
+    use super::*;
 
     #[test]
     fn test_planning_context_serde_tokens() {

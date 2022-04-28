@@ -1,13 +1,16 @@
-use super::{DeployApi, KubernetesDeployResource, KubernetesError};
-use crate::settings::Settings;
+use std::fmt::{self, Display};
+use std::sync::Arc;
+use std::time::Duration;
+
 use k8s_openapi::api::core::v1::Pod;
 use kube::api::ListParams;
 use kube::{Api, Client};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
-use std::fmt::{self, Display};
-use std::sync::Arc;
-use std::time::Duration;
+use tracing_futures::Instrument;
+
+use super::{DeployApi, KubernetesDeployResource, KubernetesError};
+use crate::settings::Settings;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TaskmanagerSpec {
@@ -102,14 +105,19 @@ impl KubernetesContext {
             FlinkComponent::TaskManager => &self.inner.taskmanager.params,
         };
 
-        tracing::debug!(?params, "Listing pods for params...");
-        self.inner.list_pods(params).await
+        self.inner
+            .list_pods(params)
+            .instrument(tracing::debug_span!("kube::list_pods", ?params))
+            .await
     }
 
     pub async fn list_pods_for_fields(
         &self, params: &ListParams, field_selector: &str,
     ) -> Result<Vec<Pod>, KubernetesError> {
-        self.inner.list_pods_for_fields(params, field_selector).await
+        self.inner
+            .list_pods_for_fields(params, field_selector)
+            .instrument(tracing::debug_span!("kube::list_pods_for_fields", ?params, %field_selector))
+            .await
     }
 }
 

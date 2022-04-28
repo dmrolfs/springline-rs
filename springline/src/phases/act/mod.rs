@@ -1,23 +1,24 @@
-use crate::phases::governance::GovernanceOutcome;
+use std::time::Duration;
+
 use either::{Either, Left, Right};
 use once_cell::sync::Lazy;
 use proctor::elements::Timestamp;
 use proctor::error::MetricLabel;
 use proctor::graph::stage::{self, SinkStage};
-use proctor::SharedString;
 use prometheus::{Histogram, HistogramOpts, HistogramTimer, HistogramVec, IntCounterVec, Opts};
 pub use protocol::{ActEvent, ActMonitor};
-use std::time::Duration;
 use thiserror::Error;
+
+use crate::phases::governance::GovernanceOutcome;
 
 mod action;
 mod scale_actuator;
-use crate::model::CorrelationId;
-use crate::phases::plan::ScalePlan;
-
 pub use action::ACTION_TOTAL_DURATION;
 pub use action::FLINK_MISSED_JAR_RESTARTS;
 pub use scale_actuator::ScaleActuator;
+
+use crate::model::CorrelationId;
+use crate::phases::plan::ScalePlan;
 
 pub trait ScaleActionPlan {
     fn correlation(&self) -> &CorrelationId;
@@ -72,13 +73,13 @@ pub enum ActError {
 }
 
 impl MetricLabel for ActError {
-    fn slug(&self) -> SharedString {
-        SharedString::Borrowed("act")
+    fn slug(&self) -> String {
+        "act".into()
     }
 
-    fn next(&self) -> Either<SharedString, Box<&dyn MetricLabel>> {
+    fn next(&self) -> Either<String, Box<&dyn MetricLabel>> {
         match self {
-            Self::Timeout(_, _) => Left("timeout".into()),
+            Self::Timeout(..) => Left("timeout".into()),
             Self::Kubernetes(_) => Left("kubernetes".into()),
             // Self::Kube(_) => Left("kubernetes".into()),
             // Self::KubeApi(e) => Left(format!("kubernetes::{}", e.reason).into()),
@@ -91,12 +92,14 @@ impl MetricLabel for ActError {
 }
 
 mod protocol {
-    use crate::model::CorrelationId;
-    use crate::phases::act::ScaleActionPlan;
     use std::collections::HashMap;
     use std::sync::Arc;
     use std::time::Duration;
+
     use tokio::sync::broadcast;
+
+    use crate::model::CorrelationId;
+    use crate::phases::act::ScaleActionPlan;
 
     pub type ActMonitor<P> = broadcast::Receiver<Arc<ActEvent<P>>>;
 

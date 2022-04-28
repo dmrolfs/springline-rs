@@ -17,9 +17,9 @@ pub(crate) use context::{
     ELIGIBILITY_CTX_TASK_LAST_FAILURE,
 };
 pub(crate) use policy::ELIGIBILITY_POLICY_INELIGIBLE_DECISIONS_COUNT;
+pub use policy::{EligibilityPolicy, EligibilityTemplateData};
 
 use crate::model::MetricPortfolio;
-pub use policy::{EligibilityPolicy, EligibilityTemplateData};
 
 pub type EligibilityOutcome = MetricPortfolio;
 pub type EligibilityApi = proctor::elements::PolicyFilterApi<EligibilityContext, EligibilityTemplateData>;

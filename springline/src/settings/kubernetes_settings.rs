@@ -1,6 +1,7 @@
+use std::time::Duration;
+
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
-use std::time::Duration;
 use url::Url;
 
 #[serde_as]
@@ -89,13 +90,14 @@ impl Default for LoadKubeConfig {
 
 /// [`Kubeconfig`] represents information on how to connect to a remote Kubernetes cluster
 ///
-/// Stored in `~/.kube/config` by default, but can be distributed across multiple paths in passed through `KUBECONFIG`.
-/// An analogue of the [config type from client-go](https://github.com/kubernetes/client-go/blob/7697067af71046b18e03dbda04e01a5bb17f9809/tools/clientcmd/api/types.go).
+/// Stored in `~/.kube/config` by default, but can be distributed across multiple paths in passed
+/// through `KUBECONFIG`. An analogue of the [config type from client-go](https://github.com/kubernetes/client-go/blob/7697067af71046b18e03dbda04e01a5bb17f9809/tools/clientcmd/api/types.go).
 ///
 /// This type (and its children) are exposed primarily for convenience.
 ///
-/// [`Config`][crate::Config] is the __intended__ developer interface to help create a [`Client`][crate::Client],
-/// and this will handle the difference between in-cluster deployment and local development.
+/// [`Config`][crate::Config] is the __intended__ developer interface to help create a
+/// [`Client`][crate::Client], and this will handle the difference between in-cluster deployment and
+/// local development.
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct Kubeconfig(kube::config::Kubeconfig);
 
@@ -148,10 +150,11 @@ impl From<KubeConfigOptions> for kube::config::KubeConfigOptions {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use claim::*;
     use pretty_assertions::assert_eq;
     use serde_test::{assert_tokens, Token};
+
+    use super::*;
 
     #[test]
     fn test_load_kube_config_serde() {

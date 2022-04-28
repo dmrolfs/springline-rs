@@ -1,15 +1,16 @@
-use super::FlinkError;
-use either::Either;
 use std::collections::HashMap;
 use std::fmt::{self, Display};
 use std::hash::Hash;
 use std::marker::PhantomData;
 use std::time::Duration;
 
+use either::Either;
 use proctor::elements::telemetry::{TableType, TableValue};
 use proctor::elements::{TelemetryType, TelemetryValue, Timestamp};
 use serde::{de, Deserialize, Deserializer, Serialize};
 use serde_with::serde_as;
+
+use super::FlinkError;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct JobSummary {

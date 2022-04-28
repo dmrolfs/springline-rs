@@ -1,13 +1,13 @@
 use std::str::FromStr;
 use std::time::Duration;
 
+use proctor::error::UrlError;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use serde::{Deserialize, Serialize};
 use serde_with::{serde_as, DurationSeconds};
 use url::Url;
 
 use crate::flink::FlinkError;
-use proctor::error::UrlError;
 
 #[serde_as]
 #[derive(Debug, Clone, Serialize, Deserialize)]

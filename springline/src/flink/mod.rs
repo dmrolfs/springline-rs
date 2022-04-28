@@ -7,11 +7,11 @@ pub use error::FlinkError;
 pub use model::{FailureCause, JobSavepointReport, OperationStatus, SavepointLocation, SavepointStatus};
 pub use model::{JarId, JobDetail, JobId, JobState, JobSummary, RestoreMode, TaskState, VertexDetail, VertexId};
 pub use model::{JOB_STATES, TASK_STATES};
-
-use crate::model::CorrelationId;
 use once_cell::sync::Lazy;
 use proctor::error::MetricLabel;
 use prometheus::{HistogramOpts, HistogramTimer, HistogramVec, IntCounterVec, Opts};
+
+use crate::model::CorrelationId;
 
 #[allow(clippy::cognitive_complexity)]
 pub(crate) fn log_response(label: &str, response: &reqwest::Response) {

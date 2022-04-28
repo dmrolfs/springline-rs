@@ -1,16 +1,15 @@
-use super::ScaleActionPlan;
-use crate::phases::act::ActError;
+use std::collections::HashMap;
 use std::fmt::{self, Debug};
+use std::time::Duration;
 
 use async_trait::async_trait;
-
-use crate::flink::{FlinkContext, JarId, JobId, JobSavepointReport};
-use crate::model::CorrelationId;
-
-use crate::kubernetes::KubernetesContext;
 use proctor::AppData;
-use std::collections::HashMap;
-use std::time::Duration;
+
+use super::ScaleActionPlan;
+use crate::flink::{FlinkContext, JarId, JobId, JobSavepointReport};
+use crate::kubernetes::KubernetesContext;
+use crate::model::CorrelationId;
+use crate::phases::act::ActError;
 
 mod composite;
 mod patch_replicas;

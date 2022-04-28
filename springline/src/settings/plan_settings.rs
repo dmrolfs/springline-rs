@@ -1,6 +1,8 @@
-use crate::phases::plan::{PerformanceRepositorySettings, SpikeSettings};
-use serde::{Deserialize, Serialize};
 use std::time::Duration;
+
+use serde::{Deserialize, Serialize};
+
+use crate::phases::plan::{PerformanceRepositorySettings, SpikeSettings};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(test, derive(PartialEq))]

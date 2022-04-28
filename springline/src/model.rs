@@ -1,11 +1,10 @@
-use frunk::{Monoid, Semigroup};
-use itertools::Itertools;
 use std::collections::{HashSet, VecDeque};
 use std::fmt::{self, Debug};
 use std::ops::{Add, Deref};
 use std::time::Duration;
 
-use crate::metrics::UpdateMetrics;
+use frunk::{Monoid, Semigroup};
+use itertools::Itertools;
 use once_cell::sync::Lazy;
 use oso::{Oso, PolarClass};
 use pretty_snowflake::{Id, Label, Labeling};
@@ -13,9 +12,11 @@ use proctor::elements::telemetry::UpdateMetricsFn;
 use proctor::elements::{telemetry, Interval, PolicyContributor, Telemetry, Timestamp};
 use proctor::error::{PolicyError, ProctorError};
 use proctor::phases::sense::SubscriptionRequirements;
-use proctor::{AppData, Correlation, ProctorIdGenerator, SharedString};
+use proctor::{AppData, Correlation, ProctorIdGenerator};
 use prometheus::{Gauge, IntGauge};
 use serde::{Deserialize, Serialize};
+
+use crate::metrics::UpdateMetrics;
 
 pub type CorrelationId = Id<MetricCatalog>;
 pub type CorrelationGenerator = ProctorIdGenerator<MetricCatalog>;
@@ -194,7 +195,8 @@ impl MetricPortfolio {
         (coverage, range.into_iter())
     }
 
-    //todo: assumes monotonically increasing recv_timestamp -- check if not true and insert accordingly or sort after push and before pop?
+    // todo: assumes monotonically increasing recv_timestamp -- check if not true and insert accordingly
+    // or sort after push and before pop?
     pub fn push(&mut self, metrics: MetricCatalog) {
         let oldest_allowed = metrics.recv_timestamp - self.time_window;
 
@@ -969,7 +971,7 @@ impl Add<&Self> for MetricCatalog {
 }
 
 impl SubscriptionRequirements for MetricCatalog {
-    fn required_fields() -> HashSet<proctor::SharedString> {
+    fn required_fields() -> HashSet<String> {
         maplit::hashset! {
             // JobHealthMetrics
             "health.job_uptime_millis".into(),
@@ -978,12 +980,12 @@ impl SubscriptionRequirements for MetricCatalog {
             "health.job_nr_failed_checkpoints".into(),
 
             // FlowMetrics
-            MC_FLOW__RECORDS_IN_PER_SEC.to_string().into(),
+            MC_FLOW__RECORDS_IN_PER_SEC.into(),
             "flow.records_out_per_sec".into(),
 
             // ClusterMetrics
-            MC_CLUSTER__NR_ACTIVE_JOBS.to_string().into(),
-            MC_CLUSTER__NR_TASK_MANAGERS.to_string().into(),
+            MC_CLUSTER__NR_ACTIVE_JOBS.into(),
+            MC_CLUSTER__NR_TASK_MANAGERS.into(),
             "cluster.task_cpu_load".into(),
             "cluster.task_heap_memory_used".into(),
             "cluster.task_heap_memory_committed".into(),
@@ -995,7 +997,7 @@ impl SubscriptionRequirements for MetricCatalog {
         }
     }
 
-    fn optional_fields() -> HashSet<SharedString> {
+    fn optional_fields() -> HashSet<String> {
         maplit::hashset! {
             // FlowMetrics
             "flow.forecasted_timestamp".into(),
@@ -1007,7 +1009,8 @@ impl SubscriptionRequirements for MetricCatalog {
 }
 
 impl UpdateMetrics for MetricCatalog {
-    fn update_metrics_for(name: SharedString) -> UpdateMetricsFn {
+    fn update_metrics_for(name: &str) -> UpdateMetricsFn {
+        let phase_name = name.to_string();
         let update_fn = move |subscription_name: &str, telemetry: &Telemetry| match telemetry.clone().try_into::<Self>()
         {
             Ok(catalog) => {
@@ -1044,10 +1047,10 @@ impl UpdateMetrics for MetricCatalog {
 
             Err(err) => {
                 tracing::warn!(
-                    error=?err, phase_name=%name,
+                    error=?err, %phase_name,
                     "failed to update sensor metrics for subscription: {}", subscription_name
                 );
-                proctor::track_errors(name.as_ref(), &ProctorError::SensePhase(err.into()));
+                proctor::track_errors(&phase_name, &ProctorError::SensePhase(err.into()));
             },
         };
 
@@ -1212,8 +1215,6 @@ pub(crate) static METRIC_CATALOG_CLUSTER_TASK_NETWORK_OUTPUT_POOL_USAGE: Lazy<Ga
 
 #[cfg(test)]
 mod tests {
-    use rand::seq::SliceRandom;
-    use rand::thread_rng;
     use std::collections::HashMap;
     use std::convert::TryFrom;
     use std::sync::Mutex;
@@ -1227,6 +1228,8 @@ mod tests {
     use proctor::error::TelemetryError;
     use proctor::phases::sense::{SUBSCRIPTION_CORRELATION, SUBSCRIPTION_TIMESTAMP};
     use proctor::ProctorIdGenerator;
+    use rand::seq::SliceRandom;
+    use rand::thread_rng;
     use serde_test::{assert_tokens, Token};
 
     use super::*;

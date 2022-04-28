@@ -1,6 +1,5 @@
 use std::fmt;
 
-use crate::engine::PhaseFlags;
 use proctor::graph::stage::tick;
 use proctor::phases::sense::{ClearinghouseApi, ClearinghouseCmd, ClearinghouseSnapshot};
 use prometheus::{Encoder, Registry, TextEncoder};
@@ -8,11 +7,12 @@ pub use protocol::{EngineApiError, EngineCmd, EngineServiceApi, Health, HealthRe
 use regex::RegexSet;
 use tokio::sync::mpsc;
 
+use crate::engine::PhaseFlags;
+
 mod protocol {
     use std::collections::HashMap;
     use std::fmt::Display;
 
-    use crate::engine::PhaseFlags;
     use axum::body::{self, BoxBody};
     use axum::http::{Response, StatusCode};
     use axum::response::IntoResponse;
@@ -23,11 +23,12 @@ mod protocol {
     use proctor::error::MetricLabel;
     use proctor::graph::stage::tick;
     use proctor::phases::sense::ClearinghouseSnapshot;
-    use proctor::SharedString;
     use regex::RegexSet;
     use serde::Deserialize;
     use thiserror::Error;
     use tokio::sync::{mpsc, oneshot};
+
+    use crate::engine::PhaseFlags;
 
     pub type EngineServiceApi = mpsc::UnboundedSender<EngineCmd>;
 
@@ -143,11 +144,11 @@ mod protocol {
     }
 
     impl MetricLabel for EngineApiError {
-        fn slug(&self) -> SharedString {
+        fn slug(&self) -> String {
             "engine_api".into()
         }
 
-        fn next(&self) -> Either<SharedString, Box<&dyn MetricLabel>> {
+        fn next(&self) -> Either<String, Box<&dyn MetricLabel>> {
             match self {
                 Self::Bootstrap(_) => Left("bootstrap".into()),
                 Self::EngineSend(_) => Left("command".into()),

@@ -2,21 +2,21 @@ use std::error::Error;
 use std::fmt;
 use std::sync::Arc;
 
-use super::action::{self, ActionSession, CompositeAction, ScaleAction};
-use super::{protocol, ActError, ActEvent, ScaleActionPlan};
-use crate::settings::Settings;
 use async_trait::async_trait;
 use cast_trait_object::dyn_upcast;
-
-use crate::flink::FlinkContext;
-use crate::kubernetes::KubernetesContext;
-use crate::phases::plan::ScalePlan;
 use proctor::error::{MetricLabel, ProctorError};
 use proctor::graph::stage::Stage;
 use proctor::graph::{Inlet, Port, SinkShape, PORT_DATA};
-use proctor::{AppData, ProctorResult, SharedString};
+use proctor::{AppData, ProctorResult};
 use tokio::sync::broadcast;
 use tracing::Instrument;
+
+use super::action::{self, ActionSession, CompositeAction, ScaleAction};
+use super::{protocol, ActError, ActEvent, ScaleActionPlan};
+use crate::flink::FlinkContext;
+use crate::kubernetes::KubernetesContext;
+use crate::phases::plan::ScalePlan;
+use crate::settings::Settings;
 
 const STAGE_NAME: &str = "execute_scaling";
 
@@ -86,8 +86,8 @@ where
     In: AppData + ScaleActionPlan,
 {
     #[inline]
-    fn name(&self) -> SharedString {
-        SharedString::Borrowed(STAGE_NAME)
+    fn name(&self) -> &str {
+        STAGE_NAME
     }
 
     #[tracing::instrument(level = "trace", skip(self))]

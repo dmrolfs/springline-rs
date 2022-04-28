@@ -1,6 +1,5 @@
 use either::{Either, Left};
 use proctor::error::MetricLabel;
-use proctor::SharedString;
 use thiserror::Error;
 
 pub fn convert_kube_error(error: kube::Error) -> KubernetesError {
@@ -37,11 +36,11 @@ pub enum KubernetesError {
 const CONFIG_LABEL: &str = "config";
 
 impl MetricLabel for KubernetesError {
-    fn slug(&self) -> SharedString {
-        SharedString::Borrowed("kubernetes")
+    fn slug(&self) -> String {
+        "kubernetes".into()
     }
 
-    fn next(&self) -> Either<SharedString, Box<&dyn MetricLabel>> {
+    fn next(&self) -> Either<String, Box<&dyn MetricLabel>> {
         match self {
             Self::InferConfig(_) => Left(CONFIG_LABEL.into()),
             Self::InCluster(_) => Left(CONFIG_LABEL.into()),

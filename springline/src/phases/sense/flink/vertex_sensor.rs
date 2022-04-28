@@ -1,9 +1,7 @@
-use super::FlinkScope;
-use super::{api_model, Aggregation, MetricOrder, Unpack};
-use crate::flink::{self, JobId, JobSummary, VertexId};
-use crate::model::{CorrelationId, MC_CLUSTER__NR_ACTIVE_JOBS};
-use crate::phases::sense::flink::api_model::FlinkMetricResponse;
-use crate::phases::sense::flink::{CorrelationGenerator, FlinkContext, OrdersByMetric, JOB_SCOPE, TASK_SCOPE};
+use std::collections::HashMap;
+use std::fmt::Debug;
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use cast_trait_object::dyn_upcast;
 use futures_util::{FutureExt, TryFutureExt};
@@ -13,20 +11,24 @@ use proctor::elements::{Telemetry, TelemetryValue};
 use proctor::error::SenseError;
 use proctor::graph::stage::{self, Stage};
 use proctor::graph::{Inlet, Outlet, Port, SinkShape, SourceShape};
-use proctor::{AppData, ProctorResult, SharedString};
+use proctor::{AppData, ProctorResult};
 use prometheus::{HistogramOpts, HistogramTimer, HistogramVec};
 use reqwest::Method;
-use std::collections::HashMap;
-use std::fmt::Debug;
-use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing::Instrument;
 use url::Url;
 
-/// Load telemetry for a specify scope from the Flink Job Manager REST API; e.g., Job or Taskmanager.
-/// Note: cast_trait_object issues a conflicting impl error if no generic is specified (at least for
-/// my use cases), so a simple Telemetry doesn't work and I need to parameterize even though
-/// I'll only use wrt Telemetry.
+use super::FlinkScope;
+use super::{api_model, Aggregation, MetricOrder, Unpack};
+use crate::flink::{self, JobId, JobSummary, VertexId};
+use crate::model::{CorrelationId, MC_CLUSTER__NR_ACTIVE_JOBS};
+use crate::phases::sense::flink::api_model::FlinkMetricResponse;
+use crate::phases::sense::flink::{CorrelationGenerator, FlinkContext, OrdersByMetric, JOB_SCOPE, TASK_SCOPE};
+
+/// Load telemetry for a specify scope from the Flink Job Manager REST API; e.g., Job or
+/// Taskmanager. Note: cast_trait_object issues a conflicting impl error if no generic is specified
+/// (at least for my use cases), so a simple Telemetry doesn't work and I need to parameterize even
+/// though I'll only use wrt Telemetry.
 #[derive(Debug)]
 pub struct VertexSensor<Out> {
     scopes: Vec<FlinkScope>,
@@ -61,6 +63,7 @@ impl<Out> VertexSensor<Out> {
 
 impl<Out> SourceShape for VertexSensor<Out> {
     type Out = Out;
+
     fn outlet(&self) -> Outlet<Self::Out> {
         self.outlet.clone()
     }
@@ -68,6 +71,7 @@ impl<Out> SourceShape for VertexSensor<Out> {
 
 impl<Out> SinkShape for VertexSensor<Out> {
     type In = ();
+
     fn inlet(&self) -> Inlet<Self::In> {
         self.trigger.clone()
     }
@@ -79,8 +83,8 @@ impl<Out> Stage for VertexSensor<Out>
 where
     Out: AppData + Unpack,
 {
-    fn name(&self) -> SharedString {
-        NAME.into()
+    fn name(&self) -> &str {
+        NAME
     }
 
     #[tracing::instrument(Level = "trace", skip(self))]
@@ -116,7 +120,7 @@ where
         let scopes = self.scopes.iter().copied().collect();
         let (metric_orders, _agg_span) = super::distill_metric_orders_and_agg(&scopes, &self.orders);
         if metric_orders.is_empty() {
-            //todo: best to end this useless stage or do nothing in loop? I hope end is best.
+            // todo: best to end this useless stage or do nothing in loop? I hope end is best.
             tracing::warn!(
                 stage=%self.name(), scopes=?self.scopes,
                 "no flink metric orders for vertex - stopping vertex sensesensor stage."
@@ -125,7 +129,7 @@ where
         }
 
         while self.trigger.recv().await.is_some() {
-            let _stage_timer = stage::start_stage_eval_time(self.name().as_ref());
+            let _stage_timer = stage::start_stage_eval_time(self.name());
 
             let correlation = self.correlation_gen.next_id();
             let span = tracing::trace_span!("collect Flink vertex telemetry", ?correlation);
@@ -218,8 +222,9 @@ where
 
         self.do_query_vertex_metric_picklist(url.clone(), metric_orders, correlation)
             .and_then(|picklist| {
-                //todo used???: let vertex_agg_span = Self::agg_span_for(&picklist, metric_orders);
-                //todo used???: tracing::info!(?picklist, &vertex_agg_span, "available vertex metrics identified for order");
+                // todo used???: let vertex_agg_span = Self::agg_span_for(&picklist, metric_orders);
+                // todo used???: tracing::info!(?picklist, &vertex_agg_span, "available vertex metrics identified
+                // for order");
                 self.do_query_vertex_available_telemetry(picklist, metric_orders, url, correlation)
             })
             .instrument(span)
@@ -393,9 +398,10 @@ fn start_flink_vertex_sensor_avail_telemetry_timer() -> HistogramTimer {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::phases::sense::flink;
-    use crate::phases::sense::flink::STD_METRIC_ORDERS;
+    use std::borrow::Cow;
+    use std::collections::HashSet;
+    use std::sync::atomic::{AtomicU32, Ordering};
+
     use claim::*;
     use pretty_assertions::assert_eq;
     use pretty_snowflake::Id;
@@ -405,14 +411,15 @@ mod tests {
     use reqwest_retry::policies::ExponentialBackoff;
     use reqwest_retry::RetryTransientMiddleware;
     use serde_json::json;
-    use std::borrow::Cow;
-    use std::collections::HashSet;
-    use std::sync::atomic::{AtomicU32, Ordering};
     use tokio::sync::mpsc;
     use tokio_test::block_on;
     use url::Url;
     use wiremock::matchers::{method, path};
     use wiremock::{Match, Mock, MockServer, Request, Respond, ResponseTemplate};
+
+    use super::*;
+    use crate::phases::sense::flink;
+    use crate::phases::sense::flink::STD_METRIC_ORDERS;
 
     pub struct RetryResponder(Arc<AtomicU32>, u32, ResponseTemplate, u16);
 
@@ -591,7 +598,7 @@ mod tests {
                 .await;
 
             let context = assert_ok!(context_for(&mock_server));
-            let (stage, _, _) = test_stage_for(&STD_METRIC_ORDERS, context).await;
+            let (stage, ..) = test_stage_for(&STD_METRIC_ORDERS, context).await;
 
             let scopes = maplit::hashset! {
                 FlinkScope::Task, FlinkScope::Kafka, FlinkScope::Kinesis,
@@ -643,8 +650,8 @@ mod tests {
     //     let _ = main_span.enter();
     //
     //     // let registry_name = "test_metrics";
-    //     // let registry = assert_ok!(Registry::new_custom(Some(registry_name.to_string()), None));
-    //     // assert_ok!(registry.register(Box::new(STAGE_EVAL_TIME.clone())));
+    //     // let registry = assert_ok!(Registry::new_custom(Some(registry_name.to_string()),
+    // None));     // assert_ok!(registry.register(Box::new(STAGE_EVAL_TIME.clone())));
     //     // assert_ok!(registry.register(Box::new(FLINK_COLLECTION_TIME.clone())));
     //     // assert_ok!(registry.register(Box::new(FLINK_COLLECTION_ERRORS.clone())));
     //
@@ -660,7 +667,8 @@ mod tests {
     //             .await;
     //
     //         let context = assert_ok!(context_for(&mock_server));
-    //         let (handle, tx_trigger, mut rx_out) = test_stage_for(FlinkScope::Jobs, &STD_METRIC_ORDERS, context).await;
+    //         let (handle, tx_trigger, mut rx_out) = test_stage_for(FlinkScope::Jobs,
+    // &STD_METRIC_ORDERS, context).await;
     //
     //         let source_handle = tokio::spawn(async move {
     //             assert_ok!(tx_trigger.send(()).await);
@@ -701,8 +709,9 @@ mod tests {
     //
     // fn make_jobs_data() -> (i64, i64, i64, serde_json::Value) {
     //     let uptime: i64 = Faker.fake::<chrono::Duration>().num_milliseconds();
-    //     let restarts: i64 = (1..99_999).fake(); // Faker.fake_with_rng::<i64, _>(&mut positive.clone())as f64;
-    //     let failed_checkpts: i64 = (1..99_999).fake(); // Faker.fake_with_rng::<i64(&mut positive) as f64;
+    //     let restarts: i64 = (1..99_999).fake(); // Faker.fake_with_rng::<i64, _>(&mut
+    // positive.clone())as f64;     let failed_checkpts: i64 = (1..99_999).fake(); //
+    // Faker.fake_with_rng::<i64(&mut positive) as f64;
     //
     //     let body = json!([
     //         {
@@ -729,8 +738,8 @@ mod tests {
     //     let _ = main_span.enter();
     //
     //     // let registry_name = "test_metrics";
-    //     // let registry = assert_ok!(Registry::new_custom(Some(registry_name.to_string()), None));
-    //     // assert_ok!(registry.register(Box::new(STAGE_EVAL_TIME.clone())));
+    //     // let registry = assert_ok!(Registry::new_custom(Some(registry_name.to_string()),
+    // None));     // assert_ok!(registry.register(Box::new(STAGE_EVAL_TIME.clone())));
     //     // assert_ok!(registry.register(Box::new(FLINK_COLLECTION_ERRORS.clone())));
     //     // assert_ok!(registry.register(Box::new(FLINK_COLLECTION_TIME.clone())));
     //
@@ -747,7 +756,8 @@ mod tests {
     //             .await;
     //
     //         let context = assert_ok!(context_for(&mock_server));
-    //         let (handle, tx_trigger, mut rx_out) = test_stage_for(FlinkScope::Jobs, &STD_METRIC_ORDERS, context).await;
+    //         let (handle, tx_trigger, mut rx_out) = test_stage_for(FlinkScope::Jobs,
+    // &STD_METRIC_ORDERS, context).await;
     //
     //         let source_handle = tokio::spawn(async move {
     //             assert_ok!(tx_trigger.send(()).await);
@@ -793,8 +803,8 @@ mod tests {
     //     let _ = main_span.enter();
     //
     //     // let registry_name = "test_metrics";
-    //     // let registry = assert_ok!(Registry::new_custom(Some(registry_name.to_string()), None));
-    //     // assert_ok!(registry.register(Box::new(STAGE_EVAL_TIME.clone())));
+    //     // let registry = assert_ok!(Registry::new_custom(Some(registry_name.to_string()),
+    // None));     // assert_ok!(registry.register(Box::new(STAGE_EVAL_TIME.clone())));
     //     // assert_ok!(registry.register(Box::new(FLINK_COLLECTION_ERRORS.clone())));
     //     // assert_ok!(registry.register(Box::new(FLINK_COLLECTION_TIME.clone())));
     //
@@ -802,8 +812,8 @@ mod tests {
     //         let mock_server = MockServer::start().await;
     //
     //         let (uptime, restarts, failed_checkpts, b) = make_jobs_data();
-    //         let metric_response = RetryResponder::new(1, 500, ResponseTemplate::new(200).set_body_json(b));
-    //         Mock::given(method("GET"))
+    //         let metric_response = RetryResponder::new(1, 500,
+    // ResponseTemplate::new(200).set_body_json(b));         Mock::given(method("GET"))
     //             .and(path("/jobs/metrics"))
     //             .respond_with(metric_response)
     //             .expect(3)
@@ -811,7 +821,8 @@ mod tests {
     //             .await;
     //
     //         let context = assert_ok!(context_for(&mock_server));
-    //         let (handle, tx_trigger, mut rx_out) = test_stage_for(FlinkScope::Jobs, &STD_METRIC_ORDERS, context).await;
+    //         let (handle, tx_trigger, mut rx_out) = test_stage_for(FlinkScope::Jobs,
+    // &STD_METRIC_ORDERS, context).await;
     //
     //         let source_handle = tokio::spawn(async move {
     //             assert_ok!(tx_trigger.send(()).await);
@@ -857,8 +868,8 @@ mod tests {
     //     let _ = main_span.enter();
     //
     //     // let registry_name = "test_metrics";
-    //     // let registry = assert_ok!(Registry::new_custom(Some(registry_name.to_string()), None));
-    //     // assert_ok!(registry.register(Box::new(STAGE_EVAL_TIME.clone())));
+    //     // let registry = assert_ok!(Registry::new_custom(Some(registry_name.to_string()),
+    // None));     // assert_ok!(registry.register(Box::new(STAGE_EVAL_TIME.clone())));
     //     // assert_ok!(registry.register(Box::new(FLINK_COLLECTION_ERRORS.clone())));
     //     // assert_ok!(registry.register(Box::new(FLINK_COLLECTION_TIME.clone())));
     //
@@ -866,10 +877,10 @@ mod tests {
     //         let mock_server = MockServer::start().await;
     //
     //         let cpu_load: f64 = 16. * ((0..100_000_000).fake::<i64>() as f64 / 100_000_000.);
-    //         let heap_used: f64 = 1_000_000_000. * ((0..100_000_000).fake::<i64>() as f64 / 100_000_000.);
-    //         let heap_committed: f64 = 1_000_000_000. * ((0..100_000_000).fake::<i64>() as f64 / 100_000_000.);
-    //         let nr_threads: i32 = (1..150).fake();
-    //         let b = json!([
+    //         let heap_used: f64 = 1_000_000_000. * ((0..100_000_000).fake::<i64>() as f64 /
+    // 100_000_000.);         let heap_committed: f64 = 1_000_000_000. *
+    // ((0..100_000_000).fake::<i64>() as f64 / 100_000_000.);         let nr_threads: i32 =
+    // (1..150).fake();         let b = json!([
     //             { "id": "Status.JVM.CPU.Load", "max": cpu_load, },
     //             { "id": "Status.JVM.Memory.Heap.Used", "max": heap_used, },
     //             { "id": "Status.JVM.Memory.Heap.Committed", "max": heap_committed, },

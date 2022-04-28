@@ -120,7 +120,7 @@ impl Forecaster for LeastSquaresWorkloadForecaster {
         from_ts + avg
     }
 
-    #[tracing::instrument(level="debug", skip(self), fields(spike_length=%self.spike_length,),)]
+    #[tracing::instrument(level="trace", skip(self), fields(spike_length=%self.spike_length,),)]
     fn add_observation(&mut self, measurement: WorkloadMeasurement) {
         let data = measurement.into();
         self.assess_spike(data);
@@ -163,7 +163,7 @@ impl LeastSquaresWorkloadForecaster {
         self.window_size <= self.data.len()
     }
 
-    #[tracing::instrument(level = "debug", skip(data))]
+    #[tracing::instrument(level = "trace", skip(data))]
     fn do_select_model(data: &[Point]) -> Box<dyn WorkloadForecast> {
         let linear = LinearRegression::from_data(data);
         let linear_r = linear.correlation_coefficient;
@@ -186,7 +186,7 @@ impl LeastSquaresWorkloadForecaster {
                     _ => Box::new(linear),
                 };
 
-                tracing::debug!(%linear_r, %quadratic_r, "selected workload prediction model: {}", model.name());
+                tracing::trace!(%linear_r, %quadratic_r, "selected workload prediction model: {}", model.name());
                 model
             },
         )

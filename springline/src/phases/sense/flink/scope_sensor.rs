@@ -1,7 +1,6 @@
-use super::FlinkScope;
-use super::{api_model, Aggregation, MetricOrder, Unpack};
-use crate::flink::{self, FlinkContext};
-use crate::phases::sense::flink::CorrelationGenerator;
+use std::fmt::Debug;
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use cast_trait_object::dyn_upcast;
 use futures_util::{FutureExt, TryFutureExt};
@@ -10,19 +9,23 @@ use itertools::Itertools;
 use proctor::error::SenseError;
 use proctor::graph::stage::{self, Stage};
 use proctor::graph::{Inlet, Outlet, Port, SinkShape, SourceShape};
-use proctor::{AppData, ProctorResult, SharedString};
+use proctor::{AppData, ProctorResult};
 use reqwest::Method;
-use std::fmt::Debug;
-use std::sync::Arc;
 use tracing::Instrument;
 use url::Url;
 
-/// Load telemetry for a specify scope from the Flink Job Manager REST API; e.g., Job or Taskmanager.
-/// Note: cast_trait_object issues a conflicting impl error if no generic is specified (at least for
-/// my use cases), so a simple Telemetry doesn't work and I need to parameterize even though
-/// I'll only use wrt Telemetry.
+use super::FlinkScope;
+use super::{api_model, Aggregation, MetricOrder, Unpack};
+use crate::flink::{self, FlinkContext};
+use crate::phases::sense::flink::CorrelationGenerator;
+
+/// Load telemetry for a specify scope from the Flink Job Manager REST API; e.g., Job or
+/// Taskmanager. Note: cast_trait_object issues a conflicting impl error if no generic is specified
+/// (at least for my use cases), so a simple Telemetry doesn't work and I need to parameterize even
+/// though I'll only use wrt Telemetry.
 #[derive(Debug)]
 pub struct ScopeSensor<Out> {
+    name: String,
     scope: FlinkScope,
     context: FlinkContext,
     orders: Arc<Vec<MetricOrder>>,
@@ -35,10 +38,11 @@ impl<Out> ScopeSensor<Out> {
     pub fn new(
         scope: FlinkScope, orders: Arc<Vec<MetricOrder>>, context: FlinkContext, correlation_gen: CorrelationGenerator,
     ) -> Self {
-        let name: SharedString = format!("{scope}Sensor").to_snake_case().into();
-        let trigger = Inlet::new(name.clone(), "trigger");
-        let outlet = Outlet::new(name, "outlet");
+        let name = format!("{scope}Sensor").to_snake_case();
+        let trigger = Inlet::new(&name, "trigger");
+        let outlet = Outlet::new(&name, "outlet");
         Self {
+            name,
             scope,
             context,
             orders,
@@ -51,6 +55,7 @@ impl<Out> ScopeSensor<Out> {
 
 impl<Out> SourceShape for ScopeSensor<Out> {
     type Out = Out;
+
     fn outlet(&self) -> Outlet<Self::Out> {
         self.outlet.clone()
     }
@@ -58,6 +63,7 @@ impl<Out> SourceShape for ScopeSensor<Out> {
 
 impl<Out> SinkShape for ScopeSensor<Out> {
     type In = ();
+
     fn inlet(&self) -> Inlet<Self::In> {
         self.trigger.clone()
     }
@@ -69,8 +75,8 @@ impl<Out> Stage for ScopeSensor<Out>
 where
     Out: AppData + Unpack,
 {
-    fn name(&self) -> SharedString {
-        self.scope.to_string().into()
+    fn name(&self) -> &str {
+        &self.name
     }
 
     #[tracing::instrument(Level = "trace", skip(self))]
@@ -120,7 +126,7 @@ where
         let scopes = maplit::hashset! { self.scope };
         let (metric_orders, agg_span) = super::distill_metric_orders_and_agg(&scopes, &self.orders);
         if metric_orders.is_empty() {
-            //todo: best to end this useless stage or do nothing in loop? I hope end is best.
+            // todo: best to end this useless stage or do nothing in loop? I hope end is best.
             tracing::warn!(
                 stage=%self.name(), scope=%self.scope,
                 "no flink metric orders for scope - stopping scope sensesensor stage."
@@ -128,14 +134,13 @@ where
             return Ok(());
         }
 
-        let scope_rep = SharedString::Owned(self.scope.to_string().to_lowercase());
+        let scope_rep = self.scope.to_string().to_lowercase();
         let metrics = metric_orders.keys();
         let url = self.extend_url_for(metrics, agg_span.iter());
         tracing::debug!("flink sensing url = {:?}", url);
-        let name = self.name();
 
         while self.trigger.recv().await.is_some() {
-            let _stage_timer = stage::start_stage_eval_time(name.as_ref());
+            let _stage_timer = stage::start_stage_eval_time(self.name());
 
             let correlation = self.correlation_gen.next_id();
             let span = tracing::trace_span!("collect Flink scope sensor telemetry", scope=%self.scope, ?correlation);
@@ -152,7 +157,7 @@ where
                         .send()
                         .map_err(|error| { error.into() })
                         .and_then(|response| {
-                            flink::log_response(format!("{} scope response", scope_rep.clone()).as_str(), &response);
+                            flink::log_response(&format!("{} scope response", scope_rep), &response);
                             response
                                 .text()
                                 .map(|body| {
@@ -194,8 +199,8 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::phases::sense::flink::STD_METRIC_ORDERS;
+    use std::sync::atomic::{AtomicU32, Ordering};
+
     use claim::*;
     use fake::{Fake, Faker};
     use pretty_assertions::assert_eq;
@@ -205,12 +210,14 @@ mod tests {
     use reqwest_retry::policies::ExponentialBackoff;
     use reqwest_retry::RetryTransientMiddleware;
     use serde_json::json;
-    use std::sync::atomic::{AtomicU32, Ordering};
     use tokio::sync::mpsc;
     use tokio_test::block_on;
     use url::Url;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, Respond, ResponseTemplate};
+
+    use super::*;
+    use crate::phases::sense::flink::STD_METRIC_ORDERS;
 
     pub struct RetryResponder(Arc<AtomicU32>, u32, ResponseTemplate, u16);
 

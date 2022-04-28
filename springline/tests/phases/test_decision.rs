@@ -10,6 +10,7 @@ use proctor::elements::{PolicySettings, QueryPolicy};
 use proctor::graph::stage::{self, ThroughStage, WithApi, WithMonitor};
 use proctor::graph::{Connect, Graph, Inlet, SinkShape, SourceShape};
 use proctor::phases::policy_phase::PolicyPhase;
+use proctor::phases::sense::clearinghouse::TelemetryCacheSettings;
 use proctor::phases::sense::{self, Sense, SubscriptionRequirements, TelemetrySubscription};
 use proctor::{AppData, ProctorContext};
 use springline::model::{MetricCatalog, MetricPortfolio, MC_CLUSTER__NR_ACTIVE_JOBS, MC_CLUSTER__NR_TASK_MANAGERS};
@@ -64,9 +65,11 @@ where
         let ctx_sensor = stage::ActorSource::<Telemetry>::new("context_sensor");
         let tx_context_sensor_api = ctx_sensor.tx_api();
 
+        let cache_settings = TelemetryCacheSettings::default();
         let mut builder = Sense::builder(
             "sensor",
             vec![Box::new(telemetry_sensor), Box::new(ctx_sensor)],
+            &cache_settings,
             MachineNode::default(),
         );
         let tx_clearinghouse_api = builder.clearinghouse.tx_api();

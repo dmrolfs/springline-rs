@@ -1,20 +1,20 @@
-use super::{ActionSession, ScaleAction};
-use crate::flink::{self, FlinkContext, FlinkError, JobId, JobSavepointReport, OperationStatus, SavepointStatus};
-use crate::phases::act::ActError;
+use std::future::Future;
+use std::time::Duration;
 
-use crate::settings::FlinkActionSettings;
 use async_trait::async_trait;
 use futures_util::{FutureExt, TryFutureExt};
 use http::Method;
-
-use crate::model::CorrelationId;
-use crate::phases::act;
-use crate::phases::plan::ScalePlan;
 use proctor::error::UrlError;
-use std::future::Future;
-use std::time::Duration;
 use tracing::Instrument;
 use url::Url;
+
+use super::{ActionSession, ScaleAction};
+use crate::flink::{self, FlinkContext, FlinkError, JobId, JobSavepointReport, OperationStatus, SavepointStatus};
+use crate::model::CorrelationId;
+use crate::phases::act;
+use crate::phases::act::ActError;
+use crate::phases::plan::ScalePlan;
+use crate::settings::FlinkActionSettings;
 
 pub const ACTION_LABEL: &str = "savepoint";
 
@@ -172,7 +172,7 @@ impl TriggerSavepoint {
                         )
                     },
                     Err(err) => {
-                        //todo: consider capping attempts
+                        // todo: consider capping attempts
                         tracing::warn!(
                             error=?err, ?trigger, correlation=%session.correlation(),
                             "check on savepoint operation for {job} failed - checking again in {polling_interval:?}."
@@ -298,10 +298,12 @@ impl TriggerSavepoint {
 }
 
 mod trigger {
-    use crate::flink::FlinkError;
+    use std::fmt;
+
     use serde::{Deserialize, Serialize};
     use serde_with::serde_as;
-    use std::fmt;
+
+    use crate::flink::FlinkError;
 
     pub type TriggerId = String;
 
@@ -364,11 +366,13 @@ mod trigger {
 }
 
 mod query {
-    use crate::flink::{FailureCause, FlinkError, OperationStatus, SavepointLocation, SavepointStatus};
+    use std::fmt;
+
     use either::Either;
     use serde::{Deserialize, Serialize};
     use serde_with::serde_as;
-    use std::fmt;
+
+    use crate::flink::{FailureCause, FlinkError, OperationStatus, SavepointLocation, SavepointStatus};
 
     #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
     pub struct SavepointInfoResponseBody {
@@ -463,12 +467,13 @@ mod query {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::phases::act::action::savepoint::query::{QueueState, QueueStatus, SavepointOperation};
     use claim::*;
     use pretty_assertions::assert_eq;
     use serde_json::json;
     use serde_test::{assert_tokens, Token};
+
+    use super::*;
+    use crate::phases::act::action::savepoint::query::{QueueState, QueueStatus, SavepointOperation};
 
     #[test]
     fn test_savepoint_body_serde_tokens() {

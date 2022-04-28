@@ -1,15 +1,16 @@
 use std::collections::HashSet;
 use std::fmt::Debug;
 
-use crate::metrics::UpdateMetrics;
 use oso::PolarClass;
 use pretty_snowflake::{Id, Label};
 use proctor::elements::telemetry::UpdateMetricsFn;
 use proctor::elements::{telemetry, Telemetry, Timestamp};
 use proctor::error::DecisionError;
 use proctor::phases::sense::SubscriptionRequirements;
-use proctor::{Correlation, ProctorContext, SharedString};
+use proctor::{Correlation, ProctorContext};
 use serde::{Deserialize, Serialize};
+
+use crate::metrics::UpdateMetrics;
 
 #[derive(PolarClass, Label, Debug, Clone, Serialize, Deserialize)]
 pub struct DecisionContext {
@@ -37,7 +38,7 @@ impl PartialEq for DecisionContext {
 }
 
 impl SubscriptionRequirements for DecisionContext {
-    fn required_fields() -> HashSet<proctor::SharedString> {
+    fn required_fields() -> HashSet<String> {
         HashSet::default()
     }
 }
@@ -51,17 +52,15 @@ impl ProctorContext for DecisionContext {
 }
 
 impl UpdateMetrics for DecisionContext {
-    fn update_metrics_for(phase_name: SharedString) -> UpdateMetricsFn {
+    fn update_metrics_for(phase_name: &str) -> UpdateMetricsFn {
+        let phase_name = phase_name.to_string();
         let update_fn = move |subscription_name: &str, telemetry: &Telemetry| match telemetry.clone().try_into::<Self>()
         {
             Ok(_ctx) => (),
 
             Err(err) => {
                 tracing::warn!(error=?err, %phase_name, "failed to update decision context metrics on subscription: {}", subscription_name);
-                proctor::track_errors(
-                    phase_name.as_ref(),
-                    &proctor::error::ProctorError::DecisionPhase(err.into()),
-                );
+                proctor::track_errors(&phase_name, &proctor::error::ProctorError::DecisionPhase(err.into()));
             },
         };
 

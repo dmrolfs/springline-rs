@@ -1,12 +1,12 @@
 use std::fmt::Debug;
 use std::time::Duration;
 
-use crate::phases::plan::{PLANNING_RECOVERY_WORKLOAD_RATE, PLANNING_VALID_WORKLOAD_RATE};
-use crate::settings::PlanSettings;
 use proctor::elements::{RecordsPerSecond, Timestamp};
 use proctor::error::PlanError;
 
 use super::{Forecaster, WorkloadForecast, WorkloadMeasurement};
+use crate::phases::plan::{PLANNING_RECOVERY_WORKLOAD_RATE, PLANNING_VALID_WORKLOAD_RATE};
+use crate::settings::PlanSettings;
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct ForecastInputs {

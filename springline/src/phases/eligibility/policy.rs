@@ -1,17 +1,17 @@
-use once_cell::sync::Lazy;
 use std::collections::{HashMap, HashSet};
 
-use crate::metrics::UpdateMetrics;
-use crate::model::MetricPortfolio;
+use once_cell::sync::Lazy;
 use oso::{Oso, PolarClass, PolarValue};
 use proctor::elements::{PolicyContributor, PolicySource, PolicySubscription, QueryPolicy, QueryResult, Telemetry};
 use proctor::error::PolicyError;
 use proctor::phases::sense::TelemetrySubscription;
-use proctor::{ProctorContext, SharedString};
+use proctor::ProctorContext;
 use prometheus::{IntCounterVec, Opts};
 use serde::{Deserialize, Serialize};
 
 use super::context::{ClusterStatus, EligibilityContext, TaskStatus};
+use crate::metrics::UpdateMetrics;
+use crate::model::MetricPortfolio;
 use crate::phases::REASON;
 use crate::settings::EligibilitySettings;
 
@@ -43,27 +43,17 @@ impl Default for EligibilityTemplateData {
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct EligibilityPolicy {
-    pub required_subscription_fields: HashSet<SharedString>,
-    pub optional_subscription_fields: HashSet<SharedString>,
+    pub required_subscription_fields: HashSet<String>,
+    pub optional_subscription_fields: HashSet<String>,
     pub sources: Vec<PolicySource>,
     pub template_data: Option<EligibilityTemplateData>,
 }
 
 impl EligibilityPolicy {
     pub fn new(settings: &EligibilitySettings) -> Self {
-        let required_subscription_fields = settings
-            .required_subscription_fields
-            .iter()
-            .map(|f| SharedString::from(f.to_string()))
-            .collect();
-        let optional_subscription_fields = settings
-            .optional_subscription_fields
-            .iter()
-            .map(|f| SharedString::from(f.to_string()))
-            .collect();
         Self {
-            required_subscription_fields,
-            optional_subscription_fields,
+            required_subscription_fields: settings.required_subscription_fields.clone(),
+            optional_subscription_fields: settings.optional_subscription_fields.clone(),
             sources: settings.policies.clone(),
             template_data: settings.template_data.clone(),
         }

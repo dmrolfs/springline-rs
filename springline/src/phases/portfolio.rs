@@ -1,24 +1,26 @@
-use crate::model::{MetricCatalog, MetricPortfolio, Portfolio};
+use std::time::Duration;
+
 use async_trait::async_trait;
 use cast_trait_object::dyn_upcast;
 use proctor::graph::stage::Stage;
 use proctor::graph::{Inlet, Outlet, Port, SinkShape, SourceShape, PORT_DATA};
-use proctor::{AppData, ProctorResult, SharedString};
-use std::time::Duration;
+use proctor::{AppData, ProctorResult};
+
+use crate::model::{MetricCatalog, MetricPortfolio, Portfolio};
 
 #[derive(Debug)]
 pub struct CollectMetricPortfolio<In, Out> {
-    name: SharedString,
+    name: String,
     time_window: Duration,
     inlet: Inlet<In>,
     outlet: Outlet<Out>,
 }
 
 impl CollectMetricPortfolio<MetricCatalog, MetricPortfolio> {
-    pub fn new(name: impl Into<SharedString>, time_window: Duration) -> Self {
+    pub fn new(name: impl Into<String>, time_window: Duration) -> Self {
         let name = name.into();
-        let inlet = Inlet::new(name.clone(), PORT_DATA);
-        let outlet = Outlet::new(name.clone(), PORT_DATA);
+        let inlet = Inlet::new(&name, PORT_DATA);
+        let outlet = Outlet::new(&name, PORT_DATA);
         Self { name, time_window, inlet, outlet }
     }
 }
@@ -47,8 +49,8 @@ where
     Out: Portfolio<Item = In>,
 {
     #[inline]
-    fn name(&self) -> SharedString {
-        self.name.clone()
+    fn name(&self) -> &str {
+        &self.name
     }
 
     #[tracing::instrument(level = "trace", skip(self))]
@@ -87,8 +89,9 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::model::{ClusterMetrics, FlowMetrics, JobHealthMetrics};
+    use std::collections::{HashMap, HashSet};
+    use std::time::Duration;
+
     use claim::*;
     use oso::Oso;
     use oso::PolarClass;
@@ -103,11 +106,12 @@ mod tests {
     use proctor::phases::sense::SubscriptionRequirements;
     use proctor::{Correlation, ProctorContext};
     use serde::{Deserialize, Serialize};
-    use std::collections::{HashMap, HashSet};
-    use std::time::Duration;
     use tokio::sync::mpsc;
     use tokio_test::block_on;
     use tracing_futures::Instrument;
+
+    use super::*;
+    use crate::model::{ClusterMetrics, FlowMetrics, JobHealthMetrics};
 
     fn make_test_catalog(ts: Timestamp, value: i32) -> MetricCatalog {
         MetricCatalog {
@@ -225,13 +229,14 @@ mod tests {
     #[async_trait]
     impl ProctorContext for TestContext {
         type Error = ProctorError;
+
         fn custom(&self) -> telemetry::TableType {
             telemetry::TableType::default()
         }
     }
 
     impl SubscriptionRequirements for TestContext {
-        fn required_fields() -> HashSet<SharedString> {
+        fn required_fields() -> HashSet<String> {
             HashSet::new()
         }
     }
@@ -242,9 +247,9 @@ mod tests {
     }
 
     impl QueryPolicy for TestPolicy {
-        type Item = MetricPortfolio;
-        type Context = TestContext;
         type Args = (Self::Item, Self::Context);
+        type Context = TestContext;
+        type Item = MetricPortfolio;
         type TemplateData = ();
 
         fn base_template_name() -> &'static str {

@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::time::Duration;
 
+use proctor::phases::sense::clearinghouse::TelemetryCacheSettings;
 use proctor::phases::sense::SensorSetting;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
@@ -12,6 +13,7 @@ pub use crate::settings::flink_settings::FlinkSettings;
 #[serde(default)]
 #[cfg_attr(test, derive(PartialEq))]
 pub struct SensorSettings {
+    pub clearinghouse: TelemetryCacheSettings,
     pub flink: FlinkSensorSettings,
     pub sensors: HashMap<String, SensorSetting>,
 }
@@ -48,6 +50,8 @@ mod tests {
     use std::path::PathBuf;
     use std::time::Duration;
 
+    use claim::*;
+    use pretty_assertions::assert_eq;
     use proctor::elements::telemetry::TelemetryType;
     use proctor::phases::sense::HttpQuery;
     use reqwest::header::{AUTHORIZATION, CONTENT_LENGTH};
@@ -56,12 +60,11 @@ mod tests {
 
     use super::*;
     use crate::phases::sense::flink::{Aggregation, FlinkScope, MetricOrder};
-    use claim::*;
-    use pretty_assertions::assert_eq;
 
     #[test]
     fn test_serde_sensor_settings_1() {
         let settings_csv = SensorSettings {
+            clearinghouse: TelemetryCacheSettings::default(),
             // only doing one pair at a time until *convenient* way to pin order and test is determined
             flink: FlinkSensorSettings {
                 metric_orders: vec![
@@ -97,7 +100,20 @@ mod tests {
         assert_tokens(
             &settings_csv,
             &vec![
-                Token::Struct { name: "SensorSettings", len: 2 },
+                Token::Struct { name: "SensorSettings", len: 3 },
+                Token::Str("clearinghouse"),
+                Token::Struct { name: "TelemetryCacheSettings", len: 5 },
+                Token::Str("ttl_secs"),
+                Token::U64(300),
+                Token::Str("nr_counters"),
+                Token::U64(1_000),
+                Token::Str("max_cost"),
+                Token::I64(100),
+                Token::Str("incremental_item_cost"),
+                Token::I64(1),
+                Token::Str("cleanup_interval_millis"),
+                Token::U64(5000),
+                Token::StructEnd,
                 Token::Str("flink"),
                 Token::Struct { name: "FlinkSensorSettings", len: 3 },
                 Token::Str("metrics_initial_delay_secs"),
@@ -147,6 +163,7 @@ mod tests {
     #[test]
     fn test_serde_sensor_settings_2() {
         let settings_rest = SensorSettings {
+            clearinghouse: TelemetryCacheSettings::default(),
             flink: FlinkSensorSettings {
                 metrics_initial_delay: Duration::from_secs(300),
                 metrics_interval: Duration::from_secs(15),
@@ -185,7 +202,20 @@ mod tests {
         assert_tokens(
             &settings_rest,
             &vec![
-                Token::Struct { name: "SensorSettings", len: 2 },
+                Token::Struct { name: "SensorSettings", len: 3 },
+                Token::Str("clearinghouse"),
+                Token::Struct { name: "TelemetryCacheSettings", len: 5 },
+                Token::Str("ttl_secs"),
+                Token::U64(300),
+                Token::Str("nr_counters"),
+                Token::U64(1_000),
+                Token::Str("max_cost"),
+                Token::I64(100),
+                Token::Str("incremental_item_cost"),
+                Token::I64(1),
+                Token::Str("cleanup_interval_millis"),
+                Token::U64(5000),
+                Token::StructEnd,
                 Token::Str("flink"),
                 Token::Struct { name: "FlinkSensorSettings", len: 3 },
                 Token::Str("metrics_initial_delay_secs"),

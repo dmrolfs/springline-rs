@@ -1,6 +1,6 @@
-use super::{FlinkScope, Unpack};
-use crate::model::MC_CLUSTER__NR_TASK_MANAGERS;
-use crate::phases::sense::flink::{CorrelationGenerator, FlinkContext};
+use std::collections::HashMap;
+use std::fmt::Debug;
+
 use async_trait::async_trait;
 use cast_trait_object::dyn_upcast;
 use futures_util::TryFutureExt;
@@ -8,15 +8,17 @@ use proctor::elements::telemetry;
 use proctor::error::SenseError;
 use proctor::graph::stage::{self, Stage};
 use proctor::graph::{Inlet, Outlet, Port, SinkShape, SourceShape};
-use proctor::{AppData, ProctorResult, SharedString};
-use std::collections::HashMap;
-use std::fmt::Debug;
+use proctor::{AppData, ProctorResult};
 use tracing::Instrument;
 
-/// Load telemetry for a specify scope from the Flink Job Manager REST API; e.g., Job or Taskmanager.
-/// Note: cast_trait_object issues a conflicting impl error if no generic is specified (at least for
-/// my use cases), so a simple Telemetry doesn't work and I need to parameterize even though
-/// I'll only use wrt Telemetry.
+use super::{FlinkScope, Unpack};
+use crate::model::MC_CLUSTER__NR_TASK_MANAGERS;
+use crate::phases::sense::flink::{CorrelationGenerator, FlinkContext};
+
+/// Load telemetry for a specify scope from the Flink Job Manager REST API; e.g., Job or
+/// Taskmanager. Note: cast_trait_object issues a conflicting impl error if no generic is specified
+/// (at least for my use cases), so a simple Telemetry doesn't work and I need to parameterize even
+/// though I'll only use wrt Telemetry.
 #[derive(Debug)]
 pub struct TaskmanagerAdminSensor<Out> {
     context: FlinkContext,
@@ -37,6 +39,7 @@ impl<Out> TaskmanagerAdminSensor<Out> {
 
 impl<Out> SourceShape for TaskmanagerAdminSensor<Out> {
     type Out = Out;
+
     fn outlet(&self) -> Outlet<Self::Out> {
         self.outlet.clone()
     }
@@ -44,6 +47,7 @@ impl<Out> SourceShape for TaskmanagerAdminSensor<Out> {
 
 impl<Out> SinkShape for TaskmanagerAdminSensor<Out> {
     type In = ();
+
     fn inlet(&self) -> Inlet<Self::In> {
         self.trigger.clone()
     }
@@ -55,8 +59,8 @@ impl<Out> Stage for TaskmanagerAdminSensor<Out>
 where
     Out: AppData + Unpack,
 {
-    fn name(&self) -> SharedString {
-        NAME.into()
+    fn name(&self) -> &str {
+        NAME
     }
 
     #[tracing::instrument(Level = "trace", skip(self))]
@@ -95,10 +99,8 @@ where
         url.path_segments_mut().unwrap().push("taskmanagers");
         tracing::debug!("url = {:?}", url);
 
-        let name = self.name();
-
         while self.trigger.recv().await.is_some() {
-            let _stage_timer = stage::start_stage_eval_time(name.as_ref());
+            let _stage_timer = stage::start_stage_eval_time(self.name());
 
             let correlation = self.correlation_gen.next_id();
             let span = tracing::trace_span!("collect Flink taskmanager admin telemetry", ?correlation);
@@ -138,7 +140,6 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     // use crate::phases::sense::flink::STD_METRIC_ORDERS;
     // use crate::phases::sense::flink::{FLINK_COLLECTION_ERRORS, FLINK_COLLECTION_TIME};
     use claim::*;
@@ -158,6 +159,8 @@ mod tests {
     use url::Url;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    use super::*;
 
     fn context_for(mock_server: &MockServer) -> anyhow::Result<FlinkContext> {
         let client = reqwest::Client::builder().default_headers(HeaderMap::default()).build()?;

@@ -2,14 +2,15 @@ use std::cmp::Ordering;
 use std::convert::TryFrom;
 use std::fmt::{self, Debug};
 
-use crate::phases::decision::DECISION_SCALING_DECISION_COUNT_METRIC;
-use crate::phases::REASON;
 use itertools::Itertools;
 use pretty_snowflake::Id;
 use proctor::elements::{PolicyOutcome, TelemetryType, TelemetryValue, ToTelemetry};
 use proctor::error::{DecisionError, TelemetryError};
 use proctor::graph::stage::{self, ThroughStage};
-use proctor::{AppData, Correlation, ProctorContext, SharedString};
+use proctor::{AppData, Correlation, ProctorContext};
+
+use crate::phases::decision::DECISION_SCALING_DECISION_COUNT_METRIC;
+use crate::phases::REASON;
 
 pub const DECISION_DIRECTION: &str = "direction";
 pub const SCALE_UP: &str = "up";
@@ -20,7 +21,7 @@ pub fn make_decision_transform<T, C, S>(name: S) -> impl ThroughStage<PolicyOutc
 where
     T: AppData + Correlation + PartialEq,
     C: ProctorContext,
-    S: Into<SharedString>,
+    S: Into<String>,
 {
     stage::Map::new(name, move |outcome: PolicyOutcome<T, C>| {
         let transform_span = tracing::trace_span!(

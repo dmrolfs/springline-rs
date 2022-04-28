@@ -1,14 +1,14 @@
 use std::fmt::Debug;
+use std::sync::Arc;
 
-use crate::model::MetricCatalog;
 use async_trait::async_trait;
 use proctor::elements::{RecordsPerSecond, Timestamp};
 use proctor::error::PlanError;
 use proctor::graph::{Outlet, Port};
 use proctor::phases::plan::{PlanEvent, Planning};
-use std::sync::Arc;
 use tokio::sync::broadcast;
 
+use crate::model::MetricCatalog;
 use crate::phases::decision::DecisionResult;
 use crate::phases::plan::context::PlanningContext;
 use crate::phases::plan::forecast::{ForecastCalculator, ForecastInputs, Forecaster};
@@ -46,8 +46,8 @@ pub struct FlinkPlanning<F: Forecaster> {
     performance_repository: Box<dyn PerformanceRepository>,
     outlet: Option<Outlet<ScalePlan>>,
     tx_monitor: broadcast::Sender<Arc<FlinkPlanningEvent>>,
-    /* todo: tx_api: mpsc::UnboundedSender<FlinkPlanningCmd>,
-     * todo: rx_api: mpsc::UnboundedReceiver<FlinkPlanningCmd>, */
+    // todo: tx_api: mpsc::UnboundedSender<FlinkPlanningCmd>,
+    // todo: rx_api: mpsc::UnboundedReceiver<FlinkPlanningCmd>,
 }
 
 impl<F: Forecaster> PartialEq for FlinkPlanning<F> {
@@ -83,8 +83,8 @@ impl<F: Forecaster> FlinkPlanning<F> {
             performance_repository,
             outlet: None,
             tx_monitor,
-            /* todo: tx_api,
-             * todo: rx_api, */
+            // todo: tx_api,
+            // todo: rx_api,
         })
     }
 
@@ -196,9 +196,9 @@ impl<F: Forecaster> FlinkPlanning<F> {
 
 #[async_trait]
 impl<F: Forecaster> Planning for FlinkPlanning<F> {
-    type Observation = super::PlanningMeasurement;
-    type Decision = DecisionResult<MetricCatalog>;
     type Context = PlanningContext;
+    type Decision = DecisionResult<MetricCatalog>;
+    type Observation = super::PlanningMeasurement;
     type Out = ScalePlan;
 
     fn set_outlet(&mut self, outlet: Outlet<Self::Out>) {

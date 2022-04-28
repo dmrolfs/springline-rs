@@ -1,12 +1,12 @@
-use crate::kubernetes::KubernetesError;
-use crate::kubernetes::{error, KubernetesDeployResource};
-use crate::model::CorrelationId;
-
 use k8s_openapi::api::apps::v1::{Deployment, StatefulSet};
 use kube::api::{Patch, PatchParams};
 use kube::{Api, Client};
 use serde_json::json;
 use tracing::Instrument;
+
+use crate::kubernetes::KubernetesError;
+use crate::kubernetes::{error, KubernetesDeployResource};
+use crate::model::CorrelationId;
 
 #[derive(Debug, Clone)]
 pub enum DeployApi {
@@ -21,7 +21,8 @@ impl DeployApi {
                 name: name.clone(),
                 api: Api::default_namespaced(client),
             },
-            // KubernetesWorkloadResource::Deployment(deploy) => Self::Deployment(Api::default_namespaced(deploy.client.clone())),
+            // KubernetesWorkloadResource::Deployment(deploy) =>
+            // Self::Deployment(Api::default_namespaced(deploy.client.clone())),
         }
     }
 

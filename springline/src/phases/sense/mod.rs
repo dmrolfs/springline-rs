@@ -1,7 +1,5 @@
 use std::collections::HashMap;
 
-use crate::flink::FlinkContext;
-use crate::model::MetricCatalog;
 use pretty_snowflake::MachineNode;
 use proctor::elements::Telemetry;
 use proctor::graph::stage::tick::{Tick, TickApi};
@@ -9,6 +7,8 @@ use proctor::graph::stage::{SourceStage, WithApi};
 use proctor::phases::sense::builder::SenseBuilder;
 use proctor::phases::sense::{Sense, SensorSetting, TelemetrySensor};
 
+use crate::flink::FlinkContext;
+use crate::model::MetricCatalog;
 use crate::phases::sense::flink::FlinkSensorSpecification;
 use crate::settings::SensorSettings;
 use crate::Result;
@@ -41,7 +41,7 @@ pub async fn make_sense_phase(
     sensors.push(flink_sensor);
 
     Ok((
-        Sense::builder(name.to_string(), sensors, machine_node),
+        Sense::builder(name, sensors, &settings.clearinghouse, machine_node),
         tx_scheduler_api,
     ))
 }
