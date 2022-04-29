@@ -81,7 +81,6 @@ pub struct Building {
     name: String,
     sensors: Arc<RwLock<Vec<BoxedSourceFactory>>>,
     action_factory: Option<Arc<ActionWithMonitorFactory>>,
-    //    rx_action_monitor: Option<act::ActMonitor<GovernanceOutcome>>,
     metrics_registry: Option<&'static Registry>,
     feedback_factory: Option<Arc<BoxedFeedbackFactory>>,
 }
