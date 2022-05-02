@@ -502,7 +502,7 @@ mod tests {
                 basis: "decision_basis".to_string(),
                 max_healthy_lag: Some(133_f64),
                 min_healthy_lag: Some(0.0),
-                max_healthy_cpu_load: Some(0.02),
+                max_healthy_cpu_load: Some(0.025),
                 min_healthy_cpu_load: None,
                 max_healthy_heap_memory_load: None,
                 max_healthy_network_io_utilization: Some(0.6),
@@ -872,8 +872,8 @@ mod tests {
                     },
                     decision: DecisionSettings {
                         template_data: Some(DecisionTemplateData {
-                            max_healthy_cpu_load: Some(0.015),
-                            min_healthy_cpu_load: Some(0.003),
+                            max_healthy_cpu_load: Some(0.02),
+                            min_healthy_cpu_load: Some(0.01),
                             ..SETTINGS.decision.template_data.clone().unwrap()
                         }),
                         ..SETTINGS.decision.clone()

@@ -9,7 +9,7 @@ scale_up(item, _context, _, reason) if
 
 {{#if max_healthy_cpu_load}}
 scale_up(item, _context, _, reason) if
-    item.cluster_task_cpu_load_above_mark(60, {{max_healthy_cpu_load}})
+    item.cluster_task_cpu_load_above_mark(90, {{max_healthy_cpu_load}})
     and reason = "cpu_load";
 #    {{max_healthy_cpu_load}} < (item.cluster.task_cpu_load / item.cluster.nr_task_managers)
 {{/if}}
