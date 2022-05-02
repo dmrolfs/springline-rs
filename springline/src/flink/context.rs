@@ -152,7 +152,6 @@ impl fmt::Debug for FlinkContextRef {
 impl FlinkContextRef {
     pub async fn query_uploaded_jars(&self, correlation: &CorrelationId) -> Result<Vec<JarSummary>, FlinkError> {
         let _timer = flink::start_flink_uploaded_jars_timer(self.cluster_label.as_str());
-        let span = tracing::debug_span!("query Flink uploaded jars", ?correlation);
 
         let result: Result<Vec<JarSummary>, FlinkError> = self
             .client
@@ -174,7 +173,10 @@ impl FlinkContextRef {
                     })
                 })
             })
-            .instrument(span)
+            .instrument(tracing::debug_span!(
+                "query Flink REST API - uploaded jars",
+                ?correlation
+            ))
             .await;
 
         flink::track_result(
@@ -187,7 +189,6 @@ impl FlinkContextRef {
 
     pub async fn query_active_jobs(&self, correlation: &CorrelationId) -> Result<Vec<JobSummary>, FlinkError> {
         let _timer = flink::start_flink_active_jobs_timer(self.cluster_label.as_str());
-        let span = tracing::debug_span!("query Flink active jobs", ?correlation);
 
         let result: Result<Vec<JobSummary>, FlinkError> = self
             .client
@@ -208,7 +209,7 @@ impl FlinkContextRef {
                     })
                 })
             })
-            .instrument(span)
+            .instrument(tracing::debug_span!("query Flink REST API - active jobs", ?correlation))
             .await
             .and_then(|jobs_json_value: serde_json::Value| {
                 let result = jobs_json_value
@@ -243,14 +244,13 @@ impl FlinkContextRef {
             .push(job_id.as_ref());
 
         let _timer = flink::start_flink_query_job_detail_timer(self.cluster_label.as_str());
-        let span = tracing::debug_span!("query FLink job detail");
 
         let result: Result<JobDetail, FlinkError> = self
             .client
             .request(Method::GET, url)
             .send()
             .map_err(|error| {
-                tracing::error!(?error, "failed Flink API job_detail response");
+                tracing::error!(?error, "failed Flink REST API - job_detail response");
                 error.into()
             })
             .and_then(|response| {
@@ -263,7 +263,7 @@ impl FlinkContextRef {
                     })
                 })
             })
-            .instrument(span)
+            .instrument(tracing::debug_span!("query FLink REST API - job detail"))
             .await;
 
         flink::track_result("job_detail", result, "failed to query Flink job detail", correlation)
@@ -271,7 +271,6 @@ impl FlinkContextRef {
 
     pub async fn query_nr_taskmanagers(&self, correlation: &CorrelationId) -> Result<usize, FlinkError> {
         let _timer = flink::start_flink_query_taskmanager_admin_timer(self.cluster_label.as_str());
-        let span = tracing::trace_span!("query Flink taskmanager admin telemetry", ?correlation);
 
         let result: Result<usize, FlinkError> = self
             .client
@@ -292,7 +291,10 @@ impl FlinkContextRef {
                         })
                 })
             })
-            .instrument(span)
+            .instrument(tracing::trace_span!(
+                "query Flink REST API - taskmanager admin telemetry",
+                ?correlation
+            ))
             .await;
 
         flink::track_result(

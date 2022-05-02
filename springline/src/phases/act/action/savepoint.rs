@@ -99,8 +99,8 @@ impl TriggerSavepoint {
     ) -> Result<trigger::TriggerId, FlinkError> {
         let step_label = super::action_step(ACTION_LABEL, "trigger_savepoint");
         let url = Self::trigger_endpoint_url_for(&session.flink, job_id)?;
-        let span = tracing::debug_span!(
-            "trigger_savepoint",
+        let span = tracing::info_span!(
+            "act::savepoint - trigger_savepoint",
             ?job_id, %cancel_job, %url, correlation=%session.correlation()
         );
 
@@ -198,8 +198,8 @@ impl TriggerSavepoint {
     ) -> Result<SavepointStatus, FlinkError> {
         let step_label = super::action_step(ACTION_LABEL, "check_savepoint");
         let url = Self::info_endpoint_url_for(&session.flink, job_id, trigger_id)?;
-        let span = tracing::trace_span!(
-            "check_savepoint", %job_id, %trigger_id, %url, correlation=%session.correlation()
+        let span = tracing::info_span!(
+            "act::savepoint - check_savepoint", %job_id, %trigger_id, %url, correlation=%session.correlation()
         );
 
         let info: Result<SavepointStatus, FlinkError> = session

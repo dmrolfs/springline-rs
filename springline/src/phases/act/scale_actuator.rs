@@ -190,11 +190,8 @@ where
     where
         E: Error + MetricLabel,
     {
-        let label = error.label();
-        match self.tx_action_monitor.send(Arc::new(ActEvent::PlanFailed {
-            plan,
-            error_metric_label: label.into(),
-        })) {
+        let error_metric_label = error.label();
+        match self.tx_action_monitor.send(Arc::new(ActEvent::PlanFailed { plan, error_metric_label, })) {
             Ok(recipients) => tracing::debug!(
                 action_durations=?session.durations, action_error=?error,
                 "published PlanFailed to {} recipients", recipients

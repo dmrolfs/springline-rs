@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use async_trait::async_trait;
+use tracing::Instrument;
 
 use super::{ActionSession, ScaleAction};
 use crate::flink::{JarId, JobId};
@@ -26,6 +27,10 @@ impl ScaleAction for PrepareData {
         let active_jobs: Vec<JobId> = session
             .flink
             .query_active_jobs(&correlation)
+            .instrument(tracing::info_span!(
+                "act::prepare_data - query_active_jobs",
+                ?correlation
+            ))
             .await
             .map(|jobs| jobs.into_iter().map(|j| j.id).collect())?;
 
@@ -34,6 +39,10 @@ impl ScaleAction for PrepareData {
         let jars: Vec<JarId> = session
             .flink
             .query_uploaded_jars(&correlation)
+            .instrument(tracing::info_span!(
+                "act::prepare_data - query_uploaded_jars",
+                ?correlation
+            ))
             .await
             .map(|jars| jars.into_iter().map(|j| j.id).collect())?;
 

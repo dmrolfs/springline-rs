@@ -143,7 +143,6 @@ where
             let _stage_timer = stage::start_stage_eval_time(self.name());
 
             let correlation = self.correlation_gen.next_id();
-            let span = tracing::trace_span!("collect Flink scope sensor telemetry", scope=%self.scope, ?correlation);
             let send_telemetry: Result<(), SenseError> = self
                 .outlet
                 .reserve_send::<_, SenseError>(async {
@@ -170,7 +169,7 @@ where
                                         })
                                 })
                         })
-                        .instrument(tracing::trace_span!("Flink scope metrics REST API", scope=%self.scope))
+                        .instrument(tracing::debug_span!("Flink REST API - scope metrics", scope=%self.scope))
                         .await
                         .and_then(|metric_response: api_model::FlinkMetricResponse| {
                             api_model::build_telemetry(metric_response, &metric_orders)
@@ -181,7 +180,7 @@ where
 
                     super::identity_or_track_error(self.scope, out).or_else(|_err| Ok(Out::default()))
                 })
-                .instrument(span)
+                .instrument(tracing::debug_span!("collect Flink scope sensor telemetry", scope=%self.scope, ?correlation))
                 .await;
 
             let _ = super::identity_or_track_error(self.scope, send_telemetry);

@@ -103,7 +103,6 @@ where
             let _stage_timer = stage::start_stage_eval_time(self.name());
 
             let correlation = self.correlation_gen.next_id();
-            let span = tracing::trace_span!("collect Flink taskmanager admin telemetry", ?correlation);
             let send_telemetry = self
                 .outlet
                 .reserve_send::<_, SenseError>(async {
@@ -113,6 +112,9 @@ where
                         .context
                         .query_nr_taskmanagers(&correlation)
                         .map_err(|err| SenseError::Api("query_nr_taskmanagers".to_string(), err.into()))
+                        .instrument(tracing::debug_span!(
+                            "Flink REST API - taskmanager admin::nr_taskmanagers"
+                        ))
                         .await
                         .and_then(|nr_taskmanagers| {
                             let mut telemetry: telemetry::TableType = HashMap::default();
@@ -122,7 +124,10 @@ where
 
                     super::identity_or_track_error(SCOPE, result).or_else(|_err| Ok(Out::default()))
                 })
-                .instrument(span)
+                .instrument(tracing::debug_span!(
+                    "collect Flink taskmanager admin telemetry",
+                    ?correlation
+                ))
                 .await;
 
             let _ = super::identity_or_track_error(SCOPE, send_telemetry);

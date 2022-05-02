@@ -17,7 +17,7 @@ pub fn make_governance_transform(name: impl Into<String>) -> impl ThroughStage<P
             .binding(ADJUSTED_TARGET)
             .map(|adjusted_targets: Vec<u32>| {
                 if !adjusted_targets.is_empty() {
-                    Some(itertools::min(adjusted_targets).unwrap())
+                    itertools::min(adjusted_targets)
                 } else {
                     None
                 }

@@ -41,23 +41,24 @@ impl ScaleAction for PatchReplicas {
         let correlation = session.correlation();
         let nr_target_taskmanagers = plan.target_replicas();
 
-        let scale_span = tracing::info_span!("kubernetes::get_scale", ?correlation);
         let original_nr_taskmanager_replicas = session
             .kube
             .taskmanager()
             .deploy
             .get_scale(&correlation)
-            .instrument(scale_span)
+            .instrument(tracing::info_span!("kubernetes::get_scale", ?correlation))
             .await?;
         tracing::info!(%nr_target_taskmanagers, ?original_nr_taskmanager_replicas, "patching to scale taskmanager replicas");
 
-        let patch_span = tracing::info_span!("kubernetes::patch_replicas", correlation = ?correlation, %nr_target_taskmanagers, ?original_nr_taskmanager_replicas);
         let patched_nr_taskmanager_replicas = session
             .kube
             .taskmanager()
             .deploy
             .patch_scale(nr_target_taskmanagers, &correlation)
-            .instrument(patch_span)
+            .instrument(tracing::info_span!(
+                "kubernetes::patch_replicas",
+                ?correlation, %nr_target_taskmanagers, ?original_nr_taskmanager_replicas
+            ))
             .await?;
         tracing::info!(
             %nr_target_taskmanagers, ?original_nr_taskmanager_replicas, ?patched_nr_taskmanager_replicas,

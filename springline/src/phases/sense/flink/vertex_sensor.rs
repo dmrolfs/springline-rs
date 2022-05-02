@@ -132,12 +132,9 @@ where
             let _stage_timer = stage::start_stage_eval_time(self.name());
 
             let correlation = self.correlation_gen.next_id();
-            let span = tracing::trace_span!("collect Flink vertex telemetry", ?correlation);
             let send_telemetry: Result<(), SenseError> = self
                 .outlet
                 .reserve_send(async {
-                    let flink_span = tracing::trace_span!("query Flink REST APIs");
-
                     let out: Result<Out, SenseError> = self
                         .context
                         .query_active_jobs(&correlation)
@@ -167,12 +164,12 @@ where
                                 .and_then(Out::unpack)
                                 .map_err(SenseError::Telemetry)
                         })
-                        .instrument(flink_span)
+                        .instrument(tracing::debug_span!("Flink REST API - vertex metrics"))
                         .await;
 
                     super::identity_or_track_error(FlinkScope::Task, out).or_else(|_err| Ok(Out::default()))
                 })
-                .instrument(span)
+                .instrument(tracing::debug_span!("collect Flink vertex telemetry", ?correlation))
                 .await;
 
             let _ = super::identity_or_track_error(FlinkScope::Task, send_telemetry);
@@ -289,7 +286,6 @@ where
             }
 
             let _timer = start_flink_vertex_sensor_avail_telemetry_timer();
-            let span = tracing::trace_span!("query Flink vertex available telemetry", ?correlation);
 
             self.context
                 .client()
@@ -306,7 +302,10 @@ where
                         })
                     })
                 })
-                .instrument(span)
+                .instrument(tracing::trace_span!(
+                    "query Flink REST API - vertex available telemetry",
+                    ?correlation
+                ))
                 .await
                 .and_then(|metric_response: FlinkMetricResponse| {
                     api_model::build_telemetry(metric_response, metric_orders).map_err(|err| err.into())

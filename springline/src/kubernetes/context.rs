@@ -155,6 +155,7 @@ impl KubernetesContextRef {
     pub async fn list_pods(&self, params: &ListParams) -> Result<Vec<Pod>, KubernetesError> {
         self.pods
             .list(params)
+            .instrument(tracing::debug_span!("kube::list_pods", ?params))
             .await
             .map(|pods| pods.items)
             .map_err(|err| err.into())

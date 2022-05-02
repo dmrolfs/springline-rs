@@ -253,7 +253,8 @@ impl RestartJobs {
         let correlation = session.correlation();
         let step_label = super::action_step(ACTION_LABEL, "try_restart_jar_for_location");
         let url = Self::restart_jar_url_for(&session.flink, jar)?;
-        let span = tracing::debug_span!("restart_jar", %url, ?correlation, %jar, %location, %parallelism);
+        let span =
+            tracing::info_span!("act::restart_jobs - restart_jar", %url, ?correlation, %jar, %location, %parallelism);
 
         let body = restart::RestartJarRequestBody {
             savepoint_path: Some(location.clone()),
