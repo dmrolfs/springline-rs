@@ -8,6 +8,7 @@ use std::time::Duration;
 
 use cast_trait_object::DynCastExt;
 use enumflags2::{bitflags, BitFlags};
+use futures::{future::FutureExt, pin_mut};
 use monitor::Monitor;
 use pretty_snowflake::MachineNode;
 use proctor::elements::Telemetry;
@@ -15,17 +16,18 @@ use proctor::graph::stage::{ActorSourceApi, SinkStage, SourceStage, WithApi, Wit
 use proctor::graph::{Connect, Graph, SinkShape, SourceShape};
 use proctor::ProctorResult;
 use prometheus::Registry;
+pub use service::EngineApiError;
 use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
 
-pub use self::http::run_http_server;
+pub use self::http::{run_http_server, shutdown_http_server};
 pub use self::monitor::{
     DECISION_PLAN_CURRENT_NR_TASK_MANAGERS, DECISION_SHOULD_PLAN_FOR_SCALING, ELIGIBILITY_IS_ELIGIBLE_FOR_SCALING,
     GOVERNANCE_PLAN_ACCEPTED, PLAN_OBSERVATION_COUNT, PLAN_TARGET_NR_TASK_MANAGERS,
 };
 use crate::engine::service::{EngineCmd, EngineServiceApi, Health, Service};
 use crate::flink::FlinkContext;
-use crate::metrics::{self, UpdateMetrics};
+use crate::metrics::UpdateMetrics;
 use crate::model::{MetricCatalog, MetricPortfolio};
 use crate::phases::act::ActMonitor;
 use crate::phases::decision::DecisionResult;
@@ -43,7 +45,7 @@ impl Autoscaler {
 
 #[derive(Debug, Clone)]
 pub struct AutoscaleEngine<S: EngineState> {
-    pub inner: S,
+    inner: S,
 }
 
 impl Default for AutoscaleEngine<Building> {
@@ -160,10 +162,6 @@ impl AutoscaleEngine<Building> {
     pub async fn finish(self, flink: FlinkContext, settings: &Settings) -> Result<AutoscaleEngine<Ready>> {
         let machine_node = MachineNode::new(settings.engine.machine_id, settings.engine.node_id)?;
 
-        if let Some(registry) = self.inner.metrics_registry {
-            metrics::register_metrics(registry)?;
-        }
-
         let mut sensors = self
             .inner
             .sensors
@@ -203,13 +201,6 @@ impl AutoscaleEngine<Building> {
                 let (_, rx) = tokio::sync::broadcast::channel(0);
                 (stage, rx)
             });
-
-
-        // let act = self.inner.act.unwrap_or_else(act::make_logger_act_phase);
-        // let rx_action_monitor = self.inner.rx_action_monitor.unwrap_or_else(|| {
-        //     let (_, rx_dummy) = tokio::sync::broadcast::channel(0);
-        //     rx_dummy
-        // });
 
         let sense = sense_builder
             .build_for_out_w_metrics(MetricCatalog::update_metrics_for(&format!(
@@ -338,7 +329,7 @@ impl AutoscaleEngine<Ready> {
 
 #[allow(dead_code)]
 pub struct Running {
-    pub tx_service_api: EngineServiceApi,
+    tx_service_api: EngineServiceApi,
     graph_handle: JoinHandle<ProctorResult<()>>,
     monitor_handle: JoinHandle<()>,
     service_handle: JoinHandle<()>,
@@ -354,9 +345,59 @@ impl fmt::Debug for Running {
 }
 
 impl AutoscaleEngine<Running> {
+    pub fn tx_service_api(&self) -> EngineServiceApi {
+        self.inner.tx_service_api.clone()
+    }
+
     #[tracing::instrument(level = "trace")]
-    pub async fn block_for_completion(self) -> Result<()> {
-        self.inner.graph_handle.await??;
-        Ok(())
+    pub async fn block_for_completion(self) -> Result<bool> {
+        let graph_handle = self.inner.graph_handle.fuse();
+        let monitor_handle = self.inner.monitor_handle.fuse();
+        let service_handle = self.inner.service_handle.fuse();
+
+        pin_mut!(graph_handle, monitor_handle, service_handle);
+
+        futures::select! {
+            graph_result = graph_handle => {
+                match graph_result {
+                    Ok(Ok(())) => {
+                        tracing::info!("Graph completed successfully.");
+                        Ok(false)
+                    },
+                    Ok(Err(err)) => {
+                        tracing::error!(error=?err, "Graph completed with error.");
+                        Err(err.into())
+                    },
+                    Err(err) => {
+                        tracing::error!(error=?err, "Graph failed to complete.");
+                        Err(err.into())
+                    },
+                }
+            },
+            monitor_result = monitor_handle => {
+                match monitor_result {
+                    Ok(()) => {
+                        tracing::info!("Monitor completed successfully.");
+                        Ok(true)
+                    },
+                    Err(err) => {
+                        tracing::error!(error=?err, "Monitor failed to complete.");
+                        Err(err.into())
+                    },
+                }
+            },
+            service_result = service_handle => {
+                match service_result {
+                    Ok(()) => {
+                        tracing::info!("Service completed successfully.");
+                        Ok(true)
+                    },
+                    Err(err) => {
+                        tracing::error!(error=?err, "Service failed to complete.");
+                        Err(err.into())
+                    },
+                }
+            },
+        }
     }
 }

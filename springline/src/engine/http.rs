@@ -5,11 +5,12 @@ use axum::error_handling::HandleErrorLayer;
 use axum::extract::{Extension, Path};
 use axum::http::{Method, StatusCode, Uri};
 use axum::response::IntoResponse;
-use axum::routing::get;
+use axum::routing;
 use axum::{BoxError, Json, Router};
 use proctor::phases::sense::clearinghouse::ClearinghouseSnapshot;
 use serde_json::json;
 use settings_loader::common::http::HttpServerSettings;
+use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 use tower::ServiceBuilder;
 use tower_http::trace::TraceLayer;
@@ -24,7 +25,7 @@ struct State {
 #[tracing::instrument(level = "trace", skip(tx_api))]
 pub fn run_http_server<'s>(
     tx_api: EngineServiceApi, settings: &HttpServerSettings,
-) -> Result<JoinHandle<Result<(), EngineApiError>>, EngineApiError> {
+) -> Result<(JoinHandle<Result<(), EngineApiError>>, oneshot::Sender<()>), EngineApiError> {
     let shared_state = Arc::new(State { tx_api });
 
     let middleware_stack = ServiceBuilder::new()
@@ -36,11 +37,13 @@ pub fn run_http_server<'s>(
         .into_inner();
 
     let app = Router::new()
-        .route("/health", get(health))
-        .route("/health/ready", get(readiness))
-        .route("/health/live", get(liveness))
-        .route("/metrics", get(get_metrics))
-        .route("/clearinghouse", get(get_clearinghouse_snapshot))
+        .route("/health", routing::get(health))
+        .route("/health/ready", routing::get(readiness))
+        .route("/health/live", routing::get(liveness))
+        .route("/metrics", routing::get(get_metrics))
+        .route("/clearinghouse", routing::get(get_clearinghouse_snapshot))
+        .route("/engine", routing::delete(restart))
+        .route("/engine/error", routing::post(induce_failure))
         .layer(middleware_stack);
 
     // debug_router!(app);
@@ -48,23 +51,37 @@ pub fn run_http_server<'s>(
     let host = settings.host.clone();
     let port = settings.port;
 
+    let (tx_shutdown, rx_shutdown) = oneshot::channel::<()>();
     let handle: JoinHandle<Result<(), EngineApiError>> = tokio::spawn(async move {
         let address = format!("{host}:{port}");
         let listener = tokio::net::TcpListener::bind(&address).await?;
-        let std_listener = listener.into_std()?;
-
         tracing::info!(
-            "{:?} autoscale engine API listening on {}",
+            "{:?} autoscale engine API listening on {address}: {listener:?}",
             std::env::current_exe(),
-            address
         );
+
+        let std_listener = listener.into_std()?;
         let builder = axum::Server::from_tcp(std_listener)?;
         let server = builder.serve(app.into_make_service());
-        server.await?;
+        let graceful = server.with_graceful_shutdown(async {
+            rx_shutdown.await.ok();
+        });
+        graceful.await?;
+        tracing::info!("{:?} autoscale engine API shutting down", std::env::current_exe());
         Ok(())
     });
 
-    Ok(handle)
+    Ok((handle, tx_shutdown))
+}
+
+#[tracing::instrument(level="info", skip(tx))]
+pub fn shutdown_http_server(tx: oneshot::Sender<()>) -> Result<(), EngineApiError>{
+    if let Err(()) = tx.send(()) {
+        tracing::error!("failed to send shutdown signal to Autoscale engine API");
+        return Err(EngineApiError::GracefulShutdown)
+    }
+
+    Ok(())
 }
 
 const STATUS_UP: &str = "up";
@@ -141,6 +158,23 @@ async fn get_clearinghouse_snapshot(
 async fn handle_engine_error(method: Method, uri: Uri, error: BoxError) -> (StatusCode, String) {
     (
         StatusCode::INTERNAL_SERVER_ERROR,
-        format!("`{} {}` failed with {}", method, uri, error),
+        format!("`{method} {uri}` failed with {error}"),
     )
+}
+
+#[tracing::instrument(level = "info", skip(engine))]
+async fn restart(Extension(engine): Extension<Arc<State>>) -> Result<(StatusCode, String), EngineApiError> {
+    EngineCmd::restart(&engine.tx_api)
+        .await
+        .map(|_| (StatusCode::ACCEPTED, "Restarting...".to_string()))
+}
+
+#[tracing::instrument(level = "error", skip(engine))]
+async fn induce_failure(Extension(engine): Extension<Arc<State>>) -> Result<(StatusCode, String), EngineApiError> {
+    EngineCmd::induce_failure(&engine.tx_api).await.map(|_| {
+        (
+            StatusCode::ACCEPTED,
+            "Inducing failure -- restarting if restarts left...".to_string(),
+        )
+    })
 }

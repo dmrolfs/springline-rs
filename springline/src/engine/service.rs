@@ -48,6 +48,7 @@ mod protocol {
         },
         CheckHealth(oneshot::Sender<Result<HealthReport, EngineApiError>>),
         UpdateHealth(Health, oneshot::Sender<Result<(), EngineApiError>>),
+        Restart(bool, oneshot::Sender<Result<(), EngineApiError>>),
     }
 
     #[allow(dead_code)]
@@ -83,6 +84,18 @@ mod protocol {
         pub async fn update_health(api: &EngineServiceApi, health: Health) -> Result<(), EngineApiError> {
             let (tx, rx) = oneshot::channel();
             api.send(Self::UpdateHealth(health, tx))?;
+            rx.await?
+        }
+
+        pub async fn restart(api: &EngineServiceApi) -> Result<(), EngineApiError> {
+            let (tx, rx) = oneshot::channel();
+            api.send(Self::Restart(false, tx))?;
+            rx.await?
+        }
+
+        pub async fn induce_failure(api: &EngineServiceApi) -> Result<(), EngineApiError> {
+            let (tx, rx) = oneshot::channel();
+            api.send(Self::Restart(true, tx))?;
             rx.await?
         }
     }
@@ -129,6 +142,9 @@ mod protocol {
 
         #[error("{0}")]
         Handler(#[from] anyhow::Error),
+
+        #[error("failed to send graceful shutdown command to autoscale engine API.")]
+        GracefulShutdown,
     }
 
     impl IntoResponse for EngineApiError {
@@ -158,6 +174,7 @@ mod protocol {
                 Self::ApiHandlerRecv(_) => Left("handler::response".into()),
                 Self::IO(_) => Left("io".into()),
                 Self::Handler(_) => Left("handler".into()),
+                Self::GracefulShutdown => Left("shutdown".into()),
             }
         }
     }
@@ -244,70 +261,78 @@ impl<'r> Service<'r> {
         let mut ready_phases = PhaseFlags::default();
         let mut is_up = true;
 
-        loop {
-            tokio::select! {
-                Some(cmd) = self.rx_api.recv() => {
-                    match cmd {
-                        EngineCmd::GatherMetrics { domain, tx } => {
-                            let report = self.get_metrics_report(&domain);
-                            if report.is_ok() {
-                                tracing::trace!(?domain, "reporting on metrics domain.");
-                            } else {
-                                tracing::warn!(?domain, ?report, "failed to gather metrics report");
-                            }
-                            let _ = tx.send(report);
-                        },
+        while let Some(cmd) = self.rx_api.recv().await {
+            match cmd {
+                EngineCmd::GatherMetrics { domain, tx } => {
+                    let report = self.get_metrics_report(&domain);
+                    if report.is_ok() {
+                        tracing::trace!(?domain, "reporting on metrics domain.");
+                    } else {
+                        tracing::warn!(?domain, ?report, "failed to gather metrics report");
+                    }
+                    let _ = tx.send(report);
+                },
 
-                        EngineCmd::ReportOnClearinghouse { subscription, tx } => {
-                            let snapshot = self.get_clearinghouse_snapshot(&subscription).await;
-                            if snapshot.is_ok() {
-                                tracing::trace!(
-                                    ?subscription,
-                                    "reporting on clearinghouse subscription{}.",
-                                    if subscription.is_none() { "s" } else { "" }
-                                );
-                            } else {
-                                tracing::warn!(?snapshot, "failed to get clearinghouse snapshot.");
-                            }
-                            let _ = tx.send(snapshot);
-                        },
+                EngineCmd::ReportOnClearinghouse { subscription, tx } => {
+                    let snapshot = self.get_clearinghouse_snapshot(&subscription).await;
+                    if snapshot.is_ok() {
+                        tracing::trace!(
+                            ?subscription,
+                            "reporting on clearinghouse subscription{}.",
+                            if subscription.is_none() { "s" } else { "" }
+                        );
+                    } else {
+                        tracing::warn!(?snapshot, "failed to get clearinghouse snapshot.");
+                    }
+                    let _ = tx.send(snapshot);
+                },
 
-                        EngineCmd::StopFlinkSensor { tx } => {
-                            let stop_response = self.stop_flink_sensor().await;
+                EngineCmd::StopFlinkSensor { tx } => {
+                    let stop_response = self.stop_flink_sensor().await;
 
-                            if stop_response.is_ok() {
-                                tracing::trace!("Engine stopped Flink sensor by command.");
-                            } else {
-                                tracing::error!(error=?stop_response, "Engine failed to stop Flink sensor.");
-                            }
+                    if stop_response.is_ok() {
+                        tracing::trace!("Engine stopped Flink sensor by command.");
+                    } else {
+                        tracing::error!(error=?stop_response, "Engine failed to stop Flink sensor.");
+                    }
 
-                            let _ = tx.send(stop_response);
-                        },
+                    let _ = tx.send(stop_response);
+                },
 
-                        EngineCmd::UpdateHealth(health, tx) => {
-                            Self::handle_health_update(health, &mut ready_phases, &mut is_up);
-                            let _ = tx.send(Ok(()));
-                        },
+                EngineCmd::UpdateHealth(health, tx) => {
+                    Self::handle_health_update(health, &mut ready_phases, &mut is_up);
+                    let _ = tx.send(Ok(()));
+                },
 
-                        EngineCmd::CheckHealth(tx) => {
-                            if is_up {
-                                tracing::trace!(?ready_phases, "checking health...");
-                                if ready_phases.is_all() {
-                                    tracing::debug!(?ready_phases, "Engine is ready to autoscale.");
-                                    let _ = tx.send(Ok(HealthReport::Up));
-                                } else {
-                                    tracing::info!(?ready_phases, "Engine is not ready to autoscale.");
-                                    let _ = tx.send(Ok(HealthReport::NotReady(!ready_phases)));
-                                }
-                            } else {
-                                tracing::warn!(?ready_phases, "engine is down.");
-                                let _ = tx.send(Ok(HealthReport::Down));
-                            }
-                        },
+                EngineCmd::CheckHealth(tx) => {
+                    if is_up {
+                        tracing::trace!(?ready_phases, "checking health...");
+                        if ready_phases.is_all() {
+                            tracing::debug!(?ready_phases, "Engine is ready to autoscale.");
+                            let _ = tx.send(Ok(HealthReport::Up));
+                        } else {
+                            tracing::info!(?ready_phases, "Engine is not ready to autoscale.");
+                            let _ = tx.send(Ok(HealthReport::NotReady(!ready_phases)));
+                        }
+                    } else {
+                        tracing::warn!(?ready_phases, "engine is down.");
+                        let _ = tx.send(Ok(HealthReport::Down));
                     }
                 },
 
-                else => break,
+                EngineCmd::Restart(false, tx) => {
+                    tracing::info!("restarting engine...");
+                    self.rx_api.close();
+                    let _ = tx.send(Ok(()));
+                    break;
+                },
+
+                EngineCmd::Restart(true, tx) => {
+                    tracing::error!("induced failure engine restart...");
+                    self.rx_api.close();
+                    let _ = tx.send(Ok(()));
+                    panic!("induced failure");
+                },
             }
         }
     }

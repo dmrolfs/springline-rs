@@ -1,11 +1,12 @@
 use std::future::Future;
 
 use clap::Parser;
+use futures::{future::FutureExt, pin_mut};
 use once_cell::sync::Lazy;
 use proctor::graph::stage::{WithApi, WithMonitor};
 use prometheus::Registry;
 use settings_loader::SettingsLoader;
-use springline::engine::{Autoscaler, BoxedTelemetrySource, FeedbackSource};
+use springline::engine::{Autoscaler, BoxedTelemetrySource, EngineApiError, FeedbackSource};
 use springline::phases::act::ScaleActuator;
 use springline::settings::{CliOptions, Settings};
 use springline::{engine, Result};
@@ -19,40 +20,84 @@ fn main() -> Result<()> {
     let subscriber = get_tracing_subscriber("info");
     proctor::tracing::init_subscriber(subscriber);
 
+    let mut restarts_remaining = 3;
+    let options = CliOptions::parse();
+
     let main_span = tracing::trace_span!("main");
     let outcome = main_span.in_scope(|| {
-        let options = CliOptions::parse();
-        let settings = Settings::load(&options)?;
+        springline::metrics::register_metrics(&METRICS_REGISTRY)?;
 
         start_pipeline(async move {
-            let flink = springline::flink::FlinkContext::from_settings(&settings.flink)?;
-            let kube = springline::kubernetes::KubernetesContext::from_settings(&settings).await?;
-            let action_flink = flink.clone();
-            let action_kube = kube.clone();
+            while 0 <= restarts_remaining {
+                let settings = Settings::load(&options)?;
+                tracing::info!(?options, ?settings, "loaded settings via CLI options");
+                let flink = springline::flink::FlinkContext::from_settings(&settings.flink)?;
+                let kube = springline::kubernetes::KubernetesContext::from_settings(&settings).await?;
+                let action_flink = flink.clone();
+                let action_kube = kube.clone();
 
-            let engine_builder = Autoscaler::builder("springline")
-                .add_sensor_factory(make_settings_sensor)
-                .await
-                .add_monitor_feedback_factory(make_monitor_sensor_and_api)
-                .with_metrics_registry(&METRICS_REGISTRY)
-                .with_action_factory(move |settings| {
-                    let actuator = ScaleActuator::new(action_kube.clone(), action_flink.clone(), settings);
-                    let rx = actuator.rx_monitor();
-                    (Box::new(actuator), rx)
-                });
+                let engine_builder = Autoscaler::builder("springline")
+                    .add_sensor_factory(make_settings_sensor)
+                    .await
+                    .add_monitor_feedback_factory(make_monitor_sensor_and_api)
+                    .with_metrics_registry(&METRICS_REGISTRY)
+                    .with_action_factory(move |settings| {
+                        let actuator = ScaleActuator::new(action_kube.clone(), action_flink.clone(), settings);
+                        let rx = actuator.rx_monitor();
+                        (Box::new(actuator), rx)
+                    });
 
-            let engine = engine_builder.clone().finish(flink, &settings).await?.run();
+                tracing::info!("Starting autoscale engine...");
+                let engine = engine_builder.clone().finish(flink, &settings).await?.run();
+                let tx_service_api = engine.tx_service_api();
+                let engine_handle = engine.block_for_completion().fuse();
+                tracing::info!("autoscale engine running...");
 
-            tracing::info!("Starting autoscale management server API...");
-            let api_handle = engine::run_http_server(engine.inner.tx_service_api.clone(), &settings.http)?;
+                tracing::info!("Starting autoscale management server API...");
+                let (api_handle, tx_shutdown_http) = engine::run_http_server(tx_service_api, &settings.http)?;
+                let api_handle = api_handle.fuse();
+                tracing::info!("autoscale management server API running...");
 
-            tracing::info!("autoscale engine fully running...");
-            if let Err(err) = engine.block_for_completion().await {
-                tracing::error!(error=?err, "autoscale engine failed: {}", err);
-            }
+                pin_mut!(engine_handle, api_handle);
 
-            if let Err(err) = api_handle.await {
-                tracing::error!(error=?err, "autoscale management server API failed: {}", err);
+                futures::select! {
+                    engine_result = engine_handle => {
+                        match engine_result {
+                            Ok(true) => {
+                                tracing::info!("restarting Autoscale engine...");
+                                restarts_remaining += 1;
+                            },
+                            Ok(false) => {
+                                tracing::info!("Autoscale engine stopped");
+                                break;
+                            },
+                            Err(err) => {
+                                tracing::error!(%restarts_remaining, "Autoscale engine stopped with error: {}", err);
+                            },
+                        }
+                    },
+
+                    api_result = api_handle => {
+                        match api_result {
+                            Ok(Ok(())) => {
+                                tracing::info!("Autoscale management server API stopped");
+                                break;
+                            },
+                            Ok(Err(err)) => {
+                                tracing::error!(%restarts_remaining, "Autoscale management server API completed with error: {}", err);
+                            },
+                            Err(err) => {
+                                tracing::error!(%restarts_remaining, "Autoscale management server API failed with error: {}", err);
+                            },
+                        }
+                    },
+                }
+
+                tracing::info!("shutting down Autoscale engine API prior to restart...");
+                engine::shutdown_http_server(tx_shutdown_http)?;
+
+                tracing::info!(%restarts_remaining, "Autoscale engine restarting...");
+                restarts_remaining -= 1;
             }
 
             tracing::info!("autoscaling engine stopped.");
