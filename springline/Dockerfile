@@ -16,7 +16,7 @@ WORKDIR /app
 RUN apt-get update \
 #    # python is only needed for the access server client
     && apt-get install -y python3.9 python3-pip \
-    && apt-get install -y curl \
+    && apt-get install -y curl vim \
      # Clean up
     && apt-get autoremove -y \
     && apt-get clean -y \
@@ -24,6 +24,9 @@ RUN apt-get update \
 
 #   python is only needed for the access server client
 RUN pip install requests
+
+COPY ["./resources", "resources"]
+RUN chmod -v 666 ./resources/*
 
 # --- Create appuser
 ENV USER=appuser
@@ -41,8 +44,6 @@ RUN adduser \
 USER appuser:appuser
 
 COPY --from=builder ["/app/target/release/springline", "springline"]
-
-COPY ["./resources", "resources"]
 
 COPY ["./hak/hak", "/usr/local/bin/hak"]
 

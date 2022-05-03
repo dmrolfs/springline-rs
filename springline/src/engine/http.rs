@@ -22,10 +22,13 @@ struct State {
     tx_api: EngineServiceApi,
 }
 
+pub type TxHttpGracefulShutdown = oneshot::Sender<()>;
+pub type HttpJoinHandle = JoinHandle<Result<(), EngineApiError>>;
+
 #[tracing::instrument(level = "trace", skip(tx_api))]
 pub fn run_http_server<'s>(
     tx_api: EngineServiceApi, settings: &HttpServerSettings,
-) -> Result<(JoinHandle<Result<(), EngineApiError>>, oneshot::Sender<()>), EngineApiError> {
+) -> Result<(HttpJoinHandle, TxHttpGracefulShutdown), EngineApiError> {
     let shared_state = Arc::new(State { tx_api });
 
     let middleware_stack = ServiceBuilder::new()
@@ -42,7 +45,7 @@ pub fn run_http_server<'s>(
         .route("/health/live", routing::get(liveness))
         .route("/metrics", routing::get(get_metrics))
         .route("/clearinghouse", routing::get(get_clearinghouse_snapshot))
-        .route("/engine", routing::delete(restart))
+        .route("/engine/restart", routing::post(restart))
         .route("/engine/error", routing::post(induce_failure))
         .layer(middleware_stack);
 
@@ -74,11 +77,11 @@ pub fn run_http_server<'s>(
     Ok((handle, tx_shutdown))
 }
 
-#[tracing::instrument(level="info", skip(tx))]
-pub fn shutdown_http_server(tx: oneshot::Sender<()>) -> Result<(), EngineApiError>{
-    if let Err(()) = tx.send(()) {
+#[tracing::instrument(level = "info", skip(tx))]
+pub fn shutdown_http_server(tx: oneshot::Sender<()>) -> Result<(), EngineApiError> {
+    if tx.send(()) == Err(()) {
         tracing::error!("failed to send shutdown signal to Autoscale engine API");
-        return Err(EngineApiError::GracefulShutdown)
+        return Err(EngineApiError::GracefulShutdown);
     }
 
     Ok(())
@@ -166,7 +169,7 @@ async fn handle_engine_error(method: Method, uri: Uri, error: BoxError) -> (Stat
 async fn restart(Extension(engine): Extension<Arc<State>>) -> Result<(StatusCode, String), EngineApiError> {
     EngineCmd::restart(&engine.tx_api)
         .await
-        .map(|_| (StatusCode::ACCEPTED, "Restarting...".to_string()))
+        .map(|_| (StatusCode::ACCEPTED, "restarting autoscale engine".to_string()))
 }
 
 #[tracing::instrument(level = "error", skip(engine))]
@@ -174,7 +177,7 @@ async fn induce_failure(Extension(engine): Extension<Arc<State>>) -> Result<(Sta
     EngineCmd::induce_failure(&engine.tx_api).await.map(|_| {
         (
             StatusCode::ACCEPTED,
-            "Inducing failure -- restarting if restarts left...".to_string(),
+            "inducing failure -- restarting if restarts left".to_string(),
         )
     })
 }

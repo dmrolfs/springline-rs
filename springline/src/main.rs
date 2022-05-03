@@ -6,7 +6,7 @@ use once_cell::sync::Lazy;
 use proctor::graph::stage::{WithApi, WithMonitor};
 use prometheus::Registry;
 use settings_loader::SettingsLoader;
-use springline::engine::{Autoscaler, BoxedTelemetrySource, EngineApiError, FeedbackSource};
+use springline::engine::{Autoscaler, BoxedTelemetrySource, FeedbackSource};
 use springline::phases::act::ScaleActuator;
 use springline::settings::{CliOptions, Settings};
 use springline::{engine, Result};
@@ -94,7 +94,16 @@ fn main() -> Result<()> {
                 }
 
                 tracing::info!("shutting down Autoscale engine API prior to restart...");
-                engine::shutdown_http_server(tx_shutdown_http)?;
+                if let Err(err) = engine::shutdown_http_server(tx_shutdown_http) {
+                    if 0 < restarts_remaining {
+                        tracing::error!(
+                            %restarts_remaining, error=?err,
+                            "failed to send shutdown signal to Autoscale engine API -- attempting restart but API may not be accessible."
+                        );
+                    } else {
+                        tracing::error!(%restarts_remaining, error=?err, "failed to send shutdown signal to Autoscale engine API - no restarts left.");
+                    }
+                }
 
                 tracing::info!(%restarts_remaining, "Autoscale engine restarting...");
                 restarts_remaining -= 1;

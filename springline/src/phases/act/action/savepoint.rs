@@ -336,8 +336,8 @@ mod trigger {
                 f,
                 "{}",
                 match self {
-                    SavepointFormatType::Canonical => "CANONICAL",
-                    SavepointFormatType::Native => "NATIVE",
+                    Self::Canonical => "CANONICAL",
+                    Self::Native => "NATIVE",
                 }
             )
         }
