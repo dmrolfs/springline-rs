@@ -217,15 +217,17 @@ impl AutoscaleEngine<Building> {
 
         let collect_portfolio =
             crate::phases::CollectMetricPortfolio::new("collect_portfolio", settings.engine.telemetry_portfolio_window);
+        let tx_collect_portfolio_api = collect_portfolio.tx_api();
 
-        let reduce_portfolio = proctor::graph::stage::Map::new(
+        let reduce_portfolio = proctor::graph::stage::FilterMap::new(
             "catalog_from_portfolio",
             |decision_portfolio: DecisionResult<MetricPortfolio>| match decision_portfolio {
-                DecisionResult::ScaleUp(portfolio) => DecisionResult::ScaleUp(portfolio.unchecked_head().clone()),
-                DecisionResult::ScaleDown(portfolio) => DecisionResult::ScaleDown(portfolio.unchecked_head().clone()),
-                DecisionResult::NoAction(portfolio) => DecisionResult::NoAction(portfolio.unchecked_head().clone()),
+                DecisionResult::ScaleUp(p) => p.head().cloned().map(DecisionResult::ScaleUp),
+                DecisionResult::ScaleDown(p) => p.head().cloned().map(DecisionResult::ScaleDown),
+                DecisionResult::NoAction(p) => p.head().cloned().map(DecisionResult::NoAction),
             },
         );
+        let reduce_portfolio = reduce_portfolio.with_block_logging();
 
         let tx_clearinghouse_api = sense.tx_api();
 
@@ -277,6 +279,7 @@ impl AutoscaleEngine<Building> {
                     tx_feedback,
                     tx_engine: tx_service_api.clone(),
                     tx_clearinghouse_api,
+                    tx_collect_portfolio_api,
                 },
                 metrics_registry: self.inner.metrics_registry,
                 service_handle,
@@ -361,7 +364,7 @@ impl AutoscaleEngine<Running> {
             graph_result = graph_handle => {
                 match graph_result {
                     Ok(Ok(())) => {
-                        tracing::info!("Graph completed successfully.");
+                        tracing::info!("Graph completed.");
                         Ok(false)
                     },
                     Ok(Err(err)) => {
@@ -377,7 +380,7 @@ impl AutoscaleEngine<Running> {
             monitor_result = monitor_handle => {
                 match monitor_result {
                     Ok(()) => {
-                        tracing::info!("Monitor completed successfully.");
+                        tracing::info!("Monitor completed.");
                         Ok(true)
                     },
                     Err(err) => {
@@ -389,7 +392,7 @@ impl AutoscaleEngine<Running> {
             service_result = service_handle => {
                 match service_result {
                     Ok(()) => {
-                        tracing::info!("Service completed successfully.");
+                        tracing::info!("Service completed.");
                         Ok(true)
                     },
                     Err(err) => {

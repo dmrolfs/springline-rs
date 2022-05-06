@@ -1,6 +1,6 @@
 use std::collections::{HashSet, VecDeque};
 use std::fmt::{self, Debug};
-use std::ops::{Add, Deref};
+use std::ops::Add;
 use std::time::Duration;
 
 use frunk::{Monoid, Semigroup};
@@ -21,10 +21,11 @@ use crate::metrics::UpdateMetrics;
 pub type CorrelationId = Id<MetricCatalog>;
 pub type CorrelationGenerator = ProctorIdGenerator<MetricCatalog>;
 
-pub trait Portfolio: AppData + Monoid + std::ops::Add<Self::Item, Output = Self> {
+pub trait Portfolio: AppData + Monoid {
     type Item: AppData;
     fn set_time_window(&mut self, time_window: Duration);
     fn window_interval(&self) -> Option<Interval>;
+    fn push(&mut self, item: Self::Item);
 }
 
 #[derive(PolarClass, Clone, PartialEq, Serialize, Deserialize)]
@@ -141,10 +142,6 @@ impl MetricPortfolio {
         self.portfolio.back()
     }
 
-    pub fn unchecked_head(&self) -> &MetricCatalog {
-        self.head().expect("MetricCatalogBook should not be empty")
-    }
-
     pub fn is_empty(&self) -> bool {
         self.portfolio.is_empty()
     }
@@ -195,32 +192,18 @@ impl MetricPortfolio {
         (coverage, range.into_iter())
     }
 
-    // todo: assumes monotonically increasing recv_timestamp -- check if not true and insert accordingly
-    // or sort after push and before pop?
-    pub fn push(&mut self, metrics: MetricCatalog) {
-        let oldest_allowed = metrics.recv_timestamp - self.time_window;
-
-        self.portfolio.push_back(metrics);
-
-        while let Some(metric) = self.portfolio.front() {
-            if metric.recv_timestamp < oldest_allowed {
-                let too_old = self.portfolio.pop_front();
-                tracing::debug!(?too_old, %oldest_allowed, "popping metric outside of time window");
-            } else {
-                break;
-            }
-        }
-    }
-
     /// Extracts metric properties from the head of the portfolio (i.e., the current catalog) toward
     /// the past.
     #[tracing::instrument(level = "trace", skip(self, extractor))]
-    pub fn extract_from_head<F, T>(&self, looking_back: Duration, extractor: F) -> impl Iterator<Item = T>
+    pub fn extract_from_head<F, T>(&self, looking_back: Duration, extractor: F) -> Vec<T>
     where
         F: FnMut(&MetricCatalog) -> T,
     {
-        let head_ts = self.recv_timestamp;
-        self.extract_in_interval(Interval::new(head_ts - looking_back, head_ts).unwrap(), extractor)
+        self.head().map_or_else(Vec::new, |h| {
+            let head_ts = h.recv_timestamp;
+            self.extract_in_interval(Interval::new(head_ts - looking_back, head_ts).unwrap(), extractor)
+                .collect()
+        })
     }
 
     /// Extracts metric properties from the end of the interval (i.e., the youngest catalog
@@ -244,8 +227,10 @@ impl MetricPortfolio {
     where
         F: FnMut(&MetricCatalog) -> bool,
     {
-        let head_ts = self.recv_timestamp;
-        self.forall_in_interval(Interval::new(head_ts - looking_back, head_ts).unwrap(), f)
+        self.head().map_or(false, |h| {
+            let head_ts = h.recv_timestamp;
+            self.forall_in_interval(Interval::new(head_ts - looking_back, head_ts).unwrap(), f)
+        })
     }
 
     #[tracing::instrument(level = "trace", skip(self, f))]
@@ -258,7 +243,7 @@ impl MetricPortfolio {
             false
         } else if self.len() == 1 && interval.duration() == Duration::ZERO {
             tracing::debug!("single metric portfolio");
-            interval.contains_timestamp(self.recv_timestamp) && f(self.deref())
+            interval.contains_timestamp(self.recv_timestamp) && f(self)
         } else {
             tracing::debug!(portfolio_window=?self.window_interval(), ?interval, "Checking for interval");
 
@@ -299,6 +284,23 @@ impl Portfolio for MetricPortfolio {
 
     fn set_time_window(&mut self, time_window: Duration) {
         self.time_window = time_window;
+    }
+
+    fn push(&mut self, metrics: MetricCatalog) {
+        // todo: assumes monotonically increasing recv_timestamp -- check if not true and insert accordingly
+        // or sort after push and before pop?
+        let oldest_allowed = metrics.recv_timestamp - self.time_window;
+
+        self.portfolio.push_back(metrics);
+
+        while let Some(metric) = self.portfolio.front() {
+            if metric.recv_timestamp < oldest_allowed {
+                let too_old = self.portfolio.pop_front();
+                tracing::debug!(?too_old, %oldest_allowed, "popping metric outside of time window");
+            } else {
+                break;
+            }
+        }
     }
 }
 
@@ -444,7 +446,7 @@ impl std::ops::Deref for MetricPortfolio {
     type Target = MetricCatalog;
 
     fn deref(&self) -> &Self::Target {
-        self.unchecked_head()
+        self.head().unwrap_or(&EMPTY_METRIC_CATALOG)
     }
 }
 
@@ -595,6 +597,8 @@ impl MetricPortfolioBuilder {
         }
     }
 }
+
+static EMPTY_METRIC_CATALOG: Lazy<MetricCatalog> = Lazy::new(MetricCatalog::empty);
 
 // #[serde_as]
 #[derive(PolarClass, Label, PartialEq, Clone, Serialize, Deserialize)]

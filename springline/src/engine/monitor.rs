@@ -19,6 +19,7 @@ use crate::phases::decision::{DecisionContext, DecisionEvent, DecisionMonitor, D
 use crate::phases::eligibility::{EligibilityContext, EligibilityEvent, EligibilityMonitor};
 use crate::phases::governance::{GovernanceContext, GovernanceEvent, GovernanceMonitor, GovernanceOutcome};
 use crate::phases::plan::{FlinkPlanningEvent, FlinkPlanningMonitor, PlanningStrategy, ScalePlan};
+use crate::phases::{PortfolioApi, PortfolioCmd};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct PlanningFeedback {
@@ -97,6 +98,7 @@ pub struct Monitor {
     pub tx_feedback: Option<ActorSourceApi<Telemetry>>,
     pub tx_engine: EngineServiceApi,
     pub tx_clearinghouse_api: ClearinghouseApi,
+    pub tx_collect_portfolio_api: PortfolioApi,
 }
 
 impl Monitor {
@@ -167,7 +169,7 @@ impl Monitor {
                 self.update_health(loaded).await;
             },
             EligibilityEvent::ContextChanged(context) => {
-                tracing::debug!(?context, "Eligibility Phase context changed");
+                tracing::info!(?context, "Eligibility Phase context changed");
             },
         }
     }
@@ -189,7 +191,7 @@ impl Monitor {
                 self.update_health(loaded).await;
             },
             DecisionEvent::ContextChanged(context) => {
-                tracing::debug!(?context, "Decision Phase context changed");
+                tracing::info!(?context, "Decision Phase context changed");
             },
         }
     }
@@ -217,7 +219,7 @@ impl Monitor {
                 self.update_health(loaded).await;
             },
             PlanEvent::ContextChanged(context) => {
-                tracing::debug!(?context, "Flink Planning context changed.");
+                tracing::info!(?context, "Flink Planning context changed.");
             },
         }
     }
@@ -267,7 +269,7 @@ impl Monitor {
                 self.update_health(loaded).await;
             },
             GovernanceEvent::ContextChanged(context) => {
-                tracing::debug!(?context, "Governance context changed.");
+                tracing::info!(?context, "Governance context changed.");
             },
         }
     }
@@ -285,7 +287,7 @@ impl Monitor {
         };
 
         if let Some(ref tx) = self.tx_feedback {
-            tracing::trace!(?action_feedback, "feedback springline from scale action");
+            tracing::trace!(?action_feedback, "feedback springline per scale action");
             if let Err(err) = ActorSourceCmd::push(tx, action_feedback.into()).await {
                 tracing::error!(error=?err, "failed to send scale deployment notification from monitor -- may impact future eligibility determination.");
             }
@@ -314,6 +316,10 @@ impl Monitor {
 
         if let Err(err) = ClearinghouseCmd::clear(&self.tx_clearinghouse_api).await {
             tracing::warn!(error=?err, "failed to clear clearinghouse on rescaling.");
+        }
+
+        if let Err(err) = PortfolioCmd::clear(&self.tx_collect_portfolio_api).await {
+            tracing::warn!(error=?err, "failed to clear portfolio on rescaling.");
         }
 
         ActionFeedback {

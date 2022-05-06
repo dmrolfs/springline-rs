@@ -207,7 +207,7 @@ where
 
     #[inline]
     async fn do_close(mut self: Box<Self>) -> Result<(), ActError> {
-        tracing::trace!("closing patch replicas act phase inlet.");
+        tracing::info!("closing patch replicas act phase inlet.");
         self.inlet.close().await;
         Ok(())
     }

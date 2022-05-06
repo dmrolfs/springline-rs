@@ -135,7 +135,7 @@ impl<F: Forecaster> FlinkPlanning<F> {
         skip(self, decision),
         fields(planning_name=%self.name, ?decision),
     )]
-    async fn handle_scale_decision(
+    async fn plan_for_scale_decision(
         &mut self, decision: DecisionResult<MetricCatalog>,
     ) -> Result<Option<ScalePlan>, PlanError> {
         let plan = if self.forecast_calculator.have_enough_data() {
@@ -152,7 +152,7 @@ impl<F: Forecaster> FlinkPlanning<F> {
 
             if let Some(plan) = ScalePlan::new(decision, required_nr_task_managers, self.min_scaling_step) {
                 if let Some(ref mut outlet) = self.outlet {
-                    tracing::debug!(?plan, "pushing scale plan.");
+                    tracing::info!(?plan, "pushing scale plan.");
                     outlet.send(plan.clone()).await?;
                 } else {
                     tracing::warn!(outlet=?self.outlet, ?plan, "wanted to push plan but could not since planning outlet is not set.");
@@ -252,7 +252,7 @@ impl<F: Forecaster> Planning for FlinkPlanning<F> {
         let plan = if let DecisionResult::NoAction(ref catalog) = decision {
             self.handle_do_not_scale_decision(catalog)?
         } else {
-            self.handle_scale_decision(decision).await?
+            self.plan_for_scale_decision(decision).await?
         };
 
         Ok(plan)
@@ -399,7 +399,7 @@ mod tests {
 
         let handle = tokio::spawn(async move {
             let p = &mut *planning_2.lock().await;
-            assert_ok!(p.handle_scale_decision(decision).await);
+            assert_ok!(p.plan_for_scale_decision(decision).await);
         });
         assert_ok!(handle.await);
 

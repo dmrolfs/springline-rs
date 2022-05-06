@@ -166,7 +166,7 @@ impl TriggerSavepoint {
                         break savepoint;
                     },
                     Ok(savepoint) => {
-                        tracing::debug!(
+                        tracing::info!(
                             ?savepoint,
                             "savepoint in progress - checking again in {polling_interval:?}"
                         )

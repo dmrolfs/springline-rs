@@ -23,7 +23,7 @@ pub fn make_governance_transform(name: impl Into<String>) -> impl ThroughStage<P
                 }
             });
 
-        let transform_span = tracing::trace_span!(
+        let transform_span = tracing::info_span!(
             "apply governance adjustments",
             item=?outcome.item, policy_results=?outcome.policy_results, ?adjusted_target
         );

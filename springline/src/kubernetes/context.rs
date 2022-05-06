@@ -107,7 +107,7 @@ impl KubernetesContext {
 
         self.inner
             .list_pods(params)
-            .instrument(tracing::debug_span!("kube::list_pods", ?params))
+            .instrument(tracing::info_span!("kube::list_pods", ?params))
             .await
     }
 
@@ -116,7 +116,7 @@ impl KubernetesContext {
     ) -> Result<Vec<Pod>, KubernetesError> {
         self.inner
             .list_pods_for_fields(params, field_selector)
-            .instrument(tracing::debug_span!("kube::list_pods_for_fields", ?params, %field_selector))
+            .instrument(tracing::info_span!("kube::list_pods_for_fields", ?params, %field_selector))
             .await
     }
 }
@@ -155,7 +155,7 @@ impl KubernetesContextRef {
     pub async fn list_pods(&self, params: &ListParams) -> Result<Vec<Pod>, KubernetesError> {
         self.pods
             .list(params)
-            .instrument(tracing::debug_span!("kube::list_pods", ?params))
+            .instrument(tracing::info_span!("kube::list_pods", ?params))
             .await
             .map(|pods| pods.items)
             .map_err(|err| err.into())

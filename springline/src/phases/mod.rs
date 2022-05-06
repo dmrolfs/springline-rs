@@ -6,6 +6,9 @@ use serde::Serialize;
 
 use crate::Result;
 
+#[cfg(test)]
+mod tests;
+
 pub mod act;
 pub mod decision;
 pub mod eligibility;
@@ -14,7 +17,7 @@ pub mod plan;
 mod portfolio;
 pub mod sense;
 
-pub use portfolio::CollectMetricPortfolio;
+pub use portfolio::{CollectMetricPortfolio, PortfolioApi, PortfolioCmd};
 
 pub const REASON: &str = "reason";
 

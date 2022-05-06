@@ -235,7 +235,7 @@ impl RestartJobs {
                     break;
                 },
                 Right(http_status) => {
-                    tracing::debug!(
+                    tracing::info!(
                         %parallelism, ?correlation, ?http_status,
                         "Flink rejected jar({jar_id}) + savepoint({location}) pair. Trying next savepoint location."
                     );
@@ -279,7 +279,7 @@ impl RestartJobs {
             .and_then(|response| {
                 let status = response.status();
                 if !status.is_success() {
-                    tracing::debug!(
+                    tracing::info!(
                         ?response,
                         "jar+savepoint pair rejected by Flink - following error is informational only"
                     );

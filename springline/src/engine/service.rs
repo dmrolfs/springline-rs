@@ -276,7 +276,7 @@ impl<'r> Service<'r> {
                 EngineCmd::ReportOnClearinghouse { subscription, tx } => {
                     let snapshot = self.get_clearinghouse_snapshot(&subscription).await;
                     if snapshot.is_ok() {
-                        tracing::trace!(
+                        tracing::debug!(
                             ?subscription,
                             "reporting on clearinghouse subscription{}.",
                             if subscription.is_none() { "s" } else { "" }
@@ -308,10 +308,10 @@ impl<'r> Service<'r> {
                     if is_up {
                         tracing::trace!(?ready_phases, "checking health...");
                         if ready_phases.is_all() {
-                            tracing::debug!(?ready_phases, "Engine is ready to autoscale.");
+                            tracing::debug!(?ready_phases, "Engine is READY to autoscale.");
                             let _ = tx.send(Ok(HealthReport::Up));
                         } else {
-                            tracing::info!(?ready_phases, "Engine is not ready to autoscale.");
+                            tracing::info!(?ready_phases, "Engine is NOT READY to autoscale.");
                             let _ = tx.send(Ok(HealthReport::NotReady(!ready_phases)));
                         }
                     } else {

@@ -41,13 +41,7 @@ impl ScaleAction for PatchReplicas {
         let correlation = session.correlation();
         let nr_target_taskmanagers = plan.target_replicas();
 
-        let original_nr_taskmanager_replicas = session
-            .kube
-            .taskmanager()
-            .deploy
-            .get_scale(&correlation)
-            .instrument(tracing::info_span!("kubernetes::get_scale", ?correlation))
-            .await?;
+        let original_nr_taskmanager_replicas = session.kube.taskmanager().deploy.get_scale(&correlation).await?;
         tracing::info!(%nr_target_taskmanagers, ?original_nr_taskmanager_replicas, "patching to scale taskmanager replicas");
 
         let patched_nr_taskmanager_replicas = session
@@ -84,7 +78,7 @@ impl ScaleAction for PatchReplicas {
 }
 
 impl PatchReplicas {
-    #[tracing::instrument(level = "debug", name = "patch_replicase::block_until_satisfied", skip(plan, kube))]
+    #[tracing::instrument(level = "info", name = "patch_replicase::block_until_satisfied", skip(plan, kube))]
     async fn block_until_satisfied(
         &self, plan: &<Self as ScaleAction>::In, kube: &KubernetesContext,
     ) -> Result<(), ActError> {
@@ -135,7 +129,7 @@ impl PatchReplicas {
         Ok(())
     }
 
-    #[tracing::instrument(level = "debug", skip())]
+    #[tracing::instrument(level = "trace", skip())]
     async fn do_assess_patch_completion(
         plan: &<Self as ScaleAction>::In, kube: &KubernetesContext, start: Instant,
     ) -> Result<(HashMap<String, Vec<Pod>>, bool), KubernetesError> {
@@ -162,10 +156,10 @@ impl PatchReplicas {
         let is_satisfied = if nr_running == target_nr_task_managers {
             true
         } else if nr_running < target_nr_task_managers && plan.direction() == ScaleDirection::Up {
-            tracing::debug!(%nr_running, %target_nr_task_managers, "patch_replicas: expecting taskmanagers to be added");
+            tracing::info!(%nr_running, %target_nr_task_managers, "patch_replicas: expecting taskmanagers to be added");
             false
         } else if target_nr_task_managers < nr_running && plan.direction() == ScaleDirection::Down {
-            tracing::debug!(%nr_running, %target_nr_task_managers, "patch_replicas: expecting taskmanagers to be removed");
+            tracing::info!(%nr_running, %target_nr_task_managers, "patch_replicas: expecting taskmanagers to be removed");
             false
         } else {
             tracing::warn!(
@@ -179,7 +173,7 @@ impl PatchReplicas {
     }
 
     #[tracing::instrument(
-    level = "debug",
+    level = "info",
     name = "patch_replicas::block_for_rescaled_taskmanagers"
         skip(self, plan, flink)
     )]
@@ -200,7 +194,7 @@ impl PatchReplicas {
                 Ok(nr_taskmanagers) => {
                     nr_confirmed_taskmanagers = nr_taskmanagers;
                     if nr_confirmed_taskmanagers == nr_target_taskmanagers {
-                        tracing::debug!(
+                        tracing::info!(
                             %nr_confirmed_taskmanagers, %nr_target_taskmanagers, ?correlation,
                             "confirmed rescaled taskmanagers connected with Flink JobManager"
                         );
