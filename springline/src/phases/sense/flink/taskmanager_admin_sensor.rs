@@ -12,8 +12,9 @@ use proctor::{AppData, ProctorResult};
 use tracing::Instrument;
 
 use super::{FlinkScope, Unpack};
-use crate::model::MC_CLUSTER__NR_TASK_MANAGERS;
-use crate::phases::sense::flink::{CorrelationGenerator, FlinkContext};
+use crate::flink::CorrelationGenerator;
+use crate::flink::MC_CLUSTER__NR_TASK_MANAGERS;
+use crate::phases::sense::flink::FlinkContext;
 
 /// Load telemetry for a specify scope from the Flink Job Manager REST API; e.g., Job or
 /// Taskmanager. Note: cast_trait_object issues a conflicting impl error if no generic is specified

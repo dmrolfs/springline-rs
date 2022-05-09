@@ -8,8 +8,8 @@ use proctor::{ProctorContext, SharedString};
 use serde::{Deserialize, Serialize};
 
 use super::context::GovernanceContext;
+use crate::flink::MetricCatalog;
 use crate::metrics::UpdateMetrics;
-use crate::model::MetricCatalog;
 use crate::phases::plan::ScalePlan;
 use crate::settings::GovernanceSettings;
 

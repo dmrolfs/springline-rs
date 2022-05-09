@@ -20,10 +20,10 @@ use url::Url;
 
 use super::FlinkScope;
 use super::{api_model, Aggregation, MetricOrder, Unpack};
-use crate::flink::{self, JobId, JobSummary, VertexId};
-use crate::model::{CorrelationId, MC_CLUSTER__NR_ACTIVE_JOBS};
+use crate::flink::{self, JobId, JobSummary, VertexId, MC_CLUSTER__NR_ACTIVE_JOBS};
 use crate::phases::sense::flink::api_model::FlinkMetricResponse;
 use crate::phases::sense::flink::{CorrelationGenerator, FlinkContext, OrdersByMetric, JOB_SCOPE, TASK_SCOPE};
+use crate::CorrelationId;
 
 /// Load telemetry for a specify scope from the Flink Job Manager REST API; e.g., Job or
 /// Taskmanager. Note: cast_trait_object issues a conflicting impl error if no generic is specified
@@ -417,6 +417,7 @@ mod tests {
     use wiremock::{Match, Mock, MockServer, Request, Respond, ResponseTemplate};
 
     use super::*;
+    use crate::flink::MC_FLOW__RECORDS_IN_PER_SEC;
     use crate::phases::sense::flink;
     use crate::phases::sense::flink::STD_METRIC_ORDERS;
 
@@ -630,7 +631,7 @@ mod tests {
             assert_eq!(
                 actual,
                 maplit::hashmap! {
-                    crate::model::MC_FLOW__RECORDS_IN_PER_SEC.to_string() => 0_f64.into(),
+                    MC_FLOW__RECORDS_IN_PER_SEC.to_string() => 0_f64.into(),
                     "flow.records_out_per_sec".to_string() => 20_f64.into(),
                     "cluster.task_network_input_queue_len".to_string() => 0_f64.into(),
                     "cluster.task_network_input_pool_usage".to_string() => 0_f64.into(),

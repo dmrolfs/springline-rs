@@ -35,7 +35,7 @@ pub use performance_repository::make_performance_repository;
 pub use performance_repository::{PerformanceRepositorySettings, PerformanceRepositoryType};
 pub use planning::{FlinkPlanning, FlinkPlanningEvent, FlinkPlanningMonitor};
 
-use crate::model::{MetricCatalog, MC_FLOW__RECORDS_IN_PER_SEC};
+use crate::flink::{MetricCatalog, MC_FLOW__RECORDS_IN_PER_SEC};
 
 const MINIMAL_CLUSTER_SIZE: usize = 1;
 

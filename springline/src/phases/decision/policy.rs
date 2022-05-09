@@ -12,8 +12,8 @@ use prometheus::{IntCounterVec, Opts};
 use serde::{Deserialize, Serialize};
 
 use super::context::DecisionContext;
+use crate::flink::MetricPortfolio;
 use crate::metrics::UpdateMetrics;
-use crate::model::MetricPortfolio;
 use crate::phases::decision::result::DECISION_DIRECTION;
 use crate::phases::REASON;
 use crate::settings::DecisionSettings;

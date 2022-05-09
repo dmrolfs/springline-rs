@@ -1,6 +1,6 @@
 use once_cell::sync::Lazy;
 use pretty_snowflake::Id;
-use springline::model::CorrelationId;
+use springline::flink::CorrelationId;
 
 mod fixtures;
 mod test_decision;

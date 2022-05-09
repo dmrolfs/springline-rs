@@ -26,9 +26,8 @@ pub use self::monitor::{
     GOVERNANCE_PLAN_ACCEPTED, PLAN_OBSERVATION_COUNT, PLAN_TARGET_NR_TASK_MANAGERS,
 };
 use crate::engine::service::{EngineCmd, EngineServiceApi, Health, Service};
-use crate::flink::FlinkContext;
+use crate::flink::{FlinkContext, MetricCatalog, MetricPortfolio};
 use crate::metrics::UpdateMetrics;
-use crate::model::{MetricCatalog, MetricPortfolio};
 use crate::phases::act::ActMonitor;
 use crate::phases::decision::DecisionResult;
 use crate::phases::governance::{self, GovernanceOutcome};

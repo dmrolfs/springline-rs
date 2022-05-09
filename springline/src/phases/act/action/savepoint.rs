@@ -10,11 +10,11 @@ use url::Url;
 
 use super::{ActionSession, ScaleAction};
 use crate::flink::{self, FlinkContext, FlinkError, JobId, JobSavepointReport, OperationStatus, SavepointStatus};
-use crate::model::CorrelationId;
 use crate::phases::act;
 use crate::phases::act::ActError;
 use crate::phases::plan::ScalePlan;
 use crate::settings::FlinkActionSettings;
+use crate::CorrelationId;
 
 pub const ACTION_LABEL: &str = "savepoint";
 

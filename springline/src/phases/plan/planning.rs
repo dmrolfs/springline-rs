@@ -8,7 +8,7 @@ use proctor::graph::{Outlet, Port};
 use proctor::phases::plan::{PlanEvent, Planning};
 use tokio::sync::broadcast;
 
-use crate::model::MetricCatalog;
+use crate::flink::MetricCatalog;
 use crate::phases::decision::DecisionResult;
 use crate::phases::plan::context::PlanningContext;
 use crate::phases::plan::forecast::{ForecastCalculator, ForecastInputs, Forecaster};
@@ -286,7 +286,7 @@ mod tests {
     use tokio_test::block_on;
 
     use super::*;
-    use crate::model::{ClusterMetrics, FlowMetrics, JobHealthMetrics};
+    use crate::flink::{ClusterMetrics, FlowMetrics, JobHealthMetrics};
     use crate::phases::plan::benchmark::*;
     use crate::phases::plan::forecast::*;
     use crate::phases::plan::performance_repository::*;

@@ -10,7 +10,7 @@ use proctor::graph::stage::{self, SourceStage, ThroughStage};
 use proctor::graph::{Connect, Graph, SinkShape, SourceShape, UniformFanInShape, UniformFanOutShape};
 use prometheus::{HistogramOpts, HistogramTimer, HistogramVec};
 
-use crate::flink::{self, FlinkContext};
+use crate::flink::{self, CorrelationGenerator, FlinkContext, MC_FLOW__RECORDS_IN_PER_SEC};
 use crate::phases::sense::flink::scope_sensor::ScopeSensor;
 use crate::phases::sense::flink::taskmanager_admin_sensor::TaskmanagerAdminSensor;
 use crate::phases::sense::flink::vertex_sensor::VertexSensor;
@@ -27,7 +27,6 @@ pub use vertex_sensor::{
     FLINK_VERTEX_SENSOR_AVAIL_TELEMETRY_TIME, FLINK_VERTEX_SENSOR_METRIC_PICKLIST_TIME, FLINK_VERTEX_SENSOR_TIME,
 };
 
-use crate::model::{CorrelationGenerator, MC_FLOW__RECORDS_IN_PER_SEC};
 
 // note: `cluster.nr_task_managers` is a standard metric pulled from Flink's admin API. The order
 // mechanism may need to be expanded to consider further meta information outside of Flink Metrics

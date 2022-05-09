@@ -11,7 +11,7 @@ use proctor::graph::stage::{self, WithApi, WithMonitor};
 use proctor::graph::{Connect, Graph, SinkShape, SourceShape};
 use proctor::phases::plan::{Plan, PlanEvent};
 use proctor::ProctorResult;
-use springline::model::{ClusterMetrics, FlowMetrics, JobHealthMetrics, MetricCatalog};
+use springline::flink::{ClusterMetrics, FlowMetrics, JobHealthMetrics, MetricCatalog};
 use springline::phases::decision::DecisionResult;
 use springline::phases::plan::{
     make_performance_repository, FlinkPlanningMonitor, ForecastInputs, PlanningContext, PlanningMeasurement,

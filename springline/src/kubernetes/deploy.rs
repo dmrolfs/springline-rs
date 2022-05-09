@@ -6,7 +6,7 @@ use tracing::Instrument;
 
 use crate::kubernetes::KubernetesError;
 use crate::kubernetes::{error, KubernetesDeployResource};
-use crate::model::CorrelationId;
+use crate::CorrelationId;
 
 #[derive(Debug, Clone)]
 pub enum DeployApi {

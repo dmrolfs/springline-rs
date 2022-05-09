@@ -12,7 +12,7 @@ pub use result::make_decision_transform;
 pub use result::DecisionResult;
 pub use result::DECISION_DIRECTION;
 
-use crate::model::MetricPortfolio;
+use crate::flink::MetricPortfolio;
 use crate::phases;
 use crate::phases::eligibility::EligibilityOutcome;
 use crate::settings::DecisionSettings;

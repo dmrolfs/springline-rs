@@ -13,7 +13,7 @@ use proctor::phases::policy_phase::PolicyPhase;
 use proctor::phases::sense::clearinghouse::TelemetryCacheSettings;
 use proctor::phases::sense::{self, Sense, SubscriptionRequirements, TelemetrySubscription};
 use proctor::{AppData, ProctorContext};
-use springline::model::{MetricCatalog, MetricPortfolio, MC_CLUSTER__NR_ACTIVE_JOBS, MC_CLUSTER__NR_TASK_MANAGERS};
+use springline::flink::{MetricCatalog, MetricPortfolio, MC_CLUSTER__NR_ACTIVE_JOBS, MC_CLUSTER__NR_TASK_MANAGERS};
 use springline::phases::decision::{make_decision_transform, DecisionResult, DECISION_DIRECTION};
 use springline::phases::decision::{DecisionContext, DecisionPolicy, DecisionTemplateData};
 use springline::settings::DecisionSettings;

@@ -22,7 +22,7 @@ mod portfolio {
     use tokio_test::block_on;
     use tracing_futures::Instrument;
 
-    use crate::model::{ClusterMetrics, FlowMetrics, JobHealthMetrics, MetricCatalog, MetricPortfolio};
+    use crate::flink::{ClusterMetrics, FlowMetrics, JobHealthMetrics, MetricCatalog, MetricPortfolio};
     use crate::phases::CollectMetricPortfolio;
 
     fn make_test_catalog(ts: Timestamp, value: i32) -> MetricCatalog {

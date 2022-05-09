@@ -2,8 +2,7 @@ use proctor::elements::telemetry::UpdateMetricsFn;
 use prometheus::Registry;
 
 use crate::phases::{act, decision, eligibility, governance, plan, sense};
-use crate::{engine, Result};
-use crate::{flink, model};
+use crate::{engine, flink, Result};
 
 pub trait UpdateMetrics {
     fn update_metrics_for(name: &str) -> UpdateMetricsFn;
@@ -13,37 +12,38 @@ pub trait UpdateMetrics {
 pub fn register_metrics(registry: &Registry) -> Result<()> {
     proctor::metrics::register_proctor_metrics(registry)?;
 
-    registry.register(Box::new(model::METRIC_CATALOG_TIMESTAMP.clone()))?;
+    registry.register(Box::new(flink::METRIC_CATALOG_TIMESTAMP.clone()))?;
 
-    registry.register(Box::new(model::METRIC_CATALOG_JOB_HEALTH_UPTIME.clone()))?;
-    registry.register(Box::new(model::METRIC_CATALOG_JOB_HEALTH_NR_RESTARTS.clone()))?;
+    registry.register(Box::new(flink::METRIC_CATALOG_JOB_HEALTH_UPTIME.clone()))?;
+    registry.register(Box::new(flink::METRIC_CATALOG_JOB_HEALTH_NR_RESTARTS.clone()))?;
     registry.register(Box::new(
-        model::METRIC_CATALOG_JOB_HEALTH_NR_COMPLETED_CHECKPOINTS.clone(),
+        flink::METRIC_CATALOG_JOB_HEALTH_NR_COMPLETED_CHECKPOINTS.clone(),
     ))?;
-    registry.register(Box::new(model::METRIC_CATALOG_JOB_HEALTH_NR_FAILED_CHECKPOINTS.clone()))?;
+    registry.register(Box::new(flink::METRIC_CATALOG_JOB_HEALTH_NR_FAILED_CHECKPOINTS.clone()))?;
 
-    registry.register(Box::new(model::METRIC_CATALOG_FLOW_RECORDS_IN_PER_SEC.clone()))?;
-    registry.register(Box::new(model::METRIC_CATALOG_FLOW_RECORDS_OUT_PER_SEC.clone()))?;
-    registry.register(Box::new(model::METRIC_CATALOG_FLOW_INPUT_RECORDS_LAG_MAX.clone()))?;
-    registry.register(Box::new(model::METRIC_CATALOG_FLOW_INPUT_MILLIS_BEHIND_LATEST.clone()))?;
-    registry.register(Box::new(model::METRIC_CATALOG_CLUSTER_NR_TASK_MANAGERS.clone()))?;
-    registry.register(Box::new(model::METRIC_CATALOG_CLUSTER_TASK_CPU_LOAD.clone()))?;
-    registry.register(Box::new(model::METRIC_CATALOG_CLUSTER_TASK_HEAP_MEMORY_USED.clone()))?;
+    registry.register(Box::new(flink::METRIC_CATALOG_FLOW_RECORDS_IN_PER_SEC.clone()))?;
+    registry.register(Box::new(flink::METRIC_CATALOG_FLOW_RECORDS_OUT_PER_SEC.clone()))?;
+    registry.register(Box::new(flink::METRIC_CATALOG_FLOW_INPUT_RECORDS_LAG_MAX.clone()))?;
+    registry.register(Box::new(flink::METRIC_CATALOG_FLOW_INPUT_MILLIS_BEHIND_LATEST.clone()))?;
+    registry.register(Box::new(flink::METRIC_CATALOG_CLUSTER_NR_ACTIVE_JOBS.clone()))?;
+    registry.register(Box::new(flink::METRIC_CATALOG_CLUSTER_NR_TASK_MANAGERS.clone()))?;
+    registry.register(Box::new(flink::METRIC_CATALOG_CLUSTER_TASK_CPU_LOAD.clone()))?;
+    registry.register(Box::new(flink::METRIC_CATALOG_CLUSTER_TASK_HEAP_MEMORY_USED.clone()))?;
     registry.register(Box::new(
-        model::METRIC_CATALOG_CLUSTER_TASK_HEAP_MEMORY_COMMITTED.clone(),
+        flink::METRIC_CATALOG_CLUSTER_TASK_HEAP_MEMORY_COMMITTED.clone(),
     ))?;
-    registry.register(Box::new(model::METRIC_CATALOG_CLUSTER_TASK_NR_THREADS.clone()))?;
+    registry.register(Box::new(flink::METRIC_CATALOG_CLUSTER_TASK_NR_THREADS.clone()))?;
     registry.register(Box::new(
-        model::METRIC_CATALOG_CLUSTER_TASK_NETWORK_INPUT_QUEUE_LEN.clone(),
-    ))?;
-    registry.register(Box::new(
-        model::METRIC_CATALOG_CLUSTER_TASK_NETWORK_INPUT_POOL_USAGE.clone(),
+        flink::METRIC_CATALOG_CLUSTER_TASK_NETWORK_INPUT_QUEUE_LEN.clone(),
     ))?;
     registry.register(Box::new(
-        model::METRIC_CATALOG_CLUSTER_TASK_NETWORK_OUTPUT_QUEUE_LEN.clone(),
+        flink::METRIC_CATALOG_CLUSTER_TASK_NETWORK_INPUT_POOL_USAGE.clone(),
     ))?;
     registry.register(Box::new(
-        model::METRIC_CATALOG_CLUSTER_TASK_NETWORK_OUTPUT_POOL_USAGE.clone(),
+        flink::METRIC_CATALOG_CLUSTER_TASK_NETWORK_OUTPUT_QUEUE_LEN.clone(),
+    ))?;
+    registry.register(Box::new(
+        flink::METRIC_CATALOG_CLUSTER_TASK_NETWORK_OUTPUT_POOL_USAGE.clone(),
     ))?;
 
     registry.register(Box::new(flink::FLINK_ERRORS.clone()))?;

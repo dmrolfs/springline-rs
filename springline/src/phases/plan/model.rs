@@ -6,9 +6,10 @@ use proctor::elements::Timestamp;
 use proctor::Correlation;
 use serde::{Deserialize, Serialize};
 
-use crate::model::{CorrelationId, MetricCatalog};
+use crate::flink::MetricCatalog;
 use crate::phases::decision::DecisionResult;
 use crate::phases::plan::MINIMAL_CLUSTER_SIZE;
+use crate::CorrelationId;
 
 #[derive(Debug, Display, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum ScaleDirection {

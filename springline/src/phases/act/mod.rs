@@ -17,8 +17,8 @@ pub use action::ACTION_TOTAL_DURATION;
 pub use action::FLINK_MISSED_JAR_RESTARTS;
 pub use scale_actuator::ScaleActuator;
 
-use crate::model::CorrelationId;
 use crate::phases::plan::ScalePlan;
+use crate::CorrelationId;
 
 pub trait ScaleActionPlan {
     fn correlation(&self) -> &CorrelationId;
@@ -98,8 +98,8 @@ mod protocol {
 
     use tokio::sync::broadcast;
 
-    use crate::model::CorrelationId;
     use crate::phases::act::ScaleActionPlan;
+    use crate::CorrelationId;
 
     pub type ActMonitor<P> = broadcast::Receiver<Arc<ActEvent<P>>>;
 

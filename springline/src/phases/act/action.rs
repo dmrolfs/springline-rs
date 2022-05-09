@@ -8,8 +8,8 @@ use proctor::AppData;
 use super::ScaleActionPlan;
 use crate::flink::{FlinkContext, JarId, JobId, JobSavepointReport};
 use crate::kubernetes::KubernetesContext;
-use crate::model::CorrelationId;
 use crate::phases::act::ActError;
+use crate::CorrelationId;
 
 mod composite;
 mod patch_replicas;

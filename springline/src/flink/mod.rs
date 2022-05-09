@@ -4,14 +4,33 @@ mod model;
 
 pub use context::FlinkContext;
 pub use error::FlinkError;
-pub use model::{FailureCause, JobSavepointReport, OperationStatus, SavepointLocation, SavepointStatus};
+pub use model::catalog::{ClusterMetrics, FlowMetrics, JobHealthMetrics, MetricCatalog};
+pub use model::catalog::{
+    MC_CLUSTER__NR_ACTIVE_JOBS, MC_CLUSTER__NR_TASK_MANAGERS, MC_FLOW__FORECASTED_RECORDS_IN_PER_SEC,
+    MC_FLOW__FORECASTED_TIMESTAMP, MC_FLOW__RECORDS_IN_PER_SEC,
+};
+pub(crate) use model::catalog::{
+    METRIC_CATALOG_CLUSTER_NR_ACTIVE_JOBS, METRIC_CATALOG_CLUSTER_NR_TASK_MANAGERS,
+    METRIC_CATALOG_CLUSTER_TASK_CPU_LOAD, METRIC_CATALOG_CLUSTER_TASK_HEAP_MEMORY_COMMITTED,
+    METRIC_CATALOG_CLUSTER_TASK_HEAP_MEMORY_USED, METRIC_CATALOG_CLUSTER_TASK_NETWORK_INPUT_POOL_USAGE,
+    METRIC_CATALOG_CLUSTER_TASK_NETWORK_INPUT_QUEUE_LEN, METRIC_CATALOG_CLUSTER_TASK_NETWORK_OUTPUT_POOL_USAGE,
+    METRIC_CATALOG_CLUSTER_TASK_NETWORK_OUTPUT_QUEUE_LEN, METRIC_CATALOG_CLUSTER_TASK_NR_THREADS,
+    METRIC_CATALOG_FLOW_INPUT_MILLIS_BEHIND_LATEST, METRIC_CATALOG_FLOW_INPUT_RECORDS_LAG_MAX,
+    METRIC_CATALOG_FLOW_RECORDS_IN_PER_SEC, METRIC_CATALOG_FLOW_RECORDS_OUT_PER_SEC,
+    METRIC_CATALOG_JOB_HEALTH_NR_COMPLETED_CHECKPOINTS, METRIC_CATALOG_JOB_HEALTH_NR_FAILED_CHECKPOINTS,
+    METRIC_CATALOG_JOB_HEALTH_NR_RESTARTS, METRIC_CATALOG_JOB_HEALTH_UPTIME, METRIC_CATALOG_TIMESTAMP,
+};
+pub use model::portfolio::{MetricPortfolio, MetricPortfolioBuilder, Portfolio};
+pub use model::{
+    CorrelationGenerator, CorrelationId, FailureCause, JobSavepointReport, OperationStatus, SavepointLocation,
+    SavepointStatus,
+};
 pub use model::{JarId, JobDetail, JobId, JobState, JobSummary, RestoreMode, TaskState, VertexDetail, VertexId};
 pub use model::{JOB_STATES, TASK_STATES};
 use once_cell::sync::Lazy;
 use proctor::error::MetricLabel;
 use prometheus::{HistogramOpts, HistogramTimer, HistogramVec, IntCounterVec, Opts};
 
-use crate::model::CorrelationId;
 
 #[allow(clippy::cognitive_complexity)]
 pub(crate) fn log_response(label: &str, response: &reqwest::Response) {

@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use chrono::{DateTime, Utc};
 use dialoguer::{Confirm, Input};
 use proctor::elements::ToTelemetry;
-use springline::model::MetricCatalog;
+use springline::flink::MetricCatalog;
 use springline::phases::eligibility::{ClusterStatus, EligibilityContext, TaskStatus};
 use springline::settings::{EligibilitySettings, Settings};
 

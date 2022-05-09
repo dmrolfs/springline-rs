@@ -8,7 +8,7 @@ use proctor::graph::{stage, Inlet, Outlet, Port, SinkShape, SourceShape, PORT_DA
 use proctor::{Ack, AppData, ProctorResult};
 use tokio::sync::{mpsc, oneshot, Mutex};
 
-use crate::model::{MetricCatalog, MetricPortfolio, Portfolio};
+use crate::flink::{MetricCatalog, MetricPortfolio, Portfolio};
 
 pub type PortfolioApi = mpsc::UnboundedSender<PortfolioCmd>;
 

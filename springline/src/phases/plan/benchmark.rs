@@ -8,7 +8,7 @@ use proctor::elements::{RecordsPerSecond, TelemetryType, TelemetryValue, ToTelem
 use proctor::error::{PlanError, TelemetryError};
 use serde::{Deserialize, Serialize};
 
-use crate::model::MetricCatalog;
+use crate::flink::MetricCatalog;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct BenchmarkRange {

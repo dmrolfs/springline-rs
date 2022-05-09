@@ -13,8 +13,8 @@ use url::Url;
 use crate::flink::error::FlinkError;
 use crate::flink::model::JarSummary;
 use crate::flink::{self, model::JobSummary, JobDetail, JobId};
-use crate::model::CorrelationId;
 use crate::settings::FlinkSettings;
+use crate::CorrelationId;
 
 #[derive(Debug, Clone)]
 pub struct FlinkContext {

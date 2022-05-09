@@ -12,7 +12,7 @@ use proctor::graph::{Connect, Graph, SinkShape};
 use proctor::Ack;
 use serde_json::json;
 use springline::flink::{FlinkContext, JobId, JobState, TaskState, VertexId, JOB_STATES, TASK_STATES};
-use springline::model::{MC_CLUSTER__NR_ACTIVE_JOBS, MC_CLUSTER__NR_TASK_MANAGERS, MC_FLOW__RECORDS_IN_PER_SEC};
+use springline::flink::{MC_CLUSTER__NR_ACTIVE_JOBS, MC_CLUSTER__NR_TASK_MANAGERS, MC_FLOW__RECORDS_IN_PER_SEC};
 use springline::phases::sense::flink::{make_sensor, FlinkSensorSpecification, STD_METRIC_ORDERS};
 use springline::settings::{FlinkSensorSettings, FlinkSettings};
 use url::Url;

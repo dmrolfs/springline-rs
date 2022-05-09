@@ -13,7 +13,7 @@ use prometheus::{IntCounter, IntGauge};
 
 use crate::engine::service::{EngineCmd, EngineServiceApi, Health};
 use crate::engine::{PhaseFlag, PhaseFlags};
-use crate::model;
+use crate::flink;
 use crate::phases::act::{ActEvent, ActMonitor, ACT_PHASE_ERRORS, ACT_SCALE_ACTION_COUNT, PIPELINE_CYCLE_TIME};
 use crate::phases::decision::{DecisionContext, DecisionEvent, DecisionMonitor, DecisionResult};
 use crate::phases::eligibility::{EligibilityContext, EligibilityEvent, EligibilityMonitor};
@@ -32,12 +32,12 @@ impl From<PlanningFeedback> for Telemetry {
         let mut telemetry = Self::new();
 
         telemetry.insert(
-            model::MC_FLOW__FORECASTED_TIMESTAMP.to_string(),
+            flink::MC_FLOW__FORECASTED_TIMESTAMP.to_string(),
             feedback.forecasted_timestamp.as_secs_f64().into(),
         );
 
         telemetry.insert(
-            model::MC_FLOW__FORECASTED_RECORDS_IN_PER_SEC.to_string(),
+            flink::MC_FLOW__FORECASTED_RECORDS_IN_PER_SEC.to_string(),
             feedback.forecasted_records_in_per_sec.into(),
         );
 
