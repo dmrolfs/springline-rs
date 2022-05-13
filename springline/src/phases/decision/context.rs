@@ -1,5 +1,5 @@
 use std::collections::HashSet;
-use std::fmt::Debug;
+use std::fmt::{self, Debug};
 
 use oso::PolarClass;
 use pretty_snowflake::{Id, Label};
@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::metrics::UpdateMetrics;
 
-#[derive(PolarClass, Label, Debug, Clone, Serialize, Deserialize)]
+#[derive(PolarClass, Label, Clone, Serialize, Deserialize)]
 pub struct DecisionContext {
     // auto-filled
     pub correlation_id: Id<Self>,
@@ -21,6 +21,16 @@ pub struct DecisionContext {
     #[polar(attribute)]
     #[serde(flatten)] // flatten enables sense of extra properties
     pub custom: telemetry::TableType,
+}
+
+impl Debug for DecisionContext {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("DecisionContext")
+            .field("correlation_id", &self.correlation_id)
+            .field("recv_timestamp", &self.recv_timestamp.to_string())
+            .field("custom", &self.custom)
+            .finish()
+    }
 }
 
 impl Correlation for DecisionContext {

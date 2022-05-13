@@ -1,5 +1,5 @@
 use std::collections::HashSet;
-use std::fmt::Debug;
+use std::fmt::{self, Debug};
 
 use once_cell::sync::Lazy;
 use oso::PolarClass;
@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::metrics::UpdateMetrics;
 
-#[derive(PolarClass, Label, Debug, Clone, Serialize, Deserialize)]
+#[derive(PolarClass, Label, Clone, Serialize, Deserialize)]
 pub struct GovernanceContext {
     // auto-filled
     pub correlation_id: Id<Self>,
@@ -37,6 +37,24 @@ pub struct GovernanceContext {
     #[polar(attribute)]
     #[serde(flatten)]
     pub custom: telemetry::TableType,
+}
+
+impl Debug for GovernanceContext {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("GovernanceContext")
+            .field("correlation_id", &self.correlation_id)
+            .field("recv_timestamp", &self.recv_timestamp.to_string())
+            .field(
+                "cluster_size",
+                &format!("[{}, {}]", self.min_cluster_size, self.max_cluster_size),
+            )
+            .field(
+                "scaling_step",
+                &format!("[{}, {}]", self.min_scaling_step, self.max_scaling_step),
+            )
+            .field("custom", &self.custom)
+            .finish()
+    }
 }
 
 impl Correlation for GovernanceContext {

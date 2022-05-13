@@ -157,7 +157,7 @@ where
         fields(correlation=%plan.correlation(), recv_timestamp=%plan.recv_timestamp())
     )]
     fn notify_action_started(&self, plan: In) {
-        tracing::info!(?plan, "scale action started");
+        tracing::info!(?plan, "rescale action started");
         match self.tx_action_monitor.send(Arc::new(ActEvent::PlanActionStarted(plan))) {
             Ok(nr_recipients) => tracing::debug!("published PlanActionStarted event to {nr_recipients} recipients."),
             Err(err) => tracing::warn!(error=?err, "failed to publish PlanActionStarted event."),
@@ -170,6 +170,7 @@ where
         fields(correlation=%plan.correlation(), recv_timestamp=%plan.recv_timestamp())
     )]
     fn notify_action_succeeded(&self, plan: In, session: ActionSession) {
+        tracing::info!(?plan, ?session, "rescale action succeeded");
         let event = Arc::new(ActEvent::PlanExecuted { plan, durations: session.durations.clone() });
 
         match self.tx_action_monitor.send(event) {
@@ -190,6 +191,7 @@ where
     where
         E: Error + MetricLabel,
     {
+        tracing::warn!(?error, ?plan, ?session, "rescale action failed");
         let error_metric_label = error.label();
         match self
             .tx_action_monitor

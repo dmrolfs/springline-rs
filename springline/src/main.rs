@@ -134,8 +134,9 @@ fn make_settings_sensor(settings: &Settings) -> BoxedTelemetrySource {
     // todo: remove with proper eligibility context telemetry - see EligibilityContext
     settings_telemetry.extend(maplit::hashmap! {
         "all_sinks_healthy".to_string() => settings.context_stub.all_sinks_healthy.into(),
-        "cluster.is_deploying".to_string() => settings.context_stub.cluster_is_deploying.into(),
-        "cluster.last_deployment".to_string() => format!("{}", settings.context_stub.cluster_last_deployment.format(proctor::serde::date::FORMAT)).into(),
+        "cluster.is_deploying".to_string() => false.into(),
+        "cluster.last_deployment".to_string() => chrono::Utc::now().format(proctor::serde::date::FORMAT).to_string().into(),
+        // "cluster.last_deployment".to_string() => format!("{}", settings.context_stub.cluster_last_deployment.format(proctor::serde::date::FORMAT)).into(),
     });
 
     Box::new(proctor::graph::stage::Sequence::new(

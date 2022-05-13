@@ -121,16 +121,16 @@ where
                         },
 
                         Some(catalog) => {
-                            let mut portfolio = portfolio.lock().await;
-                            let p: &mut Out = &mut *portfolio;
+                            let p = &mut *portfolio.lock().await;
+                            // let p: &mut Out = &mut *portfolio;
                             p.push(catalog);
 
                             tracing::debug!(
-                                ?portfolio,
+                                portfolio=?p,
                                 "pushing metric catalog portfolio looking back {:?}",
-                                portfolio.window_interval().map(|i| i.duration())
+                                p.window_interval().map(|i| i.duration())
                             );
-                            self.outlet.send(portfolio.clone()).await?;
+                            self.outlet.send(p.clone()).await?;
                         }
                     }
                 },
@@ -138,8 +138,10 @@ where
                 Some(command) = self.rx_api.recv() => {
                     match command {
                         PortfolioCmd::Clear(tx) => {
-                            let mut p = portfolio.lock().await;
+                            let p = &mut *portfolio.lock().await;
+                            let window = p.time_window();
                             *p = Out::empty();
+                            p.set_time_window(window);
                             if tx.send(()) == Err(()) {
                                 tracing::warn!("failed to ack clear portfolio command");
                             }

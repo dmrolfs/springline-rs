@@ -16,6 +16,7 @@ use super::MetricCatalog;
 
 pub trait Portfolio: AppData + Monoid {
     type Item: AppData;
+    fn time_window(&self) -> Duration;
     fn set_time_window(&mut self, time_window: Duration);
     fn window_interval(&self) -> Option<Interval>;
     fn push(&mut self, item: Self::Item);
@@ -31,10 +32,11 @@ impl fmt::Debug for MetricPortfolio {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("MetricPortfolio")
             .field("interval", &self.window_interval())
+            .field("interval_duration", &self.window_interval().map(|w| w.duration()))
             .field("time_window", &self.time_window)
             .field("portfolio_size", &self.portfolio.len())
             .field("head", &self.head().map(|c| c.recv_timestamp.to_string()))
-            .field("portfolio", &self.portfolio.iter().map(|m| m.recv_timestamp.to_string()).collect::<Vec<_>>())
+            // .field("portfolio", &self.portfolio.iter().rev().map(|m| m.recv_timestamp.to_string()).collect::<Vec<_>>())
             // .field("head", self.deref())
             .finish()
     }
@@ -255,8 +257,11 @@ impl MetricPortfolio {
             if coverage < 0.5 {
                 tracing::debug!(
                     ?interval,
+                    interval_duration=?interval.duration(),
                     included_range=?range_iter.map(|m| m.recv_timestamp.to_string()).collect::<Vec<_>>(),
-                    %coverage, "not enough coverage for meaningful evaluation."
+                    %coverage, coverage_duration=?(interval.duration().mul_f64(coverage)),
+                    "not enough coverage for meaningful evaluation."
+
                 );
                 return false;
             }
@@ -264,7 +269,9 @@ impl MetricPortfolio {
             let range: Vec<&MetricCatalog> = range_iter.collect();
             tracing::debug!(
                 range=?range.iter().map(|m| (m.recv_timestamp.to_string(), m.flow.records_in_per_sec)).collect::<Vec<_>>(),
-                %coverage,
+                ?interval,
+                interval_duration=?interval.duration(),
+                %coverage, coverage_duration=?(interval.duration().mul_f64(coverage)),
                 "evaluating for interval: {interval:?}",
             );
 
@@ -284,6 +291,10 @@ impl Portfolio for MetricPortfolio {
             i.try_into()
                 .expect("portfolio represents invalid interval (end before start): {i:?}")
         })
+    }
+
+    fn time_window(&self) -> Duration {
+        self.time_window
     }
 
     fn set_time_window(&mut self, time_window: Duration) {

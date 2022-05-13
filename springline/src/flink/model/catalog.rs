@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 use crate::metrics::UpdateMetrics;
 
 
-pub(crate) static EMPTY_METRIC_CATALOG: Lazy<MetricCatalog> = Lazy::new(MetricCatalog::empty);
+pub static EMPTY_METRIC_CATALOG: Lazy<MetricCatalog> = Lazy::new(MetricCatalog::empty);
 
 // #[serde_as]
 #[derive(PolarClass, Label, PartialEq, Clone, Serialize, Deserialize)]
@@ -48,7 +48,7 @@ impl fmt::Debug for MetricCatalog {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("MetricCatalog")
             .field("correlation", &self.correlation_id)
-            .field("recv_timestamp", &format!("{}", self.recv_timestamp))
+            .field("recv_timestamp", &self.recv_timestamp.to_string())
             .field("health", &self.health)
             .field("flow", &self.flow)
             .field("cluster", &self.cluster)
@@ -172,7 +172,7 @@ pub const MC_FLOW__RECORDS_IN_PER_SEC: &str = "flow.records_in_per_sec";
 pub const MC_FLOW__FORECASTED_TIMESTAMP: &str = "flow.forecasted_timestamp";
 pub const MC_FLOW__FORECASTED_RECORDS_IN_PER_SEC: &str = "flow.forecasted_records_in_per_sec";
 
-#[derive(PolarClass, Debug, Default, PartialEq, Clone, Serialize, Deserialize)]
+#[derive(PolarClass, Default, PartialEq, Clone, Serialize, Deserialize)]
 pub struct FlowMetrics {
     /// max rate of records flow into kafka/kinesis related subtask
     /// Flink REST API:
@@ -201,7 +201,7 @@ pub struct FlowMetrics {
         rename = "flow.forecasted_timestamp",
         skip_serializing_if = "Option::is_none"
     )]
-    pub forecasted_timestamp: Option<f64>,
+    pub forecasted_timestamp: Option<Timestamp>,
 
     /// Forecasted rate of records flow predicted by springline.
     #[polar(attribute)]
@@ -231,6 +231,29 @@ pub struct FlowMetrics {
         skip_serializing_if = "Option::is_none"
     )]
     pub input_millis_behind_latest: Option<i64>,
+}
+
+impl Debug for FlowMetrics {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut out = f.debug_struct("FlowMetrics");
+        out.field("records_out_per_sec", &self.records_out_per_sec);
+        out.field("records_in_per_sec", &self.records_in_per_sec);
+
+        if let Some((ts, recs_in_rate)) = self.forecasted_timestamp.zip(self.forecasted_records_in_per_sec) {
+            out.field("forecasted_timestamp", &ts.to_string());
+            out.field("forecasted_records_in_per_sec", &recs_in_rate);
+        }
+
+        if let Some(lag) = self.input_records_lag_max {
+            out.field("input_records_lag_max", &lag);
+        }
+
+        if let Some(behind) = self.input_millis_behind_latest {
+            out.field("input_millis_behind_latest", &behind);
+        }
+
+        out.finish()
+    }
 }
 
 impl Monoid for FlowMetrics {
@@ -315,15 +338,27 @@ pub struct ClusterMetrics {
 #[allow(unused_must_use)]
 impl ClusterMetrics {
     pub fn task_heap_memory_load(&self) -> f64 {
-        self.task_heap_memory_used / self.task_heap_memory_committed
+        if self.task_heap_memory_committed == 0.0 {
+            0.0
+        } else {
+            self.task_heap_memory_used / self.task_heap_memory_committed
+        }
     }
 
     pub fn task_network_input_utilization(&self) -> f64 {
-        self.task_network_input_pool_usage / self.task_network_input_queue_len
+        if self.task_network_input_queue_len == 0.0 {
+            0.0
+        } else {
+            self.task_network_input_pool_usage / self.task_network_input_queue_len
+        }
     }
 
     pub fn task_network_output_utilization(&self) -> f64 {
-        self.task_network_output_pool_usage / self.task_network_output_queue_len
+        if self.task_network_output_queue_len == 0.0 {
+            0.0
+        } else {
+            self.task_network_output_pool_usage / self.task_network_output_queue_len
+        }
     }
 }
 

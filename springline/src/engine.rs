@@ -234,6 +234,7 @@ impl AutoscaleEngine<Building> {
             tx_stop_flink_sensor,
             tx_clearinghouse_api.clone(),
             self.inner.metrics_registry,
+            settings,
         );
         let tx_service_api = service.tx_api();
         let service_handle = tokio::spawn(async move { service.run().await });

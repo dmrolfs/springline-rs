@@ -1,4 +1,5 @@
 use std::fmt;
+use std::sync::Arc;
 
 use proctor::graph::stage::tick;
 use proctor::phases::sense::{ClearinghouseApi, ClearinghouseCmd, ClearinghouseSnapshot};
@@ -8,10 +9,12 @@ use regex::RegexSet;
 use tokio::sync::mpsc;
 
 use crate::engine::PhaseFlags;
+use crate::settings::Settings;
 
 mod protocol {
     use std::collections::HashMap;
     use std::fmt::Display;
+    use std::sync::Arc;
 
     use axum::body::{self, BoxBody};
     use axum::http::{Response, StatusCode};
@@ -29,6 +32,7 @@ mod protocol {
     use tokio::sync::{mpsc, oneshot};
 
     use crate::engine::PhaseFlags;
+    use crate::settings::Settings;
 
     pub type EngineServiceApi = mpsc::UnboundedSender<EngineCmd>;
 
@@ -49,6 +53,7 @@ mod protocol {
         CheckHealth(oneshot::Sender<Result<HealthReport, EngineApiError>>),
         UpdateHealth(Health, oneshot::Sender<Result<(), EngineApiError>>),
         Restart(bool, oneshot::Sender<Result<(), EngineApiError>>),
+        GetSettings(oneshot::Sender<Arc<Settings>>),
     }
 
     #[allow(dead_code)]
@@ -67,6 +72,12 @@ mod protocol {
             let (tx, rx) = oneshot::channel();
             api.send(Self::ReportOnClearinghouse { subscription, tx })?;
             rx.await?
+        }
+
+        pub async fn get_settings(api: &EngineServiceApi) -> Result<Arc<Settings>, EngineApiError> {
+            let (tx, rx) = oneshot::channel();
+            api.send(Self::GetSettings(tx))?;
+            rx.await.map_err(|err| err.into())
         }
 
         pub async fn stop_flink_sensor(api: &EngineServiceApi) -> Result<(), EngineApiError> {
@@ -226,6 +237,7 @@ pub struct Service<'r> {
     tx_stop_flink_sensor: tick::TickApi,
     tx_clearinghouse_api: ClearinghouseApi,
     metrics_registry: Option<&'r Registry>,
+    settings: Arc<Settings>,
 }
 
 impl<'r> fmt::Debug for Service<'r> {
@@ -239,7 +251,7 @@ impl<'r> fmt::Debug for Service<'r> {
 impl<'r> Service<'r> {
     pub fn new(
         tx_stop_flink_sensor: tick::TickApi, tx_clearinghouse_api: ClearinghouseApi,
-        metrics_registry: Option<&'r Registry>,
+        metrics_registry: Option<&'r Registry>, settings: &Settings,
     ) -> Self {
         let (tx_api, rx_api) = mpsc::unbounded_channel();
         Self {
@@ -248,6 +260,7 @@ impl<'r> Service<'r> {
             tx_stop_flink_sensor,
             tx_clearinghouse_api,
             metrics_registry,
+            settings: Arc::new(settings.clone()),
         }
     }
 
@@ -285,6 +298,10 @@ impl<'r> Service<'r> {
                         tracing::warn!(?snapshot, "failed to get clearinghouse snapshot.");
                     }
                     let _ = tx.send(snapshot);
+                },
+
+                EngineCmd::GetSettings(tx) => {
+                    let _ = tx.send(self.settings.clone());
                 },
 
                 EngineCmd::StopFlinkSensor { tx } => {

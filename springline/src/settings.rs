@@ -1,6 +1,5 @@
 use std::path::PathBuf;
 
-use chrono::{DateTime, Utc};
 use clap::Parser;
 use config::builder::{ConfigBuilder, DefaultState};
 use proctor::elements::PolicySettings;
@@ -72,9 +71,9 @@ impl SettingsLoader for Settings {
 #[cfg_attr(test, derive(PartialEq))]
 pub struct ContextStubSettings {
     pub all_sinks_healthy: bool,
-    pub cluster_is_deploying: bool,
-    #[serde(with = "proctor::serde")]
-    pub cluster_last_deployment: DateTime<Utc>,
+    // pub cluster_is_deploying: bool,
+    // #[serde(with = "proctor::serde")]
+    // pub cluster_last_deployment: DateTime<Utc>,
 }
 
 #[derive(Parser, Clone, Debug, Default, Serialize, Deserialize)]
@@ -188,7 +187,6 @@ mod tests {
     use std::time::Duration;
     use std::{env, panic};
 
-    use chrono::TimeZone;
     use claim::*;
     use config::{Config, FileFormat};
     use once_cell::sync::Lazy;
@@ -399,10 +397,10 @@ mod tests {
             },
             context_stub: ContextStubSettings {
                 all_sinks_healthy: true,
-                cluster_is_deploying: false,
-                cluster_last_deployment: assert_ok!(
-                    Utc.datetime_from_str("2020-03-01T04:28:07Z", proctor::serde::date::FORMAT)
-                ),
+                // cluster_is_deploying: false,
+                // cluster_last_deployment: assert_ok!(
+                //     Utc.datetime_from_str("2020-03-01T04:28:07Z", proctor::serde::date::FORMAT)
+                // ),
             },
         };
 
@@ -556,10 +554,10 @@ mod tests {
         },
         context_stub: ContextStubSettings {
             all_sinks_healthy: true,
-            cluster_is_deploying: false,
-            cluster_last_deployment: assert_ok!(
-                Utc.datetime_from_str("2020-03-01T04:28:07Z", proctor::serde::date::FORMAT)
-            ),
+            // cluster_is_deploying: false,
+            // cluster_last_deployment: assert_ok!(
+            //     Utc.datetime_from_str("2020-03-01T04:28:07Z", proctor::serde::date::FORMAT)
+            // ),
         },
     });
 

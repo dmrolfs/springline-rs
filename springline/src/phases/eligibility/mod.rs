@@ -7,6 +7,9 @@ use crate::phases;
 use crate::settings::EligibilitySettings;
 use crate::Result;
 
+#[cfg(test)]
+mod tests;
+
 mod context;
 mod policy;
 

@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::fmt::{self, Debug};
 use std::time::Duration;
 
 use once_cell::sync::Lazy;
@@ -18,7 +19,7 @@ use crate::phases::plan::ForecastInputs;
 pub const PLANNING__RESCALE_RESTART: &str = "planning.rescale_restart_secs";
 
 #[serde_as]
-#[derive(Label, Debug, Clone, Serialize, Deserialize)]
+#[derive(Label, Clone, Serialize, Deserialize)]
 pub struct PlanningContext {
     // auto-filled
     pub correlation_id: Id<Self>,
@@ -46,6 +47,19 @@ pub struct PlanningContext {
     #[serde(default, rename = "planning.recovery_valid")]
     #[serde_as(as = "Option<serde_with::DurationSeconds<u64>>")]
     pub recovery_valid: Option<Duration>,
+}
+
+impl Debug for PlanningContext {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PlanningContext")
+            .field("correlation_id", &self.correlation_id)
+            .field("recv_timestamp", &self.recv_timestamp.to_string())
+            .field("min_scaling_step", &self.min_scaling_step)
+            .field("rescale_restart", &self.rescale_restart)
+            .field("max_catch_up", &self.max_catch_up)
+            .field("recovery_valid", &self.recovery_valid)
+            .finish()
+    }
 }
 
 impl Correlation for PlanningContext {

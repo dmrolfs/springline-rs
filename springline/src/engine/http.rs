@@ -16,6 +16,7 @@ use tower::ServiceBuilder;
 use tower_http::trace::TraceLayer;
 
 use crate::engine::service::{EngineApiError, EngineCmd, EngineServiceApi, HealthReport, MetricsSpan};
+use crate::settings::Settings;
 
 #[allow(dead_code)]
 struct State {
@@ -45,6 +46,7 @@ pub fn run_http_server<'s>(
         .route("/health/live", routing::get(liveness))
         .route("/metrics", routing::get(get_metrics))
         .route("/clearinghouse", routing::get(get_clearinghouse_snapshot))
+        .route("/settings", routing::get(get_settings))
         .route("/engine/restart", routing::post(restart))
         .route("/engine/error", routing::post(induce_failure))
         .layer(middleware_stack);
@@ -155,6 +157,11 @@ async fn get_clearinghouse_snapshot(
     EngineCmd::report_on_clearinghouse(&engine.tx_api, subscription.map(|s| s.0))
         .await
         .map(Json)
+}
+
+#[tracing::instrument(level = "trace", skip(engine))]
+async fn get_settings(Extension(engine): Extension<Arc<State>>) -> Result<Json<Arc<Settings>>, EngineApiError> {
+    EngineCmd::get_settings(&engine.tx_api).await.map(Json)
 }
 
 #[tracing::instrument(level = "trace", skip())]

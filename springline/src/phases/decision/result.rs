@@ -23,7 +23,8 @@ where
     C: ProctorContext,
     S: Into<String>,
 {
-    stage::Map::new(name, move |outcome: PolicyOutcome<T, C>| {
+    let name = name.into();
+    stage::Map::new(name.clone(), move |outcome: PolicyOutcome<T, C>| {
         let transform_span = tracing::trace_span!(
             "distill policy outcome into action",
             item=?outcome.item, policy_results=?outcome.policy_results
@@ -40,17 +41,17 @@ where
                         grouped.push((direction, votes.count()));
                     }
                     grouped.sort_by(|lhs, rhs| {
-                        let cmp = lhs.1.cmp(&rhs.1);
+                        let cmp = rhs.1.cmp(&lhs.1);
                         if cmp != Ordering::Equal {
                             cmp
                         } else if lhs.0 == SCALE_UP {
-                            Ordering::Less
-                        } else {
                             Ordering::Greater
+                        } else {
+                            Ordering::Less
                         }
                     });
 
-                    grouped
+                    let result = grouped
                         .first()
                         .map(|(d, _)| match d.as_str() {
                             SCALE_UP => {
@@ -91,7 +92,15 @@ where
                         .unwrap_or_else(|| {
                             tracing::warn!("no direction determined by policy - NoAction");
                             DecisionResult::NoAction(outcome.item.clone())
-                        })
+                        });
+
+                    tracing::debug!(
+                        item = ?outcome.item,
+                        ?result, direction_votes=%grouped.iter().map(|(d, v)| format!("{d}:{v}")).join(","),
+                        "DMR(KEEP): evaluating {name} policy results."
+                    );
+
+                    result
                 })
                 .unwrap_or_else(|err| {
                     tracing::error!(error=?err, "policy failed to assess direction - NoAction.");
