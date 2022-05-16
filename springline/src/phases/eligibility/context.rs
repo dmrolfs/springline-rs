@@ -99,8 +99,6 @@ impl SubscriptionRequirements for EligibilityContext {
     fn required_fields() -> HashSet<String> {
         maplit::hashset! {
             // this works because we rename the property via #serde field attributes
-            "cluster.is_deploying".into(),
-            CLUSTER__LAST_DEPLOYMENT.into(),
         }
     }
 
@@ -109,6 +107,8 @@ impl SubscriptionRequirements for EligibilityContext {
             "all_sinks_healthy".into(),
             "task.last_failure".into(),
             CLUSTER__IS_RESCALING.into(),
+            "cluster.is_deploying".into(),
+            CLUSTER__LAST_DEPLOYMENT.into(),
         }
     }
 }
@@ -138,7 +138,7 @@ impl UpdateMetrics for EligibilityContext {
 
             Err(err) => {
                 tracing::warn!(
-                    error=?err, %phase_name,
+                    error=?err, %phase_name, ?telemetry,
                     "failed to update eligibility context metrics on subscription: {}", subscription_name
                 );
                 proctor::track_errors(&phase_name, &ProctorError::EligibilityPhase(err.into()));

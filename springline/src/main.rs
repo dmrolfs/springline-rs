@@ -7,8 +7,10 @@ use proctor::graph::stage::{WithApi, WithMonitor};
 use prometheus::Registry;
 use settings_loader::SettingsLoader;
 use springline::engine::{Autoscaler, BoxedTelemetrySource, FeedbackSource};
+use springline::flink::FlinkContext;
+use springline::kubernetes::KubernetesContext;
 use springline::phases::act::ScaleActuator;
-use springline::settings::{CliOptions, Settings};
+use springline::settings::{CliOptions, FlinkSettings, Settings};
 use springline::{engine, Result};
 use tracing::Subscriber;
 
@@ -31,9 +33,11 @@ fn main() -> Result<()> {
             while 0 <= restarts_remaining {
                 let settings = Settings::load(&options)?;
                 tracing::info!(?options, ?settings, "loaded settings via CLI options");
-                let flink = springline::flink::FlinkContext::from_settings(&settings.flink)?;
-                let kube = springline::kubernetes::KubernetesContext::from_settings(&settings).await?;
-                let action_flink = flink.clone();
+
+                let sensor_flink = FlinkContext::from_settings( &FlinkSettings { max_retries: 0, ..settings.flink.clone() } )?;
+                let action_flink = FlinkContext::from_settings(&settings.flink)?;
+
+                let kube = KubernetesContext::from_settings(&settings).await?;
                 let action_kube = kube.clone();
 
                 let engine_builder = Autoscaler::builder("springline")
@@ -48,7 +52,7 @@ fn main() -> Result<()> {
                     });
 
                 tracing::info!("Starting autoscale engine...");
-                let engine = engine_builder.clone().finish(flink, &settings).await?.run();
+                let engine = engine_builder.clone().finish(sensor_flink, &settings).await?.run();
                 let tx_service_api = engine.tx_service_api();
                 let engine_handle = engine.block_for_completion().fuse();
                 tracing::info!("autoscale engine running...");

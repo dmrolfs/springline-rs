@@ -42,10 +42,23 @@ engine:
 
 sensor:
   clearinghouse:
-    # Optional setting for the time to live for each clearinghouse field. The default is 5 minutes.
-    # The clearinghouse is cleared during rescaling, so this value should be set to a duration
-    # reflecting a break in connectivity or the job not running.
-    ttl_secs: 300
+    # Optional clearinghouse ttl configuration.
+    ttl:
+      # Optional setting for the time to live for each clearinghouse field. The default is 5 minutes.
+      # The clearinghouse is cleared during rescaling, so this value should be set to a duration
+      # reflecting a break in connectivity or the job not running.
+      default_ttl_secs: 300
+
+      # Optional overrides for specific clearinghouse fields. The key is the field name, and the
+      # value is the time to live in seconds.
+      #ttl_overrides: {}
+
+      # Optional list of clearinghouse fields that never expire.
+      never_expire:
+        - all_sinks_healthy
+        - cluster.is_rescaling
+        - cluster.is_deploying
+        - cluster.last_deployment
 
     # Optional setting for the cache access counter kept for admission and eviction. The default is
     # 1000. A good  value is to set nr_counters to be 10x the number of *unique* fields expected to

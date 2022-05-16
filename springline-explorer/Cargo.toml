@@ -29,15 +29,15 @@ settings_loader = { git = "https://github.com/dmrolfs/settings-loader-rs", featu
 
 anyhow = "1.0.57"
 chrono = "0.4.19"
-clap = { version = "3.1.15", features = ["derive"] }
+clap = { version = "3.1.18", features = ["derive"] }
 # until ron feature and builder fns in *published* config-rs
 config = "0.13.1"
 #config = { version = "^0.11", default_features = true, features = ["ron"] }
 #config = { version = "^0.11" }
 console = "0.15.0"
-dialoguer = { version = "0.10.0", features = ["fuzzy-select"] }
+dialoguer = { version = "0.10.1", features = ["fuzzy-select"] }
 once_cell = "1.10.0"
-oso = "0.26.0"
+oso = "0.26.1"
 pretty-snowflake = { git = "https://github.com/dmrolfs/pretty-snowflake-rs" }
 ron = "0.7.0"
 serde = "1.0.137"

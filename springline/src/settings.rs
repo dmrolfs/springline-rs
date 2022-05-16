@@ -192,7 +192,7 @@ mod tests {
     use once_cell::sync::Lazy;
     use pretty_assertions::assert_eq;
     use proctor::elements::{PolicySource, TelemetryType, ToTelemetry};
-    use proctor::phases::sense::clearinghouse::TelemetryCacheSettings;
+    use proctor::phases::sense::clearinghouse::{CacheTtl, TelemetryCacheSettings};
     use proctor::phases::sense::SensorSetting;
 
     use super::*;
@@ -460,7 +460,18 @@ mod tests {
             telemetry_portfolio_window: Duration::from_secs(600),
         },
         sensor: SensorSettings {
-            clearinghouse: TelemetryCacheSettings::default(),
+            clearinghouse: TelemetryCacheSettings {
+                ttl: CacheTtl {
+                    never_expire: maplit::hashset! {
+                        "all_sinks_healthy".to_string(),
+                        "cluster.is_rescaling".to_string(),
+                        "cluster.is_deploying".to_string(),
+                        "cluster.last_deployment".to_string(),
+                    },
+                    ..CacheTtl::default()
+                },
+                ..TelemetryCacheSettings::default()
+            },
             flink: FlinkSensorSettings {
                 metrics_initial_delay: Duration::from_secs(300),
                 metrics_interval: Duration::from_secs(15),
@@ -848,7 +859,7 @@ mod tests {
                     },
                     eligibility: EligibilitySettings {
                         template_data: Some(EligibilityTemplateData {
-                            cooling_secs: Some(60),
+                            // cooling_secs: Some(60),
                             ..SETTINGS.eligibility.template_data.clone().unwrap()
                         }),
                         ..SETTINGS.eligibility.clone()
@@ -870,8 +881,8 @@ mod tests {
                     },
                     decision: DecisionSettings {
                         template_data: Some(DecisionTemplateData {
-                            max_healthy_cpu_load: Some(0.02),
-                            min_healthy_cpu_load: Some(0.01),
+                            max_healthy_cpu_load: Some(0.016),
+                            min_healthy_cpu_load: Some(0.012),
                             ..SETTINGS.decision.template_data.clone().unwrap()
                         }),
                         ..SETTINGS.decision.clone()

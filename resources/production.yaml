@@ -15,11 +15,11 @@ kubernetes:
 http:
   host: localhost
 
-eligibility:
-  template_data:
-    cooling_secs: 60
+#eligibility:
+#  template_data:
+#    cooling_secs: 60
 
 decision:
   template_data:
-    max_healthy_cpu_load: 0.02
-    min_healthy_cpu_load: 0.01
+    max_healthy_cpu_load: 0.016
+    min_healthy_cpu_load: 0.012

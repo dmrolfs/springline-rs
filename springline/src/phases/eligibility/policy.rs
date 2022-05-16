@@ -111,20 +111,28 @@ impl QueryPolicy for EligibilityPolicy {
     }
 
     fn query_policy(&self, engine: &Oso, args: Self::Args) -> Result<QueryResult, PolicyError> {
-        QueryResult::from_query(engine.query_rule(INELIGIBLE, args)?).map(|mut query_result| {
-            // goal is to pass on ELIGIBLE; however in order to surface reasons on the "negative"
-            // it's cheaper to query on negative then reverse the passed status
-            query_result.passed = !query_result.passed;
-            if !query_result.passed {
-                if let Some(reason) = query_result.bindings.get("reason").and_then(|rs| rs.first()) {
-                    ELIGIBILITY_POLICY_INELIGIBLE_DECISIONS_COUNT
-                        .with_label_values(&[&reason.to_string()])
-                        .inc();
+        if args.1.cluster_status.is_rescaling {
+            tracing::info!(item=?args.0, context=?args.1, "Cluster is rescaling, skipping eligibility policy check");
+            Ok(QueryResult {
+                passed: false,
+                bindings: maplit::hashmap! { REASON.to_string() => vec!["rescaling".into()] },
+            })
+        } else {
+            QueryResult::from_query(engine.query_rule(INELIGIBLE, args)?).map(|mut query_result| {
+                // goal is to pass on ELIGIBLE; however in order to surface reasons on the "negative"
+                // it's cheaper to query on negative then reverse the passed status
+                query_result.passed = !query_result.passed;
+                if !query_result.passed {
+                    if let Some(reason) = query_result.bindings.get("reason").and_then(|rs| rs.first()) {
+                        ELIGIBILITY_POLICY_INELIGIBLE_DECISIONS_COUNT
+                            .with_label_values(&[&reason.to_string()])
+                            .inc();
+                    }
                 }
-            }
 
-            query_result
-        })
+                query_result
+            })
+        }
     }
 
     fn base_template_name() -> &'static str {

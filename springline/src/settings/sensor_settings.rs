@@ -53,6 +53,7 @@ mod tests {
     use claim::*;
     use pretty_assertions::assert_eq;
     use proctor::elements::telemetry::TelemetryType;
+    use proctor::phases::sense::clearinghouse::CacheTtl;
     use proctor::phases::sense::HttpQuery;
     use reqwest::header::{AUTHORIZATION, CONTENT_LENGTH};
     use reqwest::{Method, Url};
@@ -103,8 +104,11 @@ mod tests {
                 Token::Struct { name: "SensorSettings", len: 3 },
                 Token::Str("clearinghouse"),
                 Token::Struct { name: "TelemetryCacheSettings", len: 5 },
-                Token::Str("ttl_secs"),
+                Token::Str("ttl"),
+                Token::Struct { name: "CacheTtl", len: 1 },
+                Token::Str("default_ttl_secs"),
                 Token::U64(300),
+                Token::StructEnd,
                 Token::Str("nr_counters"),
                 Token::U64(1_000),
                 Token::Str("max_cost"),
@@ -163,7 +167,13 @@ mod tests {
     #[test]
     fn test_serde_sensor_settings_2() {
         let settings_rest = SensorSettings {
-            clearinghouse: TelemetryCacheSettings::default(),
+            clearinghouse: TelemetryCacheSettings {
+                ttl: CacheTtl {
+                    never_expire: maplit::hashset! { "foo".to_string(), },
+                    ..CacheTtl::default()
+                },
+                ..TelemetryCacheSettings::default()
+            },
             flink: FlinkSensorSettings {
                 metrics_initial_delay: Duration::from_secs(300),
                 metrics_interval: Duration::from_secs(15),
@@ -205,8 +215,15 @@ mod tests {
                 Token::Struct { name: "SensorSettings", len: 3 },
                 Token::Str("clearinghouse"),
                 Token::Struct { name: "TelemetryCacheSettings", len: 5 },
-                Token::Str("ttl_secs"),
+                Token::Str("ttl"),
+                Token::Struct { name: "CacheTtl", len: 2 },
+                Token::Str("default_ttl_secs"),
                 Token::U64(300),
+                Token::Str("never_expire"),
+                Token::Seq { len: Some(1) },
+                Token::Str("foo"),
+                Token::SeqEnd,
+                Token::StructEnd,
                 Token::Str("nr_counters"),
                 Token::U64(1_000),
                 Token::Str("max_cost"),
