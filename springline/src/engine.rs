@@ -158,7 +158,7 @@ impl AutoscaleEngine<Building> {
     }
 
     #[tracing::instrument(level = "trace", skip(self, settings))]
-    pub async fn finish(self, flink: FlinkContext, settings: &Settings) -> Result<AutoscaleEngine<Ready>> {
+    pub async fn finish(self, sensor_flink: FlinkContext, settings: &Settings) -> Result<AutoscaleEngine<Ready>> {
         let machine_node = MachineNode::new(settings.engine.machine_id, settings.engine.node_id)?;
 
         let mut sensors = self
@@ -177,7 +177,7 @@ impl AutoscaleEngine<Building> {
         });
 
         let (mut sense_builder, tx_stop_flink_sensor) =
-            sense::make_sense_phase("data", flink, &settings.sensor, sensors, machine_node).await?;
+            sense::make_sense_phase("data", sensor_flink, &settings.sensor, sensors, machine_node).await?;
         let (eligibility_phase, eligibility_channel) =
             eligibility::make_eligibility_phase(&settings.eligibility, &mut sense_builder).await?;
         let rx_eligibility_monitor = eligibility_phase.rx_monitor();

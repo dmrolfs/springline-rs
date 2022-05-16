@@ -9,6 +9,7 @@ use proctor::elements::{RecordsPerSecond, Telemetry, Timestamp, FORMAT};
 use proctor::graph::stage::{ActorSourceApi, ActorSourceCmd};
 use proctor::phases::plan::{PlanEvent, PlanMonitor};
 use proctor::phases::sense::{ClearinghouseApi, ClearinghouseCmd};
+use proctor::Correlation;
 use prometheus::{IntCounter, IntGauge};
 
 use crate::engine::service::{EngineCmd, EngineServiceApi, Health};
@@ -155,21 +156,21 @@ impl Monitor {
     #[allow(clippy::cognitive_complexity)]
     async fn handle_eligibility_event(&self, event: Arc<EligibilityEvent>, loaded: &mut BitFlags<PhaseFlag>) {
         match &*event {
-            EligibilityEvent::ItemPassed(_item, query_result) => {
-                tracing::debug!(?event, ?query_result, "data item passed eligibility");
+            EligibilityEvent::ItemPassed(item, query_result) => {
+                tracing::debug!(?event, ?query_result, correlation=%item.correlation(), "data item passed eligibility");
                 ELIGIBILITY_IS_ELIGIBLE_FOR_SCALING.set(true as i64)
             },
-            EligibilityEvent::ItemBlocked(_item, query_result) => {
-                tracing::info!(?event, ?query_result, "data item blocked in eligibility");
+            EligibilityEvent::ItemBlocked(item, query_result) => {
+                tracing::info!(?event, ?query_result, correlation=%item.correlation(), "data item blocked in eligibility");
                 ELIGIBILITY_IS_ELIGIBLE_FOR_SCALING.set(false as i64)
             },
-            EligibilityEvent::ContextChanged(Some(_ctx)) if !loaded.contains(PhaseFlag::Eligibility) => {
-                tracing::info!(?event, "Eligibility Phase initial context loaded!");
+            EligibilityEvent::ContextChanged(Some(ctx)) if !loaded.contains(PhaseFlag::Eligibility) => {
+                tracing::info!(?event, correlation=%ctx.correlation(),"Eligibility Phase initial context loaded!");
                 loaded.toggle(PhaseFlag::Eligibility);
                 self.update_health(loaded).await;
             },
             EligibilityEvent::ContextChanged(context) => {
-                tracing::info!(?context, "Eligibility Phase context changed");
+                tracing::info!(?context, correlation=?context.as_ref().map(|c| c.correlation().to_string()),"Eligibility Phase context changed");
             },
         }
     }
@@ -177,21 +178,21 @@ impl Monitor {
     #[allow(clippy::cognitive_complexity)]
     async fn handle_decision_event(&self, event: Arc<DecisionEvent>, loaded: &mut BitFlags<PhaseFlag>) {
         match &*event {
-            DecisionEvent::ItemPassed(_item, query_result) => {
-                tracing::info!(?event, ?query_result, "data item passed scaling decision");
+            DecisionEvent::ItemPassed(item, query_result) => {
+                tracing::info!(?event, ?query_result, correlation=%item.correlation(), "data item passed scaling decision");
                 DECISION_SHOULD_PLAN_FOR_SCALING.set(true as i64)
             },
-            DecisionEvent::ItemBlocked(_item, query_result) => {
-                tracing::debug!(?event, ?query_result, "data item blocked by scaling decision");
+            DecisionEvent::ItemBlocked(item, query_result) => {
+                tracing::debug!(?event, ?query_result, correlation=%item.correlation(), "data item blocked by scaling decision");
                 DECISION_SHOULD_PLAN_FOR_SCALING.set(false as i64)
             },
-            DecisionEvent::ContextChanged(Some(_ctx)) if !loaded.contains(PhaseFlag::Decision) => {
-                tracing::info!(?event, "Decision Phase initial context loaded!");
+            DecisionEvent::ContextChanged(Some(ctx)) if !loaded.contains(PhaseFlag::Decision) => {
+                tracing::info!(?event, correlation=%ctx.correlation(), "Decision Phase initial context loaded!");
                 loaded.toggle(PhaseFlag::Decision);
                 self.update_health(loaded).await;
             },
             DecisionEvent::ContextChanged(context) => {
-                tracing::info!(?context, "Decision Phase context changed");
+                tracing::info!(?context, correlation=?context.as_ref().map(|c| c.correlation().to_string()), "Decision Phase context changed");
             },
         }
     }
@@ -201,25 +202,25 @@ impl Monitor {
         match &*event {
             PlanEvent::DecisionPlanned(decision, plan) => match decision {
                 DecisionResult::ScaleUp(_) | DecisionResult::ScaleDown(_) => {
-                    tracing::info!(?event, correlation=?decision.item().correlation_id, "planning for scaling decision");
+                    tracing::info!(?event, correlation=%decision.item().correlation(), "planning for scaling decision");
                     DECISION_PLAN_CURRENT_NR_TASK_MANAGERS.set(plan.current_nr_task_managers as i64);
                     PLAN_TARGET_NR_TASK_MANAGERS.set(plan.target_nr_task_managers as i64);
                 },
                 _no_action => {
-                    tracing::debug!(?event, correlation=?decision.item().correlation_id, "no planning action by decision");
+                    tracing::debug!(?event, correlation=%decision.item().correlation(), "no planning action by decision");
                 },
             },
             PlanEvent::DecisionIgnored(decision) => {
-                tracing::debug!(?event, correlation=?decision.item().correlation_id, "planning is ignoring decision result.");
+                tracing::debug!(?event, correlation=%decision.item().correlation(), "planning is ignoring decision result.");
             },
 
             PlanEvent::ContextChanged(context) if !loaded.contains(PhaseFlag::Plan) => {
-                tracing::info!(?event, ?context, "Plan Phase initial context loaded!");
+                tracing::info!(?event, ?context, correlation=%context.correlation(), "Plan Phase initial context loaded!");
                 loaded.toggle(PhaseFlag::Plan);
                 self.update_health(loaded).await;
             },
             PlanEvent::ContextChanged(context) => {
-                tracing::info!(?context, "Flink Planning context changed.");
+                tracing::info!(?context, correlation=%context.correlation(), "Flink Planning context changed.");
             },
         }
     }
@@ -255,21 +256,21 @@ impl Monitor {
     #[allow(clippy::cognitive_complexity)]
     async fn handle_governance_event(&self, event: Arc<GovernanceEvent>, loaded: &mut BitFlags<PhaseFlag>) {
         match &*event {
-            GovernanceEvent::ItemPassed(_item, query_result) => {
-                tracing::info!(?event, ?query_result, "data item passed governance");
+            GovernanceEvent::ItemPassed(item, query_result) => {
+                tracing::info!(?event, ?query_result, correlation=%item.correlation(), "data item passed governance");
                 GOVERNANCE_PLAN_ACCEPTED.set(true as i64)
             },
-            GovernanceEvent::ItemBlocked(_item, query_result) => {
-                tracing::info!(?event, ?query_result, "data item blocked in governance");
+            GovernanceEvent::ItemBlocked(item, query_result) => {
+                tracing::info!(?event, ?query_result, correlation=%item.correlation(), "data item blocked in governance");
                 GOVERNANCE_PLAN_ACCEPTED.set(false as i64)
             },
-            GovernanceEvent::ContextChanged(Some(_ctx)) if !loaded.contains(PhaseFlag::Governance) => {
-                tracing::info!(?event, "Governance Phase initial context loaded!");
+            GovernanceEvent::ContextChanged(Some(ctx)) if !loaded.contains(PhaseFlag::Governance) => {
+                tracing::info!(?event, correlation=%ctx.correlation(), "Governance Phase initial context loaded!");
                 loaded.toggle(PhaseFlag::Governance);
                 self.update_health(loaded).await;
             },
             GovernanceEvent::ContextChanged(context) => {
-                tracing::info!(?context, "Governance context changed.");
+                tracing::info!(?context, correlation=?context.as_ref().map(|c| c.correlation().to_string()), "Governance context changed.");
             },
         }
     }
@@ -295,14 +296,14 @@ impl Monitor {
     }
 
     fn do_handle_rescale_started(plan: &ScalePlan) -> ActionFeedback {
-        tracing::info!(?plan, correlation=?plan.correlation_id, "rescale action started");
+        tracing::info!(?plan, correlation=%plan.correlation(), "rescale action started");
         ActionFeedback { is_rescaling: true, ..ActionFeedback::default() }
     }
 
     async fn do_handle_rescale_executed(
         &self, plan: &ScalePlan, durations: &HashMap<String, Duration>, now: Timestamp,
     ) -> ActionFeedback {
-        tracing::info!(%now, ?plan, correlation=?plan.correlation_id, ?durations, "rescale executed");
+        tracing::info!(%now, ?plan, correlation=%plan.correlation(), ?durations, "rescale executed");
         ACT_SCALE_ACTION_COUNT
             .with_label_values(&[
                 plan.current_nr_task_managers.to_string().as_str(),
@@ -315,11 +316,11 @@ impl Monitor {
         PIPELINE_CYCLE_TIME.observe(cycle_time_seconds);
 
         if let Err(err) = ClearinghouseCmd::clear(&self.tx_clearinghouse_api).await {
-            tracing::warn!(error=?err, "failed to clear clearinghouse on rescaling.");
+            tracing::warn!(error=?err, correlation=%plan.correlation(), "failed to clear clearinghouse on rescaling.");
         }
 
         if let Err(err) = PortfolioCmd::clear(&self.tx_collect_portfolio_api).await {
-            tracing::warn!(error=?err, "failed to clear portfolio on rescaling.");
+            tracing::warn!(error=?err, correlation=%plan.correlation(), "failed to clear portfolio on rescaling.");
         }
 
         ActionFeedback {
@@ -330,7 +331,7 @@ impl Monitor {
     }
 
     fn do_handle_rescale_failed(plan: &ScalePlan, error_metric_label: &str, _now: Timestamp) -> ActionFeedback {
-        tracing::warn!(%error_metric_label, ?plan, "rescale action during act phase failed.");
+        tracing::warn!(%error_metric_label, ?plan, correlation=%plan.correlation(), "rescale action during act phase failed.");
         ACT_PHASE_ERRORS
             .with_label_values(&[
                 plan.current_nr_task_managers.to_string().as_str(),
