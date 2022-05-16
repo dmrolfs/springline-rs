@@ -117,6 +117,7 @@ mod protocol {
     }
 
     impl<P: ScaleActionPlan> ActEvent<P> {
+        #[allow(clippy::missing_const_for_fn)]
         pub fn plan(&self) -> &P {
             match self {
                 Self::PlanActionStarted(p) => p,

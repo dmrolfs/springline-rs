@@ -184,6 +184,7 @@ impl<F: Forecaster> FlinkPlanning<F> {
     /// The assumption is made that Kafka or Kinesis will be used ongoing. They obviously represent
     /// different units; however the planning calculation, if the lag score is of a consistent type,
     /// remains the same.
+    #[allow(clippy::missing_const_for_fn)]
     fn buffered_lag_score(item: &MetricCatalog) -> f64 {
         // todo: how to support other options?
         match (item.flow.input_records_lag_max, item.flow.input_millis_behind_latest) {

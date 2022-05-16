@@ -167,6 +167,7 @@ where
     }
 
     #[inline]
+    #[allow(clippy::missing_const_for_fn)]
     pub fn item(&self) -> &T {
         match self {
             Self::ScaleUp(item) => item,
