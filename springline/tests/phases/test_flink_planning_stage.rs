@@ -339,15 +339,29 @@ async fn test_flink_planning_linear() {
     tracing::info!("DMR: Verify final accumulation...");
     let actual = assert_ok!(flow.close().await);
     tracing::info!(?actual, "checking final results...");
-    assert_eq!(
-        actual,
-        vec![ScalePlan {
-            recv_timestamp: timestamp,
-            correlation_id,
-            target_nr_task_managers: 6, // todo: also allow 5???
-            current_nr_task_managers: 2,
-        }]
-    )
+    let result = std::panic::catch_unwind(|| {
+        assert_eq!(
+            actual,
+            vec![ScalePlan {
+                recv_timestamp: timestamp,
+                correlation_id: correlation_id.clone(),
+                target_nr_task_managers: 6, // todo: also allow 5???
+                current_nr_task_managers: 2,
+            }]
+        )
+    });
+
+    if result.is_err() {
+        assert_eq!(
+            actual,
+            vec![ScalePlan {
+                recv_timestamp: timestamp,
+                correlation_id,
+                target_nr_task_managers: 5,
+                current_nr_task_managers: 2,
+            }]
+        )
+    }
 
     // todo: assert performance history updated for 2 => 29. once extensible api design is worked
     // out
