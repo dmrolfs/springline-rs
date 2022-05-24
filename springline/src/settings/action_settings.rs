@@ -22,7 +22,7 @@ pub struct ActionSettings {
 }
 
 #[serde_as]
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TaskmanagerContext {
     /// A selector to identify taskmanagers the list of returned objects by the scaling target;
     /// e.g., "app=flink,component=taskmanager"
@@ -37,7 +37,7 @@ pub struct TaskmanagerContext {
 }
 
 #[serde_as]
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FlinkActionSettings {
     /// Interval in which Flink asynchronous API is polled. Defaults to 1 second.
     #[serde(
@@ -71,7 +71,7 @@ impl FlinkActionSettings {
 }
 
 #[serde_as]
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SavepointSettings {
     /// Optional directory for the triggered savepoint. If not set, the default will the savepoint
     /// directory configured with Flink.
@@ -103,7 +103,7 @@ impl SavepointSettings {
 }
 
 #[serde_as]
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FlinkRestartSettings {
     /// Time allowed restarting and confirm a FLink job. Defaults to 1 minute.
     #[serde(

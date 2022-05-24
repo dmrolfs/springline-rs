@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize, Serializer};
 use crate::phases::sense::flink::STD_METRIC_ORDERS;
 use crate::settings::FlinkSensorSettings;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MetricOrder {
     pub scope: FlinkScope,
     pub metric: String,

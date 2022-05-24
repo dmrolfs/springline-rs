@@ -8,7 +8,7 @@ use super::{Forecaster, WorkloadForecast, WorkloadMeasurement};
 use crate::phases::plan::{PLANNING_RECOVERY_WORKLOAD_RATE, PLANNING_VALID_WORKLOAD_RATE};
 use crate::settings::PlanSettings;
 
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct ForecastInputs {
     pub restart: Duration,
     pub max_catch_up: Duration,

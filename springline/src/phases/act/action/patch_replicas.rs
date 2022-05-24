@@ -16,7 +16,7 @@ use crate::settings::Settings;
 
 pub const ACTION_LABEL: &str = "patch_replicas";
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PatchReplicas {
     pub taskmanager_settle_timeout: Duration,
     pub flink_polling_interval: Duration,

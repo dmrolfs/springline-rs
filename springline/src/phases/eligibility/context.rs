@@ -149,7 +149,7 @@ impl UpdateMetrics for EligibilityContext {
     }
 }
 
-#[derive(PolarClass, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(PolarClass, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TaskStatus {
     // todo: I don't I can get this from Flink - maybe from deployment or k8s?
     // todo: remove struct in favor of metric_catalog's job health uptime -
@@ -194,7 +194,7 @@ impl Semigroup for TaskStatus {
 pub const CLUSTER__LAST_DEPLOYMENT: &str = "cluster.last_deployment";
 pub const CLUSTER__IS_RESCALING: &str = "cluster.is_rescaling";
 
-#[derive(PolarClass, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(PolarClass, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ClusterStatus {
     // todo: options to source property:
     // query k8s to describe job-manager pod in json and filter for .status.conditions

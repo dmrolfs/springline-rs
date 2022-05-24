@@ -15,14 +15,14 @@ use crate::settings::GovernanceSettings;
 
 pub const ADJUSTED_TARGET: &str = "adjusted_target";
 
-#[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct GovernanceTemplateData {
     #[serde(flatten, skip_serializing_if = "HashMap::is_empty")]
     pub custom: HashMap<String, String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct GovernancePolicy {
     pub required_subscription_fields: HashSet<SharedString>,
     pub optional_subscription_fields: HashSet<SharedString>,

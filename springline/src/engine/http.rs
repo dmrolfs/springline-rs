@@ -170,7 +170,9 @@ async fn get_settings(Extension(engine): Extension<Arc<State>>) -> Result<Json<S
 }
 
 #[tracing::instrument(level = "trace", skip(engine))]
-async fn get_performance_history(Extension(engine): Extension<Arc<State>>) -> Result<Json<PerformanceHistory>, EngineApiError> {
+async fn get_performance_history(
+    Extension(engine): Extension<Arc<State>>,
+) -> Result<Json<PerformanceHistory>, EngineApiError> {
     EngineCmd::get_performance_history(&engine.tx_api)
         .await
         .map(|ph| ph.as_ref().clone())

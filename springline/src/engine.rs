@@ -57,7 +57,7 @@ pub type PhaseFlags = BitFlags<PhaseFlag>;
 
 #[bitflags(default = Sense | Plan | Act)]
 #[repr(u8)]
-#[derive(Debug, Display, Copy, Clone, PartialEq)]
+#[derive(Debug, Display, Copy, Clone, PartialEq, Eq)]
 pub enum PhaseFlag {
     Sense = 1 << 0,
     Eligibility = 1 << 1,

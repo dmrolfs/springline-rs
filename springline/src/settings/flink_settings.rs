@@ -4,7 +4,7 @@ use std::time::Duration;
 use proctor::error::UrlError;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use serde::{Deserialize, Serialize};
-use serde_with::{serde_as, DurationSeconds};
+use serde_with::{serde_as, DurationMilliSeconds, DurationSeconds};
 use url::Url;
 
 use crate::flink::FlinkError;
@@ -32,12 +32,18 @@ pub struct FlinkSettings {
     #[serde(default = "FlinkSettings::default_max_retries")]
     pub max_retries: u32,
 
-    #[serde(rename="min_rertry_interval_millis", default = "FlinkSettings::default_min_retry_interval")]
-    #[serde_as(as = "DurationMillis")]
+    #[serde(
+        rename = "min_rertry_interval_millis",
+        default = "FlinkSettings::default_min_retry_interval"
+    )]
+    #[serde_as(as = "DurationMilliSeconds")]
     pub min_retry_interval: Duration,
 
-    #[serde(rename="max_retry_interval_millis", default = "FlinkSettings::default_max_retry_interval")]
-    #[serde_as(as = "DurationMillis")]
+    #[serde(
+        rename = "max_retry_interval_millis",
+        default = "FlinkSettings::default_max_retry_interval"
+    )]
+    #[serde_as(as = "DurationMilliSeconds")]
     pub max_retry_interval: Duration,
 
     #[serde(default, rename = "pool_idle_timeout_secs", skip_serializing_if = "Option::is_none")]
@@ -92,9 +98,13 @@ impl FlinkSettings {
         Self::DEFAULT_MAX_RETRIES
     }
 
-    pub const fn default_min_retry_interval() -> Duration { Duration::from_secs(1) }
+    pub const fn default_min_retry_interval() -> Duration {
+        Duration::from_secs(1)
+    }
 
-    pub const fn default_max_retry_interval() -> Duration { Duration::from_secs(5 * 60) }
+    pub const fn default_max_retry_interval() -> Duration {
+        Duration::from_secs(5 * 60)
+    }
 
     pub fn job_manager_url(&self, scheme: impl AsRef<str>) -> Result<Url, url::ParseError> {
         let rep = format!(

@@ -118,7 +118,7 @@ impl Semigroup for MetricCatalog {
     }
 }
 
-#[derive(PolarClass, Debug, Default, PartialEq, Clone, Serialize, Deserialize)]
+#[derive(PolarClass, Debug, Default, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub struct JobHealthMetrics {
     // todo per Flink doc's this metric does not work properly under Reactive mode. remove in favor of eligibility's
     // last_failure?

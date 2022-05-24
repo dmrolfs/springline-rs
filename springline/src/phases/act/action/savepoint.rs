@@ -308,7 +308,7 @@ mod trigger {
     pub type TriggerId = String;
 
     #[serde_as]
-    #[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
+    #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
     #[serde(default, rename_all = "kebab-case")]
     pub struct SavepointRequestBody {
         pub cancel_job: bool,
@@ -324,7 +324,7 @@ mod trigger {
         pub trigger_id: Option<String>,
     }
 
-    #[derive(Debug, Copy, Clone, PartialEq, Serialize)]
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize)]
     pub enum SavepointFormatType {
         Canonical,
         Native,
@@ -358,7 +358,7 @@ mod trigger {
         }
     }
 
-    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
     #[serde(rename_all = "kebab-case")]
     pub struct SavepointTriggerResponseBody {
         pub request_id: String,
