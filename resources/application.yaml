@@ -8,6 +8,8 @@ flink:
 #  job_manager_host: host.springline
   job_manager_port: 8081
   max_retries: 3
+  min_retry_interval_millis: 1_000
+  max_retry_interval_millis: 300_000
   pool_idle_timeout_secs: 60
   pool_max_idle_per_host: 5
 

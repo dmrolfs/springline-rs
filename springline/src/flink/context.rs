@@ -121,7 +121,10 @@ fn make_http_client(settings: &FlinkSettings) -> Result<ClientWithMiddleware, Fl
 
     let client = client_builder.build()?;
 
-    let retry_policy = ExponentialBackoff::builder().build_with_max_retries(settings.max_retries);
+    let retry_policy = ExponentialBackoff::builder()
+        .retry_bounds(settings.min_retry_interval, settings.max_retry_interval)
+        .build_with_max_retries(settings.max_retries);
+
     Ok(ClientBuilder::new(client)
         .with(RetryTransientMiddleware::new_with_policy(retry_policy))
         .build())

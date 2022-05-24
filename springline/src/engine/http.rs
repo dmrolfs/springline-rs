@@ -16,6 +16,7 @@ use tower::ServiceBuilder;
 use tower_http::trace::TraceLayer;
 
 use crate::engine::service::{EngineApiError, EngineCmd, EngineServiceApi, HealthReport, MetricsSpan};
+use crate::phases::plan::PerformanceHistory;
 use crate::settings::Settings;
 
 #[allow(dead_code)]
@@ -47,6 +48,7 @@ pub fn run_http_server<'s>(
         .route("/metrics", routing::get(get_metrics))
         .route("/clearinghouse", routing::get(get_clearinghouse_snapshot))
         .route("/settings", routing::get(get_settings))
+        .route("/performance_history", routing::get(get_performance_history))
         .route("/engine/restart", routing::post(restart))
         .route("/engine/error", routing::post(induce_failure))
         .layer(middleware_stack);
@@ -160,8 +162,19 @@ async fn get_clearinghouse_snapshot(
 }
 
 #[tracing::instrument(level = "trace", skip(engine))]
-async fn get_settings(Extension(engine): Extension<Arc<State>>) -> Result<Json<Arc<Settings>>, EngineApiError> {
-    EngineCmd::get_settings(&engine.tx_api).await.map(Json)
+async fn get_settings(Extension(engine): Extension<Arc<State>>) -> Result<Json<Settings>, EngineApiError> {
+    EngineCmd::get_settings(&engine.tx_api)
+        .await
+        .map(|s| s.as_ref().clone())
+        .map(Json)
+}
+
+#[tracing::instrument(level = "trace", skip(engine))]
+async fn get_performance_history(Extension(engine): Extension<Arc<State>>) -> Result<Json<PerformanceHistory>, EngineApiError> {
+    EngineCmd::get_performance_history(&engine.tx_api)
+        .await
+        .map(|ph| ph.as_ref().clone())
+        .map(Json)
 }
 
 #[tracing::instrument(level = "trace", skip())]

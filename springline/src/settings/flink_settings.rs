@@ -32,6 +32,14 @@ pub struct FlinkSettings {
     #[serde(default = "FlinkSettings::default_max_retries")]
     pub max_retries: u32,
 
+    #[serde(rename="min_rertry_interval_millis", default = "FlinkSettings::default_min_retry_interval")]
+    #[serde_as(as = "DurationMillis")]
+    pub min_retry_interval: Duration,
+
+    #[serde(rename="max_retry_interval_millis", default = "FlinkSettings::default_max_retry_interval")]
+    #[serde_as(as = "DurationMillis")]
+    pub max_retry_interval: Duration,
+
     #[serde(default, rename = "pool_idle_timeout_secs", skip_serializing_if = "Option::is_none")]
     #[serde_as(as = "Option<DurationSeconds>")]
     pub pool_idle_timeout: Option<Duration>,
@@ -49,6 +57,8 @@ impl Default for FlinkSettings {
             job_manager_port: Self::DEFAULT_JOB_MANAGER_PORT,
             headers: Vec::default(),
             max_retries: Self::DEFAULT_MAX_RETRIES,
+            min_retry_interval: Self::default_min_retry_interval(),
+            max_retry_interval: Self::default_max_retry_interval(),
             pool_idle_timeout: None,
             pool_max_idle_per_host: None,
         }
@@ -81,6 +91,10 @@ impl FlinkSettings {
     pub const fn default_max_retries() -> u32 {
         Self::DEFAULT_MAX_RETRIES
     }
+
+    pub const fn default_min_retry_interval() -> Duration { Duration::from_secs(1) }
+
+    pub const fn default_max_retry_interval() -> Duration { Duration::from_secs(5 * 60) }
 
     pub fn job_manager_url(&self, scheme: impl AsRef<str>) -> Result<Url, url::ParseError> {
         let rep = format!(

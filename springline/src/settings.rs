@@ -889,8 +889,8 @@ mod tests {
                     },
                     plan: PlanSettings {
                         performance_repository: PerformanceRepositorySettings {
-                            storage: PerformanceRepositoryType::Memory,
-                            storage_path: None,
+                            storage: PerformanceRepositoryType::File,
+                            storage_path: Some("/var/tmp".to_string()),
                         },
                         ..SETTINGS.plan.clone()
                     },

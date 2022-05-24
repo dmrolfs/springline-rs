@@ -54,6 +54,7 @@ mod protocol {
         UpdateHealth(Health, oneshot::Sender<Result<(), EngineApiError>>),
         Restart(bool, oneshot::Sender<Result<(), EngineApiError>>),
         GetSettings(oneshot::Sender<Arc<Settings>>),
+        GetPerformanceHistory(oneshot::Sender<Arc<crate::phases::plan::PerformanceHistory>>),
     }
 
     #[allow(dead_code)]
@@ -77,6 +78,14 @@ mod protocol {
         pub async fn get_settings(api: &EngineServiceApi) -> Result<Arc<Settings>, EngineApiError> {
             let (tx, rx) = oneshot::channel();
             api.send(Self::GetSettings(tx))?;
+            rx.await.map_err(|err| err.into())
+        }
+
+        pub async fn get_performance_history(
+            api: &EngineServiceApi,
+        ) -> Result<Arc<crate::phases::plan::PerformanceHistory>, EngineApiError> {
+            let (tx, rx) = oneshot::channel();
+            api.send(Self::GetPerformanceHistory(tx))?;
             rx.await.map_err(|err| err.into())
         }
 
@@ -302,6 +311,12 @@ impl<'r> Service<'r> {
 
                 EngineCmd::GetSettings(tx) => {
                     let _ = tx.send(self.settings.clone());
+                },
+
+                EngineCmd::GetPerformanceHistory(tx) => {
+                    tracing::error!("DMR: NOT IMPLEMENTED");
+                    // let history = self.
+                    // let _ = tx.send(self.get_performance_history().await);
                 },
 
                 EngineCmd::StopFlinkSensor { tx } => {

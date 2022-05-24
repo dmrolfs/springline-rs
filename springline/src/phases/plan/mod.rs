@@ -31,6 +31,7 @@ pub use context::{
 };
 pub use forecast::{ForecastInputs, Forecaster, LeastSquaresWorkloadForecaster, SpikeSettings, WorkloadMeasurement};
 pub use model::{ScaleDirection, ScalePlan};
+pub use performance_history::PerformanceHistory;
 pub use performance_repository::make_performance_repository;
 pub use performance_repository::{PerformanceRepositorySettings, PerformanceRepositoryType};
 pub use planning::{FlinkPlanning, FlinkPlanningEvent, FlinkPlanningMonitor};

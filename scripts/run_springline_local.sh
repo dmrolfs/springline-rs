@@ -12,7 +12,7 @@ if [ -z "$HA_CREDENTIALS" ]; then
   exit 1
 fi
 
-MEM_OPT="40m"
+MEM_OPT="50m"
 RM_OPT=""
 LOG_OPT='--env RUST_LOG="info,springline::flink=debug,springline::kubernetes=debug,springline::phases::act=debug,springline::model=debug"'
 

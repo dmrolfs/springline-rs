@@ -96,7 +96,7 @@ impl PerformanceRepository for PerformanceMemoryRepository {
     #[tracing::instrument(level = "trace", skip(self))]
     async fn save(&mut self, job_name: &str, performance_history: &PerformanceHistory) -> Result<(), PlanError> {
         let old = self.0.insert(job_name.to_string(), performance_history.clone());
-        tracing::debug!(?old, "replacing performance history in repository.");
+        tracing::debug!(%job_name, ?old, "replacing performance history in repository.");
         Ok(())
     }
 
