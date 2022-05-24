@@ -51,7 +51,7 @@ impl KubernetesSettings {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-#[cfg_attr(test, derive(PartialEq))]
+#[cfg_attr(test, derive(PartialEq, Eq))]
 pub enum LoadKubeConfig {
     /// Infer the configuration from the environment
     ///

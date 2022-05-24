@@ -18,7 +18,7 @@ pub enum ScaleDirection {
     None,
 }
 
-#[derive(PolarClass, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(PolarClass, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ScalePlan {
     pub correlation_id: CorrelationId,
 

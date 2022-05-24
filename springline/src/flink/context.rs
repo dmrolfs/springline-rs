@@ -315,7 +315,7 @@ mod jars_protocal {
 
     use crate::flink::model::JarSummary;
 
-    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
     pub struct GetJarsResponse {
         #[serde(
             serialize_with = "proctor::serde::serialize_to_str",

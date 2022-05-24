@@ -15,7 +15,7 @@ use crate::metrics::UpdateMetrics;
 use crate::phases::REASON;
 use crate::settings::EligibilitySettings;
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct EligibilityTemplateData {
     pub basis: String,
@@ -41,7 +41,7 @@ impl Default for EligibilityTemplateData {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct EligibilityPolicy {
     pub required_subscription_fields: HashSet<String>,
     pub optional_subscription_fields: HashSet<String>,

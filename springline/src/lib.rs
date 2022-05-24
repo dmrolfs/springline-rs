@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 #![warn(
     clippy::cargo,
+    clippy::suspicious,
     // missing_docs,
     clippy::nursery,
     // clippy::pedantic,

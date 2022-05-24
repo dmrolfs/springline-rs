@@ -24,7 +24,7 @@ use super::MetricCatalog;
 pub type CorrelationId = Id<MetricCatalog>;
 pub type CorrelationGenerator = ProctorIdGenerator<MetricCatalog>;
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct JobSummary {
     pub id: JobId,
     pub status: JobState,
@@ -245,7 +245,7 @@ impl TryFrom<TelemetryValue> for JobId {
 }
 
 #[serde_as]
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct JobDetail {
     pub jid: JobId,
 
@@ -321,7 +321,7 @@ impl From<&str> for VertexId {
 }
 
 #[serde_as]
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VertexDetail {
     pub id: VertexId,
 
