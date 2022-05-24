@@ -1,57 +1,96 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "springline.fullname" . }}
+  name: {{ include "common.fullname" . }}
   labels:
-{{ include "springline.labels" . | indent 4 }}
+{{ include "common.labels" . | indent 4 }}
+    component: flink-autoscaler
 spec:
   replicas: {{ .Values.replicaCount }}
   selector:
     matchLabels:
-      app.kubernetes.io/name: {{ include "springline.name" . }}
-      app.kubernetes.io/instance: {{ .Release.Name }}
+{{ include "common.labels" . | indent 6 }}
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: {{ include "springline.name" . }}
-        app.kubernetes.io/instance: {{ .Release.Name }}
+{{ include "common.labels" . | indent 8 }}
     spec:
-    {{- with .Values.imagePullSecrets }}
+#      affinity:
+
+#        preferredDuringSchedulingIgnoredDuringExecution:
+#          - weight: 100
+#            podAffinityTerm:
+#              labelSelector:
+#                matchExpressions:
+#                  - key: app
+#                    operator: In
+#                    values:
+#                      - {{ include "common.name" . }}
+#              topologyKey: kubernetes.io/hostname
       imagePullSecrets:
-        {{- toYaml . | nindent 8 }}
-    {{- end }}
+      - name: olp-pm-readonly-pull-secret
       serviceAccountName: {{ template "springline.serviceAccountName" . }}
-      securityContext:
-        {{- toYaml .Values.podSecurityContext | nindent 8 }}
-      containers:
-        - name: {{ .Chart.Name }}
-          securityContext:
-            {{- toYaml .Values.securityContext | nindent 12 }}
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
-          imagePullPolicy: {{ .Values.image.pullPolicy }}
-          ports:
-            - name: http
-              containerPort: 80
-              protocol: TCP
-          livenessProbe:
-            httpGet:
-              path: /
-              port: http
-          readinessProbe:
-            httpGet:
-              path: /
-              port: http
-          resources:
-            {{- toYaml .Values.resources | nindent 12 }}
-      {{- with .Values.nodeSelector }}
       nodeSelector:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
-    {{- with .Values.affinity }}
-      affinity:
-        {{- toYaml . | nindent 8 }}
-    {{- end }}
-    {{- with .Values.tolerations }}
+        workload: {{ .Values.deployment.nodeGroup | quote }}
       tolerations:
-        {{- toYaml . | nindent 8 }}
-    {{- end }}
+      - key: workload
+        operator: Equal
+        value: {{ .Values.deployment.nodeGroup | quote }}
+        effect: NoSchedule
+      containers:
+      - name: flink-autoscaler
+        image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        env:
+        - name: RUST_LOG
+          value: "info,springline::flink=debug,springline::kubernetes=debug,springline::phases::act=trace,proctor::phases::sense::clearinghouse=debug,springline::phases::plan::performance_repository=debug"
+        - name: RUST_BACKTRACE
+          value: "1"
+        - name: POLAR_LOG
+          value: "1"
+        ports:
+        - containerPort: 80
+{{- if .Values.deployment.enableProbes }}
+        livenessProbe:
+          httpGet:
+            path: "/health/live"
+            scheme: "HTTP"
+            port: {{ .Values.service.targetPort }}
+          initialDelaySeconds: 60
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: "/health/ready"
+            scheme: "HTTP"
+            port: {{ .Values.service.targetPort }}
+          initialDelaySeconds: 15
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+{{- end }}
+        resources:
+          requests:
+            cpu: 100m
+            memory: 50Mi
+          limits:
+            cpu: 100m
+            memory: 50Mi
+        volumeMounts:
+        - name: {{ include "common.name" . }}-mtr-cfg
+          mountPath: "/opt/springline/config"
+        - name: {{ include "common.name" . }}-aaa-credentials
+          mountPath: "/opt/springline/credentials"
+        - name: {{ include "common.name" . }}-accounting
+          mountPath: "/opt/springline/accounting"
+      volumes:
+      - name: {{ include "common.name" . }}-mtr-cfg
+        configMap:
+          name: {{ include "common.name" . }}-mtr-cfg
+      - name: {{ include "common.name" . }}-aaa-credentials
+        secret:
+          secretName: {{ required "Values.deployment.aaaClientSecretsName is not set" .Values.deployment.aaaClientSecretsName }}
+      - name: {{ include "common.name" . }}-accounting
+        secret:
+          secretName: {{ .Values.deployment.accountSecretsName }}

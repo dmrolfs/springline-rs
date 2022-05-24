@@ -1,9 +1,9 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "springline.fullname" . }}
+  name: {{ include "common.fullname" . }}
   labels:
-{{ include "springline.labels" . | indent 4 }}
+{{ include "common.labels" . | indent 4 }}
 spec:
   type: {{ .Values.service.type }}
   ports:
@@ -12,8 +12,8 @@ spec:
       protocol: TCP
       name: {{ .Values.service.portName }}
   selector:
-    app: {{ include "springline.name" }}
+    app: {{ include "common.name" . }}
     release: {{ .Release.Name }}
-    component: springline
-    app.kubernetes.io/name: {{ include "springline.name" . }}
+    component: flink-autoscaler
+    app.kubernetes.io/name: {{ include "common.name" . }}
     app.kubernetes.io/instance: {{ .Release.Name }}

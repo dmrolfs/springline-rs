@@ -1,0 +1,55 @@
+#apiVersion: v1
+#kind: ConfigMap
+#metadata:
+#  name: {{ include "common.fullname" . }}-mtr-cfg
+#  labels:
+#  {{ include "common.labels" . | indent 4 }}
+#data:
+#  reference.conf: |
+#  {{ .Files.Get "config/reference.conf" | indent 4 }}
+#liveness_probe.sh: |
+#  {{ .Files.Get "config/liveness_probe.sh" | indent 4 }}
+#config.properties: |
+#  pipeline.cluster.type={{ .Values.global.cluster.type }}
+#  pipeline.master.base-url={{ include "pipeline.masterUrl.helper" . }}
+#  pipeline.driverStatus.base-url={{ include "pipeline.sparkDriverStatusUrl.helper" . }}
+#  pipeline.id={{ .Values.global.pipeline.id }}
+#  pipeline.projectHrn={{ .Values.global.pipeline.projectHrn }}
+#  pipeline.versionId={{ .Values.global.pipeline.versionId }}
+#  pipeline.templateId={{ .Values.global.pipeline.templateId }}
+#  pipeline.timeout.clusterReadyMillis={{ int .Values.config.timeoutClusterReadyMillis }}
+#  pipeline.timeout.jobReadyMillis={{ int .Values.config.timeoutJobReadyMillis }}
+#  pipeline.timeout.jobStoppingMillis={{ int .Values.config.timeoutJobStoppingMillis }}
+#  pipeline.timeout.jobFailingMillis={{ int .Values.config.timeoutJobFailingMillis }}
+#  pipeline.timeout.masterMissingMillis={{ int .Values.config.timeoutMasterMissingMillis }}
+#  aaa.timeout.connect={{ .Values.config.aaa.timeout.connect }}
+#  aaa.timeout.read={{ .Values.config.aaa.timeout.read }}
+#  flink1XJobManager.timeout.connect={{ .Values.config.flink1XJobManager.timeout.connect }}
+#  flink1XJobManager.timeout.read={{ .Values.config.flink1XJobManager.timeout.read }}
+#  sparkMaster.timeout.connect={{ .Values.config.sparkMaster.timeout.connect }}
+#  sparkMaster.timeout.read={{ .Values.config.sparkMaster.timeout.read }}
+#  driverMonitor.timeout.connect={{ .Values.config.driverMonitor.timeout.connect }}
+#  driverMonitor.timeout.read={{ .Values.config.driverMonitor.timeout.read }}
+#  pipelineService.timeout.connect={{ .Values.config.pipelineService.timeout.connect }}
+#  pipelineService.timeout.read={{ .Values.config.pipelineService.timeout.read }}
+#  pipeline.jobId={{ .Values.global.pipeline.jobId }}
+#  pipeline.realm={{ .Values.global.pipeline.realm }}
+#  pipeline.customerBillingTag={{ .Values.global.pipeline.customerBillingTag }}
+#  pipeline.billingClientAppId={{ .Values.global.pipeline.billingClientAppId }}
+#  monitor.state.refresh.interval.millis={{ .Values.config.refreshIntervalMillis }}
+#  monitor.state.heartbeat.interval.millis={{ .Values.config.heartbeatIntervalMillis }}
+#  metrics.initialization.timeout.millis={{ .Values.config.timeoutMetricsInitializationMillis }}
+#  pipeline-service.base-url={{ .Values.config.pipelineService.url }}
+#  monitor.authenticator.use.dummy={{ .Values.config.pipelineService.dummyAuthentication }}
+#  monitor.token.cache.minutes={{ .Values.config.pipelineService.tokenCacheMinutes }}
+#  here.account-url={{ .Values.config.pipelineService.accountUrl }}
+#  here.auth-realm={{ .Values.config.pipelineService.realm }}
+#  cluster.supervisor.memory.mb={{ .Values.global.cluster.config.supervisor.memoryMi }}
+#  cluster.supervisor.cpu={{ .Values.global.cluster.config.supervisor.cpu }}
+#  cluster.supervisor.disk.gb={{ .Values.global.cluster.config.supervisor.diskGi }}
+#  cluster.worker.memory.mb={{ .Values.global.cluster.config.worker.memoryMi }}
+#  cluster.worker.cpu={{ .Values.global.cluster.config.worker.cpu }}
+#  cluster.worker.disk.gb={{ .Values.global.cluster.config.worker.diskGi }}
+#  cluster.worker.count={{ .Values.global.cluster.config.numberOfWorkers }}
+#  cluster.cpuOverheadCores={{ .Values.global.cluster.cpuOverheadCores }}
+#  cluster.memoryOverheadMi={{ .Values.global.cluster.memoryOverheadMi }}

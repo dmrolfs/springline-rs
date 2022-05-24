@@ -1,0 +1,323 @@
+NAME: ss
+LAST DEPLOYED: Tue May 24 11:28:15 2022
+NAMESPACE: default
+STATUS: pending-install
+REVISION: 1
+USER-SUPPLIED VALUES:
+{}
+
+COMPUTED VALUES:
+deployment:
+  aaaClientSecretsName: foo
+  enableProbes: true
+  env:
+  - name: RUST_LOG
+    value: info,springline::flink=debug,springline::kubernetes=debug,springline::phases::act=trace,proctor::phases::sense::clearinghouse=debug,springline::phases::plan::performance_repository=debug
+  - name: RUST_BACKTRACE
+    value: "1"
+  - name: POLAR_LOG
+    value: "1"
+  nodeGroup: ""
+fullnameOverride: ""
+global:
+  pipeline:
+    billingClientAppId: patappid
+    customerBillingTag: patbilling
+    id: 00000000-0000-0000-0000-100801000020
+    jobId: 00000000-0000-0000-0000-400801000020
+    projectHrn: hrn:here-dev:authorization::olp-here:project/narya-test-0000
+    realm: plmpatrealm
+    templateId: 00000000-0000-0000-3000-000801000020
+    versionId: 00000000-0000-0000-2000-000801000020
+image:
+  pullPolicy: IfNotPresent
+  repository: olp-pm/flink-autoscaler
+  tag: null
+imagePullSecrets:
+- olp-pm-readonly-pull-secret
+ingress:
+  annotations: {}
+  enabled: false
+  hosts:
+  - host: chart-example.local
+    paths: []
+  tls: []
+nameOverride: ""
+nodeSelector: {}
+podSecurityContext: {}
+probes:
+  enabled: true
+  httpGet:
+    livenessInterval: 120000
+    livenessPath: /health
+    port: 80
+    readinessPath: /health
+    scheme: HTTP
+replicaCount: 1
+resources:
+  limits:
+    cpu: 100m
+    memory: 50Mi
+  requests:
+    cpu: 100m
+    memory: 50Mi
+securityContext: {}
+service:
+  port: 80
+  portName: http
+  targetPort: 8000
+  type: ClusterIP
+serviceAccount:
+  create: true
+  name: ""
+
+HOOKS:
+---
+# Source: springline/templates/tests/test-connection.yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: "ss-springline-test-connection"
+  labels:
+    app.kubernetes.io/name: springline
+    helm.sh/chart: springline-0.14.0
+    app.kubernetes.io/instance: ss
+    app.kubernetes.io/version: "0.14.0"
+    app.kubernetes.io/managed-by: Helm
+    pipelineId: 00000000-0000-0000-0000-100801000020
+    jobId: 00000000-0000-0000-0000-400801000020
+    pipelineVersionId: 00000000-0000-0000-2000-000801000020
+  annotations:
+    "helm.sh/hook": test-success
+spec:
+  containers:
+    - name: wget
+      image: busybox
+      command: ['wget']
+      args:  ['ss-springline:80']
+  restartPolicy: Never
+MANIFEST:
+---
+# Source: springline/templates/serviceaccount.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ss-springline
+  labels:
+    app.kubernetes.io/name: springline
+    helm.sh/chart: springline-0.14.0
+    app.kubernetes.io/instance: ss
+    app.kubernetes.io/version: "0.14.0"
+    app.kubernetes.io/managed-by: Helm
+    pipelineId: 00000000-0000-0000-0000-100801000020
+    jobId: 00000000-0000-0000-0000-400801000020
+    pipelineVersionId: 00000000-0000-0000-2000-000801000020
+---
+# Source: springline/templates/role.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ss-springline
+  labels:
+    app.kubernetes.io/name: springline
+    helm.sh/chart: springline-0.14.0
+    app.kubernetes.io/instance: ss
+    app.kubernetes.io/version: "0.14.0"
+    app.kubernetes.io/managed-by: Helm
+    pipelineId: 00000000-0000-0000-0000-100801000020
+    jobId: 00000000-0000-0000-0000-400801000020
+    pipelineVersionId: 00000000-0000-0000-2000-000801000020
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - ""
+    resources:
+      - statefulsets
+      - deployments
+    verbs:
+      - get
+      - list
+      - watch
+      - update
+      - patch
+---
+# Source: springline/templates/role-binding.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ss-springline
+  labels:
+    app.kubernetes.io/name: springline
+    helm.sh/chart: springline-0.14.0
+    app.kubernetes.io/instance: ss
+    app.kubernetes.io/version: "0.14.0"
+    app.kubernetes.io/managed-by: Helm
+    pipelineId: 00000000-0000-0000-0000-100801000020
+    jobId: 00000000-0000-0000-0000-400801000020
+    pipelineVersionId: 00000000-0000-0000-2000-000801000020
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: ss-springline
+subjects:
+- kind: ServiceAccount
+  name: ss-springline
+  namespace: "default"
+---
+# Source: springline/templates/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: ss-springline
+  labels:
+    app.kubernetes.io/name: springline
+    helm.sh/chart: springline-0.14.0
+    app.kubernetes.io/instance: ss
+    app.kubernetes.io/version: "0.14.0"
+    app.kubernetes.io/managed-by: Helm
+    pipelineId: 00000000-0000-0000-0000-100801000020
+    jobId: 00000000-0000-0000-0000-400801000020
+    pipelineVersionId: 00000000-0000-0000-2000-000801000020
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: 8000
+      protocol: TCP
+      name: http
+  selector:
+    app: springline
+    release: ss
+    component: flink-autoscaler
+    app.kubernetes.io/name: springline
+    app.kubernetes.io/instance: ss
+---
+# Source: springline/templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ss-springline
+  labels:
+    app.kubernetes.io/name: springline
+    helm.sh/chart: springline-0.14.0
+    app.kubernetes.io/instance: ss
+    app.kubernetes.io/version: "0.14.0"
+    app.kubernetes.io/managed-by: Helm
+    pipelineId: 00000000-0000-0000-0000-100801000020
+    jobId: 00000000-0000-0000-0000-400801000020
+    pipelineVersionId: 00000000-0000-0000-2000-000801000020
+    component: flink-autoscaler
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: springline
+      helm.sh/chart: springline-0.14.0
+      app.kubernetes.io/instance: ss
+      app.kubernetes.io/version: "0.14.0"
+      app.kubernetes.io/managed-by: Helm
+      pipelineId: 00000000-0000-0000-0000-100801000020
+      jobId: 00000000-0000-0000-0000-400801000020
+      pipelineVersionId: 00000000-0000-0000-2000-000801000020
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: springline
+        helm.sh/chart: springline-0.14.0
+        app.kubernetes.io/instance: ss
+        app.kubernetes.io/version: "0.14.0"
+        app.kubernetes.io/managed-by: Helm
+        pipelineId: 00000000-0000-0000-0000-100801000020
+        jobId: 00000000-0000-0000-0000-400801000020
+        pipelineVersionId: 00000000-0000-0000-2000-000801000020
+    spec:
+#      affinity:
+
+#        preferredDuringSchedulingIgnoredDuringExecution:
+#          - weight: 100
+#            podAffinityTerm:
+#              labelSelector:
+#                matchExpressions:
+#                  - key: app
+#                    operator: In
+#                    values:
+#                      - springline
+#              topologyKey: kubernetes.io/hostname
+      imagePullSecrets:
+      - name: olp-pm-readonly-pull-secret
+      serviceAccountName: ss-springline
+      nodeSelector:
+        workload: ""
+      tolerations:
+      - key: workload
+        operator: Equal
+        value: ""
+        effect: NoSchedule
+      containers:
+      - name: flink-autoscaler
+        image: "olp-pm/flink-autoscaler:"
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: RUST_LOG
+          value: "info,springline::flink=debug,springline::kubernetes=debug,springline::phases::act=trace,proctor::phases::sense::clearinghouse=debug,springline::phases::plan::performance_repository=debug"
+        - name: RUST_BACKTRACE
+          value: "1"
+        - name: POLAR_LOG
+          value: "1"
+        ports:
+        - containerPort: 80
+        livenessProbe:
+          httpGet:
+            path: "/health/live"
+            scheme: "HTTP"
+            port: 8000
+          initialDelaySeconds: 60
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: "/health/ready"
+            scheme: "HTTP"
+            port: 8000
+          initialDelaySeconds: 15
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        resources:
+          requests:
+            cpu: 100m
+            memory: 50Mi
+          limits:
+            cpu: 100m
+            memory: 50Mi
+        volumeMounts:
+        - name: springline-mtr-cfg
+          mountPath: "/opt/springline/config"
+        - name: springline-aaa-credentials
+          mountPath: "/opt/springline/credentials"
+        - name: springline-accounting
+          mountPath: "/opt/springline/accounting"
+      volumes:
+      - name: springline-mtr-cfg
+        configMap:
+          name: springline-mtr-cfg
+      - name: springline-aaa-credentials
+        secret:
+          secretName: foo
+      - name: springline-accounting
+        secret:
+          secretName:
+
+NOTES:
+1. Get the application URL by running these commands:
+  export POD_NAME=$(kubectl get pods --namespace default -l "app.kubernetes.io/name=springline,app.kubernetes.io/instance=ss" -o jsonpath="{.items[0].metadata.name}")
+  echo "Visit http://127.0.0.1:8080 to use your application"
+  kubectl port-forward $POD_NAME 8080:80

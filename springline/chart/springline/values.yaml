@@ -5,8 +5,8 @@
 replicaCount: 1
 
 image:
-  repository: springline
-  tag: ''
+  repository: "olp-pm/flink-autoscaler"
+  tag:
   pullPolicy: IfNotPresent
 
 service:
@@ -18,6 +18,18 @@ service:
 imagePullSecrets: [olp-pm-readonly-pull-secret]
 nameOverride: ""
 fullnameOverride: ""
+
+deployment:
+  env:
+  - name: RUST_LOG
+    value: "info,springline::flink=debug,springline::kubernetes=debug,springline::phases::act=trace,proctor::phases::sense::clearinghouse=debug,springline::phases::plan::performance_repository=debug"
+  - name: RUST_BACKTRACE
+    value: "1"
+  - name: POLAR_LOG
+    value: "1"
+  aaaClientSecretsName: "foo"
+  enableProbes: true
+  nodeGroup: ""
 
 serviceAccount:
   # Specifies whether a service account should be created
@@ -51,23 +63,34 @@ ingress:
   #    hosts:
   #      - chart-example.local
 
-resources: {}
-  # We usually recommend not to specify default resources and to leave this as a conscious
-  # choice for the user. This also increases chances charts run on environments with little
-  # resources, such as Minikube. If you do want to specify resources, uncomment the following
-  # lines, adjust them as necessary, and remove the curly braces after 'resources:'.
-  # limits:
-  #   cpu: 100m
-  #   memory: 128Mi
-  # requests:
-  #   cpu: 100m
-  #   memory: 128Mi
+resources:
+  requests:
+    cpu: 100m
+    memory: 50Mi
+  limits:
+    cpu: 100m
+    memory: 50Mi
 
 nodeSelector: {}
 
-tolerations: []
+#tolerations:
+#  - key: workload
+#    operator: Equal
+#    value: ""
+#    effect: NoSchedule
 
-affinity: {}
+#affinity:
+#  podAntiAffinity:
+#    preferredDuringSchedulingIgnoredDuringExecution:
+#      - weight: 100
+#        podAffinityTerm:
+#          labelSelector:
+#            matchExpressions:
+#              - key: app
+#                operator: In
+#                values:
+#                  - {{ include "common.name" . }}
+#          topologyKey: kubernetes.io/hostname
 
 probes:
   enabled: true
@@ -77,3 +100,22 @@ probes:
     readinessPath: /health
     livenessPath: /health
     livenessInterval: 120000
+
+global:
+  pipeline:
+#    id:
+    id: "00000000-0000-0000-0000-100801000020"
+#    versionId:
+    versionId: "00000000-0000-0000-2000-000801000020"
+#    tenplateId:
+    templateId: "00000000-0000-0000-3000-000801000020"
+#    jobId:
+    jobId: "00000000-0000-0000-0000-400801000020"
+#    realm:
+    realm: "plmpatrealm"
+#    customerBillingTag: "default"
+    customerBillingTag: "patbilling"
+#    billingClientAppId:
+    billingClientAppId: "patappid"
+#    projectHrn:
+    projectHrn: "hrn:here-dev:authorization::olp-here:project/narya-test-0000"
