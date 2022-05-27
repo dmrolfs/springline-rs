@@ -85,12 +85,15 @@ async fn test_flink_sensor_merge_combine_stage() -> anyhow::Result<()> {
     let job_manager_host = assert_some!(mock_uri.host());
     let job_manager_port = assert_some!(mock_uri.port());
 
-    let context = FlinkContext::from_settings(&FlinkSettings {
-        job_manager_uri_scheme: "http".to_string(),
-        job_manager_host: job_manager_host.to_string(), //"localhost".to_string(),
-        job_manager_port,                               //: 8081,
-        ..FlinkSettings::default()
-    })?;
+    let context = FlinkContext::from_settings(
+        "test_flink",
+        &FlinkSettings {
+            job_manager_uri_scheme: "http".to_string(),
+            job_manager_host: job_manager_host.to_string(), //"localhost".to_string(),
+            job_manager_port,                               //: 8081,
+            ..FlinkSettings::default()
+        },
+    )?;
 
     let settings = FlinkSensorSettings {
         metrics_initial_delay: Duration::ZERO,

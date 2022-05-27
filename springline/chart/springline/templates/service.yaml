@@ -4,16 +4,29 @@ metadata:
   name: {{ include "common.fullname" . }}
   labels:
 {{ include "common.labels" . | indent 4 }}
+  annotations:
+{{ include "common.annotations" . | indent 4 }}
+  {{- if eq .Values.service.type "LoadBalancer" }}
+    service.beta.kubernetes.io/aws-load-balancer-type: "0.0.0.0/0"
+  {{- if .Values.service.dnsName }}
+    external-dns.alpha.kubernetes.io/hostname: {{ printf "%s-%s" (include "common.fullname" .) .Values.service.dnsName | quote }}
+  {{- end }}
+  {{- end }}
+
 spec:
   type: {{ .Values.service.type }}
   ports:
-    - port: {{ .Values.service.port }}
+    - name: {{ .Values.service.portName }}
+      port: {{ .Values.service.port }}
       targetPort: {{ .Values.service.targetPort }}
       protocol: TCP
-      name: {{ .Values.service.portName }}
+    - name: prometheus
+      port: 9898
+      targetPort: 9898
+      protocol: TCP
   selector:
     app: {{ include "common.name" . }}
     release: {{ .Release.Name }}
-    component: flink-autoscaler
+    component: {{ .Values.component }}
     app.kubernetes.io/name: {{ include "common.name" . }}
     app.kubernetes.io/instance: {{ .Release.Name }}

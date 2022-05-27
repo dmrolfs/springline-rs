@@ -1,5 +1,7 @@
 set dotenv-load
 
+ts := `date '+%s'`
+
 alias c := full-check
 alias u := update
 alias db := build-docker
@@ -25,9 +27,9 @@ build-docker:
 
 # expects QUAY_TAG to be set in `.env`
 push-docker:
-  echo "Labeling then pushing springline:latest docker image with tag: $QUAY_TAG"
-  docker tag springline:latest $QUAY_TAG
-  docker push $QUAY_TAG
+  echo "Labeling then pushing springline:latest docker image with tag: ${QUAY_TAG}:{{ts}}"
+  docker tag springline:latest ${QUAY_TAG}:{{ts}}
+  docker push ${QUAY_TAG}:{{ts}}
 
 # expects KUBECONFIG and HA_CREDENTIALS to be set in `.env`
 run-docker-local +ARGS:

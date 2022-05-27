@@ -16,7 +16,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::metrics::UpdateMetrics;
 
-
 pub static EMPTY_METRIC_CATALOG: Lazy<MetricCatalog> = Lazy::new(MetricCatalog::empty);
 
 // #[serde_as]

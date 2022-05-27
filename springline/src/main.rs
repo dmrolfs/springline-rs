@@ -34,11 +34,14 @@ fn main() -> Result<()> {
                 let settings = Settings::load(&options)?;
                 tracing::info!(?options, ?settings, "loaded settings via CLI options");
 
-                let sensor_flink = FlinkContext::from_settings( &FlinkSettings { max_retries: 0, ..settings.flink.clone() } )?;
-                let action_flink = FlinkContext::from_settings(&settings.flink)?;
+                let sensor_flink = FlinkContext::from_settings("sensor", &FlinkSettings { max_retries: 0, ..settings.flink.clone() } )?;
+                sensor_flink.check().await?;
+                let action_flink = FlinkContext::from_settings("action", &settings.flink)?;
+                action_flink.check().await?;
 
                 let kube = KubernetesContext::from_settings(&settings).await?;
-                let action_kube = kube.clone();
+                kube.check().await?;
+                let action_kube = kube; //todo will clone once kube incorporated in sensing
 
                 let engine_builder = Autoscaler::builder("springline")
                     .add_sensor_factory(make_settings_sensor)
@@ -51,18 +54,24 @@ fn main() -> Result<()> {
                         (Box::new(actuator), rx)
                     });
 
+
                 tracing::info!("Starting autoscale engine...");
                 let engine = engine_builder.clone().finish(sensor_flink, &settings).await?.run();
                 let tx_service_api = engine.tx_service_api();
                 let engine_handle = engine.block_for_completion().fuse();
                 tracing::info!("autoscale engine running...");
 
+                tracing::info!("Starting autoscale metrics exporter...");
+                let (exporter_handle, tx_shutdown_exporter) = engine::run_metrics_exporter(tx_service_api.clone(), &settings)?;
+                let exporter_handle = exporter_handle.fuse();
+                tracing::info!("autoscale metrics exporter listening on port {}...", settings.prometheus.port);
+
                 tracing::info!("Starting autoscale management server API...");
                 let (api_handle, tx_shutdown_http) = engine::run_http_server(tx_service_api, &settings.http)?;
                 let api_handle = api_handle.fuse();
                 tracing::info!("autoscale management server API running...");
 
-                pin_mut!(engine_handle, api_handle);
+                pin_mut!(engine_handle, exporter_handle, api_handle,);
 
                 futures::select! {
                     engine_result = engine_handle => {
@@ -95,6 +104,21 @@ fn main() -> Result<()> {
                             },
                         }
                     },
+
+                    exporter_result = exporter_handle => {
+                        match exporter_result {
+                            Ok(Ok(())) => {
+                                tracing::info!("Autoscale metrics exporter stopped");
+                                break;
+                            },
+                            Ok(Err(err)) => {
+                                tracing::error!(%restarts_remaining, "Autoscale metrics exporter completed with error: {}", err);
+                            },
+                            Err(err) => {
+                                tracing::error!(%restarts_remaining, "Autoscale metrics exporter failed with error: {}", err);
+                            },
+                        }
+                    },
                 }
 
                 tracing::info!("shutting down Autoscale engine API prior to restart...");
@@ -106,6 +130,18 @@ fn main() -> Result<()> {
                         );
                     } else {
                         tracing::error!(%restarts_remaining, error=?err, "failed to send shutdown signal to Autoscale engine API - no restarts left.");
+                    }
+                }
+
+                tracing::info!("shutting down metrics exporter prior to restart...");
+                if let Err(err) = engine::shutdown_exporter(tx_shutdown_exporter) {
+                    if 0 < restarts_remaining {
+                        tracing::error!(
+                            %restarts_remaining, error=?err,
+                            "failed to send shutdown signal to Autoscale metrics exporter -- attempting restart but exporter may not be accessible."
+                        );
+                    } else {
+                        tracing::error!(%restarts_remaining, error=?err, "failed to send shutdown signal to Autoscale metrics exporter - no restarts left.");
                     }
                 }
 

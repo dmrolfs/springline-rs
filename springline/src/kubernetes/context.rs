@@ -88,6 +88,10 @@ impl KubernetesContext {
         })
     }
 
+    pub async fn check(&self) -> Result<(), KubernetesError> {
+        self.inner.check().await
+    }
+
     pub fn deploy_resource(&self) -> &KubernetesDeployResource {
         &self.inner.taskmanager.spec.deploy_resource
     }
@@ -150,6 +154,20 @@ impl KubernetesContextRef {
         let pods = Api::default_namespaced(kube.clone());
 
         Ok(Self { kube, taskmanager, pods })
+    }
+
+    pub async fn check(&self) -> Result<(), KubernetesError> {
+        match self.list_pods(&self.taskmanager.params).await {
+            Ok(tms) => {
+                tracing::info!("successful kubernetes connection - found {} taskmanagers", tms.len());
+                Ok(())
+            },
+
+            Err(err) => {
+                tracing::error!("failed kubernetes connection: {}", err);
+                Err(err)
+            },
+        }
     }
 
     pub async fn list_pods(&self, params: &ListParams) -> Result<Vec<Pod>, KubernetesError> {

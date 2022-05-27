@@ -1,0 +1,20 @@
+{{- if eq .Values.service.type "LoadBalancer" }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ template "common.fullname" . }}-network-policy
+spec:
+  podSelector:
+    matchLabels:
+      app: {{ include "common.name" . }}
+      release: {{ include "common.fullname" . }}
+      component: {{ .Values.component }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - ports:
+        - protocol: TCP
+          port: {{ .Values.service.targetPort }}
+        - protocol: TCP
+          port: 9898
+  {{- end }}

@@ -10,5 +10,5 @@ roleRef:
   name: {{ include "common.fullname" . }}
 subjects:
 - kind: ServiceAccount
-  name: {{ include "common.fullname" . }}
+  name: {{ template "springline.serviceAccountName" . }}
   namespace: {{ .Release.Namespace | quote }}

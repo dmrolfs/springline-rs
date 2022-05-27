@@ -14,7 +14,7 @@ pub struct GovernanceSettings {
     pub rules: GovernanceRuleSettings,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GovernanceRuleSettings {
     pub min_cluster_size: u32,
     pub max_cluster_size: u32,

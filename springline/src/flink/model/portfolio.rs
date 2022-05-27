@@ -13,7 +13,6 @@ use serde::{Deserialize, Serialize};
 
 use super::MetricCatalog;
 
-
 pub trait Portfolio: AppData + Monoid {
     type Item: AppData;
     fn time_window(&self) -> Duration;

@@ -1,4 +1,5 @@
 mod http;
+mod metrics_exporter;
 mod monitor;
 mod service;
 
@@ -21,6 +22,9 @@ use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
 
 pub use self::http::{run_http_server, shutdown_http_server, HttpJoinHandle, TxHttpGracefulShutdown};
+pub use self::metrics_exporter::{
+    run_metrics_exporter, shutdown_exporter, ExporterJoinHandle, TxExporterGracefulShutdown,
+};
 pub use self::monitor::{
     DECISION_PLAN_CURRENT_NR_TASK_MANAGERS, DECISION_SHOULD_PLAN_FOR_SCALING, ELIGIBILITY_IS_ELIGIBLE_FOR_SCALING,
     GOVERNANCE_PLAN_ACCEPTED, PLAN_OBSERVATION_COUNT, PLAN_TARGET_NR_TASK_MANAGERS,

@@ -11,10 +11,11 @@ metadata:
   name: {{ $fullName }}
   labels:
 {{ include "common.labels" . | indent 4 }}
-  {{- with .Values.ingress.annotations }}
+{{- with .Values.ingress.annotations }}
   annotations:
-    {{- toYaml . | nindent 4 }}
-  {{- end }}
+{{ include "common.annotations" . | indent 4 }}
+{{- toYaml . | nindent 4 }}
+{{- end }}
 spec:
 {{- if .Values.ingress.tls }}
   tls:

@@ -1,0 +1,21 @@
+---
+engine:
+  machine_id: 1
+  node_id: 1
+flink:
+  job_manager_host: dr-springline-jm-0.{{ .Release.Namespace }}.svc.cluster.local
+kubernetes:
+  client: cluster_env
+http:
+  host: 0.0.0.0
+decision:
+  template_data:
+    max_healthy_cpu_load: 0.0016
+    min_healthy_cpu_load: 0.0012
+plan:
+  performance_repository:
+    storage: memory
+action:
+  taskmanager:
+    label_selector: "component=taskmanager,release={{ include "common.name" . }}"
+    deploy_resource: statefulset/{{ include "common.name" . }}-tm

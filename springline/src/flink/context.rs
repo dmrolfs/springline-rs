@@ -53,10 +53,14 @@ impl FlinkContext {
         })
     }
 
-    pub fn from_settings(settings: &FlinkSettings) -> Result<Self, FlinkError> {
+    pub fn from_settings(label: impl Into<String>, settings: &FlinkSettings) -> Result<Self, FlinkError> {
         let client = make_http_client(settings)?;
         let base_url = settings.base_url()?;
-        Self::new(settings.label.as_str(), client, base_url)
+        Self::new(label, client, base_url)
+    }
+
+    pub async fn check(&self) -> Result<(), FlinkError> {
+        self.inner.check().await
     }
 
     pub fn label(&self) -> &str {
@@ -153,6 +157,24 @@ impl fmt::Debug for FlinkContextRef {
 }
 
 impl FlinkContextRef {
+    pub async fn check(&self) -> Result<(), FlinkError> {
+        let corr = CorrelationId::direct(self.cluster_label.as_str(), 123, "flink-check");
+        match self.query_active_jobs(&corr).await {
+            Ok(jobs) => {
+                tracing::info!(
+                    "successful flink {} connection - found {} active jobs.",
+                    self.cluster_label,
+                    jobs.len()
+                );
+                Ok(())
+            },
+            Err(err) => {
+                tracing::error!("failed flink {} connection: {}", self.cluster_label, err);
+                Err(err)
+            },
+        }
+    }
+
     pub async fn query_uploaded_jars(&self, correlation: &CorrelationId) -> Result<Vec<JarSummary>, FlinkError> {
         let _timer = flink::start_flink_uploaded_jars_timer(self.cluster_label.as_str());
 

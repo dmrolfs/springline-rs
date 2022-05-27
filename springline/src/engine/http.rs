@@ -15,7 +15,7 @@ use tokio::task::JoinHandle;
 use tower::ServiceBuilder;
 use tower_http::trace::TraceLayer;
 
-use crate::engine::service::{EngineApiError, EngineCmd, EngineServiceApi, HealthReport, MetricsSpan};
+use crate::engine::service::{EngineApiError, EngineCmd, EngineServiceApi, HealthReport};
 use crate::phases::plan::PerformanceHistory;
 use crate::settings::Settings;
 
@@ -45,15 +45,12 @@ pub fn run_http_server<'s>(
         .route("/health", routing::get(health))
         .route("/health/ready", routing::get(readiness))
         .route("/health/live", routing::get(liveness))
-        .route("/metrics", routing::get(get_metrics))
         .route("/clearinghouse", routing::get(get_clearinghouse_snapshot))
         .route("/settings", routing::get(get_settings))
         .route("/performance_history", routing::get(get_performance_history))
         .route("/engine/restart", routing::post(restart))
         .route("/engine/error", routing::post(induce_failure))
         .layer(middleware_stack);
-
-    // debug_router!(app);
 
     let host = settings.host.clone();
     let port = settings.port;
@@ -62,17 +59,12 @@ pub fn run_http_server<'s>(
     let handle: JoinHandle<Result<(), EngineApiError>> = tokio::spawn(async move {
         let address = format!("{host}:{port}");
         let listener = tokio::net::TcpListener::bind(&address).await?;
-        tracing::info!(
-            "{:?} autoscale engine API listening on {address}: {listener:?}",
-            std::env::current_exe(),
-        );
+        tracing::info!("{:?} autoscale engine API listening on {address}: {listener:?}", std::env::current_exe());
 
         let std_listener = listener.into_std()?;
         let builder = axum::Server::from_tcp(std_listener)?;
         let server = builder.serve(app.into_make_service());
-        let graceful = server.with_graceful_shutdown(async {
-            rx_shutdown.await.ok();
-        });
+        let graceful = server.with_graceful_shutdown(async { rx_shutdown.await.ok(); });
         graceful.await?;
         tracing::info!("{:?} autoscale engine API shutting down", std::env::current_exe());
         Ok(())
@@ -137,19 +129,6 @@ async fn liveness(Extension(engine): Extension<Arc<State>>) -> impl IntoResponse
         },
         _ => StatusCode::OK,
     }
-}
-
-// #[debug_handler]
-#[tracing::instrument(level = "trace", skip(engine))]
-async fn get_metrics(
-    span: Option<Path<MetricsSpan>>, Extension(engine): Extension<Arc<State>>,
-) -> Result<String, EngineApiError> {
-    let span = match span {
-        Some(Path(s)) => s,
-        None => MetricsSpan::default(),
-    };
-
-    EngineCmd::gather_metrics(&engine.tx_api, span).await.map(|mr| mr.0)
 }
 
 #[tracing::instrument(level = "trace", skip(engine))]

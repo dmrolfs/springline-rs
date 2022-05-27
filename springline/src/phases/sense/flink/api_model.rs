@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use super::{Aggregation, MetricOrder};
 
-#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct FlinkMetricResponse(pub Vec<FlinkMetric>);
 
 impl IntoIterator for FlinkMetricResponse {
@@ -19,7 +19,7 @@ impl IntoIterator for FlinkMetricResponse {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct FlinkMetric {
     pub id: String,
     #[serde(flatten)]

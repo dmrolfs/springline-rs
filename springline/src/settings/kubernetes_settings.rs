@@ -51,7 +51,7 @@ impl KubernetesSettings {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-#[cfg_attr(test, derive(PartialEq, Eq))]
+#[cfg_attr(test, derive(PartialEq))]
 pub enum LoadKubeConfig {
     /// Infer the configuration from the environment
     ///
@@ -125,7 +125,7 @@ impl From<Kubeconfig> for kube::config::Kubeconfig {
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
-#[cfg_attr(test, derive(PartialEq))]
+#[cfg_attr(test, derive(PartialEq, Eq))]
 pub struct KubeConfigOptions {
     /// the named context to load.
     #[serde(default, skip_serializing_if = "Option::is_none")]

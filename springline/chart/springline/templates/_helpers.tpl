@@ -48,6 +48,17 @@ pipelineVersionId: {{ .Values.global.pipeline.versionId }}
 {{- end -}}
 
 {{/*
+Common annotations
+*/}}
+{{- define "common.annotations" -}}
+{{- if .Values.global.pipeline.annotations -}}
+{{- range $key, $value := .Values.global.annotations }}
+{{ $key }}: {{ $value }}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
 Create the name of the service account to use
 */}}
 {{- define "springline.serviceAccountName" -}}

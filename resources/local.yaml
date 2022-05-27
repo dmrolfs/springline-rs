@@ -7,7 +7,6 @@ http:
   host: localhost
 
 flink:
-  label: local_flink
 #  job_manager_host: localhost
   max_retries: 0
   pool_idle_timeout_secs: 60

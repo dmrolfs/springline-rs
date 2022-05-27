@@ -31,7 +31,6 @@ use once_cell::sync::Lazy;
 use proctor::error::MetricLabel;
 use prometheus::{HistogramOpts, HistogramTimer, HistogramVec, IntCounterVec, Opts};
 
-
 #[allow(clippy::cognitive_complexity)]
 pub(crate) fn log_response(label: &str, response: &reqwest::Response) {
     const PREAMBLE: &str = "flink response received";

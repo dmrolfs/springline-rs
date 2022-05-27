@@ -42,7 +42,6 @@ global:
   pipeline:
     # Override in pipeline template chart
     id: "00000000-0000-0000-0000-100801000020"
-    projectHrn: "hrn:here-dev:authorization::olp-here:project/narya-test-0000"
     versionId: "00000000-0000-0000-2000-000801000020"
     templateId: "00000000-0000-0000-3000-000801000020"
     jobId: "00000000-0000-0000-0000-400801000020"
@@ -67,5 +66,4 @@ global:
         cpu: 2
         diskGi: 20
       numberOfWorkers: 4
-  dpClusterId: "int-1-aws-eu-west-1"
   pipelineTerminationGracePeriodSeconds: 10

@@ -2,22 +2,30 @@
 # This is a YAML-formatted file.
 # Declare variables to be passed into your templates.
 
+nameOverride: ""
+fullnameOverride: ""
+
+component: flink-autoscaler
+
 replicaCount: 1
 
 image:
-  repository: "olp-pm/flink-autoscaler"
+  repository: hcr.data.here.com
+  path: olp-pm/flink-autoscaler
   tag:
   pullPolicy: IfNotPresent
 
+imagePullSecrets:
+  - name: olp-pm-readonly-pull-secret
+
 service:
+  # "ClusterIP" or "LoadBalancer"
   type: LoadBalancer
+  # use this if you wish to register the ELB with a friendly name - only effective when type is LoadBalancer
+  dnsName: autoscaler-api-dev.plm.platform.in.here.com
   port: 80
   targetPort: 8000
-  portName: http
-
-imagePullSecrets: [olp-pm-readonly-pull-secret]
-nameOverride: ""
-fullnameOverride: ""
+  portName: api
 
 deployment:
   env:
@@ -27,9 +35,10 @@ deployment:
     value: "1"
   - name: POLAR_LOG
     value: "1"
-  aaaClientSecretsName: "foo"
+  aaaClientSecretsName: "pipeline-monitor-aaa-client-credentials"
+  accountSecretsName: "pipeline-monitor-accounting-properties"
   enableProbes: true
-  nodeGroup: ""
+  nodeGroup: "nonresilient"
 
 serviceAccount:
   # Specifies whether a service account should be created
@@ -102,20 +111,19 @@ probes:
     livenessInterval: 120000
 
 global:
+  annotations: {}
   pipeline:
 #    id:
-    id: "00000000-0000-0000-0000-100801000020"
+    id: "2f545f95-7114-4cd1-b120-96b7df840a66"
 #    versionId:
-    versionId: "00000000-0000-0000-2000-000801000020"
+    versionId: "ad1b5f79-959a-442b-88c5-bd1fa91848fb"
 #    tenplateId:
     templateId: "00000000-0000-0000-3000-000801000020"
 #    jobId:
-    jobId: "00000000-0000-0000-0000-400801000020"
+    jobId: "600361c4-9031-419b-9cc3-ff45095be411"
 #    realm:
-    realm: "plmpatrealm"
+    realm: "dev"
 #    customerBillingTag: "default"
-    customerBillingTag: "patbilling"
+    customerBillingTag: "dev"
 #    billingClientAppId:
     billingClientAppId: "patappid"
-#    projectHrn:
-    projectHrn: "hrn:here-dev:authorization::olp-here:project/narya-test-0000"

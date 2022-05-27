@@ -32,6 +32,9 @@ pub type DecisionSettings = PolicySettings<DecisionTemplateData>;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(test, derive(PartialEq))]
 pub struct Settings {
+    #[serde(default)]
+    pub prometheus: PrometheusSettings,
+
     pub http: HttpServerSettings,
 
     #[serde(default)]
@@ -65,6 +68,18 @@ pub struct Settings {
 
 impl SettingsLoader for Settings {
     type Options = CliOptions;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PrometheusSettings {
+    /// The port on which the metrics server should listen. Default is 9898..
+    pub port: u16,
+}
+
+impl Default for PrometheusSettings {
+    fn default() -> Self {
+        Self { port: 9898 }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -271,8 +286,8 @@ mod tests {
 
         let expected = Settings {
             http: HttpServerSettings { host: "0.0.0.0".to_string(), port: 8000 },
+            prometheus: PrometheusSettings::default(),
             flink: FlinkSettings {
-                label: "ron_flink".to_string(),
                 job_manager_uri_scheme: "http".to_string(),
                 job_manager_host: "dr-flink-jm-0".to_string(),
                 job_manager_port: 8081,
@@ -280,6 +295,7 @@ mod tests {
                 max_retries: 3,
                 pool_idle_timeout: None,
                 pool_max_idle_per_host: None,
+                ..FlinkSettings::default()
             },
             kubernetes: KubernetesSettings::default(),
             engine: Default::default(),
@@ -443,8 +459,8 @@ mod tests {
 
     static SETTINGS: Lazy<Settings> = Lazy::new(|| Settings {
         http: HttpServerSettings { host: "0.0.0.0".to_string(), port: 8000 },
+        prometheus: PrometheusSettings::default(),
         flink: FlinkSettings {
-            label: "dr-springline-demo".to_string(),
             job_manager_uri_scheme: "https".to_string(),
             job_manager_host: "localhost".to_string(),
             job_manager_port: 8081,
@@ -452,6 +468,7 @@ mod tests {
             max_retries: 3,
             pool_idle_timeout: None,
             pool_max_idle_per_host: None,
+            ..FlinkSettings::default()
         },
         kubernetes: KubernetesSettings::default(),
         engine: EngineSettings {
@@ -496,8 +513,8 @@ mod tests {
             )))
             .with_template_data(EligibilityTemplateData {
                 basis: "eligibility_basis".to_string(),
-                cooling_secs: Some(15 * 60),
-                stable_secs: Some(15 * 60),
+                cooling_secs: Some(5 * 60),
+                stable_secs: Some(5 * 60),
                 custom: HashMap::default(),
             }),
         decision: DecisionSettings::default()
@@ -619,13 +636,16 @@ mod tests {
                         telemetry_portfolio_window: Duration::from_secs(600),
                     },
                     flink: FlinkSettings {
-                        label: "unspecified_flink".to_string(),
                         job_manager_uri_scheme: "http".to_string(),
                         job_manager_host: "host.lima.internal".to_string(),
                         pool_idle_timeout: Some(Duration::from_secs(60)),
                         pool_max_idle_per_host: Some(5),
                         headers: Vec::default(),
                         ..SETTINGS.flink.clone()
+                    },
+                    kubernetes: KubernetesSettings {
+                        client: LoadKubeConfig::ClusterEnv,
+                        ..SETTINGS.kubernetes.clone()
                     },
                     sensor: SensorSettings {
                         flink: FlinkSensorSettings {
@@ -644,7 +664,7 @@ mod tests {
                     },
                     eligibility: EligibilitySettings {
                         template_data: Some(EligibilityTemplateData {
-                            cooling_secs: Some(900),
+                            cooling_secs: Some(300),
                             ..SETTINGS.eligibility.template_data.clone().unwrap()
                         }),
                         ..SETTINGS.eligibility.clone()
@@ -652,6 +672,8 @@ mod tests {
                     decision: DecisionSettings {
                         template_data: Some(DecisionTemplateData {
                             // max_healthy_heap_memory_load: Some(0.5),
+                            max_healthy_cpu_load: Some(0.0016),
+                            min_healthy_cpu_load: Some(0.0012),
                             ..SETTINGS.decision.template_data.clone().unwrap()
                         }),
                         ..SETTINGS.decision.clone()
@@ -730,9 +752,9 @@ mod tests {
                     ..SETTINGS.http.clone()
                 },
                 flink: FlinkSettings {
-                    label: "local_flink".to_string(),
                     job_manager_uri_scheme: "http".to_string(),
-                    job_manager_host: "localhost".to_string(),
+                    job_manager_host: "dr-springline-jm-svc.here-olp-pipeline-management-dev.svc.cluster.local"
+                        .to_string(),
                     headers: Vec::default(),
                     max_retries: 0,
                     pool_idle_timeout: Some(Duration::from_secs(60)),
@@ -841,13 +863,12 @@ mod tests {
 
                 let expected = Settings {
                     http: HttpServerSettings {
-                        host: "localhost".to_string(),
+                        host: "0.0.0.0".to_string(),
                         ..SETTINGS.http.clone()
                     },
                     flink: FlinkSettings {
                         job_manager_uri_scheme: "http".to_string(),
-                        // job_manager_host: "host.lima.internal".to_string(),
-                        job_manager_host: "localhost".to_string(),
+                        job_manager_host: "dr-springline-jm-0".to_string(),
                         pool_idle_timeout: Some(Duration::from_secs(60)),
                         pool_max_idle_per_host: Some(5),
                         headers: Vec::default(),

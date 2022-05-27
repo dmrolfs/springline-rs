@@ -4,8 +4,7 @@ engine:
   node_id: 3
 
 flink:
-  label: dr-springline-demo
-#  job_manager_host: host.lima.internal
+  job_manager_host: dr-springline-jm-0
 
 kubernetes:
 #  client: cluser_env
@@ -13,7 +12,7 @@ kubernetes:
   patch_settle_timeout_secs: 60
 
 http:
-  host: localhost
+  host: 0.0.0.0
 
 #eligibility:
 #  template_data:

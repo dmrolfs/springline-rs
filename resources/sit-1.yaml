@@ -4,15 +4,14 @@ engine:
   node_id: 3
 
 flink:
-  label: dr-springline-demo
-#  job_manager_host: host.docker.internal
+  job_manager_host: dr-springline-jm-0
 
 kubernetes:
   client: cluster_env
   patch_settle_timeout_secs: 10
 
 http:
-  host: localhost
+  host: 0.0.0.0
 
 decision:
   template_data:

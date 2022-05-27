@@ -4,7 +4,12 @@ metadata:
   name: {{ include "common.fullname" . }}
   labels:
 {{ include "common.labels" . | indent 4 }}
-    component: flink-autoscaler
+    component: {{ .Values.component }}
+  annotations:
+{{ include "common.annotations" . | indent 4 }}
+    prometheus.io/path: "/metrics"
+    prometheus.io/port: '9898'
+    prometheus.io/scrapehifreq: "true"
 spec:
   replicas: {{ .Values.replicaCount }}
   selector:
@@ -27,8 +32,10 @@ spec:
 #                    values:
 #                      - {{ include "common.name" . }}
 #              topologyKey: kubernetes.io/hostname
+    {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
-      - name: olp-pm-readonly-pull-secret
+        {{- toYaml . | nindent 8 }}
+    {{- end }}
       serviceAccountName: {{ template "springline.serviceAccountName" . }}
       nodeSelector:
         workload: {{ .Values.deployment.nodeGroup | quote }}
@@ -39,11 +46,13 @@ spec:
         effect: NoSchedule
       containers:
       - name: flink-autoscaler
-        image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+        image: {{ .Values.image.repository }}/{{ .Values.image.path }}:{{ required ".Values.image.tag is not set" .Values.image.tag }}
         imagePullPolicy: {{ .Values.image.pullPolicy }}
         env:
+        - name: APP_ENVIRONMENT
+          value: "cluster"
         - name: RUST_LOG
-          value: "info,springline::flink=debug,springline::kubernetes=debug,springline::phases::act=trace,proctor::phases::sense::clearinghouse=debug,springline::phases::plan::performance_repository=debug"
+          value: "info,springline::flink=debug,springline::kubernetes=debug,springline::phases::act=trace,proctor::phases::sense::clearinghouse=info,springline::phases::plan::performance_repository=debug"
         - name: RUST_BACKTRACE
           value: "1"
         - name: POLAR_LOG
@@ -78,16 +87,20 @@ spec:
             cpu: 100m
             memory: 50Mi
         volumeMounts:
-        - name: {{ include "common.name" . }}-mtr-cfg
-          mountPath: "/opt/springline/config"
+        - name: autoscaler-config
+          mountPath: "/opt/springline/cluster.yaml"
+          subPath: "cluster.yaml"
         - name: {{ include "common.name" . }}-aaa-credentials
           mountPath: "/opt/springline/credentials"
         - name: {{ include "common.name" . }}-accounting
           mountPath: "/opt/springline/accounting"
       volumes:
-      - name: {{ include "common.name" . }}-mtr-cfg
+      - name: autoscaler-config
         configMap:
-          name: {{ include "common.name" . }}-mtr-cfg
+          name: {{ include "common.name" . }}-config
+          items:
+            - key: autoscaler.yaml
+              path: cluster.yaml
       - name: {{ include "common.name" . }}-aaa-credentials
         secret:
           secretName: {{ required "Values.deployment.aaaClientSecretsName is not set" .Values.deployment.aaaClientSecretsName }}

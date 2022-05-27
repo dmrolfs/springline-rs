@@ -1,14 +1,4 @@
 ---
-engine:
-  machine_id: 1
-  node_id: 1
-  # Specify the span for telemetry collection into a portfolio available to eligibility and decision
-  # policies. It's more transparent if this span is set to a duration above what is used in a policy
-  # rule, but it is not required. If a policy rule exceeds this configured span, then coverage of
-  # the portfolio must be more than half, otherwise the condition is not met.
-  # The default is 10 minutes.
-  telemetry_portfolio_window_secs: 600
-
 prometheus:
   # The address the Prometheus server should bind to. Default is "9898".
   port: 9898
@@ -19,7 +9,7 @@ http:
 
 flink:
   job_manager_uri_scheme: http
-  job_manager_host: dr-springline-jm-svc.here-olp-pipeline-management-dev.svc.cluster.local
+#  job_manager_host: host.springline
   job_manager_port: 8081
   max_retries: 3
   min_retry_interval_millis: 1000
@@ -43,10 +33,18 @@ kubernetes:
   # context/cluster/user you want to use here, but it will default to the current-context.
   # - `custom_kube_config`: Create configuration from a Kubeconfig struct. This bypasses the n
   # normal config parsing to obtain custom functionality.
-  client: cluster_env
+  client: infer
 
   # Period to allow cluster to stabilize after a patch operation. Defaults to 5 seconds.
 #  patch_settle_timeout_secs: 5
+
+engine:
+  # Specify the span for telemetry collection into a portfolio available to eligibility and decision
+  # policies. It's more transparent if this span is set to a duration above what is used in a policy
+  # rule, but it is not required. If a policy rule exceeds this configured span, then coverage of
+  # the portfolio must be more than half, otherwise the condition is not met.
+  # The default is 10 minutes.
+  telemetry_portfolio_window_secs: 600
 
 sensor:
   clearinghouse:
@@ -118,8 +116,8 @@ eligibility:
         is_template: true
   template_data:
     basis: eligibility_basis
-    cooling_secs: 300
-    stable_secs: 300
+    cooling_secs: 900
+    stable_secs: 900
 
 decision:
   policies:
@@ -135,9 +133,8 @@ decision:
     basis: decision_basis
     max_healthy_lag: 133.0
     min_healthy_lag: 0.0
+    max_healthy_cpu_load: 0.025
     max_healthy_network_io_utilization: 0.6
-    max_healthy_cpu_load: 0.0016
-    min_healthy_cpu_load: 0.0012
 
 plan:
   performance_repository:
