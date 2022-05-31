@@ -7,17 +7,14 @@ metadata:
   annotations:
 {{ include "common.annotations" . | indent 4 }}
 data:
-  autoscaler.yaml: |
+  decision_basis: |
+{{ .Files.Get "env/decision_basis.polar" | indent 4 }}
+  config: |
     ---
-    engine:
-      machine_id: 1
-      node_id: 1
     flink:
-      job_manager_host: dr-springline-jm-0.{{ .Release.Namespace }}.svc.cluster.local
+      job_manager_host: dr-springline-jm-svc.{{ .Release.Namespace }}.svc.cluster.local
     kubernetes:
       client: cluster_env
-    http:
-      host: 0.0.0.0
     decision:
       template_data:
         max_healthy_cpu_load: 0.0016
@@ -29,3 +26,26 @@ data:
       taskmanager:
         label_selector: "component=taskmanager,release={{ include "common.name" . }}"
         deploy_resource: statefulset/{{ include "common.name" . }}-tm
+#        max_healthy_heap_memory_load: f64
+#        max_healthy_network_io_utilization: f64
+#        max_healthy_lag: 133.0
+#        min_healthy_lag: 0.0
+#    eligibility:
+#      template_data:
+#        cooling_secs:
+#      min_scaling_step:
+#      restart:
+#        secs:
+#        nanos:
+#      max_catch_up:
+#        secs:
+#        nanos:
+#      recovery_valid:
+#        secs:
+#        nanos:
+#    governance:
+#      rules:
+#        min_cluster_size: 0
+#        max_cluster_size: 20
+#        min_scaling_step: 1
+#        max_scaling_step: 4

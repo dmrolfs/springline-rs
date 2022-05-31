@@ -59,12 +59,17 @@ pub fn run_http_server<'s>(
     let handle: JoinHandle<Result<(), EngineApiError>> = tokio::spawn(async move {
         let address = format!("{host}:{port}");
         let listener = tokio::net::TcpListener::bind(&address).await?;
-        tracing::info!("{:?} autoscale engine API listening on {address}: {listener:?}", std::env::current_exe());
+        tracing::info!(
+            "{:?} autoscale engine API listening on {address}: {listener:?}",
+            std::env::current_exe()
+        );
 
         let std_listener = listener.into_std()?;
         let builder = axum::Server::from_tcp(std_listener)?;
         let server = builder.serve(app.into_make_service());
-        let graceful = server.with_graceful_shutdown(async { rx_shutdown.await.ok(); });
+        let graceful = server.with_graceful_shutdown(async {
+            rx_shutdown.await.ok();
+        });
         graceful.await?;
         tracing::info!("{:?} autoscale engine API shutting down", std::env::current_exe());
         Ok(())

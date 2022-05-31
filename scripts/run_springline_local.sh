@@ -16,7 +16,8 @@ MEM_OPT="50m"
 RM_OPT=""
 LOG_OPT='--env RUST_LOG="info,springline::flink=debug,springline::kubernetes=debug,springline::phases::act=debug,springline::model=debug"'
 
-PARAMS=""
+DOCKER_PARAMS=""
+SPRINGLINE_PARAMS=""
 while (( "$#" )); do
   case "$1" in
     -m|--memory)
@@ -37,21 +38,44 @@ while (( "$#" )); do
         exit 1
       fi
       ;;
+    -a|--app-env)
+      if [ -n "$2" ] && [ ${2:0:1} != "-" ]; then
+        DOCKER_PARAMS="$DOCKER_PARAMS --env-file $2"
+        shift 2
+      else
+        echo "Error: Argument for $1 is missing" >&2
+        exit 1
+      fi
+      ;;
+    -s|--search-path)
+      if [ -n "$2" ] && [ ${2:0:1} != "-" ]; then
+        SPRINGLINE_PARAMS="$SPRINGLINE_PARAMS --search-path=$2"
+        shift 2
+      else
+        echo "Error: Argument for $1 is missing" >&2
+        exit 1
+      fi
+      ;;
     -h|--host)
       if [ -n "$2" ] && [ ${2:0:1} != "-" ]; then
-        PARAMS="$PARAMS --host=$2"
+        SPRINGLINE_PARAMS="$SPRINGLINE_PARAMS --host=$2"
         shift 2
+      else
+        echo "Error: Argument for $1 is missing" >&2
+        exit 1
       fi
       ;;
     -p|--port)
       if [ -n "$2" ] && [ ${2:0:1} != "-" ]; then
-        PARAMS="$PARAMS --port=$2"
+        SPRINGLINE_PARAMS="$SPRINGLINE_PARAMS --port=$2"
         shift 2
+      else
+        echo "Error: Argument for $1 is missing" >&2
+        exit 1
       fi
       ;;
     --rm)
       RM_OPT="--rm"
-      PARAMS="$2"
       shift 1
       ;;
     -l|--log)
@@ -65,7 +89,7 @@ while (( "$#" )); do
       exit 1
       ;;
     *) # preserve positional arguments
-      PARAMS="$PARAMS $1"
+      SPRINGLINE_PARAMS="$SPRINGLINE_PARAMS $1"
       shift
       ;;
   esac
@@ -85,7 +109,8 @@ docker run -d -it \
   --mount type=bind,source="${HA_CREDENTIALS}",target="/secrets/credentials.properties" \
   --expose 8000 \
   --network host \
-  springline:latest --env "${ENV}" ${PARAMS}
+  ${DOCKER_PARAMS} \
+  springline:latest --env "${ENV}" ${SPRINGLINE_PARAMS}
 
 
 #todo: enable host networking?? point to host-gateway, other?

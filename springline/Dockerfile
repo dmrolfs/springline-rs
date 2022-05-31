@@ -1,4 +1,4 @@
-FROM rust:1.59-bullseye AS builder
+FROM rust:1.61-bullseye AS builder
 WORKDIR /app
 
 COPY ["./springline", "."]
@@ -15,7 +15,7 @@ FROM debian:bullseye-slim AS runtime
 WORKDIR /app
 RUN apt-get update \
 #    # python is only needed for the access server client
-    && apt-get install -y python3.9 python3-pip \
+#    && apt-get install -y python3.9 python3-pip \
     && apt-get install -y curl vim \
      # Clean up
     && apt-get autoremove -y \
@@ -23,7 +23,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 #   python is only needed for the access server client
-RUN pip install requests
+#RUN pip install requests
 
 COPY ["./resources", "resources"]
 RUN chmod -v 666 ./resources/*
@@ -45,13 +45,10 @@ USER appuser:appuser
 
 COPY --from=builder ["/app/target/release/springline", "springline"]
 
-COPY ["./hak/hak", "/usr/local/bin/hak"]
+#COPY ["./hak/hak", "/usr/local/bin/hak"]
 
-#ENV RUST_LOG "info,tokio=trace,runtime=trace"
-ENV RUST_LOG "info"
-ENV RUST_BACKTRACE 1
-ENV POLAR_LOG 1
 
 ENTRYPOINT ["./springline"]
+#CMD "--search-path ${SETTINGS_SEARCH_PATH}"
 #CMD ["--env", "${APP_ENVIRONMENT}"]
 #CMD ["-s", "/secrets/secret.yaml"]

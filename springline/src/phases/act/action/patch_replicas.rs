@@ -44,7 +44,7 @@ impl ScaleAction for PatchReplicas {
         let original_nr_taskmanager_replicas = session.kube.taskmanager().deploy.get_scale(&correlation).await?;
         tracing::info!(%nr_target_taskmanagers, ?original_nr_taskmanager_replicas, "patching to scale taskmanager replicas");
 
-        let patched_nr_taskmanager_replicas = session
+        let _nr_patched_taskmanager_replicas = session
             .kube
             .taskmanager()
             .deploy
@@ -54,10 +54,6 @@ impl ScaleAction for PatchReplicas {
                 ?correlation, %nr_target_taskmanagers, ?original_nr_taskmanager_replicas
             ))
             .await?;
-        tracing::info!(
-            %nr_target_taskmanagers, ?original_nr_taskmanager_replicas, ?patched_nr_taskmanager_replicas,
-            "patched taskmanager replicas"
-        );
 
         if let Err(error) = self.block_until_satisfied(plan, &session.kube).await {
             match error {
@@ -78,7 +74,7 @@ impl ScaleAction for PatchReplicas {
 }
 
 impl PatchReplicas {
-    #[tracing::instrument(level = "info", name = "patch_replicase::block_until_satisfied", skip(plan, kube))]
+    #[tracing::instrument(level = "info", name = "patch_replicas::block_until_satisfied", skip(plan, kube))]
     async fn block_until_satisfied(
         &self, plan: &<Self as ScaleAction>::In, kube: &KubernetesContext,
     ) -> Result<(), ActError> {

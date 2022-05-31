@@ -112,13 +112,14 @@ pub struct CliOptions {
     #[clap(short = 'e', long = "env")]
     pub environment: Option<Environment>,
 
-    /// Override default location from which to load configuration files. Default directory is
-    /// ./resources.
-    #[clap(short, long, value_name = "PATH_TO_RESOURCES_DIRECTORY")]
-    pub resources: Option<PathBuf>,
+    /// Override filesystem path used to search for application and environment configuration files.
+    /// Directories are separated by the ':' character.
+    /// Default path is "./resources".
+    #[clap(short = 's', long = "search-path", value_name = "SETTINGS_SEARCH_PATH")]
+    pub settings_search_path: Option<String>,
 
     /// Flink jobmanager scheme, optionally overrides flink.job_manager_uri_scheme setting.
-    #[clap(short = 's', long = "scheme", value_name = "SCHEME")]
+    #[clap(long = "scheme", value_name = "SCHEME")]
     pub jobmanager_scheme: Option<String>,
 
     /// Flink jobmanager host, optionally overrides flink.job_manager_host setting.
@@ -144,6 +145,8 @@ pub struct CliOptions {
     pub node_id: Option<i8>,
 }
 
+const DEFAULT_SEARCH_PATH: &str = "./resources";
+
 impl LoadingOptions for CliOptions {
     type Error = SettingsError;
 
@@ -151,8 +154,9 @@ impl LoadingOptions for CliOptions {
         self.config.clone()
     }
 
-    fn resources_path(&self) -> Option<PathBuf> {
-        self.resources.clone()
+    fn implicit_search_paths(&self) -> Vec<PathBuf> {
+        let search_path = self.settings_search_path.as_deref().unwrap_or(DEFAULT_SEARCH_PATH);
+        search_path.split(':').map(PathBuf::from).collect()
     }
 
     fn secrets_path(&self) -> Option<PathBuf> {
@@ -596,7 +600,7 @@ mod tests {
         let _ = main_span.enter();
 
         let options = CliOptions {
-            resources: Some("../resources".into()),
+            settings_search_path: Some("../resources".into()),
             ..CliOptions::default()
         };
         let before_env = Settings::load(&options);
@@ -644,7 +648,7 @@ mod tests {
                         ..SETTINGS.flink.clone()
                     },
                     kubernetes: KubernetesSettings {
-                        client: LoadKubeConfig::ClusterEnv,
+                        client: LoadKubeConfig::Infer,
                         ..SETTINGS.kubernetes.clone()
                     },
                     sensor: SensorSettings {
@@ -721,7 +725,7 @@ mod tests {
         let _ = main_span.enter();
 
         let options = CliOptions {
-            resources: Some("../resources".into()),
+            settings_search_path: Some("../resources".into()),
             ..CliOptions::default()
         };
         let before_env = Settings::load(&options);
@@ -753,8 +757,7 @@ mod tests {
                 },
                 flink: FlinkSettings {
                     job_manager_uri_scheme: "http".to_string(),
-                    job_manager_host: "dr-springline-jm-svc.here-olp-pipeline-management-dev.svc.cluster.local"
-                        .to_string(),
+                    job_manager_host: "localhost".to_string(),
                     headers: Vec::default(),
                     max_retries: 0,
                     pool_idle_timeout: Some(Duration::from_secs(60)),
@@ -833,7 +836,7 @@ mod tests {
         let _ = main_span.enter();
 
         let options = CliOptions {
-            resources: Some("../resources".into()),
+            settings_search_path: Some("../resources".into()),
             ..CliOptions::default()
         };
         let before_env = Settings::load(&options);

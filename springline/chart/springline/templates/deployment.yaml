@@ -1,7 +1,7 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "common.fullname" . }}
+  name: {{ include "common.fullname" . }}-as
   labels:
 {{ include "common.labels" . | indent 4 }}
     component: {{ .Values.component }}
@@ -48,6 +48,7 @@ spec:
       - name: flink-autoscaler
         image: {{ .Values.image.repository }}/{{ .Values.image.path }}:{{ required ".Values.image.tag is not set" .Values.image.tag }}
         imagePullPolicy: {{ .Values.image.pullPolicy }}
+        command: ["/app/springline", "--search-path", "/app/resources:/opt/springline/resources"]
         env:
         - name: APP_ENVIRONMENT
           value: "cluster"
@@ -56,7 +57,7 @@ spec:
         - name: RUST_BACKTRACE
           value: "1"
         - name: POLAR_LOG
-          value: "1"
+          value: "info"
         ports:
         - containerPort: 80
 {{- if .Values.deployment.enableProbes }}
@@ -81,15 +82,14 @@ spec:
 {{- end }}
         resources:
           requests:
-            cpu: 100m
+            cpu: 5m
             memory: 50Mi
           limits:
-            cpu: 100m
+            cpu: 20m
             memory: 50Mi
         volumeMounts:
         - name: autoscaler-config
-          mountPath: "/opt/springline/cluster.yaml"
-          subPath: "cluster.yaml"
+          mountPath: "/opt/springline/resources"
         - name: {{ include "common.name" . }}-aaa-credentials
           mountPath: "/opt/springline/credentials"
         - name: {{ include "common.name" . }}-accounting
@@ -99,8 +99,10 @@ spec:
         configMap:
           name: {{ include "common.name" . }}-config
           items:
-            - key: autoscaler.yaml
-              path: cluster.yaml
+          - key: config
+            path: cluster.yaml
+          - key: decision_basis
+            path: decision-basis.polar
       - name: {{ include "common.name" . }}-aaa-credentials
         secret:
           secretName: {{ required "Values.deployment.aaaClientSecretsName is not set" .Values.deployment.aaaClientSecretsName }}

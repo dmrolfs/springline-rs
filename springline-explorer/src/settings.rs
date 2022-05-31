@@ -154,22 +154,23 @@ impl ReviseSettings {
                 builder.add_source(Settings::make_explicit_config_source(config_path))
             },
             None => {
-                let resources = state
+                let resource_path = state
                     .options
-                    .resources_path()
+                    .secrets_path()
                     .unwrap_or(std::env::current_dir()?.join(Settings::resources_home()));
+                let search_path = vec![resource_path.clone()];
                 let basename = Settings::app_config_basename();
 
                 eprintln!(
                     "\n\tLooking for: {} file in resources home: {:?}",
                     style(basename).bold(),
-                    style(resources.as_path()).bold()
+                    style(resource_path.as_path()).bold()
                 );
-                builder = builder.add_source(Settings::make_implicit_app_config_sources(basename, &resources));
+                builder = builder.add_source(Settings::make_implicit_config_source(basename, &search_path));
 
                 builder = if let Some(env) = state.options.environment() {
                     eprintln!("\n\tEnvironment complement: {}", style(env.to_string()).bold().blue());
-                    builder.add_source(Settings::make_app_environment_source(env, &resources))
+                    builder.add_source(Settings::make_app_environment_source(&env, resource_path.as_path()))
                 } else {
                     eprintln!("\n\tEnvironment complement: {}", style("none").dim().blue());
                     builder

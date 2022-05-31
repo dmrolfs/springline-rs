@@ -19,7 +19,7 @@ http:
 
 flink:
   job_manager_uri_scheme: http
-  job_manager_host: dr-springline-jm-svc.here-olp-pipeline-management-dev.svc.cluster.local
+#  job_manager_host: localhost
   job_manager_port: 8081
   max_retries: 3
   min_retry_interval_millis: 1000
@@ -43,7 +43,7 @@ kubernetes:
   # context/cluster/user you want to use here, but it will default to the current-context.
   # - `custom_kube_config`: Create configuration from a Kubeconfig struct. This bypasses the n
   # normal config parsing to obtain custom functionality.
-  client: cluster_env
+  client: infer
 
   # Period to allow cluster to stabilize after a patch operation. Defaults to 5 seconds.
 #  patch_settle_timeout_secs: 5
