@@ -143,15 +143,9 @@ plan:
   performance_repository:
     storage: memory
   min_scaling_step: 2
-  restart:
-    secs: 120
-    nanos: 0
-  max_catch_up:
-    secs: 600
-    nanos: 0
-  recovery_valid:
-    secs: 300
-    nanos: 0
+  restart_secs: 120
+  max_catch_up_secs: 600
+  recovery_valid_secs: 300
   window: 20
   spike:
     std_deviation_threshold: 5.0

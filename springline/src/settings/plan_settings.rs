@@ -1,16 +1,33 @@
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
+use serde_with::serde_as;
 
 use crate::phases::plan::{PerformanceRepositorySettings, SpikeSettings};
 
+#[serde_as]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(test, derive(PartialEq))]
 pub struct PlanSettings {
+    /// Minimum scaling step used in rescale planing.
     pub min_scaling_step: u32,
+
+    /// Starting estimated time used to restart the flink job. This time is measured and fed back
+    /// by springline for subsequent rescale planning.
+    #[serde_as(as = "serde_with::DurationSeconds<u64>")]
+    #[serde(rename = "restart_secs")]
     pub restart: Duration,
+
+    /// Time allowed for the cluster to catch up processing messages after rescaling restart.
+    #[serde_as(as = "serde_with::DurationSeconds<u64>")]
+    #[serde(rename = "max_catch_up_secs")]
     pub max_catch_up: Duration,
+
+    /// Duration after restart and catch up where the job is considered to be running.
+    #[serde_as(as = "serde_with::DurationSeconds<u64>")]
+    #[serde(rename = "recovery_valid_secs")]
     pub recovery_valid: Duration,
+
     pub performance_repository: PerformanceRepositorySettings,
     pub window: usize,
     pub spike: SpikeSettings,
@@ -62,27 +79,12 @@ mod tests {
                 Token::Struct { name: "PlanSettings", len: 7 },
                 Token::Str("min_scaling_step"),
                 Token::U32(2),
-                Token::Str("restart"),
-                Token::Struct { name: "Duration", len: 2 },
-                Token::Str("secs"),
+                Token::Str("restart_secs"),
                 Token::U64(3 * 60),
-                Token::Str("nanos"),
-                Token::U32(0),
-                Token::StructEnd,
-                Token::Str("max_catch_up"),
-                Token::Struct { name: "Duration", len: 2 },
-                Token::Str("secs"),
+                Token::Str("max_catch_up_secs"),
                 Token::U64(10 * 60),
-                Token::Str("nanos"),
-                Token::U32(0),
-                Token::StructEnd,
-                Token::Str("recovery_valid"),
-                Token::Struct { name: "Duration", len: 2 },
-                Token::Str("secs"),
+                Token::Str("recovery_valid_secs"),
                 Token::U64(5 * 60),
-                Token::Str("nanos"),
-                Token::U32(0),
-                Token::StructEnd,
                 Token::Str("performance_repository"),
                 Token::Struct { name: "PerformanceRepositorySettings", len: 2 },
                 Token::Str("storage"),
