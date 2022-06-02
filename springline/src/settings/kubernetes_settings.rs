@@ -25,6 +25,10 @@ pub struct KubernetesSettings {
     /// normal config parsing to obtain custom functionality.
     pub client: LoadKubeConfig,
 
+    /// Optional name of the kubernetes namespace in which to work. If not set, the default
+    /// kubernetes namespace is used.
+    pub namespace: Option<String>,
+
     /// Period to allow cluster to stabilize after a patch operation. Defaults to 5 seconds.
     #[serde_as(as = "serde_with::DurationSeconds<u64>")]
     #[serde(
@@ -37,6 +41,7 @@ pub struct KubernetesSettings {
 impl Default for KubernetesSettings {
     fn default() -> Self {
         Self {
+            namespace: None,
             client: LoadKubeConfig::default(),
             patch_settle_timeout: Self::default_settle_timeout_secs(),
         }
@@ -192,15 +197,19 @@ mod tests {
     #[test]
     fn test_load_kube_config_serde_tokens() {
         let s1 = KubernetesSettings {
+            namespace: Some("test-namespace".to_string()),
             client: LoadKubeConfig::Infer,
             patch_settle_timeout: Duration::from_secs(1),
         };
         assert_tokens(
             &s1,
             &vec![
-                Token::Struct { name: "KubernetesSettings", len: 2 },
+                Token::Struct { name: "KubernetesSettings", len: 3 },
                 Token::Str("client"),
                 Token::UnitVariant { name: "LoadKubeConfig", variant: "infer" },
+                Token::Str("namespace"),
+                Token::Some,
+                Token::Str("test-namespace"),
                 Token::Str("patch_settle_timeout_secs"),
                 Token::U64(1),
                 Token::StructEnd,
@@ -208,6 +217,7 @@ mod tests {
         );
 
         let s2 = KubernetesSettings {
+            namespace: None,
             client: LoadKubeConfig::KubeConfig(KubeConfigOptions {
                 context: Some("foo-context".to_string()),
                 cluster: Some("cluster-1".to_string()),
@@ -218,7 +228,7 @@ mod tests {
         assert_tokens(
             &s2,
             &vec![
-                Token::Struct { name: "KubernetesSettings", len: 2 },
+                Token::Struct { name: "KubernetesSettings", len: 3 },
                 Token::Str("client"),
                 Token::NewtypeVariant { name: "LoadKubeConfig", variant: "kube_config" },
                 Token::Struct { name: "KubeConfigOptions", len: 2 },
@@ -229,6 +239,8 @@ mod tests {
                 Token::Some,
                 Token::Str("cluster-1"),
                 Token::StructEnd,
+                Token::Str("namespace"),
+                Token::None,
                 Token::Str("patch_settle_timeout_secs"),
                 Token::U64(2),
                 Token::StructEnd,

@@ -45,6 +45,10 @@ kubernetes:
   # normal config parsing to obtain custom functionality.
   client: infer
 
+  # Name of the kubernetes namespace in which to work. If not set, the default
+  # kubernetes namespace is used.
+#  namespace:
+
   # Period to allow cluster to stabilize after a patch operation. Defaults to 5 seconds.
 #  patch_settle_timeout_secs: 5
 

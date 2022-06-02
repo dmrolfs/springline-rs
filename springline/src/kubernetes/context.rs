@@ -14,6 +14,10 @@ use crate::settings::Settings;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TaskmanagerSpec {
+    /// The name of the kubernetes namespace to manage taskmanager resources. If not specified,
+    /// the default kubernetes namespace is used.
+    pub namespace: Option<String>,
+
     /// A selector to identify taskmanagers the list of returned objects by the scaling target;
     /// e.g., "app=flink,component=taskmanager"
     pub label_selector: String,
@@ -141,6 +145,12 @@ impl fmt::Debug for KubernetesContextRef {
 
 impl KubernetesContextRef {
     pub fn new(kube: Client, spec: TaskmanagerSpec) -> Result<Self, KubernetesError> {
+        let pods = spec
+            .namespace
+            .as_ref()
+            .map(|ns| Api::namespaced(kube.clone(), ns))
+            .unwrap_or_else(|| Api::default_namespaced(kube.clone()));
+
         let taskmanager = TaskmanagerContext {
             deploy: DeployApi::from_kubernetes_resource(&spec.deploy_resource, kube.clone()),
             params: ListParams {
