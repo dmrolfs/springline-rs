@@ -1,6 +1,6 @@
 set dotenv-load
 
-ts := `date '+%s'`
+export QUAY_IMAGE_TAG := `date '+%s'`
 
 alias c := full-check
 alias u := update
@@ -25,11 +25,11 @@ build-docker:
   cargo t
   docker build --tag springline --file springline/Dockerfile .
 
-# expects QUAY_TAG to be set in `.env`
+# expects QUAY_PATH to be set in `.env`
 push-docker:
-  echo "Labeling then pushing springline:latest docker image with tag: ${QUAY_TAG}:{{ts}}"
-  docker tag springline:latest ${QUAY_TAG}:{{ts}}
-  docker push ${QUAY_TAG}:{{ts}}
+  echo "Labeling then pushing springline:latest docker image with tag: ${QUAY_PATH}:${QUAY_IMAGE_TAG}"
+  docker tag springline:latest ${QUAY_PATH}:${QUAY_IMAGE_TAG}
+  docker push ${QUAY_PATH}:${QUAY_IMAGE_TAG}
 
 # expects KUBECONFIG and HA_CREDENTIALS to be set in `.env`
 run-docker-local +ARGS:
@@ -37,3 +37,9 @@ run-docker-local +ARGS:
 
 docker-follow CONTAINER_ID:
   docker logs --follow {{CONTAINER_ID}} | bunyan | lnav
+
+#helm-install IMAGE_TAG ENV NAMESPACE:
+#  cd {{justfile_directory()}}/springline/chart
+#  helm install autoscaler ./springline --debug --values ./springline/env/{{ENV}}.yaml --set image.tag={{IMAGE_TAG}} --namespace {{NAMESPACE}}
+#
+#  {{justfile_directory()}}/springline/chart/

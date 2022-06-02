@@ -22,23 +22,24 @@ service:
   # "ClusterIP" or "LoadBalancer"
   type: LoadBalancer
   # use this if you wish to register the ELB with a friendly name - only effective when type is LoadBalancer
-  dnsName: autoscaler-api-dev.plm.platform.in.here.com
+#  dnsName: {{ Release.Name }}{{ .Values.service.dnsTail }}
   port: 80
   targetPort: 8000
   portName: api
 
 deployment:
-  env:
-  - name: RUST_LOG
-    value: "info,springline::flink=debug,springline::kubernetes=debug,springline::phases::act=trace,proctor::phases::sense::clearinghouse=debug,springline::phases::plan::performance_repository=debug"
-  - name: RUST_BACKTRACE
-    value: "1"
-  - name: POLAR_LOG
-    value: "1"
+#  env:
+#  - name: RUST_LOG
+#    value: "FOO"
+#  - name: RUST_BACKTRACE
+#    value: "1"
+#  - name: POLAR_LOG
+#    value: "info"
   aaaClientSecretsName: "pipeline-monitor-aaa-client-credentials"
   accountSecretsName: "pipeline-monitor-accounting-properties"
   enableProbes: true
   nodeGroup: "nonresilient"
+  taskManagerdeployment: "statefulset"
 
 serviceAccount:
   # Specifies whether a service account should be created
@@ -80,8 +81,6 @@ resources:
     cpu: 100m
     memory: 50Mi
 
-nodeSelector: {}
-
 #tolerations:
 #  - key: workload
 #    operator: Equal
@@ -113,17 +112,14 @@ probes:
 global:
   annotations: {}
   pipeline:
-#    id:
-    id: "2f545f95-7114-4cd1-b120-96b7df840a66"
-#    versionId:
-    versionId: "ad1b5f79-959a-442b-88c5-bd1fa91848fb"
-#    tenplateId:
-    templateId: "00000000-0000-0000-3000-000801000020"
-#    jobId:
-    jobId: "600361c4-9031-419b-9cc3-ff45095be411"
-#    realm:
-    realm: "dev"
-#    customerBillingTag: "default"
-    customerBillingTag: "dev"
-#    billingClientAppId:
-    billingClientAppId: "patappid"
+    id:
+    versionId:
+#    templateId:
+    jobId:
+    customerBillingTag:
+    billingClientAppId:
+  convention:
+    jobPrefix: "job-"
+    jobManagerSuffix: "-jm"
+    taskManagerSuffix: "-tm"
+    serviceSuffix: "-svc"

@@ -1,15 +1,15 @@
 {{/* vim: set filetype=mustache: */}}
 {{/*
-Expand the name of the chart.
+    Expand the name of the chart.
 */}}
 {{- define "common.name" -}}
 {{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
 {{/*
-Create a default fully qualified app name.
-We truncate at 63 chars because some Kubernetes name fields are limited to this (by the DNS naming spec).
-If release name contains chart name it will be used as a full name.
+    Create a default fully qualified app name.
+    We truncate at 63 chars because some Kubernetes name fields are limited to this (by the DNS naming spec).
+    If release name contains chart name it will be used as a full name.
 */}}
 {{- define "common.fullname" -}}
 {{- if .Values.fullnameOverride -}}
@@ -25,14 +25,14 @@ If release name contains chart name it will be used as a full name.
 {{- end -}}
 
 {{/*
-Create chart name and version as used by the chart label.
+    Create chart name and version as used by the chart label.
 */}}
 {{- define "common.chart" -}}
 {{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
 {{/*
-Common labels
+    Common labels
 */}}
 {{- define "common.labels" -}}
 app.kubernetes.io/name: {{ include "common.name" . }}
@@ -48,7 +48,7 @@ pipelineVersionId: {{ .Values.global.pipeline.versionId }}
 {{- end -}}
 
 {{/*
-Common annotations
+    Common annotations
 */}}
 {{- define "common.annotations" -}}
 {{- if .Values.global.pipeline.annotations -}}
@@ -59,7 +59,7 @@ Common annotations
 {{- end -}}
 
 {{/*
-Create the name of the service account to use
+    Create the name of the service account to use
 */}}
 {{- define "springline.serviceAccountName" -}}
 {{- if .Values.serviceAccount.create -}}
@@ -68,8 +68,6 @@ Create the name of the service account to use
     {{ default "default" .Values.serviceAccount.name }}
 {{- end -}}
 {{- end -}}
-
-
 
 {{- define "springline.masterUrl" -}}
 {{- if .Values.global.cluster.url -}}
@@ -87,4 +85,11 @@ http://{{ include "pipeline.releaseName" . }}:{{ .Values.global.cluster.port }}
 {{- define "springline.masterUrl.helper" -}}
 {{- $helperName := .Values.helpers.masterUrl -}}
 {{- include  $helperName . -}}
+{{- end -}}
+
+{{/*
+    Pipeline job name.
+*/}}
+{{- define "pipeline.jobName" -}}
+{{ .Values.global.convention.jobPrefix }}{{- required ".Values.global.pipeline.jobId is not set" .Values.global.pipeline.jobId -}}
 {{- end -}}

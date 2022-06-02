@@ -53,29 +53,29 @@ spec:
         - name: APP_ENVIRONMENT
           value: "cluster"
         - name: RUST_LOG
-          value: "info,springline::flink=debug,springline::kubernetes=debug,springline::phases::act=trace,proctor::phases::sense::clearinghouse=info,springline::phases::plan::performance_repository=debug"
+          value: {{ default "info" .Values.deployment.log.level }}
         - name: RUST_BACKTRACE
-          value: "1"
+          value: {{ default "1" .Values.deployment.log.backtrace | quote }}
         - name: POLAR_LOG
-          value: "info"
+          value: {{ default "info" .Values.deployment.log.polar }}
         ports:
         - containerPort: 80
 {{- if .Values.deployment.enableProbes }}
-        livenessProbe:
-          httpGet:
-            path: "/health/live"
-            scheme: "HTTP"
-            port: {{ .Values.service.targetPort }}
-          initialDelaySeconds: 60
-          periodSeconds: 10
-          timeoutSeconds: 5
-          failureThreshold: 3
         readinessProbe:
           httpGet:
             path: "/health/ready"
             scheme: "HTTP"
             port: {{ .Values.service.targetPort }}
-          initialDelaySeconds: 15
+          initialDelaySeconds: 300
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        livenessProbe:
+          httpGet:
+            path: "/health/live"
+            scheme: "HTTP"
+            port: {{ .Values.service.targetPort }}
+          initialDelaySeconds: 360
           periodSeconds: 10
           timeoutSeconds: 5
           failureThreshold: 3

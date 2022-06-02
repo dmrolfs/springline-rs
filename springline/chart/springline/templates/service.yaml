@@ -15,6 +15,12 @@ metadata:
 
 spec:
   type: {{ .Values.service.type }}
+  selector:
+    app: {{ include "common.name" . }}
+    release: {{ .Release.Name }}
+    component: {{ .Values.component }}
+    app.kubernetes.io/name: {{ include "common.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
   ports:
     - name: {{ .Values.service.portName }}
       port: {{ .Values.service.port }}
@@ -24,9 +30,3 @@ spec:
       port: 9898
       targetPort: 9898
       protocol: TCP
-  selector:
-    app: {{ include "common.name" . }}
-    release: {{ .Release.Name }}
-    component: {{ .Values.component }}
-    app.kubernetes.io/name: {{ include "common.name" . }}
-    app.kubernetes.io/instance: {{ .Release.Name }}
