@@ -72,28 +72,38 @@ pub struct TaskmanagerContext {
 
 #[derive(Debug, Clone)]
 pub struct KubernetesContext {
+    label: String,
     inner: Arc<KubernetesContextRef>,
 }
 
 impl KubernetesContext {
-    pub async fn from_settings(settings: &Settings) -> Result<Self, KubernetesError> {
+    #[tracing::instrument(level = "info", name = "KubernetesContext::from_settings")]
+    pub async fn from_settings(label: &str, settings: &Settings) -> Result<Self, KubernetesError> {
         let kube = super::make_client(&settings.kubernetes).await?;
         let taskmanager = TaskmanagerSpec {
+            namespace: settings.kubernetes.namespace.clone(),
             label_selector: settings.action.taskmanager.label_selector.clone(),
             deploy_resource: settings.action.taskmanager.deploy_resource.clone(),
             kubernetes_api: settings.action.taskmanager.kubernetes_api,
         };
-        Self::new(kube, taskmanager)
+        Self::new(label, kube, taskmanager)
     }
 
-    pub fn new(kube: Client, taskmanager: TaskmanagerSpec) -> Result<Self, KubernetesError> {
+    pub fn new(label: impl Into<String>, kube: Client, taskmanager: TaskmanagerSpec) -> Result<Self, KubernetesError> {
         Ok(Self {
+            label: label.into(),
             inner: Arc::new(KubernetesContextRef::new(kube, taskmanager)?),
         })
     }
 
     pub async fn check(&self) -> Result<(), KubernetesError> {
-        self.inner.check().await
+        let result = self
+            .inner
+            .check()
+            .instrument(tracing::debug_span!("checking kubernetes client configuration", label=%self.label))
+            .await;
+        tracing::info!("KubernetesContext::check: {:?}", result);
+        result
     }
 
     pub fn deploy_resource(&self) -> &KubernetesDeployResource {
@@ -115,7 +125,7 @@ impl KubernetesContext {
 
         self.inner
             .list_pods(params)
-            .instrument(tracing::info_span!("kube::list_pods", ?params))
+            .instrument(tracing::info_span!("kube::list_pods", label=%self.label, ?params))
             .await
     }
 
@@ -124,7 +134,7 @@ impl KubernetesContext {
     ) -> Result<Vec<Pod>, KubernetesError> {
         self.inner
             .list_pods_for_fields(params, field_selector)
-            .instrument(tracing::info_span!("kube::list_pods_for_fields", ?params, %field_selector))
+            .instrument(tracing::info_span!("kube::list_pods_for_fields", label=%self.label, ?params, %field_selector))
             .await
     }
 }
@@ -161,8 +171,6 @@ impl KubernetesContextRef {
             spec,
         };
 
-        let pods = Api::default_namespaced(kube.clone());
-
         Ok(Self { kube, taskmanager, pods })
     }
 
@@ -183,6 +191,7 @@ impl KubernetesContextRef {
     pub async fn list_pods(&self, params: &ListParams) -> Result<Vec<Pod>, KubernetesError> {
         self.pods
             .list(params)
+            .instrument(tracing::debug_span!("list kubernetes pods", ?params))
             .await
             .map(|pods| pods.items)
             .map_err(|err| err.into())

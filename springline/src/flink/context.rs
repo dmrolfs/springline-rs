@@ -53,14 +53,18 @@ impl FlinkContext {
         })
     }
 
-    pub fn from_settings(label: impl Into<String>, settings: &FlinkSettings) -> Result<Self, FlinkError> {
+    #[tracing::instrument(level = "info", name = "FlinkContext::from_settings")]
+    pub fn from_settings(label: &str, settings: &FlinkSettings) -> Result<Self, FlinkError> {
         let client = make_http_client(settings)?;
         let base_url = settings.base_url()?;
         Self::new(label, client, base_url)
     }
 
+    #[tracing::instrument(level = "info", name = "FlinkContext::check", skip(self), fields(label = %self.inner.cluster_label))]
     pub async fn check(&self) -> Result<(), FlinkError> {
-        self.inner.check().await
+        let result = self.inner.check().await;
+        tracing::info!("FlinkContext::check: {:?}", result);
+        result
     }
 
     pub fn label(&self) -> &str {

@@ -20,7 +20,7 @@ pub const RUNNING_STATUS: &str = "Running";
 // pub const FAILED_STATUS: &str = "Failed";
 pub const UNKNOWN_STATUS: &str = "Unknown";
 
-#[tracing::instrument(level = "trace", name = "make kubernetes client")]
+#[tracing::instrument(level = "info", name = "make kubernetes client")]
 async fn make_client(settings: &KubernetesSettings) -> Result<kube::Client, KubernetesError> {
     let config = match &settings.client {
         LoadKubeConfig::Infer => {

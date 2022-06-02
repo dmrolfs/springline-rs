@@ -39,7 +39,7 @@ fn main() -> Result<()> {
                 let action_flink = FlinkContext::from_settings("action", &settings.flink)?;
                 action_flink.check().await?;
 
-                let kube = KubernetesContext::from_settings(&settings).await?;
+                let kube = KubernetesContext::from_settings("action", &settings).await?;
                 kube.check().await?;
                 let action_kube = kube; //todo will clone once kube incorporated in sensing
 
