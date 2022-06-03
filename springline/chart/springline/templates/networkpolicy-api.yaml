@@ -2,7 +2,7 @@
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: {{ template "common.fullname" . }}-nw-plcy
+  name: {{ template "common.fullname" . }}-api-nw-plcy
 spec:
   podSelector:
     matchLabels:

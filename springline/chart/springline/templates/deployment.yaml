@@ -4,6 +4,7 @@ metadata:
   name: {{ include "common.fullname" . }}-as
   labels:
 {{ include "common.labels" . | indent 4 }}
+    app: {{ include "common.name" . }}
     component: {{ .Values.component }}
   annotations:
 {{ include "common.annotations" . | indent 4 }}

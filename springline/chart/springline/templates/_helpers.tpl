@@ -36,6 +36,7 @@
 */}}
 {{- define "common.labels" -}}
 app.kubernetes.io/name: {{ include "common.name" . }}
+app.kubernetes.io/component: {{ .Chart.Name }}
 helm.sh/chart: {{ include "common.chart" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- if .Chart.AppVersion }}

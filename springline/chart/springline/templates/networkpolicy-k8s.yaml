@@ -1,0 +1,23 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ template "common.fullname" . }}-k8s-nw-plcy
+  labels:
+    app: {{ include "common.name" . }}
+    release: {{ include "common.fullname" . }}
+    component: {{ .Chart.Name }}
+spec:
+  podSelector:
+    matchLabels:
+      app: {{ include "common.name" . }}
+      release: {{ include "common.fullname" . }}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+      - namespaceSelector:
+          matchLabels:
+            name: default
+      ports:
+        - protocol: TCP
+          port: 443
