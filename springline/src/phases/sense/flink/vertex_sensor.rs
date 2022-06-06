@@ -120,10 +120,9 @@ where
         let scopes = self.scopes.iter().copied().collect();
         let (metric_orders, _agg_span) = super::distill_metric_orders_and_agg(&scopes, &self.orders);
         if metric_orders.is_empty() {
-            // todo: best to end this useless stage or do nothing in loop? I hope end is best.
-            tracing::warn!(
+            tracing::info!(
                 stage=%self.name(), scopes=?self.scopes,
-                "no flink metric orders for vertex - stopping vertex sensesensor stage."
+                "no flink metric orders for vertex - stopping vertex sensor stage."
             );
             return Ok(());
         }
@@ -253,10 +252,12 @@ where
             .map(|picklist_response: FlinkMetricResponse| {
                 picklist_response
                     .into_iter()
+                    //todo: will filter by op in metric_order; get metric_order and use it to assess metric.id
                     .filter_map(|metric| metric_orders.get(&metric.id).and(Some(metric.id)))
                     .collect()
             });
 
+        tracing::debug!("job_id+vertex_id available metric order picklist are: {picklist:?}");
         super::identity_or_track_error(FlinkScope::Task, picklist)
     }
 

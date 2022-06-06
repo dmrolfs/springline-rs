@@ -12,6 +12,8 @@ use serde::{Deserialize, Serialize, Serializer};
 use crate::phases::sense::flink::STD_METRIC_ORDERS;
 use crate::settings::FlinkSensorSettings;
 
+//todo - do I need a way of saying literal or regex/partial?
+//todo - refactor into enum by flinkscope since there will be ops driven on scope.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MetricOrder {
     pub scope: FlinkScope,

@@ -103,7 +103,7 @@ spec:
           - key: config
             path: cluster.yaml
           - key: decision_basis
-            path: decision-basis.polar
+            path: chart_decision_basis.polar
       - name: {{ include "common.name" . }}-aaa-credentials
         secret:
           secretName: {{ required "Values.deployment.aaaClientSecretsName is not set" .Values.deployment.aaaClientSecretsName }}

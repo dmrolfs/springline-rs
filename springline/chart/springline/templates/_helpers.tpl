@@ -6,6 +6,10 @@
 {{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
+{{- define "common.heritage" -}}
+{{ .Release.Service }}
+{{- end -}}
+
 {{/*
     Create a default fully qualified app name.
     We truncate at 63 chars because some Kubernetes name fields are limited to this (by the DNS naming spec).
@@ -35,10 +39,15 @@
     Common labels
 */}}
 {{- define "common.labels" -}}
+app: {{ include "common.name" . }}
 app.kubernetes.io/name: {{ include "common.name" . }}
+app.kubernetes.io/instance: {{ include "common.fullname" . }}
+release: {{ include "common.fullname" . }}
+component: {{ .Chart.Name }}
 app.kubernetes.io/component: {{ .Chart.Name }}
+chart: {{ include "common.chart" . }}
 helm.sh/chart: {{ include "common.chart" . }}
-app.kubernetes.io/instance: {{ .Release.Name }}
+heritage: {{ include "common.heritage" . }}
 {{- if .Chart.AppVersion }}
 app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 {{- end }}

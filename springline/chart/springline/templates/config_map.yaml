@@ -16,9 +16,19 @@ data:
     kubernetes:
       namespace: {{ .Release.Namespace }}
     decision:
+      policies:
+        - source: file
+          policy:
+            path: "./resources/decision.polar"
+            is_template: true
+        - source: file
+          policy:
+            path: "/opt/springline/resources/chart_decision_basis.polar"
+            is_template: true
       template_data:
-        max_healthy_cpu_load: 0.0016
-        min_healthy_cpu_load: 0.0012
+        basis: chart_decision_basis
+        max_healthy_cpu_load: 10.0016
+        min_healthy_cpu_load: 5.0012
     plan:
       performance_repository:
         storage: memory

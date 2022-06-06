@@ -6,9 +6,9 @@ metadata:
 spec:
   podSelector:
     matchLabels:
-      app: {{ include "common.name" . }}
-      release: {{ include "common.fullname" . }}
-      component: {{ .Values.component }}
+      app.kubernetes.io/name: {{ include "common.name" . }}
+      app.kubernetes.io/instance: {{ include "common.fullname" . }}
+      app.kubernetes.io/component: {{ .Chart.Name }}
   policyTypes:
     - Ingress
   ingress:

@@ -1,0 +1,19 @@
+---
+#service:
+#  dnsTail: -api-dev.plm.platform.in.here.com
+deployment:
+  log:
+    level: "info,springline::flink=info,springline::kubernetes=info,springline::phases::act=trace,proctor::phases::sense::clearinghouse=info,springline::phases::plan::performance_repository=debug"
+    polar: "info"
+    backtrace: "1"
+global:
+  realm: "dev-1"
+  pipeline:
+    id: "2f545f95-7114-4cd1-b120-96b7df840a66"
+    versionId: "ad1b5f79-959a-442b-88c5-bd1fa91848fb"
+#    templateId: "00000000-0000-0000-3000-000801000020"
+    jobId: "springline"
+    customerBillingTag: "dev"
+    billingClientAppId: "patappid"
+  convention:
+    jobPrefix: "dr-"
