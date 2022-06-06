@@ -70,7 +70,7 @@ mod tests {
             flink: FlinkSensorSettings {
                 metric_orders: vec![
                     MetricOrder {
-                        scope: FlinkScope::Jobs,
+                        scope: FlinkScope::Job,
                         metric: "uptime".to_string(),
                         agg: Aggregation::Max,
                         telemetry_path: "health.job_uptime_millis".to_string(),
@@ -84,7 +84,7 @@ mod tests {
                         telemetry_type: TelemetryType::Integer,
                     },
                     MetricOrder {
-                        scope: FlinkScope::TaskManagers,
+                        scope: FlinkScope::TaskManager,
                         metric: "Status.JVM.Memory.Heap.Committed".to_string(),
                         agg: Aggregation::Sum,
                         telemetry_path: "cluster.task_heap_memory_committed".to_string(),
@@ -186,7 +186,7 @@ mod tests {
                         telemetry_type: TelemetryType::Float,
                     },
                     MetricOrder {
-                        scope: FlinkScope::Jobs,
+                        scope: FlinkScope::Job,
                         metric: "uptime".to_string(),
                         agg: Aggregation::Min,
                         telemetry_path: "health.job_uptime_millis".to_string(),
@@ -297,7 +297,7 @@ mod tests {
 
         let metric_orders = vec![
             MetricOrder {
-                scope: FlinkScope::Jobs,
+                scope: FlinkScope::Job,
                 metric: "uptime".to_string(),
                 agg: Aggregation::Max,
                 telemetry_path: "health.job_uptime_millis".to_string(),
@@ -311,7 +311,7 @@ mod tests {
                 telemetry_type: TelemetryType::Integer,
             },
             MetricOrder {
-                scope: FlinkScope::TaskManagers,
+                scope: FlinkScope::TaskManager,
                 metric: "Status.JVM.Memory.Heap.Committed".to_string(),
                 agg: Aggregation::Sum,
                 telemetry_path: "cluster.task_heap_memory_committed".to_string(),

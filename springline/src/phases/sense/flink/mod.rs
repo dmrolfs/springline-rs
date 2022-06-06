@@ -36,17 +36,17 @@ pub static STD_METRIC_ORDERS: Lazy<Vec<MetricOrder>> = Lazy::new(|| {
     use self::{Aggregation::*, FlinkScope::*};
 
     [
-        (Jobs, "uptime", Max, "health.job_uptime_millis", Integer), // does not work w reactive mode
-        (Jobs, "numRestarts", Max, "health.job_nr_restarts", Integer),
+        (Job, "uptime", Max, "health.job_uptime_millis", Integer), // does not work w reactive mode
+        (Job, "numRestarts", Max, "health.job_nr_restarts", Integer),
         (
-            Jobs,
+            Job,
             "numberOfCompletedCheckpoints",
             Max,
             "health.job_nr_completed_checkpoints",
             Integer,
         ), // does not work w reactive mode
         (
-            Jobs,
+            Job,
             "numberOfFailedCheckpoints",
             Max,
             "health.job_nr_failed_checkpoints",
@@ -54,23 +54,23 @@ pub static STD_METRIC_ORDERS: Lazy<Vec<MetricOrder>> = Lazy::new(|| {
         ), // does not work w reactive mode
         (Task, "numRecordsInPerSecond", Max, MC_FLOW__RECORDS_IN_PER_SEC, Float),
         (Task, "numRecordsOutPerSecond", Max, "flow.records_out_per_sec", Float),
-        (TaskManagers, "Status.JVM.CPU.Load", Max, "cluster.task_cpu_load", Float),
+        (TaskManager, "Status.JVM.CPU.Load", Max, "cluster.task_cpu_load", Float),
         (
-            TaskManagers,
+            TaskManager,
             "Status.JVM.Memory.Heap.Used",
             Max,
             "cluster.task_heap_memory_used",
             Float,
         ),
         (
-            TaskManagers,
+            TaskManager,
             "Status.JVM.Memory.Heap.Committed",
             Max,
             "cluster.task_heap_memory_committed",
             Float,
         ),
         (
-            TaskManagers,
+            TaskManager,
             "Status.JVM.Threads.Count",
             Max,
             "cluster.task_nr_threads",
@@ -134,13 +134,13 @@ pub async fn make_sensor(spec: FlinkSensorSpecification<'_>) -> Result<Box<dyn S
     let correlation_gen =
         CorrelationGenerator::distributed(spec.machine_node, IdPrettifier::<AlphabetCodec>::default());
     let jobs_scope_sensor = ScopeSensor::new(
-        FlinkScope::Jobs,
+        FlinkScope::Job,
         orders.clone(),
         spec.context.clone(),
         correlation_gen.clone(),
     );
     let tm_scope_sensor = ScopeSensor::new(
-        FlinkScope::TaskManagers,
+        FlinkScope::TaskManager,
         orders.clone(),
         spec.context.clone(),
         correlation_gen.clone(),
@@ -242,8 +242,8 @@ fn distill_metric_orders_and_agg(
     let mut order_domain = HashMap::default();
     let mut agg_span = HashSet::default();
 
-    for o in orders.iter().filter(|o| scopes.contains(&o.scope)) {
-        agg_span.insert(o.agg);
+    for o in orders.iter().filter(|o| scopes.contains(&o.scope())) {
+        agg_span.insert(o.agg());
         let entry = order_domain.entry(o.metric.clone()).or_insert_with(Vec::new);
         entry.push(o.clone());
     }

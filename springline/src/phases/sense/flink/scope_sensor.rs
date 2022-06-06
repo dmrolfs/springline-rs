@@ -298,7 +298,7 @@ mod tests {
                 .await;
 
             let context = assert_ok!(context_for(&mock_server));
-            let (handle, tx_trigger, mut rx_out) = test_stage_for(FlinkScope::Jobs, &STD_METRIC_ORDERS, context).await;
+            let (handle, tx_trigger, mut rx_out) = test_stage_for(FlinkScope::Job, &STD_METRIC_ORDERS, context).await;
 
             let sensor_handle = tokio::spawn(async move {
                 assert_ok!(tx_trigger.send(()).await);
@@ -387,7 +387,7 @@ mod tests {
                 .await;
 
             let context = assert_ok!(context_for(&mock_server));
-            let (handle, tx_trigger, mut rx_out) = test_stage_for(FlinkScope::Jobs, &STD_METRIC_ORDERS, context).await;
+            let (handle, tx_trigger, mut rx_out) = test_stage_for(FlinkScope::Job, &STD_METRIC_ORDERS, context).await;
 
             let sensor_handle = tokio::spawn(async move {
                 assert_ok!(tx_trigger.send(()).await);
@@ -451,7 +451,7 @@ mod tests {
                 .await;
 
             let context = assert_ok!(context_for(&mock_server));
-            let (handle, tx_trigger, mut rx_out) = test_stage_for(FlinkScope::Jobs, &STD_METRIC_ORDERS, context).await;
+            let (handle, tx_trigger, mut rx_out) = test_stage_for(FlinkScope::Job, &STD_METRIC_ORDERS, context).await;
 
             let sensor_handle = tokio::spawn(async move {
                 assert_ok!(tx_trigger.send(()).await);
@@ -534,7 +534,7 @@ mod tests {
 
             let context = assert_ok!(context_for(&mock_server));
             let (handle, tx_trigger, mut rx_out) =
-                test_stage_for(FlinkScope::TaskManagers, &STD_METRIC_ORDERS, context).await;
+                test_stage_for(FlinkScope::TaskManager, &STD_METRIC_ORDERS, context).await;
 
             let sensor_handle = tokio::spawn(async move {
                 assert_ok!(tx_trigger.send(()).await);

@@ -83,7 +83,7 @@ where
     }
 }
 
-const SCOPE: FlinkScope = FlinkScope::TaskManagers;
+const SCOPE: FlinkScope = FlinkScope::TaskManager;
 
 impl<Out> TaskmanagerAdminSensor<Out>
 where

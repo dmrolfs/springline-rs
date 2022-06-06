@@ -310,14 +310,14 @@ mod tests {
                     metrics_interval: Duration::from_secs(15),
                     metric_orders: vec![
                         MetricOrder {
-                            scope: FlinkScope::TaskManagers,
+                            scope: FlinkScope::TaskManager,
                             metric: "Status.JVM.Memory.NonHeap.Committed".to_string(),
                             agg: Aggregation::Max,
                             telemetry_path: "cluster.task_nonheap_memory_committed".to_string(),
                             telemetry_type: TelemetryType::Float,
                         },
                         MetricOrder {
-                            scope: FlinkScope::Jobs,
+                            scope: FlinkScope::Job,
                             metric: "uptime".to_string(),
                             agg: Aggregation::Min,
                             telemetry_path: "health.job_uptime_millis".to_string(),
@@ -655,7 +655,7 @@ mod tests {
                         flink: FlinkSensorSettings {
                             metrics_initial_delay: Duration::from_secs(0),
                             metric_orders: vec![MetricOrder {
-                                scope: FlinkScope::Jobs,
+                                scope: FlinkScope::Job,
                                 metric: "lastCheckpointDuration".to_string(),
                                 agg: Aggregation::Max,
                                 telemetry_path: "health.last_checkpoint_duration".to_string(),
@@ -773,7 +773,7 @@ mod tests {
                     flink: FlinkSensorSettings {
                         metrics_initial_delay: Duration::from_secs(10),
                         metric_orders: vec![MetricOrder {
-                            scope: FlinkScope::Jobs,
+                            scope: FlinkScope::Job,
                             metric: "lastCheckpointDuration".to_string(),
                             agg: Aggregation::Max,
                             telemetry_path: "health.last_checkpoint_duration".to_string(),
@@ -892,7 +892,7 @@ mod tests {
                         flink: FlinkSensorSettings {
                             metrics_initial_delay: Duration::from_secs(0),
                             metric_orders: vec![MetricOrder {
-                                scope: FlinkScope::Jobs,
+                                scope: FlinkScope::Job,
                                 metric: "lastCheckpointDuration".to_string(),
                                 agg: Aggregation::Max,
                                 telemetry_path: "health.last_checkpoint_duration".to_string(),

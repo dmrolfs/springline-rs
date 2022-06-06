@@ -5,6 +5,7 @@ use itertools::Itertools;
 use once_cell::sync::Lazy;
 use proctor::elements::telemetry::combine::{self, TelemetryCombinator};
 use proctor::elements::TelemetryType;
+use regex::Regex;
 use serde::de::{self, Deserializer, MapAccess, SeqAccess, Visitor};
 use serde::ser::SerializeTupleStruct;
 use serde::{Deserialize, Serialize, Serializer};
@@ -12,18 +13,67 @@ use serde::{Deserialize, Serialize, Serializer};
 use crate::phases::sense::flink::STD_METRIC_ORDERS;
 use crate::settings::FlinkSensorSettings;
 
-//todo - do I need a way of saying literal or regex/partial?
-//todo - refactor into enum by flinkscope since there will be ops driven on scope.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct MetricOrder {
-    pub scope: FlinkScope,
+#[derive(Debug, Clone, Partial)]
+pub struct MetricSpec {
     pub metric: String,
     pub agg: Aggregation,
     pub telemetry_path: String,
     pub telemetry_type: TelemetryType,
 }
 
+impl PartialEq for MetricSpec {
+    fn eq(&self, other: &Self) -> bool {
+        self.agg == other.agg
+        && self.telemetry_type == other.telemetry_type
+        && self.telemetry_path == other.telemetry_path
+        && self.metric.as_str() == other.metric.as_str()
+        && self.telemetry_path == other.telemetry_path
+    }
+}
+
+impl Eq for MetricSpec { }
+
+//todo - do I need a way of saying literal or regex/partial?
+//todo - refactor into enum by flinkscope since there will be ops driven on scope.
+// #[derive(Debug, Clone, PartialEq, Eq)]
+// pub struct MetricOrder {
+//     pub scope: FlinkScope,
+//     pub metric: String,
+//     pub agg: Aggregation,
+//     pub telemetry_path: String,
+//     pub telemetry_type: TelemetryType,
+// }
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MetricOrder {
+    Job(MetricSpec),
+    TaskManager(MetricSpec),
+    Task(MetricSpec),
+    Operator(MetricSpec),
+}
+
 impl MetricOrder {
+    pub fn scope(&self) -> FlinkScope {
+        match self {
+            Self::Job(_) => FlinkScope::Job,
+            Self::TaskManager(_) => FlinkScope::TaskManager,
+            Self::Task(_) => FlinkScope::Task,
+            Self::Operator(_) => FlinkScope::Operator,
+        }
+    }
+
+    pub fn agg(&self) -> Aggregation {
+        self.spec().agg
+    }
+
+    fn spec(&self) -> &MetricSpec {
+        match self {
+            Self::Job(spec) => spec,
+            Self::TaskManager(spec) => spec,
+            Self::Task(spec) => spec,
+            Self::Operator(spec) => spec,
+        }
+    }
+
     pub fn extend_standard_with_settings(settings: &FlinkSensorSettings) -> Vec<Self> {
         let mut orders = STD_METRIC_ORDERS.clone();
         orders.extend(settings.metric_orders.clone());
@@ -161,30 +211,32 @@ impl<'de> Deserialize<'de> for MetricOrder {
 
 #[derive(Debug, Display, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum FlinkScope {
-    Jobs,
+    Job,
+    TaskManager,
     Task,
-    TaskManagers,
-    Kafka,
-    Kinesis,
-    Other,
+    Operator,
+    // Kafka,
+    // Kinesis,
+    // Other,
 }
 
-static FLINK_SCOPE_JOBS: Lazy<String> = Lazy::new(|| FlinkScope::Jobs.to_string());
+static FLINK_SCOPE_JOB: Lazy<String> = Lazy::new(|| FlinkScope::Job.to_string());
+static FLINK_SCOPE_TASKMANAGER: Lazy<String> = Lazy::new(|| FlinkScope::TaskManager.to_string());
 static FLINK_SCOPE_TASK: Lazy<String> = Lazy::new(|| FlinkScope::Task.to_string());
-static FLINK_SCOPE_TASKMANAGERS: Lazy<String> = Lazy::new(|| FlinkScope::TaskManagers.to_string());
-static FLINK_SCOPE_KAFKA: Lazy<String> = Lazy::new(|| FlinkScope::Kafka.to_string());
-static FLINK_SCOPE_KINESIS: Lazy<String> = Lazy::new(|| FlinkScope::Kinesis.to_string());
-static FLINK_SCOPE_OTHER: Lazy<String> = Lazy::new(|| FlinkScope::Other.to_string());
+static FLINK_SCOPE_OPERATOR: Lazy<String> = Lazy::new(|| FlinkScope::Operator.to_string());
+// static FLINK_SCOPE_KAFKA: Lazy<String> = Lazy::new(|| FlinkScope::Kafka.to_string());
+// static FLINK_SCOPE_KINESIS: Lazy<String> = Lazy::new(|| FlinkScope::Kinesis.to_string());
+// static FLINK_SCOPE_OTHER: Lazy<String> = Lazy::new(|| FlinkScope::Other.to_string());
 
 impl AsRef<str> for FlinkScope {
     fn as_ref(&self) -> &str {
         match self {
-            Self::Jobs => FLINK_SCOPE_JOBS.as_ref(),
+            Self::Job => FLINK_SCOPE_JOB.as_ref(),
             Self::Task => FLINK_SCOPE_TASK.as_ref(),
-            Self::TaskManagers => FLINK_SCOPE_TASKMANAGERS.as_ref(),
-            Self::Kafka => FLINK_SCOPE_KAFKA.as_ref(),
-            Self::Kinesis => FLINK_SCOPE_KINESIS.as_ref(),
-            Self::Other => FLINK_SCOPE_OTHER.as_ref(),
+            Self::TaskManager => FLINK_SCOPE_TASKMANAGER.as_ref(),
+            // Self::Kafka => FLINK_SCOPE_KAFKA.as_ref(),
+            // Self::Kinesis => FLINK_SCOPE_KINESIS.as_ref(),
+            // Self::Other => FLINK_SCOPE_OTHER.as_ref(),
         }
     }
 }
