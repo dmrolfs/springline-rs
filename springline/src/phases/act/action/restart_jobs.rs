@@ -52,6 +52,7 @@ impl ScaleAction for RestartJobs {
 
         let parallelism = Self::parallelism_from_plan_session(plan, session);
 
+        let mut outcome = Ok(());
         if let Some(locations) = Self::locations_from(session) {
             if let Some(ref uploaded_jars) = session.uploaded_jars {
                 let remaining_sources = self
@@ -66,15 +67,15 @@ impl ScaleAction for RestartJobs {
                         "Flink restart failures occurred - attempting to restart at original parallelism"
                     );
 
-                    let (jars, savepoints): (Vec<JarId>, Vec<SavepointLocation>) =
-                        remaining_sources.into_iter().unzip();
+                    let mut jars = Vec::with_capacity(remaining_sources.len());
+                    let mut savepoints = HashSet::with_capacity(remaining_sources.len());
+                    for (j, s, _e) in remaining_sources {
+                        jars.push(j);
+                        savepoints.insert(s);
+                    }
+
                     let failures = self
-                        .try_jar_restarts_for_parallelism(
-                            plan.current_replicas(),
-                            &jars,
-                            savepoints.into_iter().collect(),
-                            session,
-                        )
+                        .try_jar_restarts_for_parallelism(plan.current_replicas(), &jars, savepoints, session)
                         .await;
 
                     if !failures.is_empty() {
@@ -82,6 +83,14 @@ impl ScaleAction for RestartJobs {
                             nr_restart_failures=%failures.len(), ?failures,
                             "Failed to restart all Flink jobs"
                         );
+                        let mut errors = Vec::with_capacity(failures.len());
+                        let mut jar_savepoints = Vec::with_capacity(failures.len());
+                        for (j, s, e) in failures {
+                            errors.push(e.into());
+                            jar_savepoints.push((j, s));
+                        }
+
+                        outcome = Err(ActError::Restart { sources: errors, jar_savepoints });
                     }
                 }
             } else {
@@ -91,10 +100,10 @@ impl ScaleAction for RestartJobs {
                      (with necessary assumption that Reactive mode is configured."
                 );
             };
-        }
+        };
 
         session.mark_duration(ACTION_LABEL, Duration::from_secs_f64(timer.stop_and_record()));
-        Ok(())
+        outcome
     }
 }
 
@@ -127,7 +136,7 @@ impl RestartJobs {
 
     async fn try_jar_restarts_for_parallelism(
         &self, parallelism: usize, jars: &[JarId], mut locations: HashSet<SavepointLocation>, session: &ActionSession,
-    ) -> Vec<(JarId, SavepointLocation)> {
+    ) -> Vec<(JarId, SavepointLocation, ActError)> {
         use crate::flink::JobState as JS;
 
         let correlation = session.correlation();
@@ -156,7 +165,7 @@ impl RestartJobs {
 
         let restarted = self.block_until_all_jobs_restarted(&jobs, session).instrument(span).await;
 
-        let mut failed = Vec::new();
+        let mut failed: Vec<(JarId, SavepointLocation, ActError)> = Vec::new();
         for (job, outcome) in restarted {
             match outcome {
                 Err(err) => {
@@ -166,14 +175,18 @@ impl RestartJobs {
                         "failure while waiting for all jobs to restart -- may need manual intervention"
                     );
 
-                    if let Some(source) = job_sources.get(&job) {
-                        failed.push(source.clone());
+                    if let Some((jar_id, savepoint_location)) = job_sources.get(&job).cloned() {
+                        failed.push((jar_id, savepoint_location, err.into()));
                     }
                 },
                 Ok(state) if state == JS::Failing || state == JS::Failed => {
                     tracing::error!(%job, job_state=%state, "job failed after restart -- may need manual intervention");
-                    if let Some(source) = job_sources.get(&job) {
-                        failed.push(source.clone());
+                    if let Some((jar_id, savepoint_location)) = job_sources.get(&job).cloned() {
+                        failed.push((
+                            jar_id,
+                            savepoint_location.clone(),
+                            ActError::FailedJob(job, savepoint_location),
+                        ));
                     }
                 },
                 Ok(state) => {

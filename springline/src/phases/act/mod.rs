@@ -65,6 +65,15 @@ pub enum ActError {
         job_ids: Vec<crate::flink::JobId>,
     },
 
+    #[error("Job failed during attempted restart.")]
+    FailedJob(crate::flink::JobId, crate::flink::SavepointLocation),
+
+    #[error("failure restarting Flink savepoints for jars: {jar_savepoints:?}")]
+    Restart {
+        sources: Vec<anyhow::Error>,
+        jar_savepoints: Vec<(crate::flink::JarId, crate::flink::SavepointLocation)>,
+    },
+
     #[error("failure occurred in the PatchReplicas inlet port: {0}")]
     Port(#[from] proctor::error::PortError),
 
@@ -85,6 +94,8 @@ impl MetricLabel for ActError {
             // Self::KubeApi(e) => Left(format!("kubernetes::{}", e.reason).into()),
             Self::Flink(e) => Right(Box::new(e)),
             Self::Savepoint { .. } => Left("savepoint".into()),
+            Self::FailedJob(_, _) => Left("restart::flink".into()),
+            Self::Restart { .. } => Left("restart::jar".into()),
             Self::Port(e) => Right(Box::new(e)),
             Self::Stage(_) => Left("stage".into()),
         }
