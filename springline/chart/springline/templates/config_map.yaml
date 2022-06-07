@@ -37,6 +37,8 @@ data:
         # temp hard code until we can directly embed autoscaler into runtime ns
         label_selector: "component=taskmanager,release={{ include "pipeline.jobName" . }}"
         deploy_resource: {{ default "statefulset" .Values.deployment.taskManagerDeployment }}/{{ include "pipeline.jobName" . }}{{ .Values.global.convention.taskManagerSuffix }}
+        kubernetes_api:
+          api_timeout_secs: {{ .Values.application.action.taskmanager.kubernetes_api.api_timeout_secs }}
 #        label_selector: "component=taskmanager,release={{ include "common.name" . }}"
 #        deploy_resource: statefulset/{{ include "common.name" . }}-tm
 #        max_healthy_heap_memory_load: f64

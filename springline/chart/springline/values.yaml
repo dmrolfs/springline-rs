@@ -109,6 +109,12 @@ probes:
     livenessPath: /health
     livenessInterval: 120000
 
+application:
+  action:
+    taskmanager:
+      kubernetes_api:
+        api_timeout_secs: 290
+
 global:
   annotations: {}
   pipeline:
