@@ -376,22 +376,27 @@ impl RestartJobs {
             loop {
                 match session.flink.query_job_details(job, &correlation).await {
                     Ok(detail) if detail.state.is_engaged() => {
-                        tracing::debug!(?detail, "job detail received");
+                        tracing::debug!(?detail, "job restart succeeded: job is {}", detail.state);
                         break detail.state;
                     },
-                    Ok(detail) if detail.state == JS::Failed || detail.state == JS::Failing => {
+                    Ok(detail) if detail.state == JS::Failed => {
                         // tracing::error!(?detail, "job failed after restart -- may need manual intervention");
-                        tracing::debug!(?detail, "job detail received");
+                        tracing::debug!(?detail, "job {} - restart is unsuccessful", detail.state);
                         break detail.state;
                     },
                     Ok(detail) if detail.state.is_stopped() => {
-                        tracing::warn!(?detail, "job stopped after restart -- may need manual intervention");
+                        tracing::warn!(
+                            ?detail,
+                            "job stopped({}) after restart -- may need manual intervention",
+                            detail.state
+                        );
                         break detail.state;
                     },
                     Ok(detail) => {
                         tracing::debug!(
                             ?detail,
-                            "job detail received but job is not engaged - checking again in {:?}",
+                            "job detail received and {}, but job is not engaged - checking again in {:?}",
+                            detail.state,
                             self.polling_interval
                         )
                     },
