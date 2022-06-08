@@ -45,7 +45,7 @@ impl<Out> VertexSensor<Out> {
     pub fn new(
         orders: Arc<Vec<MetricOrder>>, context: FlinkContext, correlation_gen: CorrelationGenerator,
     ) -> Result<Self, SenseError> {
-        let scopes = vec![FlinkScope::Task, FlinkScope::Kafka, FlinkScope::Kinesis];
+        let scopes = vec![FlinkScope::Task, FlinkScope::Operator];
         let trigger = Inlet::new(NAME, "trigger");
         let outlet = Outlet::new(NAME, "outlet");
 
@@ -328,7 +328,7 @@ where
                     .cloned()
                     .unwrap_or_default()
                     .into_iter()
-                    .map(|order| order.agg)
+                    .map(|order| order.agg())
                     .filter(|agg| *agg != Aggregation::Value)
             })
             .collect()
@@ -420,6 +420,7 @@ mod tests {
     use super::*;
     use crate::flink::MC_FLOW__RECORDS_IN_PER_SEC;
     use crate::phases::sense::flink;
+    use crate::phases::sense::flink::metric_order::MetricSpec;
     use crate::phases::sense::flink::STD_METRIC_ORDERS;
 
     pub struct RetryResponder(Arc<AtomicU32>, u32, ResponseTemplate, u16);
@@ -567,12 +568,12 @@ mod tests {
             let summary_response = ResponseTemplate::new(200).set_body_json(METRIC_SUMMARY.clone());
 
             let metrics = json!([
-                { "id": "numRecordsInPerSecond", "max": 0.0 },
-                { "id": "numRecordsOutPerSecond", "max": 20.0 },
-                { "id": "buffers.inputQueueLength", "max": 0.0 },
-                { "id": "buffers.inPoolUsage", "max": 0.0 },
-                { "id": "buffers.outputQueueLength", "max": 1.0 },
-                { "id": "buffers.outPoolUsage", "max": 0.1 },
+                { "id": "numRecordsInPerSecond", "max": 0_f64 },
+                { "id": "numRecordsOutPerSecond", "max": 20_f64 },
+                { "id": "buffers.inputQueueLength", "max": 0_f64 },
+                { "id": "buffers.inPoolUsage", "max": 0_f64 },
+                { "id": "buffers.outputQueueLength", "max": 1_f64 },
+                { "id": "buffers.outPoolUsage", "max": 0.1_f64 },
             ] );
 
             let metrics_response = ResponseTemplate::new(200).set_body_json(metrics);
@@ -601,18 +602,13 @@ mod tests {
             let context = assert_ok!(context_for(&mock_server));
             let (stage, ..) = test_stage_for(&STD_METRIC_ORDERS, context).await;
 
-            let scopes = maplit::hashset! {
-                FlinkScope::Task, FlinkScope::Kafka, FlinkScope::Kinesis,
-            };
+            let scopes = maplit::hashset! { FlinkScope::Task, FlinkScope::Operator };
 
             let mut orders = STD_METRIC_ORDERS.clone();
-            let kafka_order = MetricOrder {
-                scope: FlinkScope::Kafka,
-                metric: "records-lag-max".to_string(),
-                agg: Aggregation::Value,
-                telemetry_path: "flow.input_records_lag_max".to_string(),
-                telemetry_type: TelemetryType::Integer,
-            };
+            let kafka_order = MetricOrder::Operator(
+                "Source: Foo Stream".to_string(),
+                MetricSpec::new("records-lag-max", Aggregation::Value, "flow.input_records_lag_max", TelemetryType::Integer)
+            );
             orders.extend(vec![kafka_order.clone()]);
 
             let (metric_orders, agg_span) = flink::distill_metric_orders_and_agg(&scopes, &orders);

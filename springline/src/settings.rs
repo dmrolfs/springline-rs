@@ -218,9 +218,12 @@ mod tests {
     use crate::flink::RestoreMode;
     use crate::kubernetes::{KubernetesApiConstraints, KubernetesDeployResource};
     use crate::phases::plan::{PerformanceRepositorySettings, PerformanceRepositoryType, SpikeSettings};
-    use crate::phases::sense::flink::{Aggregation, FlinkScope, MetricOrder};
+    use crate::phases::sense::flink::{Aggregation, FlinkScope, MetricOrder, MetricSpec};
     use crate::settings::action_settings::SavepointSettings;
     use crate::settings::sensor_settings::FlinkSensorSettings;
+    use MetricOrder::{Job, TaskManager, Task, Operator};
+    use Aggregation::{Max, Min, Value, Sum};
+    use TelemetryType::{Integer, Float};
 
     static SERIAL_TEST: Lazy<Mutex<()>> = Lazy::new(|| Default::default());
 
@@ -309,20 +312,13 @@ mod tests {
                     metrics_initial_delay: Duration::from_secs(300),
                     metrics_interval: Duration::from_secs(15),
                     metric_orders: vec![
-                        MetricOrder {
-                            scope: FlinkScope::TaskManager,
-                            metric: "Status.JVM.Memory.NonHeap.Committed".to_string(),
-                            agg: Aggregation::Max,
-                            telemetry_path: "cluster.task_nonheap_memory_committed".to_string(),
-                            telemetry_type: TelemetryType::Float,
-                        },
-                        MetricOrder {
-                            scope: FlinkScope::Job,
-                            metric: "uptime".to_string(),
-                            agg: Aggregation::Min,
-                            telemetry_path: "health.job_uptime_millis".to_string(),
-                            telemetry_type: TelemetryType::Integer,
-                        },
+                        TaskManager(MetricSpec::new(
+                            "Status.JVM.Memory.NonHeap.Committed",
+                            Max,
+                            "cluster.task_nonheap_memory_committed",
+                Float
+                        )),
+                        Job(MetricSpec::new("uptime", Min, "health.job_uptime_millis", Integer,)),
                     ],
                 },
                 sensors: maplit::hashmap! {
@@ -496,13 +492,10 @@ mod tests {
             flink: FlinkSensorSettings {
                 metrics_initial_delay: Duration::from_secs(300),
                 metrics_interval: Duration::from_secs(15),
-                metric_orders: vec![MetricOrder {
-                    scope: FlinkScope::Kafka,
-                    metric: "records-lag-max".to_string(),
-                    agg: Aggregation::Value,
-                    telemetry_path: "flow.input_records_lag_max".to_string(),
-                    telemetry_type: TelemetryType::Integer,
-                }],
+                metric_orders: vec![Operator(
+                    "Source: my data".to_string(),
+                    MetricSpec::new("records-lag-max", Value, "flow.input_records_lag_max", Integer,)
+                )],
             },
             sensors: maplit::hashmap! {
                 "foo".to_string() => SensorSetting::Csv { path: PathBuf::from("./resources/bar.toml"),},
@@ -654,13 +647,12 @@ mod tests {
                     sensor: SensorSettings {
                         flink: FlinkSensorSettings {
                             metrics_initial_delay: Duration::from_secs(0),
-                            metric_orders: vec![MetricOrder {
-                                scope: FlinkScope::Job,
-                                metric: "lastCheckpointDuration".to_string(),
-                                agg: Aggregation::Max,
-                                telemetry_path: "health.last_checkpoint_duration".to_string(),
-                                telemetry_type: TelemetryType::Float,
-                            }],
+                            metric_orders: vec![Job(MetricSpec::new(
+                                "lastCheckpointDuration",
+                                Max,
+                                "health.last_checkpoint_duration",
+                                Float,
+                            ))],
                             ..SETTINGS.sensor.flink.clone()
                         },
                         sensors: HashMap::default(),
@@ -772,13 +764,12 @@ mod tests {
                 sensor: SensorSettings {
                     flink: FlinkSensorSettings {
                         metrics_initial_delay: Duration::from_secs(10),
-                        metric_orders: vec![MetricOrder {
-                            scope: FlinkScope::Job,
-                            metric: "lastCheckpointDuration".to_string(),
-                            agg: Aggregation::Max,
-                            telemetry_path: "health.last_checkpoint_duration".to_string(),
-                            telemetry_type: TelemetryType::Float,
-                        }],
+                        metric_orders: vec![Job(MetricSpec::new(
+                            "lastCheckpointDuration",
+                            Max,
+                            "health.last_checkpoint_duration",
+                            Float,
+                        ))],
                         ..SETTINGS.sensor.flink.clone()
                     },
                     sensors: HashMap::default(),
@@ -891,13 +882,12 @@ mod tests {
                     sensor: SensorSettings {
                         flink: FlinkSensorSettings {
                             metrics_initial_delay: Duration::from_secs(0),
-                            metric_orders: vec![MetricOrder {
-                                scope: FlinkScope::Job,
-                                metric: "lastCheckpointDuration".to_string(),
-                                agg: Aggregation::Max,
-                                telemetry_path: "health.last_checkpoint_duration".to_string(),
-                                telemetry_type: TelemetryType::Float,
-                            }],
+                            metric_orders: vec![Job(MetricSpec::new(
+                                "lastCheckpointDuration",
+                                Max,
+                                "health.last_checkpoint_duration",
+                                Float,
+                            ))],
                             ..SETTINGS.sensor.flink.clone()
                         },
                         sensors: HashMap::default(),

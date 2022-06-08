@@ -98,7 +98,14 @@ sensor:
     # User can add metrics to be collected from Flink beyond the default set. Each metric is defined
     # as an "order" of the form:
     metric_orders:
-      - scope: Jobs
+      - scope: Operator
+        name: "Source: RWO Drives stream"
+        metric: records-lag-max
+        agg: sum
+        telemetry_path: flow.input_records_lag_max
+        telemetry_type: Integer
+
+      - scope: Job
         metric: lastCheckpointDuration
         agg: max
         telemetry_path: health.last_checkpoint_duration

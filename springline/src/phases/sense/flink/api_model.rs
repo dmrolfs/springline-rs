@@ -33,16 +33,17 @@ impl FlinkMetric {
         O: IntoIterator<Item = &'m MetricOrder>,
     {
         for o in orders.into_iter() {
-            let agg = o.agg;
+            let agg = o.agg();
+            let field = o.telemetry();
             match self.values.get(&agg) {
-                None => tracing::warn!(metric=%o.metric, %agg, "metric order not found in flink response."),
-                Some(metric_value) => match metric_value.clone().try_cast(o.telemetry_type) {
+                None => tracing::warn!(metric=%o.metric(), %agg, "metric order not found in flink response."),
+                Some(metric_value) => match metric_value.clone().try_cast(field.0) {
                     Err(err) => tracing::error!(
-                        error=?err, metric=%o.metric, ?metric_value, order=?o,
+                        error=?err, metric=%o.metric(), ?metric_value, order=?o,
                         "Unable to read ordered type in flink metric response - skipping."
                     ),
                     Ok(value) => {
-                        let _ = telemetry.insert(o.telemetry_path.clone(), value);
+                        let _ = telemetry.insert(field.1.to_string(), value);
                     },
                 },
             }

@@ -22,98 +22,36 @@ mod scope_sensor;
 mod taskmanager_admin_sensor;
 mod vertex_sensor;
 
-pub use metric_order::{Aggregation, FlinkScope, MetricOrder};
+pub use metric_order::{Aggregation, FlinkScope, MetricOrder, MetricSpec};
 pub use vertex_sensor::{
     FLINK_VERTEX_SENSOR_AVAIL_TELEMETRY_TIME, FLINK_VERTEX_SENSOR_METRIC_PICKLIST_TIME, FLINK_VERTEX_SENSOR_TIME,
 };
+use crate::phases::sense::flink::metric_order::ScopeSpec;
 
 // note: `cluster.nr_task_managers` is a standard metric pulled from Flink's admin API. The order
 // mechanism may need to be expanded to consider further meta information outside of Flink Metrics
 // API.
 pub static STD_METRIC_ORDERS: Lazy<Vec<MetricOrder>> = Lazy::new(|| {
     use proctor::elements::TelemetryType::*;
-
+    use MetricOrder::{Job, TaskManager, Task, Operator,};
     use self::{Aggregation::*, FlinkScope::*};
 
-    [
-        (Job, "uptime", Max, "health.job_uptime_millis", Integer), // does not work w reactive mode
-        (Job, "numRestarts", Max, "health.job_nr_restarts", Integer),
-        (
-            Job,
-            "numberOfCompletedCheckpoints",
-            Max,
-            "health.job_nr_completed_checkpoints",
-            Integer,
-        ), // does not work w reactive mode
-        (
-            Job,
-            "numberOfFailedCheckpoints",
-            Max,
-            "health.job_nr_failed_checkpoints",
-            Integer,
-        ), // does not work w reactive mode
-        (Task, "numRecordsInPerSecond", Max, MC_FLOW__RECORDS_IN_PER_SEC, Float),
-        (Task, "numRecordsOutPerSecond", Max, "flow.records_out_per_sec", Float),
-        (TaskManager, "Status.JVM.CPU.Load", Max, "cluster.task_cpu_load", Float),
-        (
-            TaskManager,
-            "Status.JVM.Memory.Heap.Used",
-            Max,
-            "cluster.task_heap_memory_used",
-            Float,
-        ),
-        (
-            TaskManager,
-            "Status.JVM.Memory.Heap.Committed",
-            Max,
-            "cluster.task_heap_memory_committed",
-            Float,
-        ),
-        (
-            TaskManager,
-            "Status.JVM.Threads.Count",
-            Max,
-            "cluster.task_nr_threads",
-            Integer,
-        ),
-        (
-            Task,
-            "buffers.inputQueueLength",
-            Max,
-            "cluster.task_network_input_queue_len",
-            Float, // Integer,
-        ), // verify,
-        (
-            Task,
-            "buffers.inPoolUsage",
-            Max,
-            "cluster.task_network_input_pool_usage",
-            Float, // Integer,
-        ), // verify,
-        (
-            Task,
-            "buffers.outputQueueLength",
-            Max,
-            "cluster.task_network_output_queue_len",
-            Float, // Integer,
-        ), // verify,
-        (
-            Task,
-            "buffers.outPoolUsage",
-            Max,
-            "cluster.task_network_output_pool_usage",
-            Float, // Integer,
-        ), // verify,
+    vec![
+        Job(MetricSpec::new("uptime", Max, "health.job_uptime_millis", Integer)), // does not work w reactive mode
+        Job(MetricSpec::new("numRestarts", Max, "health.job_nr_restarts", Integer)),
+        Job(MetricSpec::new("numberOfCompletedCheckpoints", Max, "health.job_nr_completed_checkpoints", Integer)), // does not work w reactive mode
+        Job(MetricSpec::new("numberOfFailedCheckpoints", Max, "health.job_nr_failed_checkpoints", Integer)), // does not work w reactive mode
+        Task(MetricSpec::new("numRecordsInPerSecond", Max, MC_FLOW__RECORDS_IN_PER_SEC, Float)),
+        Task(MetricSpec::new("numRecordsOutPerSecond", Max, "flow.records_out_per_sec", Float)),
+        TaskManager(MetricSpec::new("Status.JVM.CPU.Load", Max, "cluster.task_cpu_load", Float)),
+        TaskManager(MetricSpec::new("Status.JVM.Memory.Heap.Used", Max, "cluster.task_heap_memory_used", Float)),
+        TaskManager(MetricSpec::new("Status.JVM.Memory.Heap.Committed", Max, "cluster.task_heap_memory_committed", Float)),
+        TaskManager(MetricSpec::new("Status.JVM.Threads.Count", Max, "cluster.task_nr_threads", Integer)),
+        Task(MetricSpec::new("buffers.inputQueueLength", Max, "cluster.task_network_input_queue_len", Float)), // Integer,
+        Task(MetricSpec::new("buffers.inPoolUsage", Max, "cluster.task_network_input_pool_usage", Float)), // Integer,
+        Task(MetricSpec::new("buffers.outputQueueLength", Max, "cluster.task_network_output_queue_len", Float)), // Integer,
+        Task(MetricSpec::new("buffers.outPoolUsage", Max, "cluster.task_network_output_pool_usage", Float)), // Integer,
     ]
-    .into_iter()
-    .map(|(scope, m, agg, tp, telemetry_type)| MetricOrder {
-        scope,
-        metric: m.to_string(),
-        agg,
-        telemetry_path: tp.to_string(),
-        telemetry_type,
-    })
-    .collect()
 });
 
 #[derive(Debug)]
@@ -244,7 +182,7 @@ fn distill_metric_orders_and_agg(
 
     for o in orders.iter().filter(|o| scopes.contains(&o.scope())) {
         agg_span.insert(o.agg());
-        let entry = order_domain.entry(o.metric.clone()).or_insert_with(Vec::new);
+        let entry = order_domain.entry(o.metric().to_string()).or_insert_with(Vec::new);
         entry.push(o.clone());
     }
 
@@ -267,7 +205,7 @@ fn consolidate_active_job_telemetry_for_order(
     // to avoid repeated linear searches, reorg strategy data based on metrics
     let mut telemetry_agg = HashMap::with_capacity(orders.len());
     for o in orders {
-        telemetry_agg.insert(o.telemetry_path.as_str(), o.agg);
+        telemetry_agg.insert(o.telemetry().1, o.agg());
     }
 
     // merge via order aggregation

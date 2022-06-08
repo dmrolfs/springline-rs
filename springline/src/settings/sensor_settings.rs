@@ -60,7 +60,10 @@ mod tests {
     use serde_test::{assert_tokens, Token};
 
     use super::*;
-    use crate::phases::sense::flink::{Aggregation, FlinkScope, MetricOrder};
+    use crate::phases::sense::flink::{Aggregation, FlinkScope, MetricOrder, MetricSpec};
+    use MetricOrder::{Job, TaskManager, Task, Operator};
+    use Aggregation::{Max, Min, Value, Sum};
+    use TelemetryType::{Integer, Float};
 
     #[test]
     fn test_serde_sensor_settings_1() {
@@ -69,27 +72,12 @@ mod tests {
             // only doing one pair at a time until *convenient* way to pin order and test is determined
             flink: FlinkSensorSettings {
                 metric_orders: vec![
-                    MetricOrder {
-                        scope: FlinkScope::Job,
-                        metric: "uptime".to_string(),
-                        agg: Aggregation::Max,
-                        telemetry_path: "health.job_uptime_millis".to_string(),
-                        telemetry_type: TelemetryType::Integer,
-                    },
-                    MetricOrder {
-                        scope: FlinkScope::Kafka,
-                        metric: "records-lag-max".to_string(),
-                        agg: Aggregation::Value,
-                        telemetry_path: "flow.input_records_lag_max".to_string(),
-                        telemetry_type: TelemetryType::Integer,
-                    },
-                    MetricOrder {
-                        scope: FlinkScope::TaskManager,
-                        metric: "Status.JVM.Memory.Heap.Committed".to_string(),
-                        agg: Aggregation::Sum,
-                        telemetry_path: "cluster.task_heap_memory_committed".to_string(),
-                        telemetry_type: TelemetryType::Float,
-                    },
+                    Job(MetricSpec::new("uptime", Max, "health.job_uptime_millis", Integer,)),
+                    Operator(
+                        "Source: Baz input".to_string(),
+                        MetricSpec::new("records-lag-max", Value, "flow.input_records_lag_max", Integer)
+                    ),
+                    TaskManager(MetricSpec::new("Status.JVM.Memory.Heap.Committed", Sum, "cluster.task_heap_memory_committed", Float,)),
                 ],
                 ..FlinkSensorSettings::default()
             },
@@ -178,20 +166,8 @@ mod tests {
                 metrics_initial_delay: Duration::from_secs(300),
                 metrics_interval: Duration::from_secs(15),
                 metric_orders: vec![
-                    MetricOrder {
-                        scope: FlinkScope::Task,
-                        metric: "Status.JVM.Memory.NonHeap.Committed".to_string(),
-                        agg: Aggregation::Max,
-                        telemetry_path: "cluster.task_heap_memory_committed".to_string(),
-                        telemetry_type: TelemetryType::Float,
-                    },
-                    MetricOrder {
-                        scope: FlinkScope::Job,
-                        metric: "uptime".to_string(),
-                        agg: Aggregation::Min,
-                        telemetry_path: "health.job_uptime_millis".to_string(),
-                        telemetry_type: TelemetryType::Integer,
-                    },
+                    Task(MetricSpec::new("Status.JVM.Memory.NonHeap.Committed", Max, "cluster.task_heap_memory_committed", Float,)),
+                    Job(MetricSpec::new("uptime", Min, "health.job_uptime_millis", Integer,)),
                 ],
             },
             // only doing one pair at a time until *convenient* way to pin order and test is determined
@@ -296,27 +272,12 @@ mod tests {
         let _main_span_guard = main_span.enter();
 
         let metric_orders = vec![
-            MetricOrder {
-                scope: FlinkScope::Job,
-                metric: "uptime".to_string(),
-                agg: Aggregation::Max,
-                telemetry_path: "health.job_uptime_millis".to_string(),
-                telemetry_type: TelemetryType::Integer,
-            },
-            MetricOrder {
-                scope: FlinkScope::Kafka,
-                metric: "records-lag-max".to_string(),
-                agg: Aggregation::Value,
-                telemetry_path: "flow.input_records_lag_max".to_string(),
-                telemetry_type: TelemetryType::Integer,
-            },
-            MetricOrder {
-                scope: FlinkScope::TaskManager,
-                metric: "Status.JVM.Memory.Heap.Committed".to_string(),
-                agg: Aggregation::Sum,
-                telemetry_path: "cluster.task_heap_memory_committed".to_string(),
-                telemetry_type: TelemetryType::Float,
-            },
+            Job(MetricSpec::new("uptime", Max, "health.job_uptime_millis", Integer,)),
+            Operator(
+                "Input: The best data".to_string(),
+                MetricSpec::new("records-lag-max", Value, "flow.input_records_lag_max", Integer,)
+            ),
+            TaskManager(MetricSpec::new("Status.JVM.Memory.Heap.Committed", Sum, "cluster.task_heap_memory_committed", Float,)),
         ];
 
         let actual = assert_ok!(ron::to_string(&metric_orders));
