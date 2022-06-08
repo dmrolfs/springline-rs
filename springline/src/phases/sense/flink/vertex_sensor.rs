@@ -607,7 +607,12 @@ mod tests {
             let mut orders = STD_METRIC_ORDERS.clone();
             let kafka_order = MetricOrder::Operator(
                 "Source: Foo Stream".to_string(),
-                MetricSpec::new("records-lag-max", Aggregation::Value, "flow.input_records_lag_max", TelemetryType::Integer)
+                MetricSpec::new(
+                    "records-lag-max",
+                    Aggregation::Value,
+                    "flow.input_records_lag_max",
+                    TelemetryType::Integer,
+                ),
             );
             orders.extend(vec![kafka_order.clone()]);
 

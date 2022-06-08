@@ -1,16 +1,15 @@
+use anyhow::anyhow;
 use std::collections::HashMap;
 use std::fmt::{self, Display};
-use anyhow::anyhow;
 
 use itertools::Itertools;
 use once_cell::sync::Lazy;
 use proctor::elements::telemetry::combine::{self, TelemetryCombinator};
 use proctor::elements::TelemetryType;
-use proctor::error::ProctorError::SensePhase;
 use proctor::error::SenseError;
 use regex::Regex;
-use serde::de::{self, Deserializer, MapAccess, SeqAccess, Visitor};
-use serde::ser::SerializeTupleStruct;
+use serde::de::{self, Deserializer, MapAccess, Visitor};
+use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize, Serializer};
 
 use crate::phases::sense::flink::STD_METRIC_ORDERS;
@@ -26,10 +25,7 @@ pub struct MetricSpec {
 
 impl MetricSpec {
     pub fn new(
-        metric: impl Into<String>,
-        agg: Aggregation,
-        telemetry_path: impl Into<String>,
-        telemetry_type: TelemetryType,
+        metric: impl Into<String>, agg: Aggregation, telemetry_path: impl Into<String>, telemetry_type: TelemetryType,
     ) -> Self {
         Self {
             metric: metric.into(),
@@ -82,12 +78,15 @@ impl MetricOrder {
             FlinkScope::Job => Ok(Self::Job(metric)),
             FlinkScope::TaskManager => Ok(Self::TaskManager(metric)),
             FlinkScope::Task => Ok(Self::Task(metric)),
-            FlinkScope::Operator if scope.name.is_some() => Ok(Self::Operator(scope.name.unwrap().to_string(), metric)),
-            _ => Err(SenseError::Stage(anyhow!("bad metric order scope specification: {:?}", scope))),
+            FlinkScope::Operator if scope.name.is_some() => Ok(Self::Operator(scope.name.unwrap(), metric)),
+            _ => Err(SenseError::Stage(anyhow!(
+                "bad metric order scope specification: {:?}",
+                scope
+            ))),
         }
     }
 
-    pub fn scope(&self) -> FlinkScope {
+    pub const fn scope(&self) -> FlinkScope {
         match self {
             Self::Job(_) => FlinkScope::Job,
             Self::TaskManager(_) => FlinkScope::TaskManager,
@@ -103,7 +102,7 @@ impl MetricOrder {
         }
     }
 
-    pub fn agg(&self) -> Aggregation {
+    pub const fn agg(&self) -> Aggregation {
         self.metric_spec().agg
     }
 
@@ -116,7 +115,7 @@ impl MetricOrder {
         (spec.telemetry_type, spec.telemetry_path.as_str())
     }
 
-    fn metric_spec(&self) -> &MetricSpec {
+    const fn metric_spec(&self) -> &MetricSpec {
         match self {
             Self::Job(spec) => spec,
             Self::TaskManager(spec) => spec,
@@ -149,13 +148,22 @@ impl Serialize for MetricOrder {
     where
         S: Serializer,
     {
-        let mut state = serializer.serialize_tuple_struct("MetricOrder", 5)?;
-        let spec = self.metric_spec();
-        state.serialize_field(&self.scope())?;
-        state.serialize_field(&spec.metric)?;
-        state.serialize_field(&spec.agg)?;
-        state.serialize_field(&spec.telemetry_path)?;
-        state.serialize_field(&spec.telemetry_type)?;
+        let (scope, scope_name, metric_spec, size) = match self {
+            Self::Operator(s, m) => (FlinkScope::Operator, Some(s.as_str()), m, 6),
+            Self::Job(m) => (FlinkScope::Job, None, m, 5),
+            Self::TaskManager(m) => (FlinkScope::TaskManager, None, m, 5),
+            Self::Task(m) => (FlinkScope::Task, None, m, 5),
+        };
+
+        let mut state = serializer.serialize_map(Some(size))?;
+        state.serialize_entry("scope", &scope)?;
+        if let Some(name) = scope_name {
+            state.serialize_entry("name", name)?;
+        }
+        state.serialize_entry("metric", &metric_spec.metric)?;
+        state.serialize_entry("agg", &metric_spec.agg)?;
+        state.serialize_entry("telemetry_path", &metric_spec.telemetry_path)?;
+        state.serialize_entry("telemetry_type", &metric_spec.telemetry_type)?;
         state.end()
     }
 }
@@ -170,6 +178,7 @@ impl<'de> Deserialize<'de> for MetricOrder {
         #[serde(field_identifier, rename_all = "snake_case")]
         enum Field {
             Scope,
+            #[serde(alias = "name")]
             ScopeName,
             Metric,
             Agg,
@@ -183,22 +192,8 @@ impl<'de> Deserialize<'de> for MetricOrder {
             type Value = MetricOrder;
 
             fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.write_str("struct MetricOrder")
+                f.write_str("map MetricOrder")
             }
-
-            // #[tracing::instrument(level = "trace", skip(self, seq))]
-            // fn visit_seq<V>(self, mut seq: V) -> Result<Self::Value, V::Error>
-            // where
-            //     V: SeqAccess<'de>,
-            // {
-            //     let scope = seq.next_element()?.ok_or_else(|| de::Error::invalid_length(0, &self))?;
-            //     let metric = seq.next_element()?.ok_or_else(|| de::Error::invalid_length(1, &self))?;
-            //     let agg = seq.next_element()?.ok_or_else(|| de::Error::invalid_length(2, &self))?;
-            //     let telemetry_path = seq.next_element()?.ok_or_else(|| de::Error::invalid_length(3, &self))?;
-            //     let telemetry_type = seq.next_element()?.ok_or_else(|| de::Error::invalid_length(4, &self))?;
-            //     let spec = MetricSpec { metric, agg, telemetry_path, telemetry_type };
-            //     Ok(MetricOrder::from_scope_spec(scope, spec))
-            // }
 
             #[tracing::instrument(level = "trace", skip(self, map))]
             fn visit_map<V>(self, mut map: V) -> Result<Self::Value, V::Error>
@@ -222,7 +217,7 @@ impl<'de> Deserialize<'de> for MetricOrder {
                         },
                         Field::ScopeName => {
                             if scope_name.is_some() {
-                                return Err(de::Error::duplicate_field("scope_name"));
+                                return Err(de::Error::duplicate_field("name"));
                             }
                             scope_name = Some(map.next_value()?);
                         },
@@ -268,7 +263,7 @@ impl<'de> Deserialize<'de> for MetricOrder {
         // const FIELDS: &'static [&'static str] = &["scope", "metric", "agg", "telemetry_path",
         // "telemetry_type"];
 
-        deserializer.deserialize_tuple_struct("MetricOrder", 5, OrderVisitor)
+        deserializer.deserialize_map(OrderVisitor)
     }
 }
 
@@ -329,12 +324,72 @@ impl Aggregation {
 
 #[cfg(test)]
 mod tests {
+    use crate::phases::sense::flink::metric_order::MetricSpec;
+    use crate::phases::sense::flink::{Aggregation, MetricOrder};
     use claim::*;
     use pretty_assertions::assert_eq;
     use proctor::elements::TelemetryType;
     use serde_json::json;
-    use crate::phases::sense::flink::metric_order::MetricSpec;
-    use crate::phases::sense::flink::{Aggregation, MetricOrder};
+    use serde_test::{assert_tokens, Token};
+    use trim_margin::MarginTrimmable;
+
+    #[test]
+    fn test_metric_order_serde_tokens() {
+        let data_job = MetricOrder::Job(MetricSpec {
+            metric: "lastCheckpointDuration".into(),
+            agg: Aggregation::Max,
+            telemetry_path: "health.last_checkpoint_duration".into(),
+            telemetry_type: TelemetryType::Float,
+        });
+
+        assert_tokens(
+            &data_job,
+            &[
+                Token::Map { len: Some(5) },
+                Token::Str("scope"),
+                Token::UnitVariant { name: "FlinkScope", variant: "Job" },
+                Token::Str("metric"),
+                Token::Str("lastCheckpointDuration"),
+                Token::Str("agg"),
+                Token::UnitVariant { name: "Aggregation", variant: "max" },
+                Token::Str("telemetry_path"),
+                Token::Str("health.last_checkpoint_duration"),
+                Token::Str("telemetry_type"),
+                Token::UnitVariant { name: "TelemetryType", variant: "Float" },
+                Token::MapEnd,
+            ],
+        );
+
+        let data_operator = MetricOrder::Operator(
+            "Source: Data Stream".into(),
+            MetricSpec {
+                metric: "records-lag-max".into(),
+                agg: Aggregation::Sum,
+                telemetry_path: "flow.input_records_lag_max".into(),
+                telemetry_type: TelemetryType::Integer,
+            },
+        );
+
+        assert_tokens(
+            &data_operator,
+            &[
+                Token::Map { len: Some(6) },
+                Token::Str("scope"),
+                Token::UnitVariant { name: "FlinkScope", variant: "Operator" },
+                Token::Str("name"),
+                Token::Str("Source: Data Stream"),
+                Token::Str("metric"),
+                Token::Str("records-lag-max"),
+                Token::Str("agg"),
+                Token::UnitVariant { name: "Aggregation", variant: "sum" },
+                Token::Str("telemetry_path"),
+                Token::Str("flow.input_records_lag_max"),
+                Token::Str("telemetry_type"),
+                Token::UnitVariant { name: "TelemetryType", variant: "Integer" },
+                Token::MapEnd,
+            ],
+        );
+    }
 
     #[test]
     fn test_metric_order_json_deser() {
@@ -352,6 +407,14 @@ mod tests {
                 "metric": "records-lag-max",
                 "agg": "sum",
                 "telemetry_path": "flow.input_records_lag_max",
+                "telemetry_type": "Integer"
+            },
+            {
+                "scope": "Operator",
+                "scope_name": "Source: Supplement Stream",
+                "metric": "records-lag-max",
+                "agg": "sum",
+                "telemetry_path": "supplement.input_records_lag_max",
                 "telemetry_type": "Integer"
             }
         ]);
@@ -373,8 +436,79 @@ mod tests {
                         telemetry_path: "flow.input_records_lag_max".into(),
                         telemetry_type: TelemetryType::Integer,
                     }
+                ),
+                MetricOrder::Operator(
+                    "Source: Supplement Stream".into(),
+                    MetricSpec {
+                        metric: "records-lag-max".into(),
+                        agg: Aggregation::Sum,
+                        telemetry_path: "supplement.input_records_lag_max".into(),
+                        telemetry_type: TelemetryType::Integer,
+                    }
                 )
             ]
         );
+    }
+
+    #[test]
+    fn test_metric_order_json_ser() {
+        let data = vec![
+            MetricOrder::Job(MetricSpec {
+                metric: "lastCheckpointDuration".into(),
+                agg: Aggregation::Max,
+                telemetry_path: "health.last_checkpoint_duration".into(),
+                telemetry_type: TelemetryType::Float,
+            }),
+            MetricOrder::Operator(
+                "Source: Data Stream".into(),
+                MetricSpec {
+                    metric: "records-lag-max".into(),
+                    agg: Aggregation::Sum,
+                    telemetry_path: "flow.input_records_lag_max".into(),
+                    telemetry_type: TelemetryType::Integer,
+                },
+            ),
+            MetricOrder::Operator(
+                "Source: Supplement Stream".into(),
+                MetricSpec {
+                    metric: "records-lag-max".into(),
+                    agg: Aggregation::Sum,
+                    telemetry_path: "supplement.input_records_lag_max".into(),
+                    telemetry_type: TelemetryType::Integer,
+                },
+            ),
+        ];
+
+        let actual = assert_ok!(serde_json::to_string_pretty(&data));
+
+        let expected = r##"|[
+        |  {
+        |    "scope": "Job",
+        |    "metric": "lastCheckpointDuration",
+        |    "agg": "max",
+        |    "telemetry_path": "health.last_checkpoint_duration",
+        |    "telemetry_type": "Float"
+        |  },
+        |  {
+        |    "scope": "Operator",
+        |    "name": "Source: Data Stream",
+        |    "metric": "records-lag-max",
+        |    "agg": "sum",
+        |    "telemetry_path": "flow.input_records_lag_max",
+        |    "telemetry_type": "Integer"
+        |  },
+        |  {
+        |    "scope": "Operator",
+        |    "name": "Source: Supplement Stream",
+        |    "metric": "records-lag-max",
+        |    "agg": "sum",
+        |    "telemetry_path": "supplement.input_records_lag_max",
+        |    "telemetry_type": "Integer"
+        |  }
+        |]"##
+            .trim_margin_with("|")
+            .unwrap();
+
+        assert_eq!(actual, expected);
     }
 }

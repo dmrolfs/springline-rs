@@ -218,12 +218,12 @@ mod tests {
     use crate::flink::RestoreMode;
     use crate::kubernetes::{KubernetesApiConstraints, KubernetesDeployResource};
     use crate::phases::plan::{PerformanceRepositorySettings, PerformanceRepositoryType, SpikeSettings};
-    use crate::phases::sense::flink::{Aggregation, FlinkScope, MetricOrder, MetricSpec};
+    use crate::phases::sense::flink::{Aggregation, MetricOrder, MetricSpec};
     use crate::settings::action_settings::SavepointSettings;
     use crate::settings::sensor_settings::FlinkSensorSettings;
-    use MetricOrder::{Job, TaskManager, Task, Operator};
-    use Aggregation::{Max, Min, Value, Sum};
-    use TelemetryType::{Integer, Float};
+    use Aggregation::{Max, Min, Value};
+    use MetricOrder::{Job, Operator, TaskManager};
+    use TelemetryType::{Float, Integer};
 
     static SERIAL_TEST: Lazy<Mutex<()>> = Lazy::new(|| Default::default());
 
@@ -316,9 +316,9 @@ mod tests {
                             "Status.JVM.Memory.NonHeap.Committed",
                             Max,
                             "cluster.task_nonheap_memory_committed",
-                Float
+                            Float,
                         )),
-                        Job(MetricSpec::new("uptime", Min, "health.job_uptime_millis", Integer,)),
+                        Job(MetricSpec::new("uptime", Min, "health.job_uptime_millis", Integer)),
                     ],
                 },
                 sensors: maplit::hashmap! {
@@ -494,7 +494,7 @@ mod tests {
                 metrics_interval: Duration::from_secs(15),
                 metric_orders: vec![Operator(
                     "Source: my data".to_string(),
-                    MetricSpec::new("records-lag-max", Value, "flow.input_records_lag_max", Integer,)
+                    MetricSpec::new("records-lag-max", Value, "flow.input_records_lag_max", Integer),
                 )],
             },
             sensors: maplit::hashmap! {
