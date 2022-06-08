@@ -14,6 +14,8 @@ application:
     taskmanager:
       kubernetes_api:
         api_timeout_secs: 450
+    flink:
+      polling_interval_secs: 15
 
 global:
   realm: "olp-here"

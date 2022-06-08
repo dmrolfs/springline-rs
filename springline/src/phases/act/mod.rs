@@ -69,7 +69,7 @@ pub enum ActError {
     FailedJob(crate::flink::JobId, crate::flink::SavepointLocation),
 
     #[error("failure restarting Flink savepoints for jars: {jar_savepoints:?}")]
-    Restart {
+    JobRestart {
         sources: Vec<anyhow::Error>,
         jar_savepoints: Vec<(crate::flink::JarId, crate::flink::SavepointLocation)>,
     },
@@ -95,7 +95,7 @@ impl MetricLabel for ActError {
             Self::Flink(e) => Right(Box::new(e)),
             Self::Savepoint { .. } => Left("savepoint".into()),
             Self::FailedJob(_, _) => Left("restart::flink".into()),
-            Self::Restart { .. } => Left("restart::jar".into()),
+            Self::JobRestart { .. } => Left("restart::jar".into()),
             Self::Port(e) => Right(Box::new(e)),
             Self::Stage(_) => Left("stage".into()),
         }

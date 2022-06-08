@@ -141,7 +141,7 @@ where
             match outcome {
                 Ok(_) => self.notify_action_succeeded(plan, session),
                 Err(err) => {
-                    tracing::warn!(error=?err, ?session, "failure in scale action - dropping.");
+                    tracing::warn!(error=?err, ?session, "failure in scale action.");
                     self.notify_action_failed(plan, session, err);
                 },
             }

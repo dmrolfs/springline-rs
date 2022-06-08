@@ -114,6 +114,8 @@ application:
     taskmanager:
       kubernetes_api:
         api_timeout_secs: 290
+    flink:
+      polling_interval_secs: 10
 
 global:
   annotations: {}

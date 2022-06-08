@@ -90,7 +90,7 @@ impl ScaleAction for RestartJobs {
                             jar_savepoints.push((j, s));
                         }
 
-                        outcome = Err(ActError::Restart { sources: errors, jar_savepoints });
+                        outcome = Err(ActError::JobRestart { sources: errors, jar_savepoints });
                     }
                 }
             } else {
@@ -395,7 +395,7 @@ impl RestartJobs {
                     Ok(detail) => {
                         tracing::debug!(
                             ?detail,
-                            "job detail received and {}, but job is not engaged - checking again in {:?}",
+                            "job detail received:{}, but job is not engaged - checking again in {:?}",
                             detail.state,
                             self.polling_interval
                         )
