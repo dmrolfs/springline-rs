@@ -22,7 +22,7 @@ mod scope_sensor;
 mod taskmanager_admin_sensor;
 mod vertex_sensor;
 
-pub use metric_order::{Aggregation, FlinkScope, MetricOrder, MetricSpec};
+pub use metric_order::{Aggregation, FlinkScope, MetricOrder, MetricSpec, ScopeSpec};
 pub use vertex_sensor::{
     FLINK_VERTEX_SENSOR_AVAIL_TELEMETRY_TIME, FLINK_VERTEX_SENSOR_METRIC_PICKLIST_TIME, FLINK_VERTEX_SENSOR_TIME,
 };
@@ -33,84 +33,109 @@ pub use vertex_sensor::{
 pub static STD_METRIC_ORDERS: Lazy<Vec<MetricOrder>> = Lazy::new(|| {
     use self::Aggregation::*;
     use proctor::elements::TelemetryType::*;
-    use MetricOrder::{Job, Task, TaskManager};
+    use FlinkScope::{Job, Task, TaskManager};
 
     vec![
-        Job(MetricSpec::new("uptime", Max, "health.job_uptime_millis", Integer)), // does not work w reactive mode
-        Job(MetricSpec::new("numRestarts", Max, "health.job_nr_restarts", Integer)),
-        Job(MetricSpec::new(
-            "numberOfCompletedCheckpoints",
-            Max,
-            "health.job_nr_completed_checkpoints",
-            Integer,
-        )), // does not work w reactive mode
-        Job(MetricSpec::new(
-            "numberOfFailedCheckpoints",
-            Max,
-            "health.job_nr_failed_checkpoints",
-            Integer,
-        )), // does not work w reactive mode
-        Task(MetricSpec::new(
-            "numRecordsInPerSecond",
-            Max,
-            MC_FLOW__RECORDS_IN_PER_SEC,
-            Float,
-        )),
-        Task(MetricSpec::new(
-            "numRecordsOutPerSecond",
-            Max,
-            "flow.records_out_per_sec",
-            Float,
-        )),
-        TaskManager(MetricSpec::new(
-            "Status.JVM.CPU.Load",
-            Max,
-            "cluster.task_cpu_load",
-            Float,
-        )),
-        TaskManager(MetricSpec::new(
-            "Status.JVM.Memory.Heap.Used",
-            Max,
-            "cluster.task_heap_memory_used",
-            Float,
-        )),
-        TaskManager(MetricSpec::new(
-            "Status.JVM.Memory.Heap.Committed",
-            Max,
-            "cluster.task_heap_memory_committed",
-            Float,
-        )),
-        TaskManager(MetricSpec::new(
-            "Status.JVM.Threads.Count",
-            Max,
-            "cluster.task_nr_threads",
-            Integer,
-        )),
-        Task(MetricSpec::new(
-            "buffers.inputQueueLength",
-            Max,
-            "cluster.task_network_input_queue_len",
-            Float,
-        )), // Integer,
-        Task(MetricSpec::new(
-            "buffers.inPoolUsage",
-            Max,
-            "cluster.task_network_input_pool_usage",
-            Float,
-        )), // Integer,
-        Task(MetricSpec::new(
-            "buffers.outputQueueLength",
-            Max,
-            "cluster.task_network_output_queue_len",
-            Float,
-        )), // Integer,
-        Task(MetricSpec::new(
-            "buffers.outPoolUsage",
-            Max,
-            "cluster.task_network_output_pool_usage",
-            Float,
-        )), // Integer,
+        MetricOrder::new(
+            Job.into(),
+            MetricSpec::new("uptime", Max, "health.job_uptime_millis", Integer),
+        ), // does not work w reactive mode
+        MetricOrder::new(
+            Job.into(),
+            MetricSpec::new("numRestarts", Max, "health.job_nr_restarts", Integer),
+        ),
+        MetricOrder::new(
+            Job.into(),
+            MetricSpec::new(
+                "numberOfCompletedCheckpoints",
+                Max,
+                "health.job_nr_completed_checkpoints",
+                Integer,
+            ),
+        ), // does not work w reactive mode
+        MetricOrder::new(
+            Job.into(),
+            MetricSpec::new(
+                "numberOfFailedCheckpoints",
+                Max,
+                "health.job_nr_failed_checkpoints",
+                Integer,
+            ),
+        ), // does not work w reactive mode
+        MetricOrder::new(
+            Task.into(),
+            MetricSpec::new("numRecordsInPerSecond", Max, MC_FLOW__RECORDS_IN_PER_SEC, Float),
+        ),
+        MetricOrder::new(
+            Task.into(),
+            MetricSpec::new("numRecordsOutPerSecond", Max, "flow.records_out_per_sec", Float),
+        ),
+        MetricOrder::new(
+            TaskManager.into(),
+            MetricSpec::new("Status.JVM.CPU.Load", Max, "cluster.task_cpu_load", Float),
+        ),
+        MetricOrder::new(
+            TaskManager.into(),
+            MetricSpec::new(
+                "Status.JVM.Memory.Heap.Used",
+                Max,
+                "cluster.task_heap_memory_used",
+                Float,
+            ),
+        ),
+        MetricOrder::new(
+            TaskManager.into(),
+            MetricSpec::new(
+                "Status.JVM.Memory.Heap.Committed",
+                Max,
+                "cluster.task_heap_memory_committed",
+                Float,
+            ),
+        ),
+        MetricOrder::new(
+            TaskManager.into(),
+            MetricSpec::new("Status.JVM.Threads.Count", Max, "cluster.task_nr_threads", Integer),
+        ),
+        MetricOrder::new(
+            Task.into(),
+            MetricSpec::new(
+                "buffers.inputQueueLength",
+                Max,
+                "cluster.task_network_input_queue_len",
+                Float,
+            ),
+        ), // Integer,
+        MetricOrder::new(
+            Task.into(),
+            MetricSpec::new(
+                "buffers.inPoolUsage",
+                Max,
+                "cluster.task_network_input_pool_usage",
+                Float,
+            ),
+        ), // Integer,
+        MetricOrder::new(
+            Task.into(),
+            MetricSpec::new(
+                "buffers.outputQueueLength",
+                Max,
+                "cluster.task_network_output_queue_len",
+                Float,
+            ),
+        ), // Integer,
+        MetricOrder::new(
+            Task.into(),
+            MetricSpec::new(
+                "buffers.outPoolUsage",
+                Max,
+                "cluster.task_network_output_pool_usage",
+                Float,
+            ),
+        ), // Integer,
     ]
+    .into_iter()
+    .map(|m| m.expect("failed in standard MetricOrder definitions."))
+    .collect()
 });
 
 #[derive(Debug)]

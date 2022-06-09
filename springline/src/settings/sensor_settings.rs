@@ -60,9 +60,10 @@ mod tests {
     use serde_test::{assert_tokens, Token};
 
     use super::*;
-    use crate::phases::sense::flink::{Aggregation, MetricOrder, MetricSpec};
+    use crate::phases::sense::flink::FlinkScope::{Job, Operator, Task, TaskManager};
+    use crate::phases::sense::flink::{Aggregation, MetricOrder, MetricSpec, ScopeSpec};
+    use trim_margin::MarginTrimmable;
     use Aggregation::{Max, Min, Sum, Value};
-    use MetricOrder::{Job, Operator, Task, TaskManager};
     use TelemetryType::{Float, Integer};
 
     #[test]
@@ -72,18 +73,27 @@ mod tests {
             // only doing one pair at a time until *convenient* way to pin order and test is determined
             flink: FlinkSensorSettings {
                 metric_orders: vec![
-                    Job(MetricSpec::new("uptime", Max, "health.job_uptime_millis", Integer)),
-                    Operator(
-                        "Source: Baz input".to_string(),
+                    MetricOrder::new(
+                        Job.into(),
+                        MetricSpec::new("uptime", Max, "health.job_uptime_millis", Integer),
+                    ),
+                    MetricOrder::new(
+                        ScopeSpec::new(Operator, "Source: Baz input"),
                         MetricSpec::new("records-lag-max", Value, "flow.input_records_lag_max", Integer),
                     ),
-                    TaskManager(MetricSpec::new(
-                        "Status.JVM.Memory.Heap.Committed",
-                        Sum,
-                        "cluster.task_heap_memory_committed",
-                        Float,
-                    )),
-                ],
+                    MetricOrder::new(
+                        TaskManager.into(),
+                        MetricSpec::new(
+                            "Status.JVM.Memory.Heap.Committed",
+                            Sum,
+                            "cluster.task_heap_memory_committed",
+                            Float,
+                        ),
+                    ),
+                ]
+                .into_iter()
+                .map(|m| m.unwrap())
+                .collect(),
                 ..FlinkSensorSettings::default()
             },
             sensors: maplit::hashmap! {
@@ -119,27 +129,42 @@ mod tests {
                 Token::U64(15),
                 Token::Str("metric_orders"),
                 Token::Seq { len: Some(3) },
-                Token::TupleStruct { name: "MetricOrder", len: 5 },
-                Token::UnitVariant { name: "FlinkScope", variant: "Jobs" },
+                Token::StructVariant { name: "MetricOrder", variant: "Job", len: 4 },
+                Token::Str("metric"),
                 Token::Str("uptime"),
+                Token::Str("agg"),
                 Token::UnitVariant { name: "Aggregation", variant: "max" },
+                Token::Str("telemetry_path"),
                 Token::Str("health.job_uptime_millis"),
+                Token::Str("telemetry_type"),
                 Token::UnitVariant { name: "TelemetryType", variant: "Integer" },
-                Token::TupleStructEnd,
-                Token::TupleStruct { name: "MetricOrder", len: 5 },
-                Token::UnitVariant { name: "FlinkScope", variant: "Kafka" },
+                Token::StructVariantEnd,
+                Token::StructVariant { name: "MetricOrder", variant: "Operator", len: 5 },
+                Token::Str("name"),
+                Token::Str("Source: Baz input"),
+                Token::Str("metric"),
                 Token::Str("records-lag-max"),
+                Token::Str("agg"),
                 Token::UnitVariant { name: "Aggregation", variant: "value" },
+                Token::Str("telemetry_path"),
                 Token::Str("flow.input_records_lag_max"),
+                Token::Str("telemetry_type"),
                 Token::UnitVariant { name: "TelemetryType", variant: "Integer" },
-                Token::TupleStructEnd,
-                Token::TupleStruct { name: "MetricOrder", len: 5 },
-                Token::UnitVariant { name: "FlinkScope", variant: "TaskManagers" },
+                Token::StructVariantEnd,
+                Token::StructVariant {
+                    name: "MetricOrder",
+                    variant: "TaskManager",
+                    len: 4,
+                },
+                Token::Str("metric"),
                 Token::Str("Status.JVM.Memory.Heap.Committed"),
+                Token::Str("agg"),
                 Token::UnitVariant { name: "Aggregation", variant: "sum" },
+                Token::Str("telemetry_path"),
                 Token::Str("cluster.task_heap_memory_committed"),
+                Token::Str("telemetry_type"),
                 Token::UnitVariant { name: "TelemetryType", variant: "Float" },
-                Token::TupleStructEnd,
+                Token::StructVariantEnd,
                 Token::SeqEnd,
                 Token::StructEnd,
                 Token::Str("sensors"),
@@ -171,13 +196,21 @@ mod tests {
                 metrics_initial_delay: Duration::from_secs(300),
                 metrics_interval: Duration::from_secs(15),
                 metric_orders: vec![
-                    Task(MetricSpec::new(
-                        "Status.JVM.Memory.NonHeap.Committed",
-                        Max,
-                        "cluster.task_heap_memory_committed",
-                        Float,
-                    )),
-                    Job(MetricSpec::new("uptime", Min, "health.job_uptime_millis", Integer)),
+                    MetricOrder::new(
+                        Task.into(),
+                        MetricSpec::new(
+                            "Status.JVM.Memory.NonHeap.Committed",
+                            Max,
+                            "cluster.task_heap_memory_committed",
+                            Float,
+                        ),
+                    )
+                    .unwrap(),
+                    MetricOrder::new(
+                        Job.into(),
+                        MetricSpec::new("uptime", Min, "health.job_uptime_millis", Integer),
+                    )
+                    .unwrap(),
                 ],
             },
             // only doing one pair at a time until *convenient* way to pin order and test is determined
@@ -227,20 +260,26 @@ mod tests {
                 Token::U64(15),
                 Token::Str("metric_orders"),
                 Token::Seq { len: Some(2) },
-                Token::TupleStruct { name: "MetricOrder", len: 5 },
-                Token::UnitVariant { name: "FlinkScope", variant: "Task" },
+                Token::StructVariant { name: "MetricOrder", variant: "Task", len: 4 },
+                Token::Str("metric"),
                 Token::Str("Status.JVM.Memory.NonHeap.Committed"),
+                Token::Str("agg"),
                 Token::UnitVariant { name: "Aggregation", variant: "max" },
+                Token::Str("telemetry_path"),
                 Token::Str("cluster.task_heap_memory_committed"),
+                Token::Str("telemetry_type"),
                 Token::UnitVariant { name: "TelemetryType", variant: "Float" },
-                Token::TupleStructEnd,
-                Token::TupleStruct { name: "MetricOrder", len: 5 },
-                Token::UnitVariant { name: "FlinkScope", variant: "Jobs" },
+                Token::StructVariantEnd,
+                Token::StructVariant { name: "MetricOrder", variant: "Job", len: 4 },
+                Token::Str("metric"),
                 Token::Str("uptime"),
+                Token::Str("agg"),
                 Token::UnitVariant { name: "Aggregation", variant: "min" },
+                Token::Str("telemetry_path"),
                 Token::Str("health.job_uptime_millis"),
+                Token::Str("telemetry_type"),
                 Token::UnitVariant { name: "TelemetryType", variant: "Integer" },
-                Token::TupleStructEnd,
+                Token::StructVariantEnd,
                 Token::SeqEnd,
                 Token::StructEnd,
                 Token::Str("sensors"),
@@ -281,24 +320,58 @@ mod tests {
         let main_span = tracing::debug_span!("test_flink_metric_order_serde");
         let _main_span_guard = main_span.enter();
 
-        let metric_orders = vec![
-            Job(MetricSpec::new("uptime", Max, "health.job_uptime_millis", Integer)),
-            Operator(
-                "Input: The best data".to_string(),
+        let metric_orders: Vec<MetricOrder> = vec![
+            MetricOrder::new(
+                Job.into(),
+                MetricSpec::new("uptime", Max, "health.job_uptime_millis", Integer),
+            ),
+            MetricOrder::new(
+                ScopeSpec::new(Operator, "Input: The best data"),
                 MetricSpec::new("records-lag-max", Value, "flow.input_records_lag_max", Integer),
             ),
-            TaskManager(MetricSpec::new(
-                "Status.JVM.Memory.Heap.Committed",
-                Sum,
-                "cluster.task_heap_memory_committed",
-                Float,
-            )),
-        ];
+            MetricOrder::new(
+                TaskManager.into(),
+                MetricSpec::new(
+                    "Status.JVM.Memory.Heap.Committed",
+                    Sum,
+                    "cluster.task_heap_memory_committed",
+                    Float,
+                ),
+            ),
+        ]
+        .into_iter()
+        .map(|m| m.unwrap())
+        .collect();
 
-        let actual = assert_ok!(ron::to_string(&metric_orders));
+        let actual = assert_ok!(ron::ser::to_string_pretty(
+            &metric_orders,
+            ron::ser::PrettyConfig::default()
+        ));
         assert_eq!(
             actual,
-            r##"[(Jobs,"uptime",max,"health.job_uptime_millis",Integer),(Kafka,"records-lag-max",value,"flow.input_records_lag_max",Integer),(TaskManagers,"Status.JVM.Memory.Heap.Committed",sum,"cluster.task_heap_memory_committed",Float)]"##
+            r##"|[
+                |    Job(
+                |        metric: "uptime",
+                |        agg: max,
+                |        telemetry_path: "health.job_uptime_millis",
+                |        telemetry_type: Integer,
+                |    ),
+                |    Operator(
+                |        name: "Input: The best data",
+                |        metric: "records-lag-max",
+                |        agg: value,
+                |        telemetry_path: "flow.input_records_lag_max",
+                |        telemetry_type: Integer,
+                |    ),
+                |    TaskManager(
+                |        metric: "Status.JVM.Memory.Heap.Committed",
+                |        agg: sum,
+                |        telemetry_path: "cluster.task_heap_memory_committed",
+                |        telemetry_type: Float,
+                |    ),
+                |]"##
+                .trim_margin_with("|")
+                .unwrap()
         );
 
         let hydrated: Vec<MetricOrder> = assert_ok!(ron::from_str(actual.as_str()));

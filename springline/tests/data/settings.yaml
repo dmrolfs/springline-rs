@@ -1,0 +1,121 @@
+---
+# set engine.machine_id and engine.node_id via environment variable
+prometheus:
+  port: 9898
+
+http:
+  host: 0.0.0.0
+  port: 8000
+
+flink:
+  job_manager_host: dr-flink-jm-0
+  headers:
+    - - accept
+      - "*.json"
+
+kubernetes:
+  client: infer
+
+sensor:
+  flink:
+    metrics_initial_delay_secs: 300
+    metric_orders:
+      - TaskManager:
+          metric: Status.JVM.Memory.NonHeap.Committed
+          agg: max
+          telemetry_path: cluster.task_nonheap_memory_committed
+          telemetry_type: Float
+      - Job:
+          metric: uptime
+          agg: min
+          telemetry_path: health.job_uptime_millis
+          telemetry_type: Integer
+
+  sensors:
+    foo:
+      type: csv
+      path: "../resources/bar.toml"
+
+eligibility:
+  policies:
+    - source: file
+      policy:
+        path: "../resources/eligibility.polar"
+        is_template: true
+    - source: string
+      policy:
+        name: "eligibility_basis"
+        polar: |
+          eligible(_, _context, length) if length = 13;
+          eligible(_item, context, c) if
+            c = context.custom() and
+            c.cat = "Otis" and
+            cut;
+
+        is_template: true
+
+decision:
+  policies:
+    - source: file
+      policy:
+        path: "../resources/decision.polar"
+    - source: file
+      policy:
+        path: "../resources/decision_basis.polar"
+  template_data:
+    basis: decision_basis
+    max_healthy_lag: 133.0
+    min_healthy_lag: 0.0
+    max_healthy_cpu_load: 0.7
+
+plan:
+  min_scaling_step: 2
+  restart_secs: 120
+  max_catch_up_secs: 600
+  recovery_valid_secs: 300
+  performance_repository:
+    storage: file
+    storage_path: "./tests/data/performance.data"
+  window: 20
+  spike:
+    std_deviation_threshold: 5.0
+    influence: 0.75
+    length_threshold: 3
+
+governance:
+  policy:
+    policies:
+      - source: file
+        policy:
+          path: "../resources/governance.polar"
+  rules:
+    min_cluster_size: 0
+    max_cluster_size: 10
+    min_scaling_step: 2
+    max_scaling_step: 6
+    custom:
+      foo: 17
+
+action:
+  action_timeout_secs: 600
+  taskmanager:
+    label_selector: "app=flink,component=taskmanager"
+    deploy_resource: "statefulset/dr-springline-tm"
+    kubernetes_api:
+      api_timeout_secs: 290
+      polling_interval_secs: 10
+  flink:
+    polling_interval_secs: 9
+    savepoint:
+      directory: "s3://path/to/savepoints"
+    restart:
+      operation_timeout_secs: 300
+      restore_mode: CLAIM
+      program_args:
+        - "--zed=98"
+        - "--alpha=boo"
+
+context_stub:
+  all_sinks_healthy: true
+# cluster_is_deploying: false,
+# cluster_last_deployment: "2020-03-01T04:28:07Z",

@@ -1,8 +1,9 @@
 (
     // set engine.machine_id and engine.node_id via environment variable
+    prometheus: ( port: 9898, ),
     http: ( host: "0.0.0.0", port: 8000, ),
     flink: (
-        label: "ron_flink",
+        // label: "ron_flink",
         job_manager_host: "dr-flink-jm-0",
         headers: [("accept", "*.json")],
     ),
@@ -11,8 +12,18 @@
         flink: (
             metrics_initial_delay_secs: 300,
             metric_orders: [
-                ("TaskManagers", "Status.JVM.Memory.NonHeap.Committed", "max", "cluster.task_nonheap_memory_committed", "Float"),
-                ("Jobs", "uptime", "min", "health.job_uptime_millis", "Integer"),
+                {MetricOrder:TaskManager(
+                    metric: "Status.JVM.Memory.NonHeap.Committed",
+                    agg: max,
+                    telemetry_path: "cluster.task_nonheap_memory_committed",
+                    telemetry_type: Float,
+                )},
+                {Job:(
+                    metric: "uptime",
+                    agg: min,
+                    telemetry_path: "health.job_uptime_millis",
+                    telemetry_type: Integer,
+                )},
             ],
         ),
         sensors: {
@@ -43,16 +54,16 @@
             (source: "file", policy: (path: "../resources/decision.polar")),
             (source: "file", policy: (path: "../resources/decision_basis.polar")),
         ],
-        template_data: (
-            basis: "decision_basis",
-            max_healthy_lag: 133.0,
-            min_healthy_lag: 0.0,
-            max_healthy_cpu_load: 0.7,
-        )
+        template_data: {
+            "basis": "decision_basis",
+            "max_healthy_lag": 133.0,
+            "min_healthy_lag": 0.0,
+            "max_healthy_cpu_load": 0.7,
+        }
     ),
     plan: (
         min_scaling_step: 2,
-        restart_secs:120,
+        restart_secs: 120,
         max_catch_up_secs: 600,
         recovery_valid_secs: 300,
         performance_repository: (
@@ -109,7 +120,7 @@
 ),
 context_stub: (
         all_sinks_healthy: true,
-        cluster_is_deploying: false,
-        cluster_last_deployment: "2020-03-01T04:28:07Z",
+        // cluster_is_deploying: false,
+        // cluster_last_deployment: "2020-03-01T04:28:07Z",
     ),
 )

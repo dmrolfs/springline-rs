@@ -420,7 +420,7 @@ mod tests {
     use super::*;
     use crate::flink::MC_FLOW__RECORDS_IN_PER_SEC;
     use crate::phases::sense::flink;
-    use crate::phases::sense::flink::metric_order::MetricSpec;
+    use crate::phases::sense::flink::metric_order::{MetricSpec, ScopeSpec};
     use crate::phases::sense::flink::STD_METRIC_ORDERS;
 
     pub struct RetryResponder(Arc<AtomicU32>, u32, ResponseTemplate, u16);
@@ -605,15 +605,16 @@ mod tests {
             let scopes = maplit::hashset! { FlinkScope::Task, FlinkScope::Operator };
 
             let mut orders = STD_METRIC_ORDERS.clone();
-            let kafka_order = MetricOrder::Operator(
-                "Source: Foo Stream".to_string(),
+            let kafka_order = MetricOrder::new(
+                ScopeSpec::new(FlinkScope::Operator, "Source: Foo Stream"),
                 MetricSpec::new(
                     "records-lag-max",
                     Aggregation::Value,
                     "flow.input_records_lag_max",
                     TelemetryType::Integer,
                 ),
-            );
+            )
+            .unwrap();
             orders.extend(vec![kafka_order.clone()]);
 
             let (metric_orders, agg_span) = flink::distill_metric_orders_and_agg(&scopes, &orders);

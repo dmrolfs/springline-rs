@@ -218,11 +218,11 @@ mod tests {
     use crate::flink::RestoreMode;
     use crate::kubernetes::{KubernetesApiConstraints, KubernetesDeployResource};
     use crate::phases::plan::{PerformanceRepositorySettings, PerformanceRepositoryType, SpikeSettings};
-    use crate::phases::sense::flink::{Aggregation, MetricOrder, MetricSpec};
+    use crate::phases::sense::flink::FlinkScope::{Job, Operator, TaskManager};
+    use crate::phases::sense::flink::{Aggregation, MetricOrder, MetricSpec, ScopeSpec};
     use crate::settings::action_settings::SavepointSettings;
     use crate::settings::sensor_settings::FlinkSensorSettings;
     use Aggregation::{Max, Min, Value};
-    use MetricOrder::{Job, Operator, TaskManager};
     use TelemetryType::{Float, Integer};
 
     static SERIAL_TEST: Lazy<Mutex<()>> = Lazy::new(|| Default::default());
@@ -287,7 +287,7 @@ mod tests {
     #[test]
     fn test_basic_load() {
         let c = assert_ok!(config::Config::builder()
-            .add_source(config::File::from(std::path::PathBuf::from("./tests/data/settings.ron")))
+            .add_source(config::File::from(std::path::PathBuf::from("./tests/data/settings.yaml")))
            // .add_source(config::File::from(std::path::PathBuf::from("./resources/application.ron")))
             .build());
 
@@ -312,13 +312,21 @@ mod tests {
                     metrics_initial_delay: Duration::from_secs(300),
                     metrics_interval: Duration::from_secs(15),
                     metric_orders: vec![
-                        TaskManager(MetricSpec::new(
-                            "Status.JVM.Memory.NonHeap.Committed",
-                            Max,
-                            "cluster.task_nonheap_memory_committed",
-                            Float,
-                        )),
-                        Job(MetricSpec::new("uptime", Min, "health.job_uptime_millis", Integer)),
+                        MetricOrder::new(
+                            TaskManager.into(),
+                            MetricSpec::new(
+                                "Status.JVM.Memory.NonHeap.Committed",
+                                Max,
+                                "cluster.task_nonheap_memory_committed",
+                                Float,
+                            ),
+                        )
+                        .unwrap(),
+                        MetricOrder::new(
+                            Job.into(),
+                            MetricSpec::new("uptime", Min, "health.job_uptime_millis", Integer),
+                        )
+                        .unwrap(),
                     ],
                 },
                 sensors: maplit::hashmap! {
@@ -330,13 +338,12 @@ mod tests {
                     assert_ok!(PolicySource::from_template_file("../resources/eligibility.polar")),
                     assert_ok!(PolicySource::from_template_string(
                         "eligibility_basis",
-                        r##"|
-    |                        eligible(_, _context, length) if length = 13;
-    |                        eligible(_item, context, c) if
-    |                            c = context.custom() and
-    |                            c.cat = "Otis" and
-    |                            cut;
-    |                    "##,
+                        r##"|eligible(_, _context, length) if length = 13;
+                        |eligible(_item, context, c) if
+                        |  c = context.custom() and
+                        |  c.cat = "Otis" and
+                        |  cut;
+                        |"##,
                     )),
                 ],
                 ..EligibilitySettings::default()
@@ -420,8 +427,12 @@ mod tests {
             },
         };
 
-        // let exp_rep = assert_ok!(ron::ser::to_string_pretty(&expected,
-        // ron::ser::PrettyConfig::default())); assert_eq!(exp_rep.as_str(), "");
+        // let exp_rep = assert_ok!(serde_yaml::to_string(&expected));
+        // assert_eq!(exp_rep.as_str(), "");
+        // let exp_rep = assert_ok!(ron::ser::to_string_pretty(&expected, ron::ser::PrettyConfig::default()));
+        // assert_eq!(exp_rep.as_str(), "");
+        // let exp_actual: Settings = assert_ok!(ron::from_str(&exp_rep));
+        // assert_eq!(exp_actual, expected);
 
         let actual: Settings = assert_ok!(c.try_deserialize());
         assert_eq!(actual, expected);
@@ -492,10 +503,11 @@ mod tests {
             flink: FlinkSensorSettings {
                 metrics_initial_delay: Duration::from_secs(300),
                 metrics_interval: Duration::from_secs(15),
-                metric_orders: vec![Operator(
-                    "Source: my data".to_string(),
+                metric_orders: vec![MetricOrder::new(
+                    ScopeSpec::new(Operator, "Source: my data"),
                     MetricSpec::new("records-lag-max", Value, "flow.input_records_lag_max", Integer),
-                )],
+                )
+                .unwrap()],
             },
             sensors: maplit::hashmap! {
                 "foo".to_string() => SensorSetting::Csv { path: PathBuf::from("./resources/bar.toml"),},
@@ -647,12 +659,16 @@ mod tests {
                     sensor: SensorSettings {
                         flink: FlinkSensorSettings {
                             metrics_initial_delay: Duration::from_secs(0),
-                            metric_orders: vec![Job(MetricSpec::new(
-                                "lastCheckpointDuration",
-                                Max,
-                                "health.last_checkpoint_duration",
-                                Float,
-                            ))],
+                            metric_orders: vec![MetricOrder::new(
+                                Job.into(),
+                                MetricSpec::new(
+                                    "lastCheckpointDuration",
+                                    Max,
+                                    "health.last_checkpoint_duration",
+                                    Float,
+                                ),
+                            )
+                            .unwrap()],
                             ..SETTINGS.sensor.flink.clone()
                         },
                         sensors: HashMap::default(),
@@ -764,12 +780,11 @@ mod tests {
                 sensor: SensorSettings {
                     flink: FlinkSensorSettings {
                         metrics_initial_delay: Duration::from_secs(10),
-                        metric_orders: vec![Job(MetricSpec::new(
-                            "lastCheckpointDuration",
-                            Max,
-                            "health.last_checkpoint_duration",
-                            Float,
-                        ))],
+                        metric_orders: vec![MetricOrder::new(
+                            Job.into(),
+                            MetricSpec::new("lastCheckpointDuration", Max, "health.last_checkpoint_duration", Float),
+                        )
+                        .unwrap()],
                         ..SETTINGS.sensor.flink.clone()
                     },
                     sensors: HashMap::default(),
@@ -882,12 +897,16 @@ mod tests {
                     sensor: SensorSettings {
                         flink: FlinkSensorSettings {
                             metrics_initial_delay: Duration::from_secs(0),
-                            metric_orders: vec![Job(MetricSpec::new(
-                                "lastCheckpointDuration",
-                                Max,
-                                "health.last_checkpoint_duration",
-                                Float,
-                            ))],
+                            metric_orders: vec![MetricOrder::new(
+                                Job.into(),
+                                MetricSpec::new(
+                                    "lastCheckpointDuration",
+                                    Max,
+                                    "health.last_checkpoint_duration",
+                                    Float,
+                                ),
+                            )
+                            .unwrap()],
                             ..SETTINGS.sensor.flink.clone()
                         },
                         sensors: HashMap::default(),
