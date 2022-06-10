@@ -5,7 +5,7 @@ pub mod catalog;
 pub mod portfolio;
 
 use std::collections::HashMap;
-use std::fmt::{self, Display};
+use std::fmt::{self, Debug, Display};
 use std::hash::Hash;
 use std::marker::PhantomData;
 use std::time::Duration;
@@ -245,7 +245,7 @@ impl TryFrom<TelemetryValue> for JobId {
 }
 
 #[serde_as]
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct JobDetail {
     pub jid: JobId,
 
@@ -279,6 +279,37 @@ pub struct JobDetail {
 
     #[serde(default, alias = "status-counts")]
     pub status_counts: HashMap<TaskState, usize>,
+}
+
+impl Debug for JobDetail {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("JobDetail")
+            .field("job_id", &self.jid)
+            .field("name", &self.name)
+            .field("is_stoppable", &self.is_stoppable)
+            .field("state", &self.state)
+            .field(
+                "[start - end]",
+                &format!(
+                    "[{} - {}]",
+                    self.start_time,
+                    self.end_time.map(|end| end.to_string()).unwrap_or(String::default())
+                )
+            )
+            .field("duration", &self.duration)
+            .field("max_parallelism", &self.max_parallelism)
+            .field("now", &self.now.to_string())
+            .field(
+                "timestamps",
+                &self.timestamps
+                    .iter()
+                    .map(|(s, ts)| (s, ts.to_string()))
+                    .collect::<HashMap<_, _>>()
+            )
+            .field("vertices", &self.vertices)
+            .field("status_counts", &self.status_counts)
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
