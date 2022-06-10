@@ -34,6 +34,10 @@ impl PatchReplicas {
 impl ScaleAction for PatchReplicas {
     type In = ScalePlan;
 
+    fn check_preconditions(&self, _session: &ActionSession) -> Result<(), ActError> {
+        Ok(())
+    }
+
     #[tracing::instrument(level = "info", name = "PatchReplicas::execute", skip(self))]
     async fn execute<'s>(&self, plan: &'s Self::In, session: &'s mut ActionSession) -> Result<(), ActError> {
         let timer = act::start_scale_action_timer(session.cluster_label(), ACTION_LABEL);

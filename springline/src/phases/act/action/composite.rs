@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use proctor::AppData;
+use tracing::Instrument;
 
 use super::{ActionSession, ScaleAction};
 use crate::phases::act::{self, ActError, ScaleActionPlan};
@@ -36,12 +37,30 @@ where
 {
     type In = P;
 
+    fn check_preconditions(&self, _session: &ActionSession) -> Result<(), ActError> {
+        Ok(())
+    }
+
     #[tracing::instrument(level = "info", name = "CompositeAction::execute", skip(self))]
     async fn execute<'s>(&self, plan: &'s Self::In, session: &'s mut ActionSession) -> Result<(), ActError> {
         let timer = act::start_scale_action_timer(session.cluster_label(), super::ACTION_TOTAL_DURATION);
 
         for action in self.actions.iter() {
-            action.execute(plan, session).await?;
+            let outcome = match action.check_preconditions(session) {
+                Ok(_) => {
+                    action
+                        .execute(plan, session)
+                        .instrument(tracing::info_span!("act:composite"))
+                        .await
+                },
+                Err(err) => Err(err),
+            };
+
+            if let Err(err) = outcome {
+                return Err(err);
+            }
+
+            // action.execute(plan, session).await?;
         }
 
         let total_duration = Duration::from_secs_f64(timer.stop_and_record());

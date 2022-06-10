@@ -18,6 +18,10 @@ pub struct PrepareData;
 impl ScaleAction for PrepareData {
     type In = ScalePlan;
 
+    fn check_preconditions(&self, _session: &ActionSession) -> Result<(), ActError> {
+        Ok(())
+    }
+
     #[tracing::instrument(level = "info", name = "PrepareData::execute", skip(self, _plan))]
     async fn execute<'s>(&self, _plan: &'s Self::In, session: &'s mut ActionSession) -> Result<(), ActError> {
         let timer = act::start_scale_action_timer(session.cluster_label(), ACTION_LABEL);

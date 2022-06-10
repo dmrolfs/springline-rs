@@ -39,6 +39,34 @@ impl TriggerSavepoint {
 impl ScaleAction for TriggerSavepoint {
     type In = ScalePlan;
 
+    fn check_preconditions(&self, session: &ActionSession) -> Result<(), ActError> {
+        match &session.active_jobs {
+            None => Err(ActError::ActionPrecondition {
+                action: ACTION_LABEL.to_string(),
+                reason: "active jobs not set".to_string(),
+            }),
+            Some(jobs) if jobs.is_empty() => Err(ActError::ActionPrecondition {
+                action: ACTION_LABEL.to_string(),
+                reason: "no active jobs found to rescale".to_string(),
+            }),
+            _ => Ok(()),
+        }?;
+
+        match &session.uploaded_jars {
+            None => Err(ActError::ActionPrecondition {
+                action: ACTION_LABEL.to_string(),
+                reason: "uploaded jars not set".to_string(),
+            }),
+            Some(jars) if jars.is_empty() => Err(ActError::ActionPrecondition {
+                action: ACTION_LABEL.to_string(),
+                reason: "no uploaded jars found to restart after rescale".to_string(),
+            }),
+            _ => Ok(()),
+        }?;
+
+        Ok(())
+    }
+
     #[tracing::instrument(level = "info", name = "StopFlinkWithSavepoint::execute", skip(self, _plan))]
     async fn execute<'s>(&self, _plan: &'s Self::In, session: &'s mut ActionSession) -> Result<(), ActError> {
         let timer = act::start_scale_action_timer(session.cluster_label(), ACTION_LABEL);
@@ -112,7 +140,7 @@ impl TriggerSavepoint {
         let trigger_id: Result<trigger::TriggerId, FlinkError> = session
             .flink
             .client()
-            .request(Method::POST, url)
+            .request(Method::POST, url.clone())
             .json(&body)
             .send()
             .map_err(|error| {
@@ -120,7 +148,7 @@ impl TriggerSavepoint {
                 error.into()
             })
             .and_then(|response| {
-                flink::log_response(&step_label, &response);
+                flink::log_response(&step_label, &url, &response);
                 response.text().map(|body| {
                     body.map_err(|err| err.into()).and_then(|b| {
                         let trigger_response: Result<trigger::SavepointTriggerResponseBody, FlinkError> =
@@ -205,14 +233,14 @@ impl TriggerSavepoint {
         let info: Result<SavepointStatus, FlinkError> = session
             .flink
             .client()
-            .request(Method::GET, url)
+            .request(Method::GET, url.clone())
             .send()
             .map_err(|error| {
                 tracing::warn!(%error, "Failed to get Flink savepoint info for job {job_id}");
                 error.into()
             })
             .and_then(|response| {
-                flink::log_response(&step_label, &response);
+                flink::log_response(&step_label, &url, &response);
                 response.text().map(|body| {
                     body.map_err(|err| err.into()).and_then(|b| {
                         tracing::debug!(body=%b, "savepoint body");

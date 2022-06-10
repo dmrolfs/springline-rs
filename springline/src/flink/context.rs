@@ -191,7 +191,7 @@ impl FlinkContextRef {
                 error.into()
             })
             .and_then(|response| {
-                flink::log_response("uploaded jars", &response);
+                flink::log_response("uploaded jars", &self.jars_endpoint, &response);
                 response.text().map(|body| {
                     body.map_err(|err| err.into()).and_then(|b| {
                         let response = serde_json::from_str(&b);
@@ -204,7 +204,7 @@ impl FlinkContextRef {
             })
             .instrument(tracing::info_span!(
                 "query Flink REST API - uploaded jars",
-                ?correlation
+                ?correlation, jars_endpoint=?self.jars_endpoint,
             ))
             .await;
 
@@ -228,7 +228,7 @@ impl FlinkContextRef {
                 error.into()
             })
             .and_then(|response| {
-                flink::log_response("active jobs", &response);
+                flink::log_response("active jobs", &self.jobs_endpoint, &response);
                 response.text().map(|body| {
                     body.map_err(|err| err.into()).and_then(|b| {
                         tracing::debug!(body=%b, "Flink job summary response body");
@@ -276,14 +276,14 @@ impl FlinkContextRef {
 
         let result: Result<JobDetail, FlinkError> = self
             .client
-            .request(Method::GET, url)
+            .request(Method::GET, url.clone())
             .send()
             .map_err(|error| {
                 tracing::error!(?error, "failed Flink REST API - job_detail response");
                 error.into()
             })
             .and_then(|response| {
-                flink::log_response("job detail", &response);
+                flink::log_response("job detail", &url, &response);
                 response.text().map(|body| {
                     body.map_err(|err| err.into()).and_then(|b| {
                         let result = serde_json::from_str(&b).map_err(|err| err.into());
@@ -307,7 +307,7 @@ impl FlinkContextRef {
             .send()
             .map_err(|error| error.into())
             .and_then(|response| {
-                flink::log_response("taskmanager admin response", &response);
+                flink::log_response("taskmanager admin response", &self.tm_admin_endpoint, &response);
                 response.text().map(|body| {
                     body.map_err(|err| err.into())
                         .and_then(|b| {

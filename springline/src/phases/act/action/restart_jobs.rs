@@ -46,6 +46,37 @@ impl RestartJobs {
 impl ScaleAction for RestartJobs {
     type In = ScalePlan;
 
+    fn check_preconditions(&self, session: &ActionSession) -> Result<(), ActError> {
+        match &session.savepoints {
+            None => Err(ActError::ActionPrecondition {
+                action: ACTION_LABEL.to_string(),
+                reason: "savepoints not set".to_string(),
+            }),
+            Some(locations) if locations.completed.is_empty() => Err(ActError::ActionPrecondition {
+                action: ACTION_LABEL.to_string(),
+                reason: format!(
+                    "no savepoint locations found to restart after rescale: failed:{:?}.",
+                    locations.failed
+                ),
+            }),
+            _ => Ok(()),
+        }?;
+
+        match &session.uploaded_jars {
+            None => Err(ActError::ActionPrecondition {
+                action: ACTION_LABEL.to_string(),
+                reason: "uploaded jars not set".to_string(),
+            }),
+            Some(jars) if jars.is_empty() => Err(ActError::ActionPrecondition {
+                action: ACTION_LABEL.to_string(),
+                reason: "no uploaded jars found to restart after rescale".to_string(),
+            }),
+            _ => Ok(()),
+        }?;
+
+        Ok(())
+    }
+
     #[tracing::instrument(level = "info", name = "RestartFlinkWithNewParallelism::execute", skip(self))]
     async fn execute<'s>(&self, plan: &'s Self::In, session: &'s mut ActionSession) -> Result<(), ActError> {
         let timer = act::start_scale_action_timer(session.cluster_label(), ACTION_LABEL);
@@ -148,10 +179,22 @@ impl RestartJobs {
             .await;
 
         let job_sources: HashMap<JobId, (JarId, SavepointLocation)> = match jar_restarts {
-            Ok(pairing) => pairing
-                .into_iter()
-                .map(|(job, jar, savepoint)| (job, (jar, savepoint)))
-                .collect(),
+            Ok(pairings) if pairings.is_empty() => {
+                tracing::warn!(
+                    %parallelism, jar_ids=?jars, savepoint_location=?locations,
+                    "no successful restart found for jars, savepoint locations and parallelism - manual intervention may be necessary."
+                );
+
+                HashMap::default()
+            },
+            Ok(pairings) => {
+                let job_pairings = pairings
+                    .into_iter()
+                    .map(|(job, jar, savepoint)| (job, (jar, savepoint)))
+                    .collect();
+                tracing::debug!(?job_pairings, "successful restart initiation for pairings.");
+                job_pairings
+            },
             Err(err) => {
                 flink::track_flink_errors("restart_jobs::restart", &err);
                 tracing::error!(
@@ -282,7 +325,7 @@ impl RestartJobs {
         let result: Result<Either<JobId, StatusCode>, FlinkError> = session
             .flink
             .client()
-            .request(Method::POST, url)
+            .request(Method::POST, url.clone())
             .json(&body)
             .send()
             .map_err(|error| {
@@ -297,7 +340,7 @@ impl RestartJobs {
                         "jar+savepoint pair rejected by Flink - following error is informational only"
                     );
                 }
-                flink::log_response(&step_label, &response);
+                flink::log_response(&step_label, &url, &response);
 
                 response
                     .text()

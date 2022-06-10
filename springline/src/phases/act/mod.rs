@@ -77,6 +77,9 @@ pub enum ActError {
     #[error("failure occurred in the PatchReplicas inlet port: {0}")]
     Port(#[from] proctor::error::PortError),
 
+    #[error("Failure in act phase precondition precheck in {action} action: {reason}")]
+    ActionPrecondition { action: String, reason: String },
+
     #[error("failure occurred while processing data in the PatchReplicas stage: {0}")]
     Stage(#[from] anyhow::Error),
 }
@@ -97,6 +100,7 @@ impl MetricLabel for ActError {
             Self::FailedJob(_, _) => Left("restart::flink".into()),
             Self::JobRestart { .. } => Left("restart::jar".into()),
             Self::Port(e) => Right(Box::new(e)),
+            Self::ActionPrecondition { action, .. } => Left(action.into()),
             Self::Stage(_) => Left("stage".into()),
         }
     }
