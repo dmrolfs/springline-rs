@@ -24,7 +24,7 @@ use crate::phases::sense::flink::CorrelationGenerator;
 /// (at least for my use cases), so a simple Telemetry doesn't work and I need to parameterize even
 /// though I'll only use wrt Telemetry.
 #[derive(Debug)]
-pub struct ScopeSensor<Out> {
+pub struct JobTaskmanagerSensor<Out> {
     name: String,
     scope: FlinkScope,
     context: FlinkContext,
@@ -34,8 +34,20 @@ pub struct ScopeSensor<Out> {
     outlet: Outlet<Out>,
 }
 
-impl<Out> ScopeSensor<Out> {
-    pub fn new(
+impl<Out> JobTaskmanagerSensor<Out> {
+    pub fn new_job_sensor(
+        orders: Arc<Vec<MetricOrder>>, context: FlinkContext, correlation_gen: CorrelationGenerator,
+    ) -> Self {
+        Self::new(FlinkScope::Job, orders, context, correlation_gen)
+    }
+
+    pub fn new_taskmanager_sensor(
+        orders: Arc<Vec<MetricOrder>>, context: FlinkContext, correlation_gen: CorrelationGenerator,
+    ) -> Self {
+        Self::new(FlinkScope::TaskManager, orders, context, correlation_gen)
+    }
+
+    fn new(
         scope: FlinkScope, orders: Arc<Vec<MetricOrder>>, context: FlinkContext, correlation_gen: CorrelationGenerator,
     ) -> Self {
         let name = format!("{scope}Sensor").to_snake_case();
@@ -53,7 +65,7 @@ impl<Out> ScopeSensor<Out> {
     }
 }
 
-impl<Out> SourceShape for ScopeSensor<Out> {
+impl<Out> SourceShape for JobTaskmanagerSensor<Out> {
     type Out = Out;
 
     fn outlet(&self) -> Outlet<Self::Out> {
@@ -61,7 +73,7 @@ impl<Out> SourceShape for ScopeSensor<Out> {
     }
 }
 
-impl<Out> SinkShape for ScopeSensor<Out> {
+impl<Out> SinkShape for JobTaskmanagerSensor<Out> {
     type In = ();
 
     fn inlet(&self) -> Inlet<Self::In> {
@@ -71,7 +83,7 @@ impl<Out> SinkShape for ScopeSensor<Out> {
 
 #[dyn_upcast]
 #[async_trait]
-impl<Out> Stage for ScopeSensor<Out>
+impl<Out> Stage for JobTaskmanagerSensor<Out>
 where
     Out: AppData + Unpack,
 {
@@ -98,7 +110,7 @@ where
     }
 }
 
-impl<Out> ScopeSensor<Out>
+impl<Out> JobTaskmanagerSensor<Out>
 where
     Out: AppData + Unpack,
 {
@@ -108,10 +120,14 @@ where
         Ok(())
     }
 
+    fn pluralize_scope(scope: FlinkScope) -> String {
+        format!("{scope}s")
+    }
+
     fn extend_url_for<'a>(
         &self, metrics: impl Iterator<Item = &'a String>, agg: impl Iterator<Item = &'a Aggregation>,
     ) -> Url {
-        let scope_rep = self.scope.to_string().to_lowercase();
+        let scope_rep = Self::pluralize_scope(self.scope).to_lowercase();
         let mut url = self.context.base_url();
         url.path_segments_mut().unwrap().push(&scope_rep).push("metrics");
         url.query_pairs_mut()
@@ -124,7 +140,7 @@ where
 
     async fn do_run(&mut self) -> Result<(), SenseError> {
         let scopes = maplit::hashset! { self.scope };
-        let (metric_orders, agg_span) = super::distill_metric_orders_and_agg(&scopes, &self.orders);
+        let (metric_orders, agg_span) = super::distill_metric_orders_for_sensor_scopes(&scopes, &self.orders);
         if metric_orders.is_empty() {
             // todo: best to end this useless stage or do nothing in loop? I hope end is best.
             tracing::warn!(
@@ -258,7 +274,7 @@ mod tests {
     async fn test_stage_for(
         scope: FlinkScope, orders: &Vec<MetricOrder>, context: FlinkContext,
     ) -> (tokio::task::JoinHandle<()>, mpsc::Sender<()>, mpsc::Receiver<Telemetry>) {
-        let mut stage = ScopeSensor::new(
+        let mut stage = JobTaskmanagerSensor::new(
             scope,
             Arc::new(orders.clone()),
             context,
@@ -363,7 +379,7 @@ mod tests {
     }
 
     #[test]
-    fn test_flink_scope_sensor_simple_jobs() {
+    fn test_flink_scope_sensor_simple_jobs_only() {
         once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
         let main_span = tracing::info_span!("test_flink_scope_sensor_simple_jobs");
         let _ = main_span.enter();

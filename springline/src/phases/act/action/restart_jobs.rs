@@ -275,25 +275,25 @@ impl RestartJobs {
 
     #[tracing::instrument(level = "trace", skip(session))]
     async fn try_jar_restart(
-        &self, jar_id: &JarId, locations: HashSet<SavepointLocation>, parallelism: usize, session: &ActionSession,
+        &self, jar: &JarId, locations: HashSet<SavepointLocation>, parallelism: usize, session: &ActionSession,
     ) -> Result<Option<(JobId, SavepointLocation)>, FlinkError> {
         let mut job_savepoint = None;
         let correlation = session.correlation();
 
         for location in locations {
             match self
-                .try_jar_restart_for_location(jar_id, &location, parallelism, session)
+                .try_jar_restart_for_location(jar, &location, parallelism, session)
                 .await?
             {
                 Left(job_id) => {
-                    tracing::info!(%job_id, %parallelism, ?correlation, "restarted job from jar({jar_id}) + savepoint({location}) pair.");
+                    tracing::info!(%job_id, %parallelism, ?correlation, "restarted job from jar({jar}) + savepoint({location}) pair.");
                     job_savepoint = Some((job_id, location));
                     break;
-                },
+                }
                 Right(http_status) => {
                     tracing::info!(
                         %parallelism, ?correlation, ?http_status,
-                        "Flink rejected jar({jar_id}) + savepoint({location}) pair. Trying next savepoint location."
+                        "Flink rejected jar({jar}) + savepoint({location}) pair. Trying next savepoint location."
                     );
                 },
             }
@@ -405,19 +405,15 @@ impl RestartJobs {
         result
     }
 
-    #[tracing::instrument(
-        level = "trace",
-        skip(job, session),
-        fields(job_id=%job, correlation = %session.correlation()),
-    )]
-    async fn wait_on_job_restart(&self, job: &JobId, session: &ActionSession) -> Result<JobState, FlinkError> {
+    #[tracing::instrument(level = "trace", skip(session), fields(correlation = %session.correlation()))]
+    async fn wait_on_job_restart(&self, job_id: &JobId, session: &ActionSession) -> Result<JobState, FlinkError> {
         use crate::flink::JobState as JS;
 
         let correlation = session.correlation();
 
         let task = async {
             loop {
-                match session.flink.query_job_details(job, &correlation).await {
+                match session.flink.query_job_details(job_id, &correlation).await {
                     Ok(detail) if detail.state.is_engaged() => {
                         tracing::debug!(?detail, "job restart succeeded: job is {}", detail.state);
                         break detail.state;

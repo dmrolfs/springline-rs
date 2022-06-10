@@ -129,7 +129,7 @@ impl PatchReplicas {
         Ok(())
     }
 
-    #[tracing::instrument(level = "trace", skip())]
+    #[tracing::instrument(level = "trace", name="patch_replicas::assess_patch_completion", skip())]
     async fn do_assess_patch_completion(
         plan: &<Self as ScaleAction>::In, kube: &KubernetesContext, start: Instant,
     ) -> Result<(HashMap<String, Vec<Pod>>, bool), KubernetesError> {
@@ -142,9 +142,27 @@ impl PatchReplicas {
         let (nr_running, pod_status_counts) = Self::do_count_running_pods(&pods_by_status);
 
         let budget_remaining = kube_constraints.api_timeout - Instant::now().duration_since(start);
+
+        let (is_satisfied, note) = if nr_running == target_nr_task_managers {
+            (true, "patch replicas confirmed")
+        } else if nr_running < target_nr_task_managers && plan.direction() == ScaleDirection::Up {
+            (false, "expecting taskmanagers to be added")
+        } else if target_nr_task_managers < nr_running && plan.direction() == ScaleDirection::Down {
+            (false, "expecting taskmanagers to be removed")
+        } else {
+            (
+                false,
+                "unexpected number of taskmanagers. Consider adjusting `action.taskmanager.label_selector` \
+                setting to more specifically match taskmanager pods associated with the targets flink cluster. \
+                Will continue monitoring in case it settles to expected levels."
+            )
+        };
+
         tracing::info!(
             ?correlation,
             ?pod_status_counts,
+            scale_direction=%plan.direction(),
+            %note,
             "patch_replicas: kube found {} taskmanagers in cluster: {} running of {} requested - budget remaining: \
              {:?}",
             task_managers.len(),
@@ -152,22 +170,6 @@ impl PatchReplicas {
             target_nr_task_managers,
             budget_remaining
         );
-
-        let is_satisfied = if nr_running == target_nr_task_managers {
-            true
-        } else if nr_running < target_nr_task_managers && plan.direction() == ScaleDirection::Up {
-            tracing::info!(%nr_running, %target_nr_task_managers, "patch_replicas: expecting taskmanagers to be added");
-            false
-        } else if target_nr_task_managers < nr_running && plan.direction() == ScaleDirection::Down {
-            tracing::info!(%nr_running, %target_nr_task_managers, "patch_replicas: expecting taskmanagers to be removed");
-            false
-        } else {
-            tracing::warn!(
-                %nr_running, %target_nr_task_managers, scale_direction=%plan.direction(),
-                "patch_replicas: Unexpected number of taskmanagers. Consider adjusting `action.taskmanager.label_selector` setting to more specifically match taskmanager pods associated with the targets flink cluster. Will continue monitoring in case it settles to expected levels."
-            );
-            false
-        };
 
         Ok((pods_by_status, is_satisfied))
     }

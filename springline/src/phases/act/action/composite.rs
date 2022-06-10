@@ -50,7 +50,7 @@ where
                 Ok(_) => {
                     action
                         .execute(plan, session)
-                        .instrument(tracing::info_span!("act:composite"))
+                        .instrument(tracing::info_span!("act::composite::action", action=%action.label()))
                         .await
                 },
                 Err(err) => Err(err),

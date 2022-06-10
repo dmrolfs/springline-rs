@@ -118,7 +118,7 @@ where
 
     async fn do_run(&mut self) -> Result<(), SenseError> {
         let scopes = self.scopes.iter().copied().collect();
-        let (metric_orders, _agg_span) = super::distill_metric_orders_and_agg(&scopes, &self.orders);
+        let (metric_orders, _agg_span) = super::distill_metric_orders_for_sensor_scopes(&scopes, &self.orders);
         if metric_orders.is_empty() {
             tracing::info!(
                 stage=%self.name(), scopes=?self.scopes,
@@ -617,7 +617,7 @@ mod tests {
             .unwrap();
             orders.extend(vec![kafka_order.clone()]);
 
-            let (metric_orders, agg_span) = flink::distill_metric_orders_and_agg(&scopes, &orders);
+            let (metric_orders, agg_span) = flink::distill_metric_orders_for_sensor_scopes(&scopes, &orders);
             tracing::info!(?metric_orders, ?agg_span, "orders distilled");
 
             let actual = assert_ok!(

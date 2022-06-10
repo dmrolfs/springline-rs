@@ -11,14 +11,14 @@ use proctor::graph::{Connect, Graph, SinkShape, SourceShape, UniformFanInShape, 
 use prometheus::{HistogramOpts, HistogramTimer, HistogramVec};
 
 use crate::flink::{self, CorrelationGenerator, FlinkContext, MC_FLOW__RECORDS_IN_PER_SEC};
-use crate::phases::sense::flink::scope_sensor::ScopeSensor;
+use crate::phases::sense::flink::job_taskmanager_sensor::JobTaskmanagerSensor;
 use crate::phases::sense::flink::taskmanager_admin_sensor::TaskmanagerAdminSensor;
 use crate::phases::sense::flink::vertex_sensor::VertexSensor;
 use crate::settings::FlinkSensorSettings;
 
 mod api_model;
+mod job_taskmanager_sensor;
 mod metric_order;
-mod scope_sensor;
 mod taskmanager_admin_sensor;
 mod vertex_sensor;
 
@@ -155,18 +155,10 @@ pub async fn make_sensor(spec: FlinkSensorSpecification<'_>) -> Result<Box<dyn S
 
     let correlation_gen =
         CorrelationGenerator::distributed(spec.machine_node, IdPrettifier::<AlphabetCodec>::default());
-    let jobs_scope_sensor = ScopeSensor::new(
-        FlinkScope::Job,
-        orders.clone(),
-        spec.context.clone(),
-        correlation_gen.clone(),
-    );
-    let tm_scope_sensor = ScopeSensor::new(
-        FlinkScope::TaskManager,
-        orders.clone(),
-        spec.context.clone(),
-        correlation_gen.clone(),
-    );
+    let jobs_scope_sensor =
+        JobTaskmanagerSensor::new_job_sensor(orders.clone(), spec.context.clone(), correlation_gen.clone());
+    let tm_scope_sensor =
+        JobTaskmanagerSensor::new_taskmanager_sensor(orders.clone(), spec.context.clone(), correlation_gen.clone());
     let tm_admin_sensor = TaskmanagerAdminSensor::new(spec.context.clone(), correlation_gen.clone());
     let vertex_sensor = VertexSensor::new(orders.clone(), spec.context.clone(), correlation_gen)?;
     let flink_sensors: Vec<Box<dyn ThroughStage<(), Telemetry>>> = vec![
@@ -258,7 +250,8 @@ where
 type OrdersByMetric = HashMap<String, Vec<MetricOrder>>;
 /// Distills orders to requested scope and reorganizes them (order has metric+agg) to metric and
 /// consolidates aggregation span.
-fn distill_metric_orders_and_agg(
+#[tracing::instrument(level = "debug")]
+fn distill_metric_orders_for_sensor_scopes(
     scopes: &HashSet<FlinkScope>, orders: &[MetricOrder],
 ) -> (OrdersByMetric, HashSet<Aggregation>) {
     let mut order_domain = HashMap::default();
@@ -270,6 +263,7 @@ fn distill_metric_orders_and_agg(
         entry.push(o.clone());
     }
 
+    tracing::debug!("orders distilled:{order_domain:?} and aggregatioins:{agg_span:?}.");
     (order_domain, agg_span)
 }
 
