@@ -10,12 +10,18 @@ deployment:
     backtrace: "1"
 
 application:
+  eligibility:
+    template_data:
+      cooling_secs: 900
+
   action:
     taskmanager:
       kubernetes_api:
         api_timeout_secs: 450
     flink:
       polling_interval_secs: 15
+      restart:
+        operation_timeout_secs: 300
 
 global:
   realm: "olp-here"
