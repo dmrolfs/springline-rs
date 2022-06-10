@@ -136,15 +136,24 @@ where
             let _timer = proctor::graph::stage::start_stage_eval_time(STAGE_NAME);
             let mut session = ActionSession::new(plan.correlation().clone(), self.kube.clone(), self.flink.clone());
 
-            let span = tracing::info_span!("execute_scaling", ?plan);
-            let outcome = self.action.execute(&plan, &mut session).instrument(span).await;
+            let outcome = match self.action.check_preconditions(&session) {
+                Ok(_) => {
+                    self.action
+                        .execute(&plan, &mut session)
+                        .instrument(tracing::info_span!("act::execute_actuator", ?plan))
+                        .await
+                },
+                Err(err) => Err(err),
+            };
+
             match outcome {
                 Ok(_) => self.notify_action_succeeded(plan, session),
                 Err(err) => {
-                    tracing::warn!(error=?err, ?session, "failure in scale action.");
+                    tracing::error!(error=?err, ?session, "failure in scale action.");
                     self.notify_action_failed(plan, session, err);
                 },
             }
+
             *is_rescaling = false;
         }
 

@@ -27,6 +27,7 @@ pub use savepoint::TriggerSavepoint;
 #[async_trait]
 pub trait ScaleAction: Debug + Send + Sync {
     type In: AppData + ScaleActionPlan;
+    fn check_preconditions(&self, session: &ActionSession) -> Result<(), ActError>;
     async fn execute<'s>(&self, plan: &'s Self::In, session: &'s mut ActionSession) -> Result<(), ActError>;
 }
 

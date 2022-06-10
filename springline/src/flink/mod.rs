@@ -30,17 +30,18 @@ pub use model::{JOB_STATES, TASK_STATES};
 use once_cell::sync::Lazy;
 use proctor::error::MetricLabel;
 use prometheus::{HistogramOpts, HistogramTimer, HistogramVec, IntCounterVec, Opts};
+use url::Url;
 
 #[allow(clippy::cognitive_complexity)]
-pub(crate) fn log_response(label: &str, response: &reqwest::Response) {
+pub(crate) fn log_response(label: &str, endpoint: &Url, response: &reqwest::Response) {
     const PREAMBLE: &str = "flink response received";
     let status = response.status();
     if status.is_success() || status.is_informational() {
-        tracing::debug!(?response, "{PREAMBLE}: {label}");
+        tracing::debug!(?endpoint, ?response, "{PREAMBLE}: {label}");
     } else if status.is_client_error() {
-        tracing::warn!(?response, "{PREAMBLE}: {label}");
+        tracing::warn!(?endpoint, ?response, "{PREAMBLE}: {label}");
     } else {
-        tracing::warn!(?response, "{PREAMBLE}: {label}");
+        tracing::warn!(?endpoint, ?response, "{PREAMBLE}: {label}");
     }
 }
 

@@ -237,14 +237,14 @@ where
         let picklist: Result<Vec<String>, SenseError> = self
             .context
             .client()
-            .request(Method::GET, vertex_metrics_url)
+            .request(Method::GET, vertex_metrics_url.clone())
             .send()
             .map_err(|error| {
                 tracing::error!(?error, "failed Flink API vertex_metrics response");
                 error.into()
             })
             .and_then(|response| {
-                flink::log_response("vertex metric picklist", &response);
+                flink::log_response("vertex metric picklist", &vertex_metrics_url, &response);
                 response.json::<FlinkMetricResponse>().map_err(|err| err.into())
             })
             .instrument(span)
@@ -290,11 +290,11 @@ where
 
             self.context
                 .client()
-                .request(Method::GET, vertex_metrics_url)
+                .request(Method::GET, vertex_metrics_url.clone())
                 .send()
                 .map_err(|error| error.into())
                 .and_then(|response| {
-                    flink::log_response("job_vertex available telemetry", &response);
+                    flink::log_response("job_vertex available telemetry", &vertex_metrics_url, &response);
                     response.text().map(|body| {
                         body.map_err(|err| err.into()).and_then(|b| {
                             let result = serde_json::from_str(&b).map_err(|err| err.into());

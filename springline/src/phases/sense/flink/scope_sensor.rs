@@ -156,7 +156,7 @@ where
                         .send()
                         .map_err(|error| { error.into() })
                         .and_then(|response| {
-                            flink::log_response(&format!("{} scope response", scope_rep), &response);
+                            flink::log_response(&format!("{} scope response", scope_rep), &url, &response);
                             response
                                 .text()
                                 .map(|body| {

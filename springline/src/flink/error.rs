@@ -37,6 +37,8 @@ pub enum FlinkError {
     #[error("Flink savepoint operation failed for job {job_id}: {cause}")]
     Savepoint { job_id: JobId, cause: FailureCause },
 
+    // #[error("Flink restarts could not be initiated for jars:{jars:?} and savepoint-locations:{locations:?}")]
+    // RestartInitiation { jars: Vec<JarId>, locations: Vec<SavepointLocation>, },
     #[error("Flink API operation {0} failed to complete within timeout of {1:?}")]
     Timeout(String, std::time::Duration),
 }
