@@ -205,9 +205,9 @@ action:
       # directory configured with Flink.
 #      directory: "/path/to/flink/savepoints"
 
-#    restart:
+    restart:
       # Time allowed restarting and confirm a FLink job. Defaults to 1 minute.
-#      operation_timeout_secs: 60
+      operation_timeout_secs: 60
 
       # Optional boolean value that specifies whether the job submission should be rejected if the
       # savepoint contains state that cannot be mapped back to the job.

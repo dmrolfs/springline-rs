@@ -110,12 +110,19 @@ probes:
     livenessInterval: 120000
 
 application:
+  eligibility:
+    template_data:
+      cooling_secs: 600
+      stable_secs: 900
+
   action:
     taskmanager:
       kubernetes_api:
         api_timeout_secs: 290
     flink:
       polling_interval_secs: 10
+      restart:
+        operation_timeout_secs: 60
 
 global:
   annotations: {}
