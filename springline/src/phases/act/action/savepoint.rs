@@ -39,14 +39,18 @@ impl TriggerSavepoint {
 impl ScaleAction for TriggerSavepoint {
     type In = ScalePlan;
 
+    fn label(&self) -> &str {
+        self.label()
+    }
+
     fn check_preconditions(&self, session: &ActionSession) -> Result<(), ActError> {
         match &session.active_jobs {
             None => Err(ActError::ActionPrecondition {
-                action: ACTION_LABEL.to_string(),
+                action: self.label().to_string(),
                 reason: "active jobs not set".to_string(),
             }),
             Some(jobs) if jobs.is_empty() => Err(ActError::ActionPrecondition {
-                action: ACTION_LABEL.to_string(),
+                action: self.label().to_string(),
                 reason: "no active jobs found to rescale".to_string(),
             }),
             _ => Ok(()),
@@ -54,11 +58,11 @@ impl ScaleAction for TriggerSavepoint {
 
         match &session.uploaded_jars {
             None => Err(ActError::ActionPrecondition {
-                action: ACTION_LABEL.to_string(),
+                action: self.label().to_string(),
                 reason: "uploaded jars not set".to_string(),
             }),
             Some(jars) if jars.is_empty() => Err(ActError::ActionPrecondition {
-                action: ACTION_LABEL.to_string(),
+                action: self.label().to_string(),
                 reason: "no uploaded jars found to restart after rescale".to_string(),
             }),
             _ => Ok(()),
@@ -69,7 +73,7 @@ impl ScaleAction for TriggerSavepoint {
 
     #[tracing::instrument(level = "info", name = "StopFlinkWithSavepoint::execute", skip(self, _plan))]
     async fn execute<'s>(&self, _plan: &'s Self::In, session: &'s mut ActionSession) -> Result<(), ActError> {
-        let timer = act::start_scale_action_timer(session.cluster_label(), ACTION_LABEL);
+        let timer = act::start_scale_action_timer(session.cluster_label(), self.label());
 
         let correlation = session.correlation();
         let active_jobs = session.active_jobs.clone().unwrap_or_default();
@@ -92,7 +96,7 @@ impl ScaleAction for TriggerSavepoint {
         let savepoint_report = Self::block_for_all_savepoints(tasks, &correlation).await?;
         session.savepoints = Some(savepoint_report);
 
-        session.mark_duration(ACTION_LABEL, Duration::from_secs_f64(timer.stop_and_record()));
+        session.mark_duration(self.label(), Duration::from_secs_f64(timer.stop_and_record()));
         Ok(())
     }
 }

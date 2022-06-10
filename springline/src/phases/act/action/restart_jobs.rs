@@ -46,14 +46,18 @@ impl RestartJobs {
 impl ScaleAction for RestartJobs {
     type In = ScalePlan;
 
+    fn label(&self) -> &str {
+        ACTION_LABEL
+    }
+
     fn check_preconditions(&self, session: &ActionSession) -> Result<(), ActError> {
         match &session.savepoints {
             None => Err(ActError::ActionPrecondition {
-                action: ACTION_LABEL.to_string(),
+                action: self.label().to_string(),
                 reason: "savepoints not set".to_string(),
             }),
             Some(locations) if locations.completed.is_empty() => Err(ActError::ActionPrecondition {
-                action: ACTION_LABEL.to_string(),
+                action: self.label().to_string(),
                 reason: format!(
                     "no savepoint locations found to restart after rescale: failed:{:?}.",
                     locations.failed
@@ -64,11 +68,11 @@ impl ScaleAction for RestartJobs {
 
         match &session.uploaded_jars {
             None => Err(ActError::ActionPrecondition {
-                action: ACTION_LABEL.to_string(),
+                action: self.label().to_string(),
                 reason: "uploaded jars not set".to_string(),
             }),
             Some(jars) if jars.is_empty() => Err(ActError::ActionPrecondition {
-                action: ACTION_LABEL.to_string(),
+                action: self.label().to_string(),
                 reason: "no uploaded jars found to restart after rescale".to_string(),
             }),
             _ => Ok(()),
@@ -79,7 +83,7 @@ impl ScaleAction for RestartJobs {
 
     #[tracing::instrument(level = "info", name = "RestartFlinkWithNewParallelism::execute", skip(self))]
     async fn execute<'s>(&self, plan: &'s Self::In, session: &'s mut ActionSession) -> Result<(), ActError> {
-        let timer = act::start_scale_action_timer(session.cluster_label(), ACTION_LABEL);
+        let timer = act::start_scale_action_timer(session.cluster_label(), self.label());
 
         let parallelism = Self::parallelism_from_plan_session(plan, session);
 
@@ -126,14 +130,15 @@ impl ScaleAction for RestartJobs {
                 }
             } else {
                 tracing::warn!(
-                    "No uploaded jars to start jobs from -- skipping {ACTION_LABEL}. Flink standalone not supported. \
+                    "No uploaded jars to start jobs from -- skipping {}. Flink standalone not supported. \
                      Todo: add identification of standalone mode and once detected apply Reactive Flink approach \
-                     (with necessary assumption that Reactive mode is configured."
+                     (with necessary assumption that Reactive mode is configured.",
+                    self.label()
                 );
             };
         };
 
-        session.mark_duration(ACTION_LABEL, Duration::from_secs_f64(timer.stop_and_record()));
+        session.mark_duration(self.label(), Duration::from_secs_f64(timer.stop_and_record()));
         outcome
     }
 }
@@ -307,7 +312,7 @@ impl RestartJobs {
         &self, jar: &JarId, location: &SavepointLocation, parallelism: usize, session: &ActionSession,
     ) -> Result<Either<JobId, StatusCode>, FlinkError> {
         let correlation = session.correlation();
-        let step_label = super::action_step(ACTION_LABEL, "try_restart_jar_for_location");
+        let step_label = super::action_step(self.label(), "try_restart_jar_for_location");
         let url = Self::restart_jar_url_for(&session.flink, jar)?;
         let span =
             tracing::info_span!("act::restart_jobs - restart_jar", %url, ?correlation, %jar, %location, %parallelism);
@@ -455,7 +460,7 @@ impl RestartJobs {
 
         tokio::time::timeout(self.restart_timeout, task).await.map_err(|_elapsed| {
             FlinkError::Timeout(
-                format!("Timed out waiting for job({job}) to restart"),
+                format!("Timed out waiting for job({job_id}) to restart"),
                 self.restart_timeout,
             )
         })
@@ -485,7 +490,8 @@ impl RestartJobs {
             tracing::warn!(
                 ?session,
                 ?correlation,
-                "No savepoints found in session to restart - skipping {ACTION_LABEL}."
+                "No savepoints found in session to restart - skipping {}.",
+                ACTION_LABEL
             );
             false
         } else {

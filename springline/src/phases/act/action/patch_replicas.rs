@@ -34,13 +34,17 @@ impl PatchReplicas {
 impl ScaleAction for PatchReplicas {
     type In = ScalePlan;
 
+    fn label(&self) -> &str {
+        ACTION_LABEL
+    }
+
     fn check_preconditions(&self, _session: &ActionSession) -> Result<(), ActError> {
         Ok(())
     }
 
     #[tracing::instrument(level = "info", name = "PatchReplicas::execute", skip(self))]
     async fn execute<'s>(&self, plan: &'s Self::In, session: &'s mut ActionSession) -> Result<(), ActError> {
-        let timer = act::start_scale_action_timer(session.cluster_label(), ACTION_LABEL);
+        let timer = act::start_scale_action_timer(session.cluster_label(), self.label());
 
         let correlation = session.correlation();
         let nr_target_taskmanagers = plan.target_replicas();
@@ -72,7 +76,7 @@ impl ScaleAction for PatchReplicas {
         let confirmed_nr_taskmanagers = self.block_for_rescaled_taskmanagers(plan, &session.flink).await;
         session.nr_confirmed_rescaled_taskmanagers = Some(confirmed_nr_taskmanagers);
 
-        session.mark_duration(ACTION_LABEL, Duration::from_secs_f64(timer.stop_and_record()));
+        session.mark_duration(self.label(), Duration::from_secs_f64(timer.stop_and_record()));
         Ok(())
     }
 }

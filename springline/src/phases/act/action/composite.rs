@@ -7,7 +7,7 @@ use tracing::Instrument;
 use super::{ActionSession, ScaleAction};
 use crate::phases::act::{self, ActError, ScaleActionPlan};
 
-// pub const ACTION_LABEL: &str = "composite";
+pub const ACTION_LABEL: &str = "composite";
 
 #[derive(Debug)]
 pub struct CompositeAction<P> {
@@ -36,6 +36,10 @@ where
     P: AppData + ScaleActionPlan,
 {
     type In = P;
+
+    fn label(&self) -> &str {
+        ACTION_LABEL
+    }
 
     fn check_preconditions(&self, _session: &ActionSession) -> Result<(), ActError> {
         Ok(())

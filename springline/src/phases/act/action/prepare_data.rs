@@ -18,13 +18,17 @@ pub struct PrepareData;
 impl ScaleAction for PrepareData {
     type In = ScalePlan;
 
+    fn label(&self) -> &str {
+        ACTION_LABEL
+    }
+
     fn check_preconditions(&self, _session: &ActionSession) -> Result<(), ActError> {
         Ok(())
     }
 
     #[tracing::instrument(level = "info", name = "PrepareData::execute", skip(self, _plan))]
     async fn execute<'s>(&self, _plan: &'s Self::In, session: &'s mut ActionSession) -> Result<(), ActError> {
-        let timer = act::start_scale_action_timer(session.cluster_label(), ACTION_LABEL);
+        let timer = act::start_scale_action_timer(session.cluster_label(), self.label());
 
         let correlation = session.correlation();
         // todo: consider moving this to context channel?? would support keeping track of jar and job?
@@ -51,7 +55,7 @@ impl ScaleAction for PrepareData {
             .map(|jars| jars.into_iter().map(|j| j.id).collect())?;
 
         session.uploaded_jars = Some(jars);
-        session.mark_duration(ACTION_LABEL, Duration::from_secs_f64(timer.stop_and_record()));
+        session.mark_duration(self.label(), Duration::from_secs_f64(timer.stop_and_record()));
         Ok(())
     }
 }
