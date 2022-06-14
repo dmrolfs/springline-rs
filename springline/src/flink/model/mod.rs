@@ -609,6 +609,7 @@ impl From<FailureCause> for TelemetryValue {
     }
 }
 
+#[serde(rename_all = "snake_case")]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RestoreMode {
     /// Flink will take ownership of the given snapshot. It will clean the snapshot once it is
@@ -624,7 +625,7 @@ pub enum RestoreMode {
     /// This is the mode in which Flink worked so far. It will not claim ownership of the
     /// snapshot and will not delete the files. However, it can directly depend on the existence
     /// of the files of the restored checkpoint. It might not be safe to delete checkpoints that
-    /// were restored in legacy mode
+    /// were restored in legacy mode.
     Legacy,
 }
 

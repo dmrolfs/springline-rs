@@ -27,7 +27,7 @@ pub struct RestartJobs {
     pub polling_interval: Duration,
     pub allow_non_restored_state: Option<bool>,
     pub program_args: Option<Vec<String>>,
-    pub restore_mode: Option<RestoreMode>, // not sure if this is needed
+    pub restore_mode: Option<RestoreMode>, 
 }
 
 impl RestartJobs {

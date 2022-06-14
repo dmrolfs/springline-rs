@@ -216,6 +216,19 @@ action:
       # Time allowed restarting and confirm a FLink job. Defaults to 1 minute.
       operation_timeout_secs: 60
 
+      # Optionally specify the restore mode when restarting from a savepoint. Defaults to "no_claim".
+      # - "no_claim": Flink will not claim ownership of the snapshot files. However it will make sure
+      #               it does not depend on any artifacts from the restored snapshot. In order to do
+      #               that, Flink will take the first checkpoint as a full one, which means it might
+      #               reupload/duplicate files that are part of the restored checkpoint.
+      # - "claim": Flink will take ownership of the given snapshot. It will clean the snapshot once
+      #            it is subsumed by newer ones.
+      # - "legacy": This is the mode in which older version of Flink worked. It will not claim
+      #             ownership of the snapshot and will not delete the files. However, it can directly
+      #             depend on the existence of the files of the restored checkpoint. It might not be
+      #             safe to delete checkpoints that were restored in legacy mode.
+      restore_mode: claim
+
       # Optional boolean value that specifies whether the job submission should be rejected if the
       # savepoint contains state that cannot be mapped back to the job.
 #      allow_non_restartable_jobs: false
