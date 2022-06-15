@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
+use crate::phases::sense::flink::metric_order::MetricOrderMatcher;
 use once_cell::sync::Lazy;
 use proctor::elements::{Telemetry, TelemetryValue};
 use proctor::error::TelemetryError;
@@ -22,37 +23,42 @@ impl IntoIterator for FlinkMetricResponse {
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct FlinkMetric {
     pub id: String,
-    #[serde(flatten)]
+    #[serde(default, flatten)]
     pub values: HashMap<Aggregation, TelemetryValue>,
 }
 
 impl FlinkMetric {
+    /// populate the values of the metric for each order aggregation of the provided, matched orders.
     #[allow(dead_code)]
-    fn populate_telemetry<'m, O>(&self, telemetry: &mut Telemetry, orders: O)
+    fn populate_telemetry<'m, O>(&self, telemetry: &mut Telemetry, matched_orders: O)
     where
         O: IntoIterator<Item = &'m MetricOrder>,
     {
-        for o in orders.into_iter() {
+        for o in matched_orders.into_iter() {
             let agg = o.agg();
             let field = o.telemetry();
             match self.values.get(&agg) {
-                None => tracing::warn!(metric=%o.metric(), %agg, "metric order not found in flink response."),
+                None => {
+                    tracing::warn!(metric=%o.metric(), %agg, "metric order aggregation not found in flink response.")
+                },
                 Some(metric_value) => match metric_value.clone().try_cast(field.0) {
+                    Ok(value) => {
+                        let _ = telemetry.insert(field.1.to_string(), value);
+                    },
                     Err(err) => tracing::error!(
                         error=?err, metric=%o.metric(), ?metric_value, order=?o,
                         "Unable to read ordered type in flink metric response - skipping."
                     ),
-                    Ok(value) => {
-                        let _ = telemetry.insert(field.1.to_string(), value);
-                    },
                 },
             }
         }
     }
 }
 
-#[tracing::instrument(level = "trace", skip(metrics, orders))]
-pub fn build_telemetry<M>(metrics: M, orders: &HashMap<String, Vec<MetricOrder>>) -> Result<Telemetry, TelemetryError>
+#[tracing::instrument(level = "trace", skip(metrics, order_matchers))]
+pub fn build_telemetry<M>(
+    metrics: M, order_matchers: &HashMap<MetricOrder, MetricOrderMatcher>,
+) -> Result<Telemetry, TelemetryError>
 where
     M: IntoIterator<Item = FlinkMetric>,
 {
@@ -60,23 +66,39 @@ where
 
     let mut satisfied = HashSet::new();
 
-    for m in metrics.into_iter() {
-        match orders.get(m.id.as_str()) {
-            Some(os) => {
-                satisfied.insert(m.id.clone());
-                m.populate_telemetry(&mut telemetry, os);
-            },
-            None => {
-                tracing::warn!(unexpected_metric=?m, "unexpected metric in response not ordered - adding with minimal translation");
-                m.values.into_iter().for_each(|(agg, val)| {
-                    let key = format!("{}{}", m.id, suffix_for(m.id.as_str(), agg));
-                    let _ = telemetry.insert(key, val);
-                });
-            },
+    for metric in metrics.into_iter() {
+        let matched_orders: Vec<&MetricOrder> = order_matchers
+            .iter()
+            .filter_map(|(order, matches)| if matches(&metric.id) { Some(order) } else { None })
+            .collect();
+
+        if !matched_orders.is_empty() {
+            satisfied.extend(matched_orders.iter().copied());
+            metric.populate_telemetry(&mut telemetry, matched_orders);
+        } else {
+            tracing::warn!(unexpected_metric=?metric, "unexpected metric in response not ordered - adding with minimal translation");
+            metric.values.into_iter().for_each(|(agg, val)| {
+                let key = format!("{}{}", metric.id, suffix_for(metric.id.as_str(), agg));
+                let _ = telemetry.insert(key, val);
+            });
         }
+
+        //     // match matched_orders {
+        //     //     Some(os) => {
+        //     //         satisfied.insert(m.id.clone());
+        //     //         m.populate_telemetry(&mut telemetry, os);
+        //     //     },
+        //     //     None => {
+        //     //         tracing::warn!(unexpected_metric=?m, "unexpected metric in response not ordered - adding with minimal translation");
+        //     //         m.values.into_iter().for_each(|(agg, val)| {
+        //     //             let key = format!("{}{}", m.id, suffix_for(m.id.as_str(), agg));
+        //     //             let _ = telemetry.insert(key, val);
+        //     //         });
+        //     //     },
+        //     // }
     }
 
-    let all: HashSet<String> = orders.keys().cloned().collect();
+    let all: HashSet<&MetricOrder> = order_matchers.iter().map(|(order, _)| order).collect();
     let unfulfilled = all.difference(&satisfied).collect::<HashSet<_>>();
     if !unfulfilled.is_empty() {
         tracing::warn!(?unfulfilled, "some metrics orders were not fulfilled.");

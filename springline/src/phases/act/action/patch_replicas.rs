@@ -133,7 +133,7 @@ impl PatchReplicas {
         Ok(())
     }
 
-    #[tracing::instrument(level = "trace", name="patch_replicas::assess_patch_completion", skip())]
+    #[tracing::instrument(level = "trace", name = "patch_replicas::assess_patch_completion", skip())]
     async fn do_assess_patch_completion(
         plan: &<Self as ScaleAction>::In, kube: &KubernetesContext, start: Instant,
     ) -> Result<(HashMap<String, Vec<Pod>>, bool), KubernetesError> {
@@ -158,7 +158,7 @@ impl PatchReplicas {
                 false,
                 "unexpected number of taskmanagers. Consider adjusting `action.taskmanager.label_selector` \
                 setting to more specifically match taskmanager pods associated with the targets flink cluster. \
-                Will continue monitoring in case it settles to expected levels."
+                Will continue monitoring in case it settles to expected levels.",
             )
         };
 

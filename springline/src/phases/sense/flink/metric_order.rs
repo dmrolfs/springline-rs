@@ -1,6 +1,8 @@
 use anyhow::anyhow;
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fmt::Display;
+use std::hash::{Hash, Hasher};
 
 use itertools::Itertools;
 use once_cell::sync::Lazy;
@@ -103,6 +105,69 @@ pub enum MetricOrder {
     },
 }
 
+impl Hash for MetricOrder {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        match self {
+            Self::Job { metric, .. } => metric.hash(state),
+            Self::TaskManager { metric, .. } => metric.hash(state),
+            Self::Task { metric, .. } => metric.hash(state),
+            Self::Operator { name, metric, .. } => {
+                name.hash(state);
+                metric.hash(state);
+            },
+        }
+    }
+}
+
+pub type MetricOrderMatcher = Box<dyn Fn(&str) -> bool + Send + Sync + 'static>;
+
+// impl PartialEq for MetricOrder {
+//     fn eq(&self, other: &Self) -> bool {
+//         match (self, other) {
+//             (
+//                 Self::Job { metric: lhs_metric, agg: lhs_agg, telemetry_path: lhs_telemetry_path, telemetry_type: lhs_telemetry_type },
+//                 Self::Job { metric: rhs_metric, agg: rhs_agg, telemetry_path: rhs_telemetry_path, telemetry_type: rhs_telemetry_type }
+//             ) => {
+//                 lhs_metric == rhs_metric
+//                 && lhs_agg == rhs_agg
+//                 && lhs_telemetry_path == rhs_telemetry_path
+//                 && lhs_telemetry_type == rhs_telemetry_type
+//             },
+//             (
+//                 Self::TaskManager { metric: lhs_metric, agg: lhs_agg, telemetry_path: lhs_telemetry_path, telemetry_type: lhs_telemetry_type },
+//                 Self::TaskManager { metric: rhs_metric, agg: rhs_agg, telemetry_path: rhs_telemetry_path, telemetry_type: rhs_telemetry_type }
+//             ) => {
+//                 lhs_metric == rhs_metric
+//                 && lhs_agg == rhs_agg
+//                 && lhs_telemetry_path == rhs_telemetry_path
+//                 && lhs_telemetry_type == rhs_telemetry_type
+//             },
+//             (
+//                 Self::Task { metric: lhs_metric, agg: lhs_agg, telemetry_path: lhs_telemetry_path, telemetry_type: lhs_telemetry_type },
+//                 Self::Task { metric: rhs_metric, agg: rhs_agg, telemetry_path: rhs_telemetry_path, telemetry_type: rhs_telemetry_type }
+//             ) => {
+//                 lhs_metric == rhs_metric
+//                 && lhs_agg == rhs_agg
+//                 && lhs_telemetry_path == rhs_telemetry_path
+//                 && lhs_telemetry_type == rhs_telemetry_type
+//             },
+//             (
+//                 Self::Operator { name: lhs_name, metric: lhs_metric, agg: lhs_agg, telemetry_path: lhs_telemetry_path, telemetry_type: lhs_telemetry_type, .. },
+//                 Self::Operator { name: rhs_name, metric: rhs_metric, agg: rhs_agg, telemetry_path: rhs_telemetry_path, telemetry_type: rhs_telemetry_type, .. }
+//             ) => {
+//                 lhs_name == rhs_name
+//                 && lhs_metric == rhs_metric
+//                 && lhs_agg == rhs_agg
+//                 && lhs_telemetry_path == rhs_telemetry_path
+//                 && lhs_telemetry_type == rhs_telemetry_type
+//             },
+//             _ => false,
+//         }
+//     }
+// }
+//
+// impl Eq for MetricOrder {}
+
 impl MetricOrder {
     pub fn new(scope: ScopeSpec, metric: MetricSpec) -> Result<Self, SenseError> {
         match scope.scope {
@@ -136,6 +201,99 @@ impl MetricOrder {
                 scope
             ))),
         }
+    }
+
+    pub fn matcher(&self) -> Result<MetricOrderMatcher, SenseError> {
+        let matcher: MetricOrderMatcher = match self {
+            Self::Job { metric, .. } => {
+                let match_metric = metric.clone();
+                Box::new(move |flink_metric| flink_metric == match_metric.as_str())
+            },
+            Self::TaskManager { metric, .. } => {
+                let match_metric = metric.clone();
+                Box::new(move |flink_metric| flink_metric == match_metric.as_str())
+            },
+            Self::Task { metric, .. } => {
+                let match_metric = metric.clone();
+                Box::new(move |flink_metric| flink_metric == match_metric.as_str())
+            },
+            Self::Operator { name, metric, .. } => {
+                let encoded_name = Self::encode_string(name);
+                let regex = Regex::new(&format!(r"^{encoded_name}\..+\..*{metric}$"))
+                    .map_err(|err| SenseError::Stage(err.into()))?;
+
+                tracing::warn!(%encoded_name, ?regex, "DMR: MATCHER FOR OPERATOR [{name}]::[{metric}]");
+                Box::new(move |flink_metric| regex.is_match(flink_metric))
+            },
+        };
+
+        Ok(matcher)
+    }
+
+    fn encode_string(rep: &str) -> Cow<'_, str> {
+        let mut escaped = String::with_capacity(rep.len() | 15);
+        let unmodified = Self::append_string(rep.as_bytes(), &mut escaped, true);
+        if unmodified {
+            return Cow::Borrowed(rep);
+        }
+        Cow::Owned(escaped)
+    }
+
+    fn append_string(data: &[u8], escaped: &mut String, may_skip: bool) -> bool {
+        let unmodified = Self::encode_into(data, may_skip, |s| {
+            escaped.push_str(s);
+            Ok::<_, std::convert::Infallible>(())
+            // Ok::<_, std::convert::Infallible>(escaped.push_str(s))
+        });
+
+        if let Err(ref err) = unmodified {
+            tracing::error!(error=?err, "failed to encode metric");
+        }
+
+        unmodified.unwrap()
+    }
+
+    fn encode_into<E>(
+        mut data: &[u8], may_skip_write: bool, mut push_str: impl FnMut(&str) -> Result<(), E>,
+    ) -> Result<bool, E> {
+        let mut pushed = false;
+        loop {
+            // Fast path to skip over safe chars at the beginning of the remaining string
+            let ascii_len = data
+                .iter()
+                .take_while(|&&c| matches!(c, b'0'..=b'9' | b'A'..=b'Z' | b'a'..=b'z' | b'-' | b'.' | b'_' | b'~'))
+                .count();
+
+            let (safe, rest) = if data.len() <= ascii_len {
+                if !pushed && may_skip_write {
+                    return Ok(true);
+                }
+
+                (data, &[][..]) // redundant to optimize out a panic in split_at
+            } else {
+                data.split_at(ascii_len)
+            };
+
+            pushed = true;
+
+            if !safe.is_empty() {
+                push_str(std::str::from_utf8(safe).unwrap())?;
+            }
+            if rest.is_empty() {
+                break;
+            }
+
+            match rest.split_first() {
+                Some((_eaten_byte, rest)) => {
+                    let enc = &[b'_'];
+                    push_str(std::str::from_utf8(enc).unwrap())?;
+                    data = rest;
+                },
+                None => break,
+            };
+        }
+
+        Ok(false)
     }
 
     pub const fn scope(&self) -> FlinkScope {
@@ -172,6 +330,24 @@ impl MetricOrder {
         }
     }
 
+    pub fn metric_path(&self) -> String {
+        match self {
+            Self::Job { metric, .. } => format!("Job::{metric}"),
+            Self::TaskManager { metric, .. } => format!("TaskManager::{metric}"),
+            Self::Task { metric, .. } => format!("Task::{metric}"),
+            Self::Operator { name, metric, .. } => format!("Operator::{name}::{metric}"),
+        }
+    }
+
+    // pub fn fulfilled_by(&self, that_metric: impl AsRef<str>) -> bool {
+    //     match self {
+    //         Self::Job { metric, .. } => metric.as_str() == that_metric.as_ref(),
+    //         Self::TaskManager { metric, .. } => metric.as_str() == that_metric.as_ref(),
+    //         Self::Task { metric, .. } => metric.as_str() == that_metric.as_ref(),
+    //         Self::Operator { regex, .. } => regex.is_match(that_metric.as_ref()),
+    //     }
+    // }
+
     pub fn telemetry(&self) -> (TelemetryType, &str) {
         match self {
             Self::Job { telemetry_path, telemetry_type, .. } => (*telemetry_type, telemetry_path.as_str()),
@@ -205,26 +381,27 @@ impl MetricOrder {
 //     where
 //         S: Serializer,
 //     {
-//         let (scope, scope_name, metric_spec, size) = match self {
-//             Self::Operator(s, m) => (FlinkScope::Operator, Some(s.as_str()), m, 6),
-//             Self::Job(m) => (FlinkScope::Job, None, m, 5),
-//             Self::TaskManager(m) => (FlinkScope::TaskManager, None, m, 5),
-//             Self::Task(m) => (FlinkScope::Task, None, m, 5),
+//         let (variant, variant_index, size) = match self {
+//             Self::Job { .. } => ("Job", 0, 4),
+//             Self::TaskManager { .. } => ("TaskManager", 1, 4),
+//             Self::Task { .. } => ("Task", 2, 4),
+//             Self::Operator { .. } => ("Operator", 3, 5),
 //         };
 //
-//         let mut state = serializer.serialize_map(Some(size))?;
-//         state.serialize_entry("scope", &scope)?;
-//         if let Some(name) = scope_name {
-//             state.serialize_entry("name", name)?;
+//         let mut state = serializer.serialize_struct_variant("MetricOrder", variant_index, variant, size)?;
+//         state.serialize_field("scope", &self.scope())?;
+//         if let Some(name) = self.scope_name() {
+//             state.serialize_field("name", name)?;
 //         }
-//         state.serialize_entry("metric", &metric_spec.metric)?;
-//         state.serialize_entry("agg", &metric_spec.agg)?;
-//         state.serialize_entry("telemetry_path", &metric_spec.telemetry_path)?;
-//         state.serialize_entry("telemetry_type", &metric_spec.telemetry_type)?;
+//         state.serialize_field("metric", &self.metric())?;
+//         state.serialize_field("agg", &self.agg())?;
+//         let (telemetry_type, telemetry_path) = self.telemetry();
+//         state.serialize_field("telemetry_path", telemetry_path)?;
+//         state.serialize_field("telemetry_type", &telemetry_type)?;
 //         state.end()
 //     }
 // }
-//
+
 // impl<'de> Deserialize<'de> for MetricOrder {
 //     #[tracing::instrument(level = "trace", skip(deserializer))]
 //     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -249,14 +426,15 @@ impl MetricOrder {
 //             type Value = MetricOrder;
 //
 //             fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-//                 f.write_str("map MetricOrder")
+//                 f.write_str("enum MetricOrder")
 //             }
+//
+//             #[tracing::instrument(level = "trace", skip())]
 //
 //
 //             #[tracing::instrument(level = "trace", skip(self, map))]
-//             fn visit_map<V>(self, mut map: V) -> Result<Self::Value, V::Error>
-//             where
-//                 V: MapAccess<'de>,
+//             fn visit_enum<A>(self, data: A) -> Result<Self::Value, A::Error>
+//                 where A: EnumAccess<'de>,
 //             {
 //                 let mut scope = None;
 //                 let mut scope_name = None;
@@ -317,7 +495,7 @@ impl MetricOrder {
 //                 MetricOrder::from_scope_spec(scope_spec, metric_spec).map_err(de::Error::custom)
 //             }
 //
-//             fn visit_enum<A>(self, data: A) -> Result<Self::Value, serde::de::Error> where A: EnumAccess<'de> {
+//             {
 //                 todo!()
 //             }
 //         }
@@ -386,7 +564,6 @@ impl Aggregation {
 
 #[cfg(test)]
 mod tests {
-    use crate::phases::sense::flink::metric_order::MetricSpec;
     use crate::phases::sense::flink::{Aggregation, MetricOrder};
     use claim::*;
     use pretty_assertions::assert_eq;

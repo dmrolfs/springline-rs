@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::fmt::Debug;
+use std::fmt;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -22,37 +22,63 @@ use super::FlinkScope;
 use super::{api_model, Aggregation, MetricOrder, Unpack};
 use crate::flink::{self, JobId, JobSummary, VertexId, MC_CLUSTER__NR_ACTIVE_JOBS};
 use crate::phases::sense::flink::api_model::FlinkMetricResponse;
-use crate::phases::sense::flink::{CorrelationGenerator, FlinkContext, OrdersByMetric, JOB_SCOPE, TASK_SCOPE};
+use crate::phases::sense::flink::metric_order::MetricOrderMatcher;
+use crate::phases::sense::flink::{CorrelationGenerator, FlinkContext, JOB_SCOPE, TASK_SCOPE};
 use crate::CorrelationId;
 
 /// Load telemetry for a specify scope from the Flink Job Manager REST API; e.g., Job or
 /// Taskmanager. Note: cast_trait_object issues a conflicting impl error if no generic is specified
 /// (at least for my use cases), so a simple Telemetry doesn't work and I need to parameterize even
 /// though I'll only use wrt Telemetry.
-#[derive(Debug)]
 pub struct VertexSensor<Out> {
-    scopes: Vec<FlinkScope>,
     context: FlinkContext,
-    orders: Arc<Vec<MetricOrder>>,
+    scopes: Vec<FlinkScope>,
+    orders: Vec<MetricOrder>,
+    order_matchers: HashMap<MetricOrder, MetricOrderMatcher>,
     correlation_gen: CorrelationGenerator,
     trigger: Inlet<()>,
     outlet: Outlet<Out>,
+}
+
+impl<Out> fmt::Debug for VertexSensor<Out> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("VertexSensor")
+            .field("context", &self.context)
+            .field("scopes", &self.scopes)
+            .field("orders", &self.orders)
+            .field("trigger", &self.trigger)
+            .field("outlet", &self.outlet)
+            .finish()
+    }
 }
 
 const NAME: &str = "vertex_sensor";
 
 impl<Out> VertexSensor<Out> {
     pub fn new(
-        orders: Arc<Vec<MetricOrder>>, context: FlinkContext, correlation_gen: CorrelationGenerator,
+        orders: &[MetricOrder], context: FlinkContext, correlation_gen: CorrelationGenerator,
     ) -> Result<Self, SenseError> {
         let scopes = vec![FlinkScope::Task, FlinkScope::Operator];
         let trigger = Inlet::new(NAME, "trigger");
         let outlet = Outlet::new(NAME, "outlet");
 
+        let mut my_orders = Vec::new();
+        let mut order_matchers = HashMap::new();
+        for order in orders {
+            let found = scopes.iter().any(|s| *s == order.scope());
+            if found {
+                my_orders.push(order.clone());
+                let matcher = order.matcher()?;
+                order_matchers.insert(order.clone(), matcher);
+            }
+        }
+
+        // orders.iter().filter(|o| scopes.iter().find(|s| *s == &o.scope()).is_some()).cloned().collect();
         Ok(Self {
-            scopes,
             context,
-            orders,
+            scopes,
+            orders: my_orders,
+            order_matchers,
             correlation_gen,
             trigger,
             outlet,
@@ -117,9 +143,7 @@ where
     }
 
     async fn do_run(&mut self) -> Result<(), SenseError> {
-        let scopes = self.scopes.iter().copied().collect();
-        let (metric_orders, _agg_span) = super::distill_metric_orders_for_sensor_scopes(&scopes, &self.orders);
-        if metric_orders.is_empty() {
+        if self.orders.is_empty() {
             tracing::info!(
                 stage=%self.name(), scopes=?self.scopes,
                 "no flink metric orders for vertex - stopping vertex sensor stage."
@@ -144,13 +168,8 @@ where
 
                             let _vertex_gather_tasks: Vec<()> =
                                 futures::future::join_all(active_jobs.into_iter().map(|job| async {
-                                    self.gather_vertex_telemetry(
-                                        job,
-                                        metric_telemetry.clone(),
-                                        &metric_orders,
-                                        &correlation,
-                                    )
-                                    .await
+                                    self.gather_vertex_telemetry(job, metric_telemetry.clone(), &correlation)
+                                        .await
                                 }))
                                 .await;
 
@@ -177,18 +196,15 @@ where
         Ok(())
     }
 
-    #[tracing::instrument(level = "trace", skip(self, metric_telemetry, metric_orders))]
+    #[tracing::instrument(level = "trace", skip(self, metric_telemetry))]
     async fn gather_vertex_telemetry(
         &self, job: JobSummary, metric_telemetry: Arc<Mutex<HashMap<String, Vec<TelemetryValue>>>>,
-        metric_orders: &OrdersByMetric, correlation: &CorrelationId,
+        correlation: &CorrelationId,
     ) {
         match self.context.query_job_details(&job.id, correlation).await {
             Ok(detail) => {
                 for vertex in detail.vertices.into_iter().filter(|v| v.status.is_active()) {
-                    if let Ok(vertex_telemetry) = self
-                        .query_vertex_telemetry(&job.id, &vertex.id, metric_orders, correlation)
-                        .await
-                    {
+                    if let Ok(vertex_telemetry) = self.query_vertex_telemetry(&job.id, &vertex.id, correlation).await {
                         let mut groups = metric_telemetry.lock().await;
                         super::merge_into_metric_groups(&mut *groups, vertex_telemetry);
                     }
@@ -200,9 +216,9 @@ where
         }
     }
 
-    #[tracing::instrument(level = "trace", skip(self, metric_orders))]
+    #[tracing::instrument(level = "trace", skip(self))]
     async fn query_vertex_telemetry(
-        &self, job_id: &JobId, vertex_id: &VertexId, metric_orders: &OrdersByMetric, correlation: &CorrelationId,
+        &self, job_id: &JobId, vertex_id: &VertexId, correlation: &CorrelationId,
     ) -> Result<Telemetry, SenseError> {
         let mut url = self.context.jobs_endpoint();
         url.path_segments_mut()
@@ -214,25 +230,25 @@ where
             .push("metrics");
 
         let _timer = start_flink_vertex_sensor_timer();
-        let span = tracing::trace_span!("query Flink vertex telemetry", ?correlation);
+        let span = tracing::debug_span!("query Flink vertex telemetry", ?correlation, ?job_id, ?vertex_id);
 
-        self.do_query_vertex_metric_picklist(url.clone(), metric_orders, correlation)
+        self.do_query_vertex_metric_picklist(url.clone(), correlation)
             .and_then(|picklist| {
                 // todo used???: let vertex_agg_span = Self::agg_span_for(&picklist, metric_orders);
                 // todo used???: tracing::info!(?picklist, &vertex_agg_span, "available vertex metrics identified
                 // for order");
-                self.do_query_vertex_available_telemetry(picklist, metric_orders, url, correlation)
+                self.do_query_vertex_available_telemetry(picklist, url, correlation)
             })
             .instrument(span)
             .await
     }
 
-    #[tracing::instrument(level = "trace", skip(self, vertex_metrics_url, metric_orders))]
+    #[tracing::instrument(level = "trace", skip(self, vertex_metrics_url))]
     async fn do_query_vertex_metric_picklist(
-        &self, vertex_metrics_url: Url, metric_orders: &OrdersByMetric, correlation: &CorrelationId,
+        &self, vertex_metrics_url: Url, correlation: &CorrelationId,
     ) -> Result<Vec<String>, SenseError> {
         let _timer = start_flink_vertex_sensor_metric_picklist_time();
-        let span = tracing::trace_span!("query Flink vertex metric picklist", ?correlation);
+        let span = tracing::debug_span!("query Flink vertex metric picklist", ?correlation, ?vertex_metrics_url);
 
         let picklist: Result<Vec<String>, SenseError> = self
             .context
@@ -252,8 +268,15 @@ where
             .map(|picklist_response: FlinkMetricResponse| {
                 picklist_response
                     .into_iter()
-                    //todo: will filter by op in metric_order; get metric_order and use it to assess metric.id
-                    .filter_map(|metric| metric_orders.get(&metric.id).and(Some(metric.id)))
+                    .filter_map(|metric| {
+                        self.order_matchers.iter().find_map(|(o, matches)| {
+                            if matches(&metric.id) {
+                                Some(metric.id.clone())
+                            } else {
+                                None
+                            }
+                        })
+                    })
                     .collect()
             });
 
@@ -261,12 +284,12 @@ where
         super::identity_or_track_error(FlinkScope::Task, picklist)
     }
 
-    #[tracing::instrument(level = "trace", skip(self, picklist, metric_orders, vertex_metrics_url))]
+    #[tracing::instrument(level = "trace", skip(self, picklist, vertex_metrics_url))]
     async fn do_query_vertex_available_telemetry(
-        &self, picklist: Vec<String>, metric_orders: &OrdersByMetric, mut vertex_metrics_url: Url,
-        correlation: &CorrelationId,
+        &self, picklist: Vec<String>, mut vertex_metrics_url: Url, correlation: &CorrelationId,
     ) -> Result<Telemetry, SenseError> {
-        let agg_span = Self::agg_span_for(&picklist, metric_orders);
+        let agg_span = Self::agg_span_for(&picklist, &self.orders);
+
         tracing::debug!(
             ?picklist,
             ?agg_span,
@@ -274,7 +297,7 @@ where
             "vertex metric picklist and aggregation span for metric order"
         );
 
-        let telemetry: Result<Telemetry, SenseError> = if !metric_orders.is_empty() {
+        let telemetry: Result<Telemetry, SenseError> = if !self.orders.is_empty() {
             vertex_metrics_url
                 .query_pairs_mut()
                 .clear()
@@ -309,7 +332,7 @@ where
                 ))
                 .await
                 .and_then(|metric_response: FlinkMetricResponse| {
-                    api_model::build_telemetry(metric_response, metric_orders).map_err(|err| err.into())
+                    api_model::build_telemetry(metric_response, &self.order_matchers).map_err(|err| err.into())
                 })
         } else {
             Ok(Telemetry::default())
@@ -319,17 +342,25 @@ where
     }
 
     #[tracing::instrument(level = "trace", skip(picklist, metric_orders))]
-    fn agg_span_for(picklist: &[String], metric_orders: &OrdersByMetric) -> Vec<Aggregation> {
+    fn agg_span_for(picklist: &[String], metric_orders: &[MetricOrder]) -> Vec<Aggregation> {
         picklist
             .iter()
             .flat_map(|metric| {
-                metric_orders
-                    .get(metric)
-                    .cloned()
-                    .unwrap_or_default()
-                    .into_iter()
-                    .map(|order| order.agg())
-                    .filter(|agg| *agg != Aggregation::Value)
+                metric_orders.iter().filter_map(|o| {
+                    if o.agg() != Aggregation::Value && o.metric() == metric.as_str() {
+                        Some(o.agg())
+                    } else {
+                        None
+                    }
+                })
+
+                // metric_orders
+                //     .get(metric)
+                //     .cloned()
+                //     .unwrap_or_default()
+                //     .into_iter()
+                //     .map(|order| order.agg())
+                //     .filter(|agg| *agg != Aggregation::Value)
             })
             .collect()
     }
@@ -419,7 +450,6 @@ mod tests {
 
     use super::*;
     use crate::flink::MC_FLOW__RECORDS_IN_PER_SEC;
-    use crate::phases::sense::flink;
     use crate::phases::sense::flink::metric_order::{MetricSpec, ScopeSpec};
     use crate::phases::sense::flink::STD_METRIC_ORDERS;
 
@@ -461,13 +491,10 @@ mod tests {
     }
 
     async fn test_stage_for(
-        orders: &Vec<MetricOrder>, context: FlinkContext,
+        orders: &[MetricOrder], context: FlinkContext,
     ) -> (VertexSensor<Telemetry>, mpsc::Sender<()>, mpsc::Receiver<Telemetry>) {
-        let mut stage = assert_ok!(VertexSensor::new(
-            Arc::new(orders.clone()),
-            context,
-            CorrelationGenerator::default()
-        ));
+        let correlation_gen = CorrelationGenerator::default();
+        let mut stage = assert_ok!(VertexSensor::new(orders, context, correlation_gen));
         let (tx_trigger, rx_trigger) = mpsc::channel(1);
         let (tx_out, rx_out) = mpsc::channel(8);
         stage.trigger.attach("trigger".into(), rx_trigger).await;
@@ -499,12 +526,13 @@ mod tests {
 
     const METRIC_SUMMARY: Lazy<serde_json::Value> = Lazy::new(|| {
         json!([
+                { "id": "Source__Foo_Data_stream.KafkaConsumer.client-id.fce7d7241a2648da85a99be91e4f2b77.catalog.ingestion-service.layer.observations.consumer-fetch-manager-metrics_records-lag-max" },
                 { "id": "Shuffle.Netty.Output.Buffers.outPoolUsage" },
                 { "id": "checkpointStartDelayNanos" },
                 { "id": "numBytesInLocal" },
                 { "id": "numBytesInRemotePerSecond" },
                 { "id": "Shuffle.Netty.Input.numBytesInRemotePerSecond" },
-                { "id": "Source__Custom_Source.numRecordsInPerSecond" },
+                { "id": "Source__Foo_Data_stream.numRecordsInPerSecond" },
                 { "id": "numBytesOut" },
                 { "id": "Timestamps/Watermarks.currentInputWatermark" },
                 { "id": "numBytesIn" },
@@ -538,14 +566,14 @@ mod tests {
                 { "id": "Source__Custom_Source.currentOutputWatermark" },
                 { "id": "numBuffersInRemote" },
                 { "id": "buffers.inputQueueLength" },
-                { "id": "Source__Custom_Source.numRecordsOutPerSecond" },
+                { "id": "Source__Foo_Data_stream.numRecordsOutPerSecond" },
                 { "id": "Timestamps/Watermarks.numRecordsInPerSecond" },
                 { "id": "numRecordsIn" },
                 { "id": "Shuffle.Netty.Input.numBuffersInRemote" },
                 { "id": "numBytesInPerSecond" },
                 { "id": "backPressuredTimeMsPerSecond" },
                 { "id": "Shuffle.Netty.Input.Buffers.inputQueueLength" },
-                { "id": "Source__Custom_Source.numRecordsIn" },
+                { "id": "Source__Foo_Data_stream.numRecordsIn" },
                 { "id": "buffers.inputExclusiveBuffersUsage" },
                 { "id": "Shuffle.Netty.Input.numBuffersInRemotePerSecond" },
                 { "id": "numRecordsOutPerSecond" },
@@ -554,6 +582,18 @@ mod tests {
                 { "id": "numRecordsInPerSecond" },
                 { "id": "Shuffle.Netty.Input.Buffers.inputFloatingBuffersUsage" },
             ] )
+    });
+
+    static TEST_ORDERS: Lazy<Vec<MetricOrder>> = Lazy::new(|| {
+        let mut orders = STD_METRIC_ORDERS.clone();
+        orders.push(MetricOrder::Operator {
+            name: "Source: Foo Data stream".into(),
+            metric: "records-lag-max".into(),
+            agg: Aggregation::Sum,
+            telemetry_path: "flow.input_records_lag_max".into(),
+            telemetry_type: TelemetryType::Integer,
+        });
+        orders
     });
 
     #[test]
@@ -568,6 +608,10 @@ mod tests {
             let summary_response = ResponseTemplate::new(200).set_body_json(METRIC_SUMMARY.clone());
 
             let metrics = json!([
+                {
+                    "id": "Source__Foo_Data_stream.KafkaConsumer.client-id.fce7d7241a2648da85a99be91e4f2b77.catalog.ingestion-service.layer.observations.consumer-fetch-manager-metrics_records-lag-max",
+                    "sum": 123456_i64,
+                },
                 { "id": "numRecordsInPerSecond", "max": 0_f64 },
                 { "id": "numRecordsOutPerSecond", "max": 20_f64 },
                 { "id": "buffers.inputQueueLength", "max": 0_f64 },
@@ -600,13 +644,13 @@ mod tests {
                 .await;
 
             let context = assert_ok!(context_for(&mock_server));
-            let (stage, ..) = test_stage_for(&STD_METRIC_ORDERS, context).await;
+            let (stage, ..) = test_stage_for(&TEST_ORDERS, context).await;
 
-            let scopes = maplit::hashset! { FlinkScope::Task, FlinkScope::Operator };
+            // let scopes = maplit::hashset! { FlinkScope::Task, FlinkScope::Operator };
 
             let mut orders = STD_METRIC_ORDERS.clone();
             let kafka_order = MetricOrder::new(
-                ScopeSpec::new(FlinkScope::Operator, "Source: Foo Stream"),
+                ScopeSpec::new(FlinkScope::Operator, "Source: Foo Data stream"),
                 MetricSpec::new(
                     "records-lag-max",
                     Aggregation::Value,
@@ -617,15 +661,15 @@ mod tests {
             .unwrap();
             orders.extend(vec![kafka_order.clone()]);
 
-            let (metric_orders, agg_span) = flink::distill_metric_orders_for_sensor_scopes(&scopes, &orders);
-            tracing::info!(?metric_orders, ?agg_span, "orders distilled");
+            // let metric_orders: Vec<MetricOrder> = orders.iter().filter(|o| scopes.iter().find(|s| *s == &o.scope()).is_some()).cloned().collect();
+            // let agg_span: HashSet<Aggregation> = metric_orders.iter().map(|o| o.agg()).collect();
+            // tracing::info!(?metric_orders, ?agg_span, "orders distilled");
 
             let actual = assert_ok!(
                 stage
                     .query_vertex_telemetry(
                         &job_id,
                         &vertex_id,
-                        &metric_orders,
                         &Id::direct("test_query_vertex_telemetry", 23, "CBA")
                     )
                     .await
@@ -634,6 +678,7 @@ mod tests {
             assert_eq!(
                 actual,
                 maplit::hashmap! {
+                    "flow.input_records_lag_max".to_string() => 123456_i64.into(),
                     MC_FLOW__RECORDS_IN_PER_SEC.to_string() => 0_f64.into(),
                     "flow.records_out_per_sec".to_string() => 20_f64.into(),
                     "cluster.task_network_input_queue_len".to_string() => 0_f64.into(),

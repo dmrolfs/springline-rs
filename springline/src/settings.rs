@@ -586,6 +586,10 @@ mod tests {
                     directory: Some("s3://path/to/savepoints".to_string()),
                     ..SavepointSettings::default()
                 },
+                restart: FlinkRestartSettings {
+                    restore_mode: Some(RestoreMode::Claim),
+                    ..FlinkRestartSettings::default()
+                },
                 ..FlinkActionSettings::default()
             },
         },

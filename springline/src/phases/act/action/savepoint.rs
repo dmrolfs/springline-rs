@@ -40,7 +40,7 @@ impl ScaleAction for TriggerSavepoint {
     type In = ScalePlan;
 
     fn label(&self) -> &str {
-        self.label()
+        ACTION_LABEL
     }
 
     fn check_preconditions(&self, session: &ActionSession) -> Result<(), ActError> {

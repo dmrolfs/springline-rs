@@ -27,7 +27,7 @@ flink:
   pool_idle_timeout_secs: 60
   pool_max_idle_per_host: 5
 
-# configure the kubernetes client used by both sesnors and actuators.
+# configure the kubernetes client used by both sensors and actuators.
 kubernetes:
   # The Kubernetes clients supports several different configuration strategies:
   # - `infer`: Infers configuration from the environment. First attempting to load in-cluster

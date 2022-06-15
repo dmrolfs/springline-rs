@@ -27,7 +27,7 @@ pub struct RestartJobs {
     pub polling_interval: Duration,
     pub allow_non_restored_state: Option<bool>,
     pub program_args: Option<Vec<String>>,
-    pub restore_mode: Option<RestoreMode>, 
+    pub restore_mode: Option<RestoreMode>,
 }
 
 impl RestartJobs {
@@ -294,7 +294,7 @@ impl RestartJobs {
                     tracing::info!(%job_id, %parallelism, ?correlation, "restarted job from jar({jar}) + savepoint({location}) pair.");
                     job_savepoint = Some((job_id, location));
                     break;
-                }
+                },
                 Right(http_status) => {
                     tracing::info!(
                         %parallelism, ?correlation, ?http_status,

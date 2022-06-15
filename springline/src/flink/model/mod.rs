@@ -293,18 +293,19 @@ impl Debug for JobDetail {
                 &format!(
                     "[{} - {}]",
                     self.start_time,
-                    self.end_time.map(|end| end.to_string()).unwrap_or(String::default())
-                )
+                    self.end_time.map(|end| end.to_string()).unwrap_or_default()
+                ),
             )
             .field("duration", &self.duration)
             .field("max_parallelism", &self.max_parallelism)
             .field("now", &self.now.to_string())
             .field(
                 "timestamps",
-                &self.timestamps
+                &self
+                    .timestamps
                     .iter()
                     .map(|(s, ts)| (s, ts.to_string()))
-                    .collect::<HashMap<_, _>>()
+                    .collect::<HashMap<_, _>>(),
             )
             .field("vertices", &self.vertices)
             .field("status_counts", &self.status_counts)
@@ -609,8 +610,8 @@ impl From<FailureCause> for TelemetryValue {
     }
 }
 
-#[serde(rename_all = "snake_case")]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum RestoreMode {
     /// Flink will take ownership of the given snapshot. It will clean the snapshot once it is
     /// subsumed by newer ones.

@@ -1,5 +1,4 @@
-use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
+use std::collections::HashMap;
 
 use cast_trait_object::DynCastExt;
 use once_cell::sync::Lazy;
@@ -151,16 +150,16 @@ pub struct FlinkSensorSpecification<'a> {
 pub async fn make_sensor(spec: FlinkSensorSpecification<'_>) -> Result<Box<dyn SourceStage<Telemetry>>, SenseError> {
     let name = format!("{}_flink_sensor", spec.name);
 
-    let orders = Arc::new(MetricOrder::extend_standard_with_settings(spec.settings));
+    let orders = MetricOrder::extend_standard_with_settings(spec.settings);
 
     let correlation_gen =
         CorrelationGenerator::distributed(spec.machine_node, IdPrettifier::<AlphabetCodec>::default());
     let jobs_scope_sensor =
-        JobTaskmanagerSensor::new_job_sensor(orders.clone(), spec.context.clone(), correlation_gen.clone());
+        JobTaskmanagerSensor::new_job_sensor(orders.as_slice(), spec.context.clone(), correlation_gen.clone())?;
     let tm_scope_sensor =
-        JobTaskmanagerSensor::new_taskmanager_sensor(orders.clone(), spec.context.clone(), correlation_gen.clone());
+        JobTaskmanagerSensor::new_taskmanager_sensor(orders.as_slice(), spec.context.clone(), correlation_gen.clone())?;
     let tm_admin_sensor = TaskmanagerAdminSensor::new(spec.context.clone(), correlation_gen.clone());
-    let vertex_sensor = VertexSensor::new(orders.clone(), spec.context.clone(), correlation_gen)?;
+    let vertex_sensor = VertexSensor::new(orders.as_slice(), spec.context.clone(), correlation_gen)?;
     let flink_sensors: Vec<Box<dyn ThroughStage<(), Telemetry>>> = vec![
         Box::new(jobs_scope_sensor),
         Box::new(tm_scope_sensor),
@@ -247,25 +246,25 @@ where
     }
 }
 
-type OrdersByMetric = HashMap<String, Vec<MetricOrder>>;
-/// Distills orders to requested scope and reorganizes them (order has metric+agg) to metric and
-/// consolidates aggregation span.
-#[tracing::instrument(level = "debug")]
-fn distill_metric_orders_for_sensor_scopes(
-    scopes: &HashSet<FlinkScope>, orders: &[MetricOrder],
-) -> (OrdersByMetric, HashSet<Aggregation>) {
-    let mut order_domain = HashMap::default();
-    let mut agg_span = HashSet::default();
-
-    for o in orders.iter().filter(|o| scopes.contains(&o.scope())) {
-        agg_span.insert(o.agg());
-        let entry = order_domain.entry(o.metric().to_string()).or_insert_with(Vec::new);
-        entry.push(o.clone());
-    }
-
-    tracing::debug!("orders distilled:{order_domain:?} and aggregatioins:{agg_span:?}.");
-    (order_domain, agg_span)
-}
+// type OrdersByMetric = HashMap<String, Vec<MetricOrder>>;
+// /// Distills orders to requested scope and reorganizes them (order has metric+agg) to metric and
+// /// consolidates aggregation span.
+// #[tracing::instrument(level = "debug")]
+// fn distill_metric_orders_for_sensor_scopes(
+//     scopes: &HashSet<FlinkScope>, orders: &[MetricOrder],
+// ) -> (OrdersByMetric, HashSet<Aggregation>) {
+//     let mut order_domain = HashMap::default();
+//     let mut agg_span = HashSet::default();
+//
+//     for o in orders.iter().filter(|o| scopes.contains(&o.scope())) {
+//         agg_span.insert(o.agg());
+//         let entry = order_domain.entry(o.metric().to_string()).or_insert_with(Vec::new);
+//         entry.push(o.clone());
+//     }
+//
+//     tracing::debug!("orders distilled:{order_domain:?} and aggregations:{agg_span:?}.");
+//     (order_domain, agg_span)
+// }
 
 fn merge_into_metric_groups(metric_telemetry: &mut HashMap<String, Vec<TelemetryValue>>, vertex_telemetry: Telemetry) {
     for (metric, vertex_val) in vertex_telemetry.into_iter() {
@@ -276,6 +275,8 @@ fn merge_into_metric_groups(metric_telemetry: &mut HashMap<String, Vec<Telemetry
     }
 }
 
+/// For each set of telemetry values collected for a metric, aggregate them accordingly the desired
+/// metric order aggregation.
 #[tracing::instrument(level = "trace", skip(orders))]
 fn consolidate_active_job_telemetry_for_order(
     job_telemetry: HashMap<String, Vec<TelemetryValue>>, orders: &[MetricOrder],

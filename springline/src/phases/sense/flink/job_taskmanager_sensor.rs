@@ -1,5 +1,5 @@
-use std::fmt::Debug;
-use std::sync::Arc;
+use std::collections::{HashMap, HashSet};
+use std::fmt;
 
 use async_trait::async_trait;
 use cast_trait_object::dyn_upcast;
@@ -17,51 +17,78 @@ use url::Url;
 use super::FlinkScope;
 use super::{api_model, Aggregation, MetricOrder, Unpack};
 use crate::flink::{self, FlinkContext};
+use crate::phases::sense::flink::api_model::FlinkMetricResponse;
+use crate::phases::sense::flink::metric_order::MetricOrderMatcher;
 use crate::phases::sense::flink::CorrelationGenerator;
 
 /// Load telemetry for a specify scope from the Flink Job Manager REST API; e.g., Job or
 /// Taskmanager. Note: cast_trait_object issues a conflicting impl error if no generic is specified
 /// (at least for my use cases), so a simple Telemetry doesn't work and I need to parameterize even
 /// though I'll only use wrt Telemetry.
-#[derive(Debug)]
 pub struct JobTaskmanagerSensor<Out> {
     name: String,
     scope: FlinkScope,
     context: FlinkContext,
-    orders: Arc<Vec<MetricOrder>>,
+    orders: Vec<MetricOrder>,
+    order_matchers: HashMap<MetricOrder, MetricOrderMatcher>,
     correlation_gen: CorrelationGenerator,
     trigger: Inlet<()>,
     outlet: Outlet<Out>,
 }
 
+impl<Out> fmt::Debug for JobTaskmanagerSensor<Out> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("JobTaskmanagerSensor")
+            .field("scope", &self.scope)
+            .field("name", &self.name)
+            .field("context", &self.context)
+            .field("orders", &self.orders)
+            .field("trigger", &self.trigger)
+            .field("outlet", &self.outlet)
+            .finish()
+    }
+}
+
 impl<Out> JobTaskmanagerSensor<Out> {
     pub fn new_job_sensor(
-        orders: Arc<Vec<MetricOrder>>, context: FlinkContext, correlation_gen: CorrelationGenerator,
-    ) -> Self {
+        orders: &[MetricOrder], context: FlinkContext, correlation_gen: CorrelationGenerator,
+    ) -> Result<Self, SenseError> {
         Self::new(FlinkScope::Job, orders, context, correlation_gen)
     }
 
     pub fn new_taskmanager_sensor(
-        orders: Arc<Vec<MetricOrder>>, context: FlinkContext, correlation_gen: CorrelationGenerator,
-    ) -> Self {
+        orders: &[MetricOrder], context: FlinkContext, correlation_gen: CorrelationGenerator,
+    ) -> Result<Self, SenseError> {
         Self::new(FlinkScope::TaskManager, orders, context, correlation_gen)
     }
 
     fn new(
-        scope: FlinkScope, orders: Arc<Vec<MetricOrder>>, context: FlinkContext, correlation_gen: CorrelationGenerator,
-    ) -> Self {
+        scope: FlinkScope, orders: &[MetricOrder], context: FlinkContext, correlation_gen: CorrelationGenerator,
+    ) -> Result<Self, SenseError> {
         let name = format!("{scope}Sensor").to_snake_case();
         let trigger = Inlet::new(&name, "trigger");
         let outlet = Outlet::new(&name, "outlet");
-        Self {
+
+        let mut my_orders = Vec::new();
+        let mut order_matchers = HashMap::new();
+        for order in orders {
+            if order.scope() == scope {
+                my_orders.push(order.clone());
+                let matcher = order.matcher()?;
+                order_matchers.insert(order.clone(), matcher);
+            }
+        }
+
+        Ok(Self {
             name,
             scope,
             context,
-            orders,
+            orders: my_orders,
+            order_matchers,
             correlation_gen,
             trigger,
             outlet,
-        }
+        })
     }
 }
 
@@ -124,36 +151,105 @@ where
         format!("{scope}s")
     }
 
-    fn extend_url_for<'a>(
-        &self, metrics: impl Iterator<Item = &'a String>, agg: impl Iterator<Item = &'a Aggregation>,
-    ) -> Url {
+    fn extend_url_for(&self, metrics: &[impl AsRef<str>], agg: &[Aggregation]) -> Url {
         let scope_rep = Self::pluralize_scope(self.scope).to_lowercase();
         let mut url = self.context.base_url();
         url.path_segments_mut().unwrap().push(&scope_rep).push("metrics");
-        url.query_pairs_mut()
-            .clear()
-            .append_pair("get", metrics.cloned().join(",").as_str())
-            .append_pair("agg", agg.copied().join(",").as_str());
+
+        if !metrics.is_empty() || !agg.is_empty() {
+            url.query_pairs_mut().clear();
+        }
+
+        if !metrics.is_empty() {
+            let metrics_query = metrics.iter().map(|m| m.as_ref()).join(",");
+            url.query_pairs_mut().append_pair("get", &metrics_query);
+        }
+
+        if !agg.is_empty() {
+            url.query_pairs_mut()
+                .append_pair("agg", agg.iter().copied().join(",").as_str());
+        }
 
         url
     }
 
+    #[tracing::instrument(level = "debug", skip(self))]
+    async fn get_scope_metrics(
+        &self, metrics: &[&MetricOrder], aggs: &[Aggregation],
+    ) -> Result<FlinkMetricResponse, SenseError> {
+        let metric_ids: Vec<&str> = metrics.iter().map(|o| o.metric()).collect();
+        let url = self.extend_url_for(metric_ids.as_slice(), aggs);
+        let flink_metrics: Result<FlinkMetricResponse, SenseError> = self
+            .context
+            .client()
+            .request(Method::GET, url.clone())
+            .send()
+            .map_err(|err| err.into())
+            .and_then(|response| {
+                flink::log_response(&format!("{} scope response", self.scope), &url, &response);
+                response.text().map(|body| {
+                    body.map_err(|err| err.into()).and_then(|b| {
+                        let result = serde_json::from_str(&b).map_err(|err| err.into());
+                        tracing::debug!(body=%b, response=?result, "flink {} scope metrics response body", self.scope);
+                        result
+                    })
+                })
+            })
+            .instrument(tracing::debug_span!("Flink REST API - scope metrics", scope=%self.scope))
+            .await;
+
+        super::identity_or_track_error(self.scope, flink_metrics)
+    }
+
+    #[tracing::instrument(level = "info", skip(self))]
+    async fn distill_metric_orders(&self) -> Result<(Vec<String>, Vec<&MetricOrder>), SenseError> {
+        let flink_metrics: Vec<String> = self
+            .get_scope_metrics(vec![].as_slice(), vec![].as_slice())
+            .await?
+            .0
+            .into_iter()
+            .map(|m| m.id)
+            .collect();
+
+        tracing::warn!("DISTILL: flink_metrics={flink_metrics:?}");
+
+        tracing::warn!("DISTLL: original {} orders = {:?}", self.scope, self.orders);
+
+        let mut requested_metrics = HashSet::new();
+        let mut available_orders = Vec::new();
+        for order in self.orders.iter() {
+            let matches = &self.order_matchers[order];
+            for metric in flink_metrics.iter() {
+                if matches(metric) {
+                    requested_metrics.insert(metric.clone());
+                    available_orders.push(order);
+                }
+            }
+        }
+
+        tracing::debug!(?available_orders, ?requested_metrics, "distilled metric orders");
+        Ok((requested_metrics.into_iter().collect(), available_orders))
+    }
+
     async fn do_run(&mut self) -> Result<(), SenseError> {
-        let scopes = maplit::hashset! { self.scope };
-        let (metric_orders, agg_span) = super::distill_metric_orders_for_sensor_scopes(&scopes, &self.orders);
-        if metric_orders.is_empty() {
+        // let scopes = maplit::hashset! { self.scope };
+        let (metrics, metric_orders) = self.distill_metric_orders().await?;
+        let agg_span: HashSet<Aggregation> = metric_orders.iter().map(|o| o.agg()).collect();
+        tracing::debug!("requested metrics:{metrics:?} metric orders:{metric_orders:?}, aggregations:{agg_span:?}");
+
+        // let (metric_orders, agg_span) = super::distill_metric_orders_for_sensor_scopes(&scopes, &self.scope_orders);
+        if metrics.is_empty() || metric_orders.is_empty() {
             // todo: best to end this useless stage or do nothing in loop? I hope end is best.
-            tracing::warn!(
-                stage=%self.name(), scope=%self.scope,
-                "no flink metric orders for scope - stopping scope sensesensor stage."
-            );
+            tracing::warn!(stage=%self.name(), "no flink metric orders for scope - stopping {} sensor stage.", self.scope);
             return Ok(());
         }
 
         let scope_rep = self.scope.to_string().to_lowercase();
-        let metrics = metric_orders.keys();
-        let url = self.extend_url_for(metrics, agg_span.iter());
-        tracing::debug!("flink sensing url = {:?}", url);
+        let url = self.extend_url_for(
+            metrics.as_slice(),
+            agg_span.iter().copied().collect::<Vec<_>>().as_slice(),
+        );
+        tracing::debug!(?metrics, ?agg_span, "flink sensing url = {:?}", url);
 
         while self.trigger.recv().await.is_some() {
             let _stage_timer = stage::start_stage_eval_time(self.name());
@@ -187,8 +283,8 @@ where
                         })
                         .instrument(tracing::debug_span!("Flink REST API - scope metrics", scope=%self.scope))
                         .await
-                        .and_then(|metric_response: api_model::FlinkMetricResponse| {
-                            api_model::build_telemetry(metric_response, &metric_orders)
+                        .and_then(|metric_response: FlinkMetricResponse| {
+                            api_model::build_telemetry(metric_response, &self.order_matchers)
                                 // this is only needed because async_trait forcing me to parameterize this stage
                                 .and_then(|telemetry| Out::unpack(telemetry))
                                 .map_err(|err| err.into())
@@ -215,6 +311,7 @@ where
 #[cfg(test)]
 mod tests {
     use std::sync::atomic::{AtomicU32, Ordering};
+    use std::sync::Arc;
 
     use claim::*;
     use fake::{Fake, Faker};
@@ -228,11 +325,27 @@ mod tests {
     use tokio::sync::mpsc;
     use tokio_test::block_on;
     use url::Url;
-    use wiremock::matchers::{method, path};
-    use wiremock::{Mock, MockServer, Respond, ResponseTemplate};
+    use wiremock::matchers::{method, path, query_param};
+    use wiremock::{Match, Mock, MockServer, Request, Respond, ResponseTemplate};
 
     use super::*;
     use crate::phases::sense::flink::STD_METRIC_ORDERS;
+
+    pub struct QueryParamKeyMatcher(String);
+
+    impl QueryParamKeyMatcher {
+        /// Specify the expected value for a query parameter.
+        pub fn new<K: Into<String>>(key: K) -> Self {
+            let key = key.into();
+            Self(key)
+        }
+    }
+
+    impl Match for QueryParamKeyMatcher {
+        fn matches(&self, request: &Request) -> bool {
+            request.url.query_pairs().any(|q| q.0 == self.0.as_str())
+        }
+    }
 
     pub struct RetryResponder(Arc<AtomicU32>, u32, ResponseTemplate, u16);
 
@@ -272,14 +385,10 @@ mod tests {
     }
 
     async fn test_stage_for(
-        scope: FlinkScope, orders: &Vec<MetricOrder>, context: FlinkContext,
+        scope: FlinkScope, orders: &[MetricOrder], context: FlinkContext,
     ) -> (tokio::task::JoinHandle<()>, mpsc::Sender<()>, mpsc::Receiver<Telemetry>) {
-        let mut stage = JobTaskmanagerSensor::new(
-            scope,
-            Arc::new(orders.clone()),
-            context,
-            CorrelationGenerator::default(),
-        );
+        let correlation_gen = CorrelationGenerator::default();
+        let mut stage = assert_ok!(JobTaskmanagerSensor::new(scope, orders, context, correlation_gen));
         let (tx_trigger, rx_trigger) = mpsc::channel(1);
         let (tx_out, rx_out) = mpsc::channel(8);
         stage.trigger.attach("trigger".into(), rx_trigger).await;
@@ -308,8 +417,16 @@ mod tests {
             let metric_response = ResponseTemplate::new(500);
             Mock::given(method("GET"))
                 .and(path("/jobs/metrics"))
+                .and(QueryParamKeyMatcher::new("get"))
+                .and(query_param("agg", "Max"))
                 .respond_with(metric_response)
                 .expect(6)
+                .mount(&mock_server)
+                .await;
+            Mock::given(method("GET"))
+                .and(path("/jobs/metrics"))
+                .respond_with(ResponseTemplate::new(200).set_body_json(make_jobs_query_list()))
+                .expect(1)
                 .mount(&mock_server)
                 .await;
 
@@ -355,6 +472,26 @@ mod tests {
         //     });
     }
 
+    fn make_jobs_query_list() -> serde_json::Value {
+        json!([
+            { "id": "numberOfFailedCheckpoints" },
+            // { "id": "lastCheckpointSize" },
+            // { "id": "lastCheckpointExternalPath" },
+            // { "id": "totalNumberOfCheckpoints" },
+            // { "id": "lastCheckpointRestoreTimestamp" },
+            // { "id": "restartingTime" },
+            { "id": "uptime" },
+            // { "id": "numberOfInProgressCheckpoints" },
+            // { "id": "downtime" },
+            // { "id": "numberOfCompletedCheckpoints" },
+            // { "id": "lastCheckpointProcessedData" },
+            { "id": "numRestarts" },
+            // { "id": "fullRestarts" },
+            // { "id": "lastCheckpointDuration" },
+            // { "id": "lastCheckpointPersistedData" }
+        ])
+    }
+
     fn make_jobs_data() -> (i64, i64, i64, serde_json::Value) {
         let uptime: i64 = Faker.fake::<chrono::Duration>().num_milliseconds();
         let restarts: i64 = (1..99_999).fake(); // Faker.fake_with_rng::<i64, _>(&mut positive.clone())as f64;
@@ -397,8 +534,16 @@ mod tests {
             let metric_response = ResponseTemplate::new(200).set_body_json(b);
             Mock::given(method("GET"))
                 .and(path("/jobs/metrics"))
+                .and(QueryParamKeyMatcher::new("get"))
+                .and(query_param("agg", "Max"))
                 .respond_with(metric_response)
                 .expect(2)
+                .mount(&mock_server)
+                .await;
+            Mock::given(method("GET"))
+                .and(path("/jobs/metrics"))
+                .respond_with(ResponseTemplate::new(200).set_body_json(make_jobs_query_list()))
+                .expect(1)
                 .mount(&mock_server)
                 .await;
 
@@ -461,8 +606,16 @@ mod tests {
             let metric_response = RetryResponder::new(1, 500, ResponseTemplate::new(200).set_body_json(b));
             Mock::given(method("GET"))
                 .and(path("/jobs/metrics"))
+                .and(QueryParamKeyMatcher::new("get"))
+                .and(query_param("agg", "Max"))
                 .respond_with(metric_response)
                 .expect(3)
+                .mount(&mock_server)
+                .await;
+            Mock::given(method("GET"))
+                .and(path("/jobs/metrics"))
+                .respond_with(ResponseTemplate::new(200).set_body_json(make_jobs_query_list()))
+                .expect(1)
                 .mount(&mock_server)
                 .await;
 
@@ -525,6 +678,43 @@ mod tests {
             let heap_used: f64 = 1_000_000_000. * ((0..100_000_000).fake::<i64>() as f64 / 100_000_000.);
             let heap_committed: f64 = 1_000_000_000. * ((0..100_000_000).fake::<i64>() as f64 / 100_000_000.);
             let nr_threads: i32 = (1..150).fake();
+            let tm_available_metrics = json!([
+                { "id": "Status.Network.AvailableMemorySegments" },
+                { "id": "Status.JVM.Memory.Mapped.TotalCapacity" },
+                { "id": "Status.Network.TotalMemorySegments" },
+                { "id": "Status.JVM.Memory.Mapped.MemoryUsed" },
+                { "id": "Status.JVM.CPU.Time" },
+                { "id": "Status.Flink.Memory.Managed.Total" },
+                { "id": "Status.JVM.GarbageCollector.G1_Young_Generation.Count" },
+                { "id": "Status.JVM.Threads.Count" },
+                { "id": "Status.Shuffle.Netty.UsedMemory" },
+                { "id": "Status.JVM.Memory.Heap.Committed" },
+                { "id": "Status.Shuffle.Netty.TotalMemory" },
+                { "id": "Status.JVM.Memory.Metaspace.Committed" },
+                { "id": "Status.JVM.Memory.Direct.Count" },
+                { "id": "Status.Shuffle.Netty.AvailableMemorySegments" },
+                { "id": "Status.JVM.Memory.NonHeap.Max" },
+                { "id": "Status.Shuffle.Netty.TotalMemorySegments" },
+                { "id": "Status.JVM.Memory.NonHeap.Committed" },
+                { "id": "Status.JVM.Memory.NonHeap.Used" },
+                { "id": "Status.JVM.Memory.Metaspace.Max" },
+                { "id": "Status.JVM.GarbageCollector.G1_Old_Generation.Count" },
+                { "id": "Status.JVM.Memory.Direct.MemoryUsed" },
+                { "id": "Status.JVM.Memory.Direct.TotalCapacity" },
+                { "id": "Status.JVM.GarbageCollector.G1_Old_Generation.Time" },
+                { "id": "Status.Shuffle.Netty.UsedMemorySegments" },
+                { "id": "Status.JVM.ClassLoader.ClassesLoaded" },
+                { "id": "Status.JVM.Memory.Mapped.Count" },
+                { "id": "Status.JVM.Memory.Metaspace.Used" },
+                { "id": "Status.Flink.Memory.Managed.Used" },
+                { "id": "Status.JVM.CPU.Load" },
+                { "id": "Status.JVM.Memory.Heap.Max" },
+                { "id": "Status.JVM.Memory.Heap.Used" },
+                { "id": "Status.JVM.ClassLoader.ClassesUnloaded" },
+                { "id": "Status.Shuffle.Netty.AvailableMemory" },
+                { "id": "Status.JVM.GarbageCollector.G1_Young_Generation.Time" }
+            ]);
+
             let b = json!([
                 { "id": "Status.JVM.CPU.Load", "max": cpu_load, },
                 { "id": "Status.JVM.Memory.Heap.Used", "max": heap_used, },
@@ -543,8 +733,16 @@ mod tests {
             let metric_response = ResponseTemplate::new(200).set_body_json(b);
             Mock::given(method("GET"))
                 .and(path("/taskmanagers/metrics"))
+                .and(QueryParamKeyMatcher::new("get"))
+                .and(query_param("agg", "Max"))
                 .respond_with(metric_response)
                 .expect(2)
+                .mount(&mock_server)
+                .await;
+            Mock::given(method("GET"))
+                .and(path("/taskmanagers/metrics"))
+                .respond_with(ResponseTemplate::new(200).set_body_json(tm_available_metrics))
+                .expect(1)
                 .mount(&mock_server)
                 .await;
 

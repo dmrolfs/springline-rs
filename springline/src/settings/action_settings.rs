@@ -118,6 +118,8 @@ pub struct FlinkRestartSettings {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub allow_non_restored_state: Option<bool>,
 
+    /// Set the restore mode for restarting a job from a savepoint. The default behavior is to use
+    /// `RestoreMode::NoClaim`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde_as(as = "Option<serde_with::DisplayFromStr>")]
     pub restore_mode: Option<RestoreMode>,
