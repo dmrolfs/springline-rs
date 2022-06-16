@@ -195,6 +195,7 @@ fn make_test_data(
         flow: FlowMetrics {
             records_in_per_sec: records_per_sec,
             records_out_per_sec: records_per_sec,
+            idle_time_millis_per_sec: 222.2,
             forecasted_timestamp: Some(forecasted_timestamp),
             forecasted_records_in_per_sec: Some(records_per_sec),
             input_records_lag_max: Some(input_records_lag_max),

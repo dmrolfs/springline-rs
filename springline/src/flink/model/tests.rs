@@ -71,6 +71,29 @@ mod catalog {
     }
 
     #[test]
+    fn test_flow_task_utilization() {
+        let mut flow = FlowMetrics {
+            idle_time_millis_per_sec: 500.0,
+            ..FlowMetrics::default()
+        };
+        assert_eq!(flow.average_task_utilization(), 0.5);
+
+        flow.idle_time_millis_per_sec = 1000.0;
+        assert_eq!(flow.average_task_utilization(), 0.0);
+
+        flow.idle_time_millis_per_sec = 0.0;
+        assert_eq!(flow.average_task_utilization(), 1.0);
+
+        // by flink definition can't happen but want to reasonably handle:
+
+        flow.idle_time_millis_per_sec = 201_312.7;
+        assert_eq!(flow.average_task_utilization(), 0.0);
+
+        flow.idle_time_millis_per_sec = -2.1;
+        assert_eq!(flow.average_task_utilization(), 1.0);
+    }
+
+    #[test]
     fn test_invalid_type_serde_issue() {
         let mut telemetry = Telemetry::new();
         telemetry.insert("cluster.task_cpu_load".to_string(), TelemetryValue::Float(0.025));
@@ -112,6 +135,10 @@ mod catalog {
         telemetry.insert(
             "flow.records_out_per_sec".to_string(),
             TelemetryValue::Float(19.966666666666665),
+        );
+        telemetry.insert(
+            "flow.idle_time_millis_per_sec".to_string(),
+            TelemetryValue::Float(555.5),
         );
         telemetry.insert(
             "cluster.task_heap_memory_committed".to_string(),
@@ -158,6 +185,7 @@ mod catalog {
                 flow: FlowMetrics {
                     records_in_per_sec: 20.0,
                     records_out_per_sec: 19.966666666666665,
+                    idle_time_millis_per_sec: 555.5,
                     forecasted_timestamp: Some(Timestamp::new(1647307440, 378969192)),
                     forecasted_records_in_per_sec: Some(21.4504261933966),
                     input_records_lag_max: None,
@@ -251,6 +279,7 @@ mod catalog {
                 records_in_per_sec: 17.,
                 forecasted_timestamp: Some(ts),
                 forecasted_records_in_per_sec: Some(23.),
+                idle_time_millis_per_sec: 777.7,
                 input_records_lag_max: Some(314),
                 input_millis_behind_latest: None,
                 records_out_per_sec: 0.0,
@@ -300,6 +329,8 @@ mod catalog {
                 Token::F64(17.),
                 Token::Str("flow.records_out_per_sec"),
                 Token::F64(0.),
+                Token::Str("flow.idle_time_millis_per_sec"),
+                Token::F64(777.7),
                 Token::Str("flow.forecasted_timestamp"),
                 Token::Some,
                 Token::TupleStruct { name: "Timestamp", len: 2 },
@@ -358,6 +389,7 @@ mod catalog {
             },
             flow: FlowMetrics {
                 records_in_per_sec: 17.,
+                idle_time_millis_per_sec: 333.3,
                 forecasted_timestamp: None,
                 forecasted_records_in_per_sec: None,
                 input_records_lag_max: Some(314),
@@ -398,6 +430,7 @@ mod catalog {
                 MC_FLOW__RECORDS_IN_PER_SEC.to_string() => (17.).to_telemetry(),
                 "flow.records_out_per_sec".to_string() => (0.).to_telemetry(),
                 "flow.input_records_lag_max".to_string() => 314.to_telemetry(),
+                "flow.idle_time_millis_per_sec".to_string() => 333.3.to_telemetry(),
 
                 MC_CLUSTER__NR_ACTIVE_JOBS.to_string() => 1.to_telemetry(),
                 MC_CLUSTER__NR_TASK_MANAGERS.to_string() => 4.to_telemetry(),

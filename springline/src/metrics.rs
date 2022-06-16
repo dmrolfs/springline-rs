@@ -23,6 +23,7 @@ pub fn register_metrics(registry: &Registry) -> Result<()> {
 
     registry.register(Box::new(flink::METRIC_CATALOG_FLOW_RECORDS_IN_PER_SEC.clone()))?;
     registry.register(Box::new(flink::METRIC_CATALOG_FLOW_RECORDS_OUT_PER_SEC.clone()))?;
+    registry.register(Box::new(flink::METRIC_CATALOG_FLOW_IDLE_TIME_MILLIS_PER_SEC.clone()))?;
     registry.register(Box::new(flink::METRIC_CATALOG_FLOW_INPUT_RECORDS_LAG_MAX.clone()))?;
     registry.register(Box::new(flink::METRIC_CATALOG_FLOW_INPUT_MILLIS_BEHIND_LATEST.clone()))?;
     registry.register(Box::new(flink::METRIC_CATALOG_CLUSTER_NR_ACTIVE_JOBS.clone()))?;

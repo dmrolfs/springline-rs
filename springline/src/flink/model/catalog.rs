@@ -1,5 +1,5 @@
 use std::collections::HashSet;
-use std::fmt::{self, Debug};
+use std::fmt;
 use std::ops::Add;
 
 use frunk::{Monoid, Semigroup};
@@ -69,7 +69,12 @@ impl PolicyContributor for MetricCatalog {
     fn register_with_policy_engine(engine: &mut Oso) -> Result<(), PolicyError> {
         engine.register_class(Self::get_polar_class())?;
         engine.register_class(JobHealthMetrics::get_polar_class())?;
-        engine.register_class(FlowMetrics::get_polar_class())?;
+        engine.register_class(
+            FlowMetrics::get_polar_class_builder()
+                .name("FlowMetrics")
+                .add_method("average_task_utilization", FlowMetrics::average_task_utilization)
+                .build(),
+        )?;
         engine.register_class(
             ClusterMetrics::get_polar_class_builder()
                 .name("ClusterMetrics")
@@ -193,6 +198,12 @@ pub struct FlowMetrics {
     #[serde(rename = "flow.records_out_per_sec")]
     pub records_out_per_sec: f64,
 
+    /// average rate of idle time in (ideally non-source) tasks. Currently source tasks are not removed
+    /// so this metric is skewed downward.
+    #[polar(attribute)]
+    #[serde(rename = "flow.idle_time_millis_per_sec")]
+    pub idle_time_millis_per_sec: f64,
+
     /// Timestamp (in fractional secs) for the forecasted_records_in_per_sec value.
     #[polar(attribute)]
     #[serde(
@@ -232,11 +243,12 @@ pub struct FlowMetrics {
     pub input_millis_behind_latest: Option<i64>,
 }
 
-impl Debug for FlowMetrics {
+impl fmt::Debug for FlowMetrics {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut out = f.debug_struct("FlowMetrics");
         out.field("records_out_per_sec", &self.records_out_per_sec);
         out.field("records_in_per_sec", &self.records_in_per_sec);
+        out.field("idle_time_millis_per_sec", &self.idle_time_millis_per_sec);
 
         if let Some((ts, recs_in_rate)) = self.forecasted_timestamp.zip(self.forecasted_records_in_per_sec) {
             out.field("forecasted_timestamp", &ts.to_string());
@@ -255,11 +267,19 @@ impl Debug for FlowMetrics {
     }
 }
 
+impl FlowMetrics {
+    pub fn average_task_utilization(&self) -> f64 {
+        let idle = self.idle_time_millis_per_sec.max(0.0).min(1_000.0);
+        1.0 - idle / 1_000.0
+    }
+}
+
 impl Monoid for FlowMetrics {
     fn empty() -> Self {
         Self {
-            records_in_per_sec: -1.0,
-            records_out_per_sec: -1.0,
+            records_in_per_sec: 0.0,
+            records_out_per_sec: 0.0,
+            idle_time_millis_per_sec: 0.0,
             forecasted_timestamp: None,
             forecasted_records_in_per_sec: None,
             input_records_lag_max: None,
@@ -439,6 +459,7 @@ impl SubscriptionRequirements for MetricCatalog {
             // FlowMetrics
             MC_FLOW__RECORDS_IN_PER_SEC.into(),
             "flow.records_out_per_sec".into(),
+            "flow.idle_time_millis_per_sec".into(),
 
             // ClusterMetrics
             MC_CLUSTER__NR_ACTIVE_JOBS.into(),
@@ -480,6 +501,7 @@ impl UpdateMetrics for MetricCatalog {
 
                 METRIC_CATALOG_FLOW_RECORDS_IN_PER_SEC.set(catalog.flow.records_in_per_sec);
                 METRIC_CATALOG_FLOW_RECORDS_OUT_PER_SEC.set(catalog.flow.records_out_per_sec);
+                METRIC_CATALOG_FLOW_IDLE_TIME_MILLIS_PER_SEC.set(catalog.flow.idle_time_millis_per_sec);
 
                 if let Some(lag) = catalog.flow.input_records_lag_max {
                     METRIC_CATALOG_FLOW_INPUT_RECORDS_LAG_MAX.set(lag);
@@ -569,6 +591,14 @@ pub static METRIC_CATALOG_FLOW_RECORDS_OUT_PER_SEC: Lazy<Gauge> = Lazy::new(|| {
         "Current records egress per second",
     )
     .expect("failed creating metric_catalog_flow_records_out_per_sec metric")
+});
+
+pub static METRIC_CATALOG_FLOW_IDLE_TIME_MILLIS_PER_SEC: Lazy<Gauge> = Lazy::new(|| {
+    Gauge::new(
+        "metric_catalog_flow_idle_time_millis_per_sec",
+        "Current average idle time in millis per second",
+    )
+    .expect("failed creating metric_catalog_flow_idle_time_millis_per_sec metric")
 });
 
 pub static METRIC_CATALOG_FLOW_INPUT_RECORDS_LAG_MAX: Lazy<IntGauge> = Lazy::new(|| {

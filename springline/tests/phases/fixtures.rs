@@ -31,6 +31,7 @@ pub fn make_test_item_padding() -> Telemetry {
             "health.job_nr_failed_checkpoints".to_string() => (0).into(),
 
             "flow.records_out_per_sec".to_string() => (0.).into(),
+            "flow.idle_time_millis_per_sec".to_string() => (111.1).into(),
 
             "cluster.task_cpu_load".to_string() => (0.).into(),
             "cluster.task_heap_memory_used".to_string() => (0.).into(),

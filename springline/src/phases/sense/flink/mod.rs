@@ -70,6 +70,10 @@ pub static STD_METRIC_ORDERS: Lazy<Vec<MetricOrder>> = Lazy::new(|| {
             MetricSpec::new("numRecordsOutPerSecond", Max, "flow.records_out_per_sec", Float),
         ),
         MetricOrder::new(
+            Task.into(), //todo want non-source tasks -- maybe as part of source spec? filtering during query?
+            MetricSpec::new("idleTimeMsPerSecond", Avg, "flow.idle_time_millis_per_sec", Float),
+        ),
+        MetricOrder::new(
             TaskManager.into(),
             MetricSpec::new("Status.JVM.CPU.Load", Max, "cluster.task_cpu_load", Float),
         ),
