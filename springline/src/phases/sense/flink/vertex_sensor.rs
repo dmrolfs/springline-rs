@@ -269,7 +269,7 @@ where
                 picklist_response
                     .into_iter()
                     .filter_map(|metric| {
-                        self.order_matchers.iter().find_map(|(o, matches)| {
+                        self.order_matchers.iter().find_map(|(_, matches)| {
                             if matches(&metric.id) {
                                 Some(metric.id.clone())
                             } else {
@@ -429,8 +429,6 @@ fn start_flink_vertex_sensor_avail_telemetry_timer() -> HistogramTimer {
 
 #[cfg(test)]
 mod tests {
-    use std::borrow::Cow;
-    use std::collections::HashSet;
     use std::sync::atomic::{AtomicU32, Ordering};
 
     use claim::*;
@@ -446,11 +444,12 @@ mod tests {
     use tokio_test::block_on;
     use url::Url;
     use wiremock::matchers::{method, path};
-    use wiremock::{Match, Mock, MockServer, Request, Respond, ResponseTemplate};
+    use wiremock::{Mock, MockServer, Respond, ResponseTemplate};
 
     use super::*;
     use crate::flink::MC_FLOW__RECORDS_IN_PER_SEC;
     use crate::phases::sense::flink::metric_order::{MetricSpec, ScopeSpec};
+    use crate::phases::sense::flink::tests::{EmptyQueryParamMatcher, QueryParamKeyMatcher};
     use crate::phases::sense::flink::STD_METRIC_ORDERS;
 
     pub struct RetryResponder(Arc<AtomicU32>, u32, ResponseTemplate, u16);
@@ -500,28 +499,6 @@ mod tests {
         stage.trigger.attach("trigger".into(), rx_trigger).await;
         stage.outlet.attach("out".into(), tx_out).await;
         (stage, tx_trigger, rx_out)
-    }
-
-    struct EmptyQueryParamMatcher;
-    impl Match for EmptyQueryParamMatcher {
-        fn matches(&self, request: &Request) -> bool {
-            request.url.query().is_none()
-        }
-    }
-
-    struct QueryParamKeyMatcher(String);
-
-    impl QueryParamKeyMatcher {
-        pub fn new(key: impl Into<String>) -> Self {
-            Self(key.into())
-        }
-    }
-
-    impl Match for QueryParamKeyMatcher {
-        fn matches(&self, request: &Request) -> bool {
-            let query_keys: HashSet<Cow<'_, str>> = request.url.query_pairs().map(|(k, _)| k).collect();
-            query_keys.contains(self.0.as_str())
-        }
     }
 
     const METRIC_SUMMARY: Lazy<serde_json::Value> = Lazy::new(|| {
@@ -588,10 +565,12 @@ mod tests {
         let mut orders = STD_METRIC_ORDERS.clone();
         orders.push(MetricOrder::Operator {
             name: "Source: Foo Data stream".into(),
-            metric: "records-lag-max".into(),
-            agg: Aggregation::Sum,
-            telemetry_path: "flow.input_records_lag_max".into(),
-            telemetry_type: TelemetryType::Integer,
+            spec: MetricSpec {
+                metric: "records-lag-max".into(),
+                agg: Aggregation::Sum,
+                telemetry_path: "flow.input_records_lag_max".into(),
+                telemetry_type: TelemetryType::Integer,
+            },
         });
         orders
     });

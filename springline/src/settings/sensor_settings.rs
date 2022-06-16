@@ -129,7 +129,8 @@ mod tests {
                 Token::U64(15),
                 Token::Str("metric_orders"),
                 Token::Seq { len: Some(3) },
-                Token::StructVariant { name: "MetricOrder", variant: "Job", len: 4 },
+                Token::NewtypeVariant { name: "MetricOrder", variant: "Job" },
+                Token::Map { len: None },
                 Token::Str("metric"),
                 Token::Str("uptime"),
                 Token::Str("agg"),
@@ -138,8 +139,9 @@ mod tests {
                 Token::Str("health.job_uptime_millis"),
                 Token::Str("telemetry_type"),
                 Token::UnitVariant { name: "TelemetryType", variant: "Integer" },
-                Token::StructVariantEnd,
-                Token::StructVariant { name: "MetricOrder", variant: "Operator", len: 5 },
+                Token::MapEnd,
+                Token::NewtypeVariant { name: "MetricOrder", variant: "Operator" },
+                Token::Map { len: None },
                 Token::Str("name"),
                 Token::Str("Source: Baz input"),
                 Token::Str("metric"),
@@ -150,12 +152,9 @@ mod tests {
                 Token::Str("flow.input_records_lag_max"),
                 Token::Str("telemetry_type"),
                 Token::UnitVariant { name: "TelemetryType", variant: "Integer" },
-                Token::StructVariantEnd,
-                Token::StructVariant {
-                    name: "MetricOrder",
-                    variant: "TaskManager",
-                    len: 4,
-                },
+                Token::MapEnd,
+                Token::NewtypeVariant { name: "MetricOrder", variant: "TaskManager" },
+                Token::Map { len: None },
                 Token::Str("metric"),
                 Token::Str("Status.JVM.Memory.Heap.Committed"),
                 Token::Str("agg"),
@@ -164,7 +163,7 @@ mod tests {
                 Token::Str("cluster.task_heap_memory_committed"),
                 Token::Str("telemetry_type"),
                 Token::UnitVariant { name: "TelemetryType", variant: "Float" },
-                Token::StructVariantEnd,
+                Token::MapEnd,
                 Token::SeqEnd,
                 Token::StructEnd,
                 Token::Str("sensors"),
@@ -260,7 +259,8 @@ mod tests {
                 Token::U64(15),
                 Token::Str("metric_orders"),
                 Token::Seq { len: Some(2) },
-                Token::StructVariant { name: "MetricOrder", variant: "Task", len: 4 },
+                Token::NewtypeVariant { name: "MetricOrder", variant: "Task" },
+                Token::Map { len: None },
                 Token::Str("metric"),
                 Token::Str("Status.JVM.Memory.NonHeap.Committed"),
                 Token::Str("agg"),
@@ -269,8 +269,9 @@ mod tests {
                 Token::Str("cluster.task_heap_memory_committed"),
                 Token::Str("telemetry_type"),
                 Token::UnitVariant { name: "TelemetryType", variant: "Float" },
-                Token::StructVariantEnd,
-                Token::StructVariant { name: "MetricOrder", variant: "Job", len: 4 },
+                Token::MapEnd,
+                Token::NewtypeVariant { name: "MetricOrder", variant: "Job" },
+                Token::Map { len: None },
                 Token::Str("metric"),
                 Token::Str("uptime"),
                 Token::Str("agg"),
@@ -279,7 +280,7 @@ mod tests {
                 Token::Str("health.job_uptime_millis"),
                 Token::Str("telemetry_type"),
                 Token::UnitVariant { name: "TelemetryType", variant: "Integer" },
-                Token::StructVariantEnd,
+                Token::MapEnd,
                 Token::SeqEnd,
                 Token::StructEnd,
                 Token::Str("sensors"),
@@ -343,38 +344,57 @@ mod tests {
         .map(|m| m.unwrap())
         .collect();
 
-        let actual = assert_ok!(ron::ser::to_string_pretty(
-            &metric_orders,
-            ron::ser::PrettyConfig::default()
-        ));
+        let actual = assert_ok!(serde_yaml::to_string(&metric_orders));
         assert_eq!(
             actual,
-            r##"|[
-                |    Job(
-                |        metric: "uptime",
-                |        agg: max,
-                |        telemetry_path: "health.job_uptime_millis",
-                |        telemetry_type: Integer,
-                |    ),
-                |    Operator(
-                |        name: "Input: The best data",
-                |        metric: "records-lag-max",
-                |        agg: value,
-                |        telemetry_path: "flow.input_records_lag_max",
-                |        telemetry_type: Integer,
-                |    ),
-                |    TaskManager(
-                |        metric: "Status.JVM.Memory.Heap.Committed",
-                |        agg: sum,
-                |        telemetry_path: "cluster.task_heap_memory_committed",
-                |        telemetry_type: Float,
-                |    ),
-                |]"##
-                .trim_margin_with("|")
-                .unwrap()
+            r##"|---
+                |- Job:
+                |    metric: uptime
+                |    agg: max
+                |    telemetry_path: health.job_uptime_millis
+                |    telemetry_type: Integer
+                |- Operator:
+                |    name: "Input: The best data"
+                |    metric: records-lag-max
+                |    agg: value
+                |    telemetry_path: flow.input_records_lag_max
+                |    telemetry_type: Integer
+                |- TaskManager:
+                |    metric: Status.JVM.Memory.Heap.Committed
+                |    agg: sum
+                |    telemetry_path: cluster.task_heap_memory_committed
+                |    telemetry_type: Float
+                |"##
+            .trim_margin_with("|")
+            .unwrap()
         );
 
-        let hydrated: Vec<MetricOrder> = assert_ok!(ron::from_str(actual.as_str()));
+        let hydrated: Vec<MetricOrder> = assert_ok!(serde_yaml::from_str(actual.as_str()));
         assert_eq!(hydrated, metric_orders);
     }
 }
+
+
+
+// -- ron format --
+// r##"|[
+//                 |    Job({
+//                 |        "metric": "uptime",
+//                 |        "agg": max,
+//                 |        "telemetry_path": "health.job_uptime_millis",
+//                 |        "telemetry_type": Integer,
+//                 |    }),
+//                 |    Operator({
+//                 |        "name": "Input: The best data",
+//                 |        "metric": "records-lag-max",
+//                 |        "agg": value,
+//                 |        "telemetry_path": "flow.input_records_lag_max",
+//                 |        "telemetry_type": Integer,
+//                 |    }),
+//                 |    TaskManager({
+//                 |        "metric": "Status.JVM.Memory.Heap.Committed",
+//                 |        "agg": sum,
+//                 |        "telemetry_path": "cluster.task_heap_memory_committed",
+//                 |        "telemetry_type": Float,
+//                 |    }),
+//                 |]"##

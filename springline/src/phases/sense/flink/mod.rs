@@ -312,3 +312,29 @@ fn consolidate_active_job_telemetry_for_order(
 
     Ok(telemetry)
 }
+
+#[cfg(test)]
+mod tests {
+    use wiremock::{Match, Request};
+
+    pub struct EmptyQueryParamMatcher;
+    impl Match for EmptyQueryParamMatcher {
+        fn matches(&self, request: &Request) -> bool {
+            request.url.query().is_none()
+        }
+    }
+
+    pub struct QueryParamKeyMatcher(String);
+
+    impl QueryParamKeyMatcher {
+        pub fn new(key: impl Into<String>) -> Self {
+            Self(key.into())
+        }
+    }
+
+    impl Match for QueryParamKeyMatcher {
+        fn matches(&self, request: &Request) -> bool {
+            request.url.query_pairs().any(|q| q.0 == self.0.as_str())
+        }
+    }
+}

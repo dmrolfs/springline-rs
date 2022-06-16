@@ -326,26 +326,11 @@ mod tests {
     use tokio_test::block_on;
     use url::Url;
     use wiremock::matchers::{method, path, query_param};
-    use wiremock::{Match, Mock, MockServer, Request, Respond, ResponseTemplate};
+    use wiremock::{Mock, MockServer, Respond, ResponseTemplate};
 
     use super::*;
+    use crate::phases::sense::flink::tests::{EmptyQueryParamMatcher, QueryParamKeyMatcher};
     use crate::phases::sense::flink::STD_METRIC_ORDERS;
-
-    pub struct QueryParamKeyMatcher(String);
-
-    impl QueryParamKeyMatcher {
-        /// Specify the expected value for a query parameter.
-        pub fn new<K: Into<String>>(key: K) -> Self {
-            let key = key.into();
-            Self(key)
-        }
-    }
-
-    impl Match for QueryParamKeyMatcher {
-        fn matches(&self, request: &Request) -> bool {
-            request.url.query_pairs().any(|q| q.0 == self.0.as_str())
-        }
-    }
 
     pub struct RetryResponder(Arc<AtomicU32>, u32, ResponseTemplate, u16);
 
@@ -542,6 +527,7 @@ mod tests {
                 .await;
             Mock::given(method("GET"))
                 .and(path("/jobs/metrics"))
+                .and(EmptyQueryParamMatcher)
                 .respond_with(ResponseTemplate::new(200).set_body_json(make_jobs_query_list()))
                 .expect(1)
                 .mount(&mock_server)
@@ -614,6 +600,7 @@ mod tests {
                 .await;
             Mock::given(method("GET"))
                 .and(path("/jobs/metrics"))
+                .and(EmptyQueryParamMatcher)
                 .respond_with(ResponseTemplate::new(200).set_body_json(make_jobs_query_list()))
                 .expect(1)
                 .mount(&mock_server)

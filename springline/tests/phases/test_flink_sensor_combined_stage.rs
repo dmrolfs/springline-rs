@@ -5,18 +5,21 @@ use std::time::Duration;
 use cast_trait_object::DynCastExt;
 use claim::*;
 use fake::{Fake, Faker};
+use once_cell::sync::Lazy;
 use pretty_assertions::assert_eq;
-use proctor::elements::{RecordsPerSecond, Telemetry, TelemetryValue};
+use proctor::elements::{RecordsPerSecond, Telemetry, TelemetryType, TelemetryValue};
 use proctor::graph::stage::{self, ActorSourceApi, ActorSourceCmd, WithApi};
 use proctor::graph::{Connect, Graph, SinkShape};
 use proctor::Ack;
 use serde_json::json;
 use springline::flink::{FlinkContext, JobId, JobState, TaskState, VertexId, JOB_STATES, TASK_STATES};
 use springline::flink::{MC_CLUSTER__NR_ACTIVE_JOBS, MC_CLUSTER__NR_TASK_MANAGERS, MC_FLOW__RECORDS_IN_PER_SEC};
-use springline::phases::sense::flink::{make_sensor, FlinkSensorSpecification, STD_METRIC_ORDERS};
+use springline::phases::sense::flink::{
+    make_sensor, Aggregation, FlinkSensorSpecification, MetricOrder, MetricSpec, STD_METRIC_ORDERS,
+};
 use springline::settings::{FlinkSensorSettings, FlinkSettings};
 use url::Url;
-use wiremock::matchers::{method, path};
+use wiremock::matchers::{method, path, query_param, query_param_is_missing};
 use wiremock::{Match, Mock, MockServer, Request, ResponseTemplate, Times};
 
 struct EmptyQueryParamMatcher;
@@ -40,6 +43,20 @@ impl Match for QueryParamKeyMatcher {
         query_keys.contains(self.0.as_str())
     }
 }
+
+static TEST_ORDERS: Lazy<Vec<MetricOrder>> = Lazy::new(|| {
+    let mut orders = STD_METRIC_ORDERS.clone();
+    orders.push(MetricOrder::Operator {
+        name: "Source: Foo Data stream".into(),
+        spec: MetricSpec {
+            metric: "records-lag-max".into(),
+            agg: Aggregation::Sum,
+            telemetry_path: "flow.input_records_lag_max".into(),
+            telemetry_type: TelemetryType::Integer,
+        },
+    });
+    orders
+});
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn test_flink_sensor_merge_combine_stage() -> anyhow::Result<()> {
@@ -98,7 +115,7 @@ async fn test_flink_sensor_merge_combine_stage() -> anyhow::Result<()> {
     let settings = FlinkSensorSettings {
         metrics_initial_delay: Duration::ZERO,
         metrics_interval: Duration::from_secs(120),
-        metric_orders: STD_METRIC_ORDERS.clone(),
+        metric_orders: TEST_ORDERS.clone(),
         ..FlinkSensorSettings::default()
     };
 
@@ -315,18 +332,44 @@ struct MockFlinkJobsMetrics {
 
 impl MockFlinkJobsMetrics {
     async fn mount_mock(server: &MockServer, expect: impl Into<Times>) -> Self {
+        let avail_body = json!([
+            { "id": "numberOfFailedCheckpoints" },
+            // { "id": "lastCheckpointSize" },
+            // { "id": "lastCheckpointExternalPath" },
+            // { "id": "totalNumberOfCheckpoints" },
+            // { "id": "lastCheckpointRestoreTimestamp" },
+            // { "id": "restartingTime" },
+            { "id": "uptime" },
+            // { "id": "numberOfInProgressCheckpoints" },
+            // { "id": "downtime" },
+            // { "id": "numberOfCompletedCheckpoints" },
+            // { "id": "lastCheckpointProcessedData" },
+            { "id": "numRestarts" },
+            // { "id": "fullRestarts" },
+            // { "id": "lastCheckpointDuration" },
+            // { "id": "lastCheckpointPersistedData" }
+        ]);
+        let avail_response = ResponseTemplate::new(200).set_body_json(avail_body);
+        Mock::given(method("GET"))
+            .and(path("/jobs/metrics"))
+            .and(query_param_is_missing("get"))
+            .and(query_param_is_missing("agg"))
+            .respond_with(avail_response)
+            .mount(&server)
+            .await;
+
         let uptime = i64::abs(Faker.fake::<chrono::Duration>().num_milliseconds());
         let restarts = (0..99).fake();
         let failed_checkpoints = (0..99).fake();
-        let body = json!([
+        let query_body = json!([
             { "id": "uptime", "max": uptime as f64, },
             { "id": "numRestarts", "max": restarts as f64, },
             { "id": "numberOfFailedCheckpoints", "max": failed_checkpoints as f64, },
         ]);
-        let response = ResponseTemplate::new(200).set_body_json(body);
+        let query_response = ResponseTemplate::new(200).set_body_json(query_body);
         Mock::given(method("GET"))
             .and(path("/jobs/metrics"))
-            .respond_with(response)
+            .respond_with(query_response)
             .expect(expect)
             .mount(&server)
             .await;
@@ -345,20 +388,68 @@ struct MockFlinkTaskmanagersMetrics {
 
 impl MockFlinkTaskmanagersMetrics {
     async fn mount_mock(server: &MockServer, expect: impl Into<Times>) -> Self {
+        let avail_body = json!([
+            { "id": "Status.Network.AvailableMemorySegments" },
+            { "id": "Status.JVM.Memory.Mapped.TotalCapacity" },
+            { "id": "Status.Network.TotalMemorySegments" },
+            { "id": "Status.JVM.Memory.Mapped.MemoryUsed" },
+            { "id": "Status.JVM.CPU.Time" },
+            { "id": "Status.Flink.Memory.Managed.Total" },
+            { "id": "Status.JVM.GarbageCollector.G1_Young_Generation.Count" },
+            { "id": "Status.JVM.Threads.Count" },
+            { "id": "Status.Shuffle.Netty.UsedMemory" },
+            { "id": "Status.JVM.Memory.Heap.Committed" },
+            { "id": "Status.Shuffle.Netty.TotalMemory" },
+            { "id": "Status.JVM.Memory.Metaspace.Committed" },
+            { "id": "Status.JVM.Memory.Direct.Count" },
+            { "id": "Status.Shuffle.Netty.AvailableMemorySegments" },
+            { "id": "Status.JVM.Memory.NonHeap.Max" },
+            { "id": "Status.Shuffle.Netty.TotalMemorySegments" },
+            { "id": "Status.JVM.Memory.NonHeap.Committed" },
+            { "id": "Status.JVM.Memory.NonHeap.Used" },
+            { "id": "Status.JVM.Memory.Metaspace.Max" },
+            { "id": "Status.JVM.GarbageCollector.G1_Old_Generation.Count" },
+            { "id": "Status.JVM.Memory.Direct.MemoryUsed" },
+            { "id": "Status.JVM.Memory.Direct.TotalCapacity" },
+            { "id": "Status.JVM.GarbageCollector.G1_Old_Generation.Time" },
+            { "id": "Status.Shuffle.Netty.UsedMemorySegments" },
+            { "id": "Status.JVM.ClassLoader.ClassesLoaded" },
+            { "id": "Status.JVM.Memory.Mapped.Count" },
+            { "id": "Status.JVM.Memory.Metaspace.Used" },
+            { "id": "Status.Flink.Memory.Managed.Used" },
+            { "id": "Status.JVM.CPU.Load" },
+            { "id": "Status.JVM.Memory.Heap.Max" },
+            { "id": "Status.JVM.Memory.Heap.Used" },
+            { "id": "Status.JVM.ClassLoader.ClassesUnloaded" },
+            { "id": "Status.Shuffle.Netty.AvailableMemory" },
+            { "id": "Status.JVM.GarbageCollector.G1_Young_Generation.Time" }
+        ]);
+        let avail_response = ResponseTemplate::new(200).set_body_json(avail_body);
+        Mock::given(method("GET"))
+            .and(path("/taskmanagers/metrics"))
+            .and(query_param_is_missing("get"))
+            .and(query_param_is_missing("agg"))
+            .respond_with(avail_response)
+            .expect(1)
+            .mount(&server)
+            .await;
+
         let cpu_load = 16. * ((0..100_000_000).fake::<i64>() as f64 / 100_000_000.);
         let heap_used = 1_000_000_000. * ((0..100_000_000).fake::<i64>() as f64 / 100_000_000.);
         let heap_committed = 1_000_000_000. * ((0..100_000_000).fake::<i64>() as f64 / 100_000_000.);
         let nr_threads = (1..150).fake();
-        let body = json!([
+        let query_body = json!([
             { "id": "Status.JVM.CPU.Load", "max":  cpu_load,},
             { "id": "Status.JVM.Memory.Heap.Used", "max":  heap_used,},
             { "id": "Status.JVM.Memory.Heap.Committed", "max":  heap_committed,},
             { "id": "Status.JVM.Threads.Count", "max":  nr_threads as f64,},
         ]);
-        let response = ResponseTemplate::new(200).set_body_json(body);
+        let query_response = ResponseTemplate::new(200).set_body_json(query_body);
         Mock::given(method("GET"))
             .and(path("/taskmanagers/metrics"))
-            .respond_with(response)
+            .and(QueryParamKeyMatcher::new("get"))
+            .and(query_param("agg", "Max"))
+            .respond_with(query_response)
             .expect(expect)
             .mount(&server)
             .await;
@@ -654,6 +745,7 @@ struct MockFlinkVertexMetricSummary;
 impl MockFlinkVertexMetricSummary {
     async fn mount_mock(job_id: &JobId, vertex_id: &VertexId, server: &MockServer, expect: impl Into<Times>) -> Self {
         let body = json!([
+                { "id": "Source__Foo_Data_stream.KafkaConsumer.client-id.fce7d7241a2648da85a99be91e4f2b77.catalog.ingestion-service.layer.observations.consumer-fetch-manager-metrics_records-lag-max" },
                 { "id": "Shuffle.Netty.Output.Buffers.outPoolUsage" },
                 { "id": "checkpointStartDelayNanos" },
                 { "id": "numBytesInLocal" },
@@ -695,6 +787,7 @@ impl MockFlinkVertexMetricSummary {
                 { "id": "buffers.inputQueueLength" },
                 { "id": "Source__Custom_Source.numRecordsOutPerSecond" },
                 { "id": "Timestamps/Watermarks.numRecordsInPerSecond" },
+                { "id": "Source__Foo_Data_stream.numRecordsOutPerSecond" },
                 { "id": "numRecordsIn" },
                 { "id": "Shuffle.Netty.Input.numBuffersInRemote" },
                 { "id": "numBytesInPerSecond" },
