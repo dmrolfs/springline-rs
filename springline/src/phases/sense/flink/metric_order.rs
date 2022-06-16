@@ -77,7 +77,6 @@ pub enum MetricOrder {
 
 pub type MetricOrderMatcher = Box<dyn Fn(&str) -> bool + Send + Sync + 'static>;
 
-
 impl MetricOrder {
     pub fn new(scope: ScopeSpec, metric: MetricSpec) -> Result<Self, SenseError> {
         match scope.scope {
