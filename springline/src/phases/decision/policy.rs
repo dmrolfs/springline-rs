@@ -29,11 +29,12 @@ pub struct DecisionTemplateData {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub min_healthy_lag: Option<f64>,
 
-    // todo: use lag for both kafka and kinesis -- units obviously different but uses are mutually exclusive?
-    // #[serde(skip_serializing_if = "Option::is_none")]
-    // pub max_healthy_millis_behind_latest: Option<f64>,
-    // #[serde(skip_serializing_if = "Option::is_none")]
-    // pub min_healthy_millis_behind_latest: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_task_idle_time_millis_per_sec: Option<f64>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub min_task_idle_time_millis_per_sec: Option<f64>,
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_healthy_cpu_load: Option<f64>,
 
@@ -46,6 +47,9 @@ pub struct DecisionTemplateData {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_healthy_network_io_utilization: Option<f64>,
 
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub evaluate_duration_secs: Option<i64>,
+
     #[serde(flatten, skip_serializing_if = "HashMap::is_empty")]
     pub custom: HashMap<String, String>,
 }
@@ -56,10 +60,13 @@ impl Default for DecisionTemplateData {
             basis: format!("{}_basis", DecisionPolicy::base_template_name()),
             max_healthy_lag: None,
             min_healthy_lag: None,
+            max_task_idle_time_millis_per_sec: None,
+            min_task_idle_time_millis_per_sec: None,
             max_healthy_cpu_load: None,
             min_healthy_cpu_load: None,
             max_healthy_heap_memory_load: None,
             max_healthy_network_io_utilization: None,
+            evaluate_duration_secs: None,
             custom: HashMap::default(),
         }
     }
@@ -242,8 +249,8 @@ mod tests {
         let rep = assert_ok!(ron::ser::to_string_pretty(&data, ron::ser::PrettyConfig::default()));
         let expected_rep = r##"|{
         |    "basis": "decision_basis",
-        |    "max_healthy_lag": Some(133),
-        |    "min_healthy_lag": Some(1),
+        |    "max_healthy_lag": Some(133.0),
+        |    "min_healthy_lag": Some(1.0),
         |    "max_healthy_cpu_load": Some(0.7),
         |    "foo": "zed",
         |}"##

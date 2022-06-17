@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::sync::Arc;
 
@@ -288,7 +288,7 @@ where
     async fn do_query_vertex_available_telemetry(
         &self, picklist: Vec<String>, mut vertex_metrics_url: Url, correlation: &CorrelationId,
     ) -> Result<Telemetry, SenseError> {
-        let agg_span = Self::agg_span_for(&picklist, &self.orders);
+        let agg_span = self.agg_span_for(&picklist);
 
         tracing::debug!(
             ?picklist,
@@ -341,26 +341,18 @@ where
         super::identity_or_track_error(FlinkScope::Task, telemetry)
     }
 
-    #[tracing::instrument(level = "trace", skip(picklist, metric_orders))]
-    fn agg_span_for(picklist: &[String], metric_orders: &[MetricOrder]) -> Vec<Aggregation> {
+    #[tracing::instrument(level = "trace", skip(self, picklist))]
+    fn agg_span_for(&self, picklist: &[String]) -> HashSet<Aggregation> {
         picklist
             .iter()
-            .flat_map(|metric| {
-                metric_orders.iter().filter_map(|o| {
-                    if o.agg() != Aggregation::Value && o.metric() == metric.as_str() {
+            .flat_map(|pick_metric| {
+                self.order_matchers.iter().filter_map(|(o, matches)| {
+                    if o.agg() != Aggregation::Value && matches(pick_metric.as_str()) {
                         Some(o.agg())
                     } else {
                         None
                     }
                 })
-
-                // metric_orders
-                //     .get(metric)
-                //     .cloned()
-                //     .unwrap_or_default()
-                //     .into_iter()
-                //     .map(|order| order.agg())
-                //     .filter(|agg| *agg != Aggregation::Value)
             })
             .collect()
     }

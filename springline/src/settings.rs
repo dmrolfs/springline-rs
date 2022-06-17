@@ -218,6 +218,7 @@ mod tests {
     use crate::flink::RestoreMode;
     use crate::kubernetes::{KubernetesApiConstraints, KubernetesDeployResource};
     use crate::phases::plan::{PerformanceRepositorySettings, PerformanceRepositoryType, SpikeSettings};
+    use crate::phases::sense::flink::Aggregation::Sum;
     use crate::phases::sense::flink::FlinkScope::{Job, Operator, TaskManager};
     use crate::phases::sense::flink::{Aggregation, MetricOrder, MetricSpec, ScopeSpec};
     use crate::settings::action_settings::SavepointSettings;
@@ -325,6 +326,11 @@ mod tests {
                         MetricOrder::new(
                             Job.into(),
                             MetricSpec::new("uptime", Min, "health.job_uptime_millis", Integer),
+                        )
+                        .unwrap(),
+                        MetricOrder::new(
+                            ScopeSpec::new(Operator, "Source: Data Stream"),
+                            MetricSpec::new("records-lag-max", Sum, "flow.input_records_lag_max", Integer),
                         )
                         .unwrap(),
                     ],
@@ -538,10 +544,8 @@ mod tests {
                 max_healthy_lag: Some(133_f64),
                 min_healthy_lag: Some(0.0),
                 max_healthy_cpu_load: Some(0.025),
-                min_healthy_cpu_load: None,
-                max_healthy_heap_memory_load: None,
                 max_healthy_network_io_utilization: Some(0.6),
-                custom: HashMap::default(),
+                ..DecisionTemplateData::default()
             }),
         plan: PlanSettings {
             min_scaling_step: 2,

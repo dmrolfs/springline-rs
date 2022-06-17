@@ -232,12 +232,10 @@ where
     }
 
     async fn do_run(&mut self) -> Result<(), SenseError> {
-        // let scopes = maplit::hashset! { self.scope };
         let (metrics, metric_orders) = self.distill_metric_orders().await?;
         let agg_span: HashSet<Aggregation> = metric_orders.iter().map(|o| o.agg()).collect();
         tracing::debug!("requested metrics:{metrics:?} metric orders:{metric_orders:?}, aggregations:{agg_span:?}");
 
-        // let (metric_orders, agg_span) = super::distill_metric_orders_for_sensor_scopes(&scopes, &self.scope_orders);
         if metrics.is_empty() || metric_orders.is_empty() {
             // todo: best to end this useless stage or do nothing in loop? I hope end is best.
             tracing::warn!(stage=%self.name(), "no flink metric orders for scope - stopping {} sensor stage.", self.scope);
