@@ -110,6 +110,13 @@ probes:
     livenessInterval: 120000
 
 application:
+  sensor:
+    flink:
+      metric_orders:
+        flow:
+          input_records_lag_max:
+            name:
+
   eligibility:
     template_data:
       cooling_secs: 600

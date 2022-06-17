@@ -5,11 +5,18 @@ imagePullSecrets:
 #  dnsTail: -api-dev.plm.platform.in.here.com
 deployment:
   log:
-    level: "info,springline::flink=debug,springline::kubernetes=trace,springline::phases::act=trace,kube=trace,kube_client=trace"
+    level: "info,springline::flink=debug,springline::kubernetes=trace,springline::phases::act=trace,kube=trace,kube_client=trace,springline::phases::sense::flink=debug"
     polar: "info"
     backtrace: "1"
 
 application:
+  sensor:
+    flink:
+      metric_orders:
+        flow:
+          input_records_lag_max:
+            name: "Source: RWO Drives stream" #todo Source: should be populated via a Task type [Source, Through, Sink]
+
   eligibility:
     template_data:
       cooling_secs: 900

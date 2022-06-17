@@ -16,6 +16,16 @@ data:
     kubernetes:
       namespace: {{ .Release.Namespace }}
     
+    sensor:
+      flink:
+        metric_orders:
+          - Operator:
+              name: "{{ .Values.application.sensor.flink.metric_orders.flow.input_records_lag_max.name }}"
+              metric: records-lag-max
+              agg: sum
+              telemetry_path: flow.input_records_lag_max
+              telemetry_type: Integer
+    
     eligibility:
       template_data:
         cooling_secs: {{ .Values.application.eligibility.template_data.cooling_secs }}

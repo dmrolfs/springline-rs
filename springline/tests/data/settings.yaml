@@ -30,6 +30,12 @@ sensor:
           agg: min
           telemetry_path: health.job_uptime_millis
           telemetry_type: Integer
+      - Operator:
+          name: "Source: Data Stream"
+          metric: records-lag-max
+          agg: sum
+          telemetry_path: flow.input_records_lag_max
+          telemetry_type: Integer
 
   sensors:
     foo:
