@@ -1,6 +1,8 @@
 set dotenv-load
 
-export QUAY_IMAGE_TAG := `date '+%s'`
+export NEW_QUAY_IMAGE_TAG := `date '+%s'`
+image_default := env_var('QUAY_IMAGE_TAG')
+ns_default := env_var('JOB_NS_PREFIX') + env_var('JOB_ID')
 
 alias c := full-check
 alias u := update
@@ -27,6 +29,7 @@ build-docker:
 
 # expects QUAY_PATH to be set in `.env`
 push-docker:
+  export QUAY_IMAGE_TAG=NEW_QUAY_IMAGE_TAG
   echo "Labeling then pushing springline:latest docker image with tag: ${QUAY_PATH}:${QUAY_IMAGE_TAG}"
   docker tag springline:latest ${QUAY_PATH}:${QUAY_IMAGE_TAG}
   docker push ${QUAY_PATH}:${QUAY_IMAGE_TAG}
@@ -38,8 +41,19 @@ run-docker-local +ARGS:
 docker-follow CONTAINER_ID:
   docker logs --follow {{CONTAINER_ID}} | bunyan | lnav
 
-#helm-install IMAGE_TAG ENV NAMESPACE:
-#  cd {{justfile_directory()}}/springline/chart
-#  helm install autoscaler ./springline --debug --values ./springline/env/{{ENV}}.yaml --set image.tag={{IMAGE_TAG}} --namespace {{NAMESPACE}}
-#
-#  {{justfile_directory()}}/springline/chart/
+helm-install env image=image_default namespace=ns_default:
+  #!/usr/bin/env bash
+  set -euxo pipefail
+  echo "installing springline helm chart for image[{{image}}], configuration-env[{{env}}] to k8s namespace: {{namespace}}"
+  cd {{justfile_directory()}}/springline/chart
+  helm install autoscaler ./springline --debug \
+    --values ./springline/env/{{env}}.yaml \
+    --set image.tag={{image}} \
+    --set global.pipeline.jobId=$JOB_ID \
+    --namespace {{namespace}}
+
+helm-uninstall namespace=ns_default:
+  #!/usr/bin/env bash
+  set -euxo pipefail
+  helm uninstall -n {{namespace}} autoscaler
+
