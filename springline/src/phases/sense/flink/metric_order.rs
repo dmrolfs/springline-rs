@@ -442,7 +442,69 @@ mod tests {
     use proctor::elements::TelemetryType;
     use serde_json::json;
     use serde_test::{assert_tokens, Token};
+    use std::collections::HashSet;
+    use std::hash::{Hash, Hasher};
     use trim_margin::MarginTrimmable;
+
+    #[test]
+    fn test_aggregation_hash_eq() {
+        fn test_scenario(lhs: Aggregation, rhs: Aggregation, same: bool) {
+            let mut lhs_hasher = std::collections::hash_map::DefaultHasher::new();
+            lhs.hash(&mut lhs_hasher);
+            let mut rhs_hasher = std::collections::hash_map::DefaultHasher::new();
+            rhs.hash(&mut rhs_hasher);
+            if same {
+                assert_eq!(lhs_hasher.finish(), rhs_hasher.finish());
+                assert_eq!(lhs, rhs);
+            } else {
+                assert_ne!(lhs_hasher.finish(), rhs_hasher.finish());
+                assert_ne!(lhs, rhs);
+            }
+        }
+
+        test_scenario(Aggregation::Value, Aggregation::Value, true);
+        test_scenario(Aggregation::Value, Aggregation::Max, false);
+        test_scenario(Aggregation::Value, Aggregation::Min, false);
+        test_scenario(Aggregation::Value, Aggregation::Sum, false);
+        test_scenario(Aggregation::Value, Aggregation::Avg, false);
+
+        test_scenario(Aggregation::Max, Aggregation::Value, false);
+        test_scenario(Aggregation::Max, Aggregation::Max, true);
+        test_scenario(Aggregation::Max, Aggregation::Min, false);
+        test_scenario(Aggregation::Max, Aggregation::Sum, false);
+        test_scenario(Aggregation::Max, Aggregation::Avg, false);
+
+        test_scenario(Aggregation::Min, Aggregation::Value, false);
+        test_scenario(Aggregation::Min, Aggregation::Max, false);
+        test_scenario(Aggregation::Min, Aggregation::Min, true);
+        test_scenario(Aggregation::Min, Aggregation::Sum, false);
+        test_scenario(Aggregation::Min, Aggregation::Avg, false);
+
+        test_scenario(Aggregation::Sum, Aggregation::Value, false);
+        test_scenario(Aggregation::Sum, Aggregation::Max, false);
+        test_scenario(Aggregation::Sum, Aggregation::Min, false);
+        test_scenario(Aggregation::Sum, Aggregation::Sum, true);
+        test_scenario(Aggregation::Sum, Aggregation::Avg, false);
+
+        test_scenario(Aggregation::Avg, Aggregation::Value, false);
+        test_scenario(Aggregation::Avg, Aggregation::Max, false);
+        test_scenario(Aggregation::Avg, Aggregation::Min, false);
+        test_scenario(Aggregation::Avg, Aggregation::Sum, false);
+        test_scenario(Aggregation::Avg, Aggregation::Avg, true);
+
+        let data = vec![
+            Aggregation::Max,
+            Aggregation::Max,
+            Aggregation::Sum,
+            Aggregation::Avg,
+            Aggregation::Max,
+        ];
+        let actual: HashSet<Aggregation> = data.iter().copied().collect();
+        assert_eq!(
+            actual,
+            maplit::hashset! {Aggregation::Max, Aggregation::Sum, Aggregation::Avg,}
+        );
+    }
 
     #[test]
     fn test_metric_order_serde_tokens() {

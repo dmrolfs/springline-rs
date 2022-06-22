@@ -294,6 +294,7 @@ where
             ?picklist,
             ?agg_span,
             ?correlation,
+            base_vertex_metrics_url=?vertex_metrics_url,
             "vertex metric picklist and aggregation span for metric order"
         );
 
@@ -319,11 +320,12 @@ where
                 .and_then(|response| {
                     flink::log_response("job_vertex available telemetry", &vertex_metrics_url, &response);
                     response.text().map(|body| {
-                        body.map_err(|err| err.into()).and_then(|b| {
-                            let result = serde_json::from_str(&b).map_err(|err| err.into());
-                            tracing::debug!(body=%b, response=?result, "Flink vertex metrics response body");
-                            result
-                        })
+                        let flink_result = body
+                            .map_err(|err| err.into())
+                            .and_then(|b| serde_json::from_str(&b).map_err(|err| err.into()));
+
+                        tracing::debug!(response=?flink_result, "Flink vertex metrics response body");
+                        flink_result
                     })
                 })
                 .instrument(tracing::trace_span!(
@@ -346,7 +348,12 @@ where
         picklist
             .iter()
             .flat_map(|pick_metric| {
-                self.order_matchers.iter().filter_map(|(o, matches)| {
+                self.order_matchers.iter().filter_map(move |(o, matches)| {
+                    tracing::debug!(
+                        order=?o,
+                        "picklist metric[{}] matches order[{}:{}] = {}",
+                        pick_metric, o.agg(), o.metric(), matches(pick_metric.as_str())
+                    );
                     if o.agg() != Aggregation::Value && matches(pick_metric.as_str()) {
                         Some(o.agg())
                     } else {
@@ -566,6 +573,39 @@ mod tests {
         });
         orders
     });
+
+    #[test]
+    fn test_vertex_sensor_agg_span() {
+        once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
+        let main_span = tracing::info_span!("test_query_vertex_telemetry");
+        let _ = main_span.enter();
+
+        block_on(async {
+            let mock_server = MockServer::start().await;
+            let context = assert_ok!(context_for(&mock_server));
+            let (stage, ..) = test_stage_for(&TEST_ORDERS, context).await;
+
+            let picklist: Vec<String> = vec![
+                "buffers.inputQueueLength",
+                "idleTimeMsPerSecond",
+                "buffers.outPoolUsage",
+                "buffers.inPoolUsage",
+                "numRecordsInPerSecond",
+                "buffers.outputQueueLength",
+                "numRecordsOutPerSecond",
+                "Source__Foo_Data_stream.KafkaConsumer.client-id.846ed8a181ca4278acc87834d01625fe.catalog.here-onemap-rsd-ingestion-service-scl.layer.observations-bmw.consumer-fetch-manager-metrics_records-lag-max",
+            ]
+                .into_iter()
+                .map(|s| s.to_string())
+                .collect();
+
+            let actual = stage.agg_span_for(&picklist);
+            assert_eq!(
+                actual,
+                maplit::hashset! {Aggregation::Max, Aggregation::Avg, Aggregation::Sum,}
+            );
+        })
+    }
 
     #[test]
     fn test_query_vertex_telemetry() {
