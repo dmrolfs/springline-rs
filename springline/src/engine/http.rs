@@ -7,6 +7,7 @@ use axum::http::{Method, StatusCode, Uri};
 use axum::response::IntoResponse;
 use axum::routing;
 use axum::{BoxError, Json, Router};
+use itertools::Itertools;
 use proctor::phases::sense::clearinghouse::ClearinghouseSnapshot;
 use serde_json::json;
 use settings_loader::common::http::HttpServerSettings;
@@ -136,12 +137,34 @@ async fn liveness(Extension(engine): Extension<Arc<State>>) -> impl IntoResponse
     }
 }
 
+#[derive(serde::Serialize)]
+struct ClearinghouseReport {
+    pub telemetry: linked_hash_map::LinkedHashMap<String, proctor::elements::TelemetryValue>,
+    pub missing: std::collections::HashSet<String>,
+    pub subscriptions: Vec<proctor::phases::sense::TelemetrySubscription>,
+}
+
+impl From<ClearinghouseSnapshot> for ClearinghouseReport {
+    fn from(snapshot: ClearinghouseSnapshot) -> Self {
+        Self {
+            telemetry: snapshot
+                .telemetry
+                .into_iter()
+                .sorted_by(|(lhs, _), (rhs, _)| lhs.cmp(rhs))
+                .collect(),
+            missing: snapshot.missing,
+            subscriptions: snapshot.subscriptions,
+        }
+    }
+}
+
 #[tracing::instrument(level = "trace", skip(engine))]
 async fn get_clearinghouse_snapshot(
     subscription: Option<Path<String>>, Extension(engine): Extension<Arc<State>>,
-) -> Result<Json<ClearinghouseSnapshot>, EngineApiError> {
+) -> Result<Json<ClearinghouseReport>, EngineApiError> {
     EngineCmd::report_on_clearinghouse(&engine.tx_api, subscription.map(|s| s.0))
         .await
+        .map(Into::into)
         .map(Json)
 }
 
