@@ -322,7 +322,7 @@ impl RestartJobs {
             parallelism: Some(parallelism),
             allow_non_restored_state: self.allow_non_restored_state,
             program_args_list: self.program_args.clone(),
-            restore_mode: self.restore_mode,
+            //todo: add feature for supported flink version -- restore_mode: self.restore_mode,
             ..restart::RestartJarRequestBody::default()
         };
         tracing::debug!(request_body=?body, ?correlation, ?url, "restarting jar({jar}) with savepoint({location:?})...");

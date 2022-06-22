@@ -1,7 +1,7 @@
 set dotenv-load
 
-export NEW_QUAY_IMAGE_TAG := `date '+%s'`
-image_default := env_var('QUAY_IMAGE_TAG')
+timestamp := `date '+%s'`
+image_default := env_var('IMAGE_TAG')
 ns_default := env_var('JOB_NS_PREFIX') + env_var('JOB_ID')
 
 alias c := full-check
@@ -9,7 +9,7 @@ alias u := update
 alias db := build-docker
 alias drl := run-docker-local
 alias df := docker-follow
-alias dp := push-docker
+alias dp := push-image
 
 default:
   just --list
@@ -28,11 +28,10 @@ build-docker:
   docker build --tag springline --file springline/Dockerfile .
 
 # expects QUAY_PATH to be set in `.env`
-push-docker:
-  export QUAY_IMAGE_TAG=NEW_QUAY_IMAGE_TAG
-  echo "Labeling then pushing springline:latest docker image with tag: ${QUAY_PATH}:${QUAY_IMAGE_TAG}"
-  docker tag springline:latest ${QUAY_PATH}:${QUAY_IMAGE_TAG}
-  docker push ${QUAY_PATH}:${QUAY_IMAGE_TAG}
+push-image:
+  echo "Labeling then pushing springline:latest docker image with tag: ${QUAY_PATH}:{{timestamp}}"
+  docker tag springline:latest ${QUAY_PATH}:{{timestamp}}
+  docker push ${QUAY_PATH}:{{timestamp}}
 
 # expects KUBECONFIG and HA_CREDENTIALS to be set in `.env`
 run-docker-local +ARGS:
