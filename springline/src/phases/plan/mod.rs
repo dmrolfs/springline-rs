@@ -24,13 +24,14 @@ mod performance_history;
 mod performance_repository;
 mod planning;
 
+pub use crate::phases::decision::ScaleDirection;
 pub use context::{PlanningContext, PLANNING__RESCALE_RESTART};
 pub use context::{
     PLANNING_CTX_FORECASTING_MAX_CATCH_UP_SECS, PLANNING_CTX_FORECASTING_RECOVERY_VALID_SECS,
     PLANNING_CTX_FORECASTING_RESTART_SECS, PLANNING_CTX_MIN_SCALING_STEP,
 };
 pub use forecast::{ForecastInputs, Forecaster, LeastSquaresWorkloadForecaster, SpikeSettings, WorkloadMeasurement};
-pub use model::{ScaleDirection, ScalePlan};
+pub use model::ScalePlan;
 pub use performance_history::PerformanceHistory;
 pub use performance_repository::make_performance_repository;
 pub use performance_repository::{PerformanceRepositorySettings, PerformanceRepositoryType};

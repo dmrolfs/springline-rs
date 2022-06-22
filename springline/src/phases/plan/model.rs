@@ -1,4 +1,4 @@
-use std::fmt::{self, Display};
+use std::fmt;
 
 use oso::PolarClass;
 use pretty_snowflake::Id;
@@ -8,15 +8,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::flink::MetricCatalog;
 use crate::phases::decision::DecisionResult;
-use crate::phases::plan::MINIMAL_CLUSTER_SIZE;
+use crate::phases::plan::{ScaleDirection, MINIMAL_CLUSTER_SIZE};
 use crate::CorrelationId;
-
-#[derive(Debug, Display, Copy, Clone, PartialEq, Eq, Hash)]
-pub enum ScaleDirection {
-    Up,
-    Down,
-    None,
-}
 
 #[derive(PolarClass, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ScalePlan {

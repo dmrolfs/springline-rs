@@ -1,3 +1,13 @@
+use crate::flink::MetricPortfolio;
+use crate::phases;
+use crate::phases::eligibility::EligibilityOutcome;
+use crate::settings::DecisionSettings;
+use crate::Result;
+use proctor::elements::PolicySubscription;
+use proctor::phases::policy_phase::PolicyPhase;
+use proctor::phases::sense::{ClearinghouseSubscriptionAgent, SubscriptionChannel};
+use std::fmt::Display;
+
 mod context;
 mod policy;
 mod result;
@@ -5,18 +15,9 @@ mod result;
 pub use context::DecisionContext;
 pub(crate) use policy::DECISION_SCALING_DECISION_COUNT_METRIC;
 pub use policy::{DecisionPolicy, DecisionTemplateData};
-use proctor::elements::PolicySubscription;
-use proctor::phases::policy_phase::PolicyPhase;
-use proctor::phases::sense::{ClearinghouseSubscriptionAgent, SubscriptionChannel};
-pub use result::make_decision_transform;
 pub use result::DecisionResult;
 pub use result::DECISION_DIRECTION;
-
-use crate::flink::MetricPortfolio;
-use crate::phases;
-use crate::phases::eligibility::EligibilityOutcome;
-use crate::settings::DecisionSettings;
-use crate::Result;
+pub use result::{get_direction_and_reason, make_decision_transform};
 
 pub type DecisionOutcome = DecisionResult<MetricPortfolio>;
 pub type DecisionApi = proctor::elements::PolicyFilterApi<DecisionContext, DecisionTemplateData>;
@@ -39,4 +40,11 @@ where
     let decision = Box::new(PolicyPhase::with_transform(name, policy, make_decision_transform(name)).await?);
     let channel = phases::subscribe_policy_phase(subscription, &decision, agent).await?;
     Ok((decision, channel))
+}
+
+#[derive(Debug, Display, Copy, Clone, PartialEq, Eq, Hash)]
+pub enum ScaleDirection {
+    Up,
+    Down,
+    None,
 }

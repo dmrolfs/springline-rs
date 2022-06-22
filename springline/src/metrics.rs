@@ -81,7 +81,7 @@ pub fn register_metrics(registry: &Registry) -> Result<()> {
     registry.register(Box::new(governance::GOVERNANCE_CTX_MAX_SCALING_STEP.clone()))?;
 
     registry.register(Box::new(engine::ELIGIBILITY_IS_ELIGIBLE_FOR_SCALING.clone()))?;
-    registry.register(Box::new(engine::DECISION_SHOULD_PLAN_FOR_SCALING.clone()))?;
+    registry.register(Box::new(engine::DECISION_RESCALE_DECISION.clone()))?;
     registry.register(Box::new(engine::PLAN_OBSERVATION_COUNT.clone()))?;
     registry.register(Box::new(engine::DECISION_PLAN_CURRENT_NR_TASK_MANAGERS.clone()))?;
     registry.register(Box::new(engine::PLAN_TARGET_NR_TASK_MANAGERS.clone()))?;

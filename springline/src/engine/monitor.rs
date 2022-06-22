@@ -16,11 +16,11 @@ use crate::engine::service::{EngineCmd, EngineServiceApi, Health};
 use crate::engine::{PhaseFlag, PhaseFlags};
 use crate::flink;
 use crate::phases::act::{ActEvent, ActMonitor, ACT_PHASE_ERRORS, ACT_SCALE_ACTION_COUNT, PIPELINE_CYCLE_TIME};
-use crate::phases::decision::{DecisionContext, DecisionEvent, DecisionMonitor, DecisionResult};
+use crate::phases::decision::{DecisionContext, DecisionEvent, DecisionMonitor, DecisionResult, ScaleDirection};
 use crate::phases::eligibility::{EligibilityContext, EligibilityEvent, EligibilityMonitor};
 use crate::phases::governance::{GovernanceContext, GovernanceEvent, GovernanceMonitor, GovernanceOutcome};
 use crate::phases::plan::{FlinkPlanningEvent, FlinkPlanningMonitor, PlanningStrategy, ScalePlan};
-use crate::phases::{PortfolioApi, PortfolioCmd};
+use crate::phases::{decision, PortfolioApi, PortfolioCmd};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct PlanningFeedback {
@@ -85,6 +85,16 @@ impl From<ActionFeedback> for Telemetry {
         }
 
         telemetry
+    }
+}
+
+impl From<ScaleDirection> for i64 {
+    fn from(direction: ScaleDirection) -> Self {
+        match direction {
+            ScaleDirection::None => 0,
+            ScaleDirection::Down => -1,
+            ScaleDirection::Up => 1,
+        }
     }
 }
 
@@ -180,11 +190,20 @@ impl Monitor {
         match &*event {
             DecisionEvent::ItemPassed(item, query_result) => {
                 tracing::info!(?event, ?query_result, correlation=%item.correlation(), "data item passed scaling decision");
-                DECISION_SHOULD_PLAN_FOR_SCALING.set(true as i64)
+                match decision::get_direction_and_reason(query_result) {
+                    Ok((direction, _reason)) => DECISION_RESCALE_DECISION.set(direction.into()),
+                    Err(error) => {
+                        tracing::error!(
+                            ?error,
+                            "failed to get scale decision direction and reason from query results"
+                        );
+                        DECISION_RESCALE_DECISION.set(ScaleDirection::None.into());
+                    },
+                }
             },
             DecisionEvent::ItemBlocked(item, query_result) => {
                 tracing::debug!(?event, ?query_result, correlation=%item.correlation(), "data item blocked by scaling decision");
-                DECISION_SHOULD_PLAN_FOR_SCALING.set(false as i64)
+                DECISION_RESCALE_DECISION.set(ScaleDirection::None.into());
             },
             DecisionEvent::ContextChanged(Some(ctx)) if !loaded.contains(PhaseFlag::Decision) => {
                 tracing::info!(?event, correlation=%ctx.correlation(), "Decision Phase initial context loaded!");
@@ -352,12 +371,20 @@ pub static ELIGIBILITY_IS_ELIGIBLE_FOR_SCALING: Lazy<IntGauge> = Lazy::new(|| {
     .expect("failed creating eligibility_is_eligible_for_scaling metric")
 });
 
-pub static DECISION_SHOULD_PLAN_FOR_SCALING: Lazy<IntGauge> = Lazy::new(|| {
+// pub static DECISION_SHOULD_PLAN_FOR_SCALING: Lazy<IntGauge> = Lazy::new(|| {
+//     IntGauge::new(
+//         "decision_should_plan_for_scaling",
+//         "Should plan for scaling the cluster",
+//     )
+//     .expect("failed creating decision_should_plan_for_scaling metric")
+// });
+
+pub static DECISION_RESCALE_DECISION: Lazy<IntGauge> = Lazy::new(|| {
     IntGauge::new(
-        "decision_should_plan_for_scaling",
-        "Should plan for scaling the cluster",
+        "decision_rescale_decision",
+        "Decision on rescaling the cluster: -1 = rescale down, 0 = no action, 1 = rescale up",
     )
-    .expect("failed creating decision_should_plan_for_scaling metric")
+    .expect("failed creating decision_rescale_decision metric")
 });
 
 pub static PLAN_OBSERVATION_COUNT: Lazy<IntCounter> = Lazy::new(|| {
