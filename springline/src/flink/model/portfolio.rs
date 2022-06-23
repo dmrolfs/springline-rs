@@ -97,7 +97,9 @@ where
         if value <= 0.0 {
             Err(ValidationError::new("not enough window coverage to be meaningful."))
         } else if 1.0 < value {
-            Err(ValidationError::new("available telemetry window cannot meet sufficient coverage."))
+            Err(ValidationError::new(
+                "available telemetry window cannot meet sufficient coverage.",
+            ))
         } else {
             Ok(())
         }

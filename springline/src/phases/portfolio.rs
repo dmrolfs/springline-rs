@@ -7,7 +7,7 @@ use proctor::error::ProctorError;
 use proctor::graph::stage::{Stage, WithApi};
 use proctor::graph::{stage, Inlet, Outlet, Port, SinkShape, SourceShape, PORT_DATA};
 use proctor::{Ack, AppData, ProctorResult, ReceivedAt};
-use tokio::sync::{mpsc, oneshot, Mutex};
+use tokio::sync::{mpsc, oneshot};
 
 use crate::flink::{AppDataPortfolio, MetricCatalog, Portfolio};
 use crate::settings::EngineSettings;
@@ -117,8 +117,7 @@ where
 
     #[tracing::instrument(level = "trace", name = "run collect metric portfolio", skip(self))]
     async fn run(&mut self) -> ProctorResult<()> {
-        let portfolio: Mutex<Option<Out>> = Mutex::new(None);
-        // let mut portfolio: Option<Out> = None;
+        let mut portfolio: Option<Out> = None;
 
         loop {
             let _timer = stage::start_stage_eval_time(self.name());
@@ -132,27 +131,15 @@ where
                         },
 
                         Some(catalog) => {
-                            let portfolio_ref = &mut *portfolio.lock().await;
-                            match portfolio_ref.as_mut() {
+                            match portfolio.as_mut() {
                                 Some(p) => p.push(catalog),
                                 None => {
                                     let p = self.make_portfolio(catalog)?;
-                                    *portfolio_ref = Some(p);
+                                    portfolio = Some(p);
                                 }
                             }
 
-                            let out = portfolio_ref.as_ref().cloned().unwrap();
-
-                            // match portfolio.as_mut() {
-                            //     Some(p) => p.push(catalog),
-                            //     None => {
-                            //         let p = self.make_portfolio(catalog)?;
-                            //         // let p = Out::from_item(catalog, self.time_window, self.sufficient_coverage).map_err?;
-                            //         portfolio = Some(p);
-                            //     }
-                            // }
-                            //
-                            // let out = portfolio.unwrap().clone();
+                            let out = portfolio.as_ref().cloned().unwrap();
 
                             tracing::debug!(
                                 portfolio=?out,
@@ -168,11 +155,7 @@ where
                 Some(command) = self.rx_api.recv() => {
                     match command {
                         PortfolioCmd::Clear(tx) => {
-                            // portfolio = None;
-                            let p = &mut *portfolio.lock().await;
-                            // let window = p.time_window();
-                            *p = None;
-                            // p.set_time_window(window);
+                            portfolio = None;
                             if tx.send(()) == Err(()) {
                                 tracing::warn!("failed to ack clear portfolio command");
                             }
