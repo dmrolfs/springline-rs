@@ -12,9 +12,10 @@ use prometheus::{IntCounterVec, Opts};
 use serde::{Deserialize, Serialize};
 
 use super::context::DecisionContext;
-use crate::flink::MetricPortfolio;
+use crate::flink::AppDataPortfolio;
 use crate::metrics::UpdateMetrics;
 use crate::phases::decision::result::DECISION_DIRECTION;
+use crate::phases::decision::DecisionData;
 use crate::phases::REASON;
 use crate::settings::DecisionSettings;
 
@@ -103,7 +104,7 @@ impl PolicySubscription for DecisionPolicy {
 impl QueryPolicy for DecisionPolicy {
     type Args = (Self::Item, Self::Context, PolarValue, PolarValue);
     type Context = DecisionContext;
-    type Item = MetricPortfolio;
+    type Item = DecisionData;
     type TemplateData = DecisionTemplateData;
 
     fn base_template_name() -> &'static str {
@@ -128,7 +129,7 @@ impl QueryPolicy for DecisionPolicy {
 
     fn initialize_policy_engine(&self, engine: &mut Oso) -> Result<(), PolicyError> {
         Telemetry::register_with_policy_engine(engine)?;
-        MetricPortfolio::register_with_policy_engine(engine)?;
+        AppDataPortfolio::register_with_policy_engine(engine)?;
 
         engine.register_class(
             DecisionContext::get_polar_class_builder()

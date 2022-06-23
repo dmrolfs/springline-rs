@@ -21,7 +21,9 @@ pub(crate) use model::catalog::{
     METRIC_CATALOG_JOB_HEALTH_NR_FAILED_CHECKPOINTS, METRIC_CATALOG_JOB_HEALTH_NR_RESTARTS,
     METRIC_CATALOG_JOB_HEALTH_UPTIME, METRIC_CATALOG_TIMESTAMP,
 };
-pub use model::portfolio::{MetricPortfolio, MetricPortfolioBuilder, Portfolio};
+pub use model::portfolio::{
+    default_sufficient_coverage, AppDataPortfolio, AppDataPortfolioBuilder, Portfolio, DEFAULT_SUFFICIENT_COVERAGE,
+};
 pub use model::{
     CorrelationGenerator, CorrelationId, FailureCause, JobSavepointReport, OperationStatus, SavepointLocation,
     SavepointStatus,

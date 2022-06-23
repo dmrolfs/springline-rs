@@ -484,7 +484,7 @@ mod catalog {
 mod portfolio {
     use std::time::Duration;
 
-    use frunk::Semigroup;
+    use frunk::{Monoid, Semigroup};
     use pretty_assertions::assert_eq;
     use proctor::elements::Timestamp;
 
@@ -494,8 +494,10 @@ mod portfolio {
     #[tracing::instrument(level = "info", skip(catalogs))]
     fn make_test_portfolio(
         limit: usize, interval: Duration, catalogs: &[MetricCatalog],
-    ) -> (MetricPortfolio, Vec<MetricCatalog>) {
-        let mut portfolio = MetricPortfolio::builder().with_size_and_interval(limit, interval);
+    ) -> (AppDataPortfolio<MetricCatalog>, Vec<MetricCatalog>) {
+        let mut portfolio = AppDataPortfolio::builder()
+            .with_size_and_interval(limit, interval)
+            .with_sufficient_coverage(0.5);
         let mut used = Vec::new();
         let mut remaining = Vec::new();
         for c in catalogs {
@@ -511,7 +513,44 @@ mod portfolio {
             portfolio.push(c);
         }
 
-        (portfolio.build(), remaining)
+        (assert_ok!(portfolio.build()), remaining)
+    }
+
+    #[test]
+    fn test_portfolio_invariants() {
+        let portfolio = AppDataPortfolio::<MetricCatalog>::builder()
+            .with_time_window(Duration::from_secs(1))
+            .with_sufficient_coverage(0.5)
+            .build();
+        assert_err!(portfolio, "portfolio is empty");
+
+        let portfolio = AppDataPortfolio::<MetricCatalog>::builder()
+            .with_time_window(Duration::from_secs(1))
+            .with_sufficient_coverage(0.0)
+            .with_item(MetricCatalog::empty())
+            .build();
+        assert_err!(portfolio, "zero sufficient coverage");
+
+        let portfolio = AppDataPortfolio::<MetricCatalog>::builder()
+            .with_time_window(Duration::from_secs(1))
+            .with_sufficient_coverage(1.0)
+            .with_item(MetricCatalog::empty())
+            .build();
+        assert_ok!(portfolio);
+
+        let portfolio = AppDataPortfolio::<MetricCatalog>::builder()
+            .with_time_window(Duration::from_secs(1))
+            .with_sufficient_coverage(-0.07)
+            .with_item(MetricCatalog::empty())
+            .build();
+        assert_err!(portfolio, "negative coverage");
+
+        let portfolio = AppDataPortfolio::<MetricCatalog>::builder()
+            .with_time_window(Duration::from_secs(1))
+            .with_sufficient_coverage(1.00003)
+            .with_item(MetricCatalog::empty())
+            .build();
+        assert_err!(portfolio, "impossible sufficient coverage required");
     }
 
     #[test]
@@ -519,7 +558,7 @@ mod portfolio {
         let m1 = make_test_catalog(Timestamp::new(1, 0), 1);
         let m2 = make_test_catalog(Timestamp::new(2, 0), 2);
 
-        let mut portfolio = MetricPortfolio::from_size(m1.clone(), 3, Duration::from_secs(1));
+        let mut portfolio = AppDataPortfolio::from_size(m1.clone(), 3, Duration::from_secs(1));
         assert_eq!(portfolio.correlation_id, m1.correlation_id);
         assert_eq!(portfolio.recv_timestamp, m1.recv_timestamp);
 

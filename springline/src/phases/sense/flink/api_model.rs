@@ -101,7 +101,7 @@ where
     let all: HashSet<&MetricOrder> = order_matchers.iter().map(|(order, _)| order).collect();
     let unfulfilled = all.difference(&satisfied).collect::<HashSet<_>>();
     if !unfulfilled.is_empty() {
-        tracing::warn!(?unfulfilled, "some metrics orders were not fulfilled.");
+        tracing::info!(?unfulfilled, "some metrics orders were not fulfilled.");
     }
 
     Ok(telemetry)

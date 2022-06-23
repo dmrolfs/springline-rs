@@ -10,15 +10,12 @@ use proctor::elements::telemetry::UpdateMetricsFn;
 use proctor::elements::{telemetry, PolicyContributor, Telemetry, Timestamp};
 use proctor::error::{PolicyError, ProctorError};
 use proctor::phases::sense::SubscriptionRequirements;
-use proctor::Correlation;
+use proctor::{Correlation, ReceivedAt};
 use prometheus::{Gauge, IntGauge};
 use serde::{Deserialize, Serialize};
 
 use crate::metrics::UpdateMetrics;
 
-pub static EMPTY_METRIC_CATALOG: Lazy<MetricCatalog> = Lazy::new(MetricCatalog::empty);
-
-// #[serde_as]
 #[derive(PolarClass, Label, PartialEq, Clone, Serialize, Deserialize)]
 pub struct MetricCatalog {
     pub correlation_id: Id<Self>,
@@ -61,6 +58,12 @@ impl Correlation for MetricCatalog {
 
     fn correlation(&self) -> &Id<Self::Correlated> {
         &self.correlation_id
+    }
+}
+
+impl ReceivedAt for MetricCatalog {
+    fn recv_timestamp(&self) -> Timestamp {
+        self.recv_timestamp
     }
 }
 

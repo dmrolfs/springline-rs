@@ -6,20 +6,20 @@ use once_cell::sync::Lazy;
 use pretty_snowflake::{AlphabetCodec, Id, IdPrettifier, Label, Labeling};
 use proctor::elements::Timestamp;
 use proctor::ProctorIdGenerator;
-use springline::flink::{ClusterMetrics, FlowMetrics, JobHealthMetrics, MetricPortfolio};
+use springline::flink::{AppDataPortfolio, ClusterMetrics, FlowMetrics, JobHealthMetrics};
 use tailcall::tailcall;
 use trim_margin::MarginTrimmable;
 
 use super::*;
 use crate::THEME;
 
-impl PopulateData for MetricPortfolio {
+impl PopulateData for AppDataPortfolio<MetricCatalog> {
     fn make(now: DateTime<Utc>, settings: &Settings) -> Result<Self>
     where
         Self: Sized,
     {
         <MetricCatalog as PopulateData>::make(now, settings)
-            .map(|catalog| MetricPortfolio::from_time_window(catalog, Duration::from_secs(600)))
+            .map(|catalog| AppDataPortfolio::from_time_window(catalog, Duration::from_secs(600)))
     }
 }
 

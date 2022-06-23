@@ -11,14 +11,14 @@ use proctor::graph::stage::{self, WithApi, WithMonitor};
 use proctor::graph::{Connect, Graph, SinkShape, SourceShape};
 use proctor::phases::policy_phase::PolicyPhase;
 use proctor::ProctorIdGenerator;
-use springline::flink::{ClusterMetrics, FlowMetrics, JobHealthMetrics, MetricCatalog, MetricPortfolio};
+use springline::flink::{AppDataPortfolio, ClusterMetrics, FlowMetrics, JobHealthMetrics, MetricCatalog};
 use springline::phases::eligibility::{ClusterStatus, TaskStatus};
 use springline::phases::eligibility::{EligibilityContext, EligibilityPolicy, EligibilityTemplateData};
 use springline::settings::EligibilitySettings;
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
-type Data = MetricPortfolio;
+type Data = AppDataPortfolio<MetricCatalog>;
 type Context = EligibilityContext;
 
 lazy_static! {
@@ -552,5 +552,5 @@ pub fn make_test_item(custom: telemetry::TableType) -> Data {
         custom,
     };
 
-    MetricPortfolio::from_size(catalog, 60, Duration::from_secs(10))
+    AppDataPortfolio::from_size(catalog, 60, Duration::from_secs(10))
 }

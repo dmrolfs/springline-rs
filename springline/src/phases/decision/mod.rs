@@ -1,4 +1,4 @@
-use crate::flink::MetricPortfolio;
+use crate::flink::{AppDataPortfolio, MetricCatalog};
 use crate::phases;
 use crate::phases::eligibility::EligibilityOutcome;
 use crate::settings::DecisionSettings;
@@ -19,10 +19,11 @@ pub use result::DecisionResult;
 pub use result::DECISION_DIRECTION;
 pub use result::{get_direction_and_reason, make_decision_transform};
 
-pub type DecisionOutcome = DecisionResult<MetricPortfolio>;
+pub type DecisionData = AppDataPortfolio<MetricCatalog>;
+pub type DecisionOutcome = DecisionResult<DecisionData>;
 pub type DecisionApi = proctor::elements::PolicyFilterApi<DecisionContext, DecisionTemplateData>;
-pub type DecisionMonitor = proctor::elements::PolicyFilterMonitor<MetricPortfolio, DecisionContext>;
-pub type DecisionEvent = proctor::elements::PolicyFilterEvent<MetricPortfolio, DecisionContext>;
+pub type DecisionMonitor = proctor::elements::PolicyFilterMonitor<DecisionData, DecisionContext>;
+pub type DecisionEvent = proctor::elements::PolicyFilterEvent<DecisionData, DecisionContext>;
 
 pub type DecisionPhase = (
     Box<PolicyPhase<EligibilityOutcome, DecisionOutcome, DecisionContext, DecisionTemplateData>>,

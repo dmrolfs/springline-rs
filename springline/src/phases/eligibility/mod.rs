@@ -22,16 +22,17 @@ pub(crate) use context::{
 pub(crate) use policy::ELIGIBILITY_POLICY_INELIGIBLE_DECISIONS_COUNT;
 pub use policy::{EligibilityPolicy, EligibilityTemplateData};
 
-use crate::flink::MetricPortfolio;
+use crate::flink::{AppDataPortfolio, MetricCatalog};
 
-pub type EligibilityOutcome = MetricPortfolio;
+pub type EligibilityData = AppDataPortfolio<MetricCatalog>;
+pub type EligibilityOutcome = EligibilityData;
 pub type EligibilityApi = proctor::elements::PolicyFilterApi<EligibilityContext, EligibilityTemplateData>;
-pub type EligibilityMonitor = proctor::elements::PolicyFilterMonitor<MetricPortfolio, EligibilityContext>;
+pub type EligibilityMonitor = proctor::elements::PolicyFilterMonitor<EligibilityData, EligibilityContext>;
 pub type EligibilityPhase = (
-    Box<PolicyPhase<MetricPortfolio, EligibilityOutcome, EligibilityContext, EligibilityTemplateData>>,
+    Box<PolicyPhase<EligibilityData, EligibilityOutcome, EligibilityContext, EligibilityTemplateData>>,
     SubscriptionChannel<EligibilityContext>,
 );
-pub type EligibilityEvent = PolicyFilterEvent<MetricPortfolio, EligibilityContext>;
+pub type EligibilityEvent = PolicyFilterEvent<EligibilityData, EligibilityContext>;
 
 #[tracing::instrument(level = "trace", skip(agent))]
 pub async fn make_eligibility_phase<A>(settings: &EligibilitySettings, agent: &mut A) -> Result<EligibilityPhase>

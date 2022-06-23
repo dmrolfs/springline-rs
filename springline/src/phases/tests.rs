@@ -22,8 +22,9 @@ mod portfolio {
     use tokio_test::block_on;
     use tracing_futures::Instrument;
 
-    use crate::flink::{ClusterMetrics, FlowMetrics, JobHealthMetrics, MetricCatalog, MetricPortfolio};
+    use crate::flink::{AppDataPortfolio, ClusterMetrics, FlowMetrics, JobHealthMetrics, MetricCatalog};
     use crate::phases::CollectMetricPortfolio;
+    use crate::settings::EngineSettings;
 
     fn make_test_catalog(ts: Timestamp, value: i32) -> MetricCatalog {
         MetricCatalog {
@@ -68,7 +69,12 @@ mod portfolio {
         let (tx_in, rx_in) = mpsc::channel(8);
         let (tx_out, mut rx_out) = mpsc::channel(8);
 
-        let mut stage = CollectMetricPortfolio::new("test_collect_metric_portfolio", Duration::from_secs(1) * 3);
+        let engine_settings = EngineSettings {
+            telemetry_portfolio_window: Duration::from_secs(3),
+            sufficient_window_coverage_percentage: 0.5,
+            ..EngineSettings::default()
+        };
+        let mut stage = CollectMetricPortfolio::new("test_collect_metric_portfolio", &engine_settings);
 
         block_on(async {
             let mut inlet = stage.inlet();
@@ -161,7 +167,7 @@ mod portfolio {
     impl QueryPolicy for TestPolicy {
         type Args = (Self::Item, Self::Context);
         type Context = TestContext;
-        type Item = MetricPortfolio;
+        type Item = AppDataPortfolio<MetricCatalog>;
         type TemplateData = ();
 
         fn base_template_name() -> &'static str {
@@ -185,7 +191,7 @@ mod portfolio {
         }
 
         fn initialize_policy_engine(&self, engine: &mut Oso) -> Result<(), PolicyError> {
-            MetricPortfolio::register_with_policy_engine(engine)
+            AppDataPortfolio::register_with_policy_engine(engine)
         }
 
         fn make_query_args(&self, item: &Self::Item, context: &Self::Context) -> Self::Args {
@@ -220,8 +226,12 @@ mod portfolio {
         let (tx_in, rx_in) = mpsc::channel(8);
         let (tx_out, mut rx_out) = mpsc::channel(8);
 
-        let mut collect_stage =
-            CollectMetricPortfolio::new("test_collect_metric_portfolio", Duration::from_secs(1) * 3);
+        let engine_settings = EngineSettings {
+            telemetry_portfolio_window: Duration::from_secs(3),
+            sufficient_window_coverage_percentage: 0.5,
+            ..EngineSettings::default()
+        };
+        let mut collect_stage = CollectMetricPortfolio::new("test_collect_metric_portfolio", &engine_settings);
         let policy = TestPolicy {
             policies: vec![assert_ok!(PolicySource::from_complete_string(
                 "test_policy",
@@ -295,7 +305,8 @@ mod portfolio {
                             &PolicyFilterEvent::ItemPassed(_, _)
                         );
 
-                        let actual: PolicyOutcome<MetricPortfolio, TestContext> = assert_some!(rx_out.recv().await);
+                        let actual: PolicyOutcome<AppDataPortfolio<MetricCatalog>, TestContext> =
+                            assert_some!(rx_out.recv().await);
 
                         assert_eq!((i, assert_some!(actual.item.flow.input_records_lag_max)), (i, expected));
                     } else {

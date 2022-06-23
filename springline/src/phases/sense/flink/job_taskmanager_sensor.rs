@@ -203,7 +203,7 @@ where
 
     #[tracing::instrument(level = "info", skip(self))]
     async fn distill_metric_orders(&self) -> Result<(Vec<String>, Vec<&MetricOrder>), SenseError> {
-        let flink_metrics: Vec<String> = self
+        let flink_scope_metrics: Vec<String> = self
             .get_scope_metrics(vec![].as_slice(), vec![].as_slice())
             .await?
             .0
@@ -211,15 +211,11 @@ where
             .map(|m| m.id)
             .collect();
 
-        tracing::warn!("DISTILL: flink_metrics={flink_metrics:?}");
-
-        tracing::warn!("DISTLL: original {} orders = {:?}", self.scope, self.orders);
-
         let mut requested_metrics = HashSet::new();
         let mut available_orders = Vec::new();
         for order in self.orders.iter() {
             let matches = &self.order_matchers[order];
-            for metric in flink_metrics.iter() {
+            for metric in flink_scope_metrics.iter() {
                 if matches(metric) {
                     requested_metrics.insert(metric.clone());
                     available_orders.push(order);
@@ -227,7 +223,7 @@ where
             }
         }
 
-        tracing::debug!(?available_orders, ?requested_metrics, "distilled metric orders");
+        tracing::debug!(?available_orders, ?requested_metrics, original=?self.orders, "distilled metric orders");
         Ok((requested_metrics.into_iter().collect(), available_orders))
     }
 

@@ -30,10 +30,10 @@ pub use self::monitor::{
     GOVERNANCE_PLAN_ACCEPTED, PLAN_OBSERVATION_COUNT, PLAN_TARGET_NR_TASK_MANAGERS,
 };
 use crate::engine::service::{EngineCmd, EngineServiceApi, Health, Service};
-use crate::flink::{FlinkContext, MetricCatalog, MetricPortfolio};
+use crate::flink::{FlinkContext, MetricCatalog};
 use crate::metrics::UpdateMetrics;
 use crate::phases::act::ActMonitor;
-use crate::phases::decision::DecisionResult;
+use crate::phases::decision::{DecisionOutcome, DecisionResult};
 use crate::phases::governance::{self, GovernanceOutcome};
 use crate::phases::{act, decision, eligibility, plan, sense};
 use crate::settings::Settings;
@@ -218,18 +218,17 @@ impl AutoscaleEngine<Building> {
             settings.sensor.flink.metrics_interval,
         );
 
-        let collect_portfolio =
-            crate::phases::CollectMetricPortfolio::new("collect_portfolio", settings.engine.telemetry_portfolio_window);
+        let collect_portfolio = crate::phases::CollectMetricPortfolio::new("collect_portfolio", &settings.engine);
         let tx_collect_portfolio_api = collect_portfolio.tx_api();
 
-        let reduce_portfolio = proctor::graph::stage::FilterMap::new(
-            "catalog_from_portfolio",
-            |decision_portfolio: DecisionResult<MetricPortfolio>| match decision_portfolio {
-                DecisionResult::ScaleUp(p) => p.head().cloned().map(DecisionResult::ScaleUp),
-                DecisionResult::ScaleDown(p) => p.head().cloned().map(DecisionResult::ScaleDown),
-                DecisionResult::NoAction(p) => p.head().cloned().map(DecisionResult::NoAction),
-            },
-        );
+        let reduce_portfolio =
+            proctor::graph::stage::FilterMap::new("catalog_from_portfolio", |decision_portfolio: DecisionOutcome| {
+                match decision_portfolio {
+                    DecisionResult::ScaleUp(p) => p.head().cloned().map(DecisionResult::ScaleUp),
+                    DecisionResult::ScaleDown(p) => p.head().cloned().map(DecisionResult::ScaleDown),
+                    DecisionResult::NoAction(p) => p.head().cloned().map(DecisionResult::NoAction),
+                }
+            });
         let reduce_portfolio = reduce_portfolio.with_block_logging();
 
         let tx_clearinghouse_api = sense.tx_api();

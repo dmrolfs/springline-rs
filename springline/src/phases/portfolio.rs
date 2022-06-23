@@ -3,12 +3,14 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use cast_trait_object::dyn_upcast;
+use proctor::error::ProctorError;
 use proctor::graph::stage::{Stage, WithApi};
 use proctor::graph::{stage, Inlet, Outlet, Port, SinkShape, SourceShape, PORT_DATA};
-use proctor::{Ack, AppData, ProctorResult};
+use proctor::{Ack, AppData, ProctorResult, ReceivedAt};
 use tokio::sync::{mpsc, oneshot, Mutex};
 
-use crate::flink::{MetricCatalog, MetricPortfolio, Portfolio};
+use crate::flink::{AppDataPortfolio, MetricCatalog, Portfolio};
+use crate::settings::EngineSettings;
 
 pub type PortfolioApi = mpsc::UnboundedSender<PortfolioCmd>;
 
@@ -35,6 +37,7 @@ impl PortfolioCmd {
 pub struct CollectMetricPortfolio<In, Out> {
     name: String,
     time_window: Duration,
+    sufficient_coverage: f64,
     inlet: Inlet<In>,
     outlet: Outlet<Out>,
     tx_api: PortfolioApi,
@@ -46,17 +49,26 @@ impl<In, Out> Debug for CollectMetricPortfolio<In, Out> {
         f.debug_struct("CollectMetricPortfolio")
             .field("name", &self.name)
             .field("time_window", &self.time_window)
+            .field("sufficient_coverage", &self.sufficient_coverage)
             .finish()
     }
 }
 
-impl CollectMetricPortfolio<MetricCatalog, MetricPortfolio> {
-    pub fn new(name: impl Into<String>, time_window: Duration) -> Self {
+impl CollectMetricPortfolio<MetricCatalog, AppDataPortfolio<MetricCatalog>> {
+    pub fn new(name: impl Into<String>, settings: &EngineSettings) -> Self {
         let name = name.into();
         let (tx_api, rx_api) = mpsc::unbounded_channel();
         let inlet = Inlet::new(&name, PORT_DATA);
         let outlet = Outlet::new(&name, PORT_DATA);
-        Self { name, time_window, inlet, outlet, tx_api, rx_api }
+        Self {
+            name,
+            time_window: settings.telemetry_portfolio_window,
+            sufficient_coverage: settings.sufficient_window_coverage_percentage,
+            inlet,
+            outlet,
+            tx_api,
+            rx_api,
+        }
     }
 }
 
@@ -88,7 +100,7 @@ impl<In, Out> WithApi for CollectMetricPortfolio<In, Out> {
 #[async_trait]
 impl<In, Out> Stage for CollectMetricPortfolio<In, Out>
 where
-    In: AppData,
+    In: AppData + ReceivedAt,
     Out: Portfolio<Item = In>,
 {
     #[inline]
@@ -105,9 +117,8 @@ where
 
     #[tracing::instrument(level = "trace", name = "run collect metric portfolio", skip(self))]
     async fn run(&mut self) -> ProctorResult<()> {
-        let mut portfolio = Out::empty();
-        portfolio.set_time_window(self.time_window);
-        let portfolio = Mutex::new(portfolio);
+        let portfolio: Mutex<Option<Out>> = Mutex::new(None);
+        // let mut portfolio: Option<Out> = None;
 
         loop {
             let _timer = stage::start_stage_eval_time(self.name());
@@ -121,16 +132,35 @@ where
                         },
 
                         Some(catalog) => {
-                            let p = &mut *portfolio.lock().await;
-                            // let p: &mut Out = &mut *portfolio;
-                            p.push(catalog);
+                            let portfolio_ref = &mut *portfolio.lock().await;
+                            match portfolio_ref.as_mut() {
+                                Some(p) => p.push(catalog),
+                                None => {
+                                    let p = self.make_portfolio(catalog)?;
+                                    *portfolio_ref = Some(p);
+                                }
+                            }
+
+                            let out = portfolio_ref.as_ref().cloned().unwrap();
+
+                            // match portfolio.as_mut() {
+                            //     Some(p) => p.push(catalog),
+                            //     None => {
+                            //         let p = self.make_portfolio(catalog)?;
+                            //         // let p = Out::from_item(catalog, self.time_window, self.sufficient_coverage).map_err?;
+                            //         portfolio = Some(p);
+                            //     }
+                            // }
+                            //
+                            // let out = portfolio.unwrap().clone();
 
                             tracing::debug!(
-                                portfolio=?p,
+                                portfolio=?out,
                                 "pushing metric catalog portfolio looking back {:?}",
-                                p.window_interval().map(|i| i.duration())
+                                out.window_interval().map(|i| i.duration())
                             );
-                            self.outlet.send(p.clone()).await?;
+
+                            self.outlet.send(out).await?;
                         }
                     }
                 },
@@ -138,10 +168,11 @@ where
                 Some(command) = self.rx_api.recv() => {
                     match command {
                         PortfolioCmd::Clear(tx) => {
+                            // portfolio = None;
                             let p = &mut *portfolio.lock().await;
-                            let window = p.time_window();
-                            *p = Out::empty();
-                            p.set_time_window(window);
+                            // let window = p.time_window();
+                            *p = None;
+                            // p.set_time_window(window);
                             if tx.send(()) == Err(()) {
                                 tracing::warn!("failed to ack clear portfolio command");
                             }
@@ -170,5 +201,15 @@ where
         self.inlet.close().await;
         self.outlet.close().await;
         Ok(())
+    }
+}
+
+impl<In, Out> CollectMetricPortfolio<In, Out>
+where
+    In: AppData + ReceivedAt,
+    Out: Portfolio<Item = In>,
+{
+    fn make_portfolio(&self, data: In) -> ProctorResult<Out> {
+        Out::from_item(data, self.time_window, self.sufficient_coverage).map_err(|err| ProctorError::Phase(err.into()))
     }
 }

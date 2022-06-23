@@ -10,8 +10,9 @@ use prometheus::{IntCounterVec, Opts};
 use serde::{Deserialize, Serialize};
 
 use super::context::{ClusterStatus, EligibilityContext, TaskStatus};
-use crate::flink::MetricPortfolio;
+use crate::flink::AppDataPortfolio;
 use crate::metrics::UpdateMetrics;
+use crate::phases::eligibility::EligibilityData;
 use crate::phases::REASON;
 use crate::settings::EligibilitySettings;
 
@@ -75,12 +76,12 @@ const INELIGIBLE: &str = "ineligible";
 impl QueryPolicy for EligibilityPolicy {
     type Args = (Self::Item, Self::Context, PolarValue);
     type Context = EligibilityContext;
-    type Item = MetricPortfolio;
+    type Item = EligibilityData;
     type TemplateData = EligibilityTemplateData;
 
     fn initialize_policy_engine(&self, oso: &mut Oso) -> Result<(), PolicyError> {
         Telemetry::register_with_policy_engine(oso)?;
-        MetricPortfolio::register_with_policy_engine(oso)?;
+        AppDataPortfolio::register_with_policy_engine(oso)?;
 
         oso.register_class(
             EligibilityContext::get_polar_class_builder()

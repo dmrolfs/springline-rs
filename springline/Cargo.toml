@@ -94,6 +94,7 @@ tracing-futures = "0.2.5"
 tracing-subscriber = { version = "0.3.11", features = ["env-filter", "json"] }
 trim-margin = "0.1.0"
 url = { version = "2.2.2", features = ["serde"] }
+validator = { version = "0.15.0", features = ["derive"] }
 
 [dev-dependencies]
 lazy_static = "1.4.0"

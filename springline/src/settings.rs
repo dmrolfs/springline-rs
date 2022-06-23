@@ -491,7 +491,7 @@ mod tests {
         engine: EngineSettings {
             machine_id: 7,
             node_id: 3,
-            telemetry_portfolio_window: Duration::from_secs(600),
+            ..EngineSettings::default()
         },
         sensor: SensorSettings {
             clearinghouse: TelemetryCacheSettings {
@@ -642,7 +642,7 @@ mod tests {
                     EngineSettings {
                         machine_id: 17,
                         node_id: 13,
-                        telemetry_portfolio_window: Duration::from_secs(600)
+                        ..EngineSettings::default()
                     }
                 );
 
@@ -650,7 +650,7 @@ mod tests {
                     engine: EngineSettings {
                         machine_id: 17,
                         node_id: 13,
-                        telemetry_portfolio_window: Duration::from_secs(600),
+                        ..EngineSettings::default()
                     },
                     flink: FlinkSettings {
                         job_manager_uri_scheme: "http".to_string(),
@@ -762,7 +762,7 @@ mod tests {
                 EngineSettings {
                     machine_id: 1,
                     node_id: 1,
-                    telemetry_portfolio_window: Duration::from_secs(600),
+                    ..EngineSettings::default()
                 }
             );
 
@@ -783,7 +783,7 @@ mod tests {
                 engine: EngineSettings {
                     machine_id: 1,
                     node_id: 1,
-                    telemetry_portfolio_window: Duration::from_secs(600),
+                    ..EngineSettings::default()
                 },
                 sensor: SensorSettings {
                     flink: FlinkSensorSettings {
@@ -874,7 +874,7 @@ mod tests {
                     EngineSettings {
                         machine_id: 7,
                         node_id: 3,
-                        telemetry_portfolio_window: Duration::from_secs(600),
+                        ..EngineSettings::default()
                     }
                 );
 
