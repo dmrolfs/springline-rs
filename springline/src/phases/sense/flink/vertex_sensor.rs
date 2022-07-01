@@ -462,9 +462,9 @@ mod tests {
     impl Respond for RetryResponder {
         #[tracing::instrument(level = "info", skip(self))]
         fn respond(&self, _request: &wiremock::Request) -> ResponseTemplate {
-            let mut attempts = self.0.load(Ordering::SeqCst);
+            let mut attempts = self.0.load(Ordering::Acquire);
             attempts += 1;
-            self.0.store(attempts, Ordering::SeqCst);
+            self.0.store(attempts, Ordering::Release);
 
             if self.1 < attempts {
                 let result = self.2.clone();
