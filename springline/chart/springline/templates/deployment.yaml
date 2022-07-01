@@ -87,7 +87,7 @@ spec:
             memory: 50Mi
           limits:
             cpu: 20m
-            memory: 50Mi
+            memory: 100Mi
         volumeMounts:
         - name: autoscaler-config
           mountPath: "/opt/springline/resources"
