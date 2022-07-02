@@ -187,7 +187,6 @@ pub struct FlowMetrics {
     /// agg=max Flink REST API:
     /// /jobs/<job-id>/vertices/<vertex-id>?get=numRecordsInPerSecond&agg=max
     /// and regex for all subtask.metric fields
-    // todo: determine which vertices pertains to kafka/kinesis by:
     #[polar(attribute)]
     #[serde(rename = "flow.records_in_per_sec")]
     pub records_in_per_sec: f64,
@@ -196,7 +195,6 @@ pub struct FlowMetrics {
     /// Flink REST API:
     /// /jobs/<job-id>/vertices/<vertex-id>/subtasks/metrics?get=numRecordsOutPerSecond&subtask=0&
     /// agg=max
-    // todo: determine which vertices pertains to kafka/kinesis by:
     #[polar(attribute)]
     #[serde(rename = "flow.records_out_per_sec")]
     pub records_out_per_sec: f64,

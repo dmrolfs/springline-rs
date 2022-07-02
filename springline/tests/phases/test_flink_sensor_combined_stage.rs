@@ -15,7 +15,7 @@ use serde_json::json;
 use springline::flink::{FlinkContext, JobId, JobState, TaskState, VertexId, JOB_STATES, TASK_STATES};
 use springline::flink::{MC_CLUSTER__NR_ACTIVE_JOBS, MC_CLUSTER__NR_TASK_MANAGERS, MC_FLOW__RECORDS_IN_PER_SEC};
 use springline::phases::sense::flink::{
-    make_sensor, Aggregation, FlinkSensorSpecification, MetricOrder, MetricSpec, STD_METRIC_ORDERS,
+    make_sensor, Aggregation, FlinkSensorSpecification, MetricOrder, MetricSpec, PlanPositionSpec, STD_METRIC_ORDERS,
 };
 use springline::settings::{FlinkSensorSettings, FlinkSettings};
 use url::Url;
@@ -48,12 +48,13 @@ static TEST_ORDERS: Lazy<Vec<MetricOrder>> = Lazy::new(|| {
     let mut orders = STD_METRIC_ORDERS.clone();
     orders.push(MetricOrder::Operator {
         name: "Source: Foo Data stream".into(),
-        spec: MetricSpec {
+        metric: MetricSpec {
             metric: "records-lag-max".into(),
             agg: Aggregation::Sum,
             telemetry_path: "flow.input_records_lag_max".into(),
             telemetry_type: TelemetryType::Integer,
         },
+        position: PlanPositionSpec::Source,
     });
     orders
 });

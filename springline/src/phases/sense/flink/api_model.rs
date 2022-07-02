@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::phases::sense::flink::metric_order::MetricOrderMatcher;
+use crate::phases::sense::flink::metric_order::{self, MetricOrderMatcher};
+use crate::phases::sense::flink::PositionCandidate;
 use once_cell::sync::Lazy;
 use proctor::elements::{Telemetry, TelemetryValue};
 use proctor::error::TelemetryError;
@@ -56,8 +57,8 @@ impl FlinkMetric {
 }
 
 #[tracing::instrument(level = "trace", skip(metrics, order_matchers))]
-pub fn build_telemetry<M>(
-    metrics: M, order_matchers: &HashMap<MetricOrder, MetricOrderMatcher>,
+pub fn build_telemetry<'c, M>(
+    position_candidate: &PositionCandidate<'c>, metrics: M, order_matchers: &HashMap<MetricOrder, MetricOrderMatcher>,
 ) -> Result<Telemetry, TelemetryError>
 where
     M: IntoIterator<Item = FlinkMetric>,
@@ -69,7 +70,17 @@ where
     for metric in metrics.into_iter() {
         let matched_orders: Vec<&MetricOrder> = order_matchers
             .iter()
-            .filter_map(|(order, matches)| if matches(&metric.id) { Some(order) } else { None })
+            .filter_map(|(order, matches)| {
+                let candidate = metric_order::Candidate {
+                    metric: &metric.id,
+                    position: position_candidate.clone(),
+                };
+                if matches(&candidate) {
+                    Some(order)
+                } else {
+                    None
+                }
+            })
             .collect();
 
         if !matched_orders.is_empty() {

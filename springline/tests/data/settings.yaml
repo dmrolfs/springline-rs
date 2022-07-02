@@ -32,6 +32,7 @@ sensor:
           telemetry_type: Integer
       - Operator:
           name: "Source: Data Stream"
+          position: source
           metric: records-lag-max
           agg: sum
           telemetry_path: flow.input_records_lag_max

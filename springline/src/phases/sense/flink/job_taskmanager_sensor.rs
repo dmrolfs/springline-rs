@@ -15,7 +15,7 @@ use tracing::Instrument;
 use url::Url;
 
 use super::FlinkScope;
-use super::{api_model, Aggregation, MetricOrder, Unpack};
+use super::{api_model, metric_order, Aggregation, MetricOrder, Unpack};
 use crate::flink::{self, FlinkContext};
 use crate::phases::sense::flink::api_model::FlinkMetricResponse;
 use crate::phases::sense::flink::metric_order::MetricOrderMatcher;
@@ -216,7 +216,11 @@ where
         for order in self.orders.iter() {
             let matches = &self.order_matchers[order];
             for metric in flink_scope_metrics.iter() {
-                if matches(metric) {
+                let candidate = metric_order::Candidate {
+                    metric,
+                    position: metric_order::PositionCandidate::ByName(&self.name),
+                };
+                if matches(&candidate) {
                     requested_metrics.insert(metric.clone());
                     available_orders.push(order);
                 }
@@ -278,7 +282,11 @@ where
                         .instrument(tracing::debug_span!("Flink REST API - scope metrics", scope=%self.scope))
                         .await
                         .and_then(|metric_response: FlinkMetricResponse| {
-                            api_model::build_telemetry(metric_response, &self.order_matchers)
+                            api_model::build_telemetry(
+                                &metric_order::PositionCandidate::Any,
+                                metric_response,
+                                 &self.order_matchers
+                            )
                                 // this is only needed because async_trait forcing me to parameterize this stage
                                 .and_then(|telemetry| Out::unpack(telemetry))
                                 .map_err(|err| err.into())

@@ -1,4 +1,4 @@
-use anyhow::anyhow;
+// use anyhow::anyhow;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fmt::Display;
@@ -36,21 +36,45 @@ impl MetricSpec {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ScopeSpec {
-    pub scope: FlinkScope,
-    pub name: Option<String>,
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum PositionCandidate<'c> {
+    Any,
+    ByName(&'c str),
 }
 
-impl ScopeSpec {
-    pub fn new(scope: FlinkScope, name: impl Into<String>) -> Self {
-        Self { scope, name: Some(name.into()) }
+#[derive(Debug, Display, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PlanPositionSpec {
+    All,
+    Source,
+    NotSource,
+    //todo Can include the following for completness but unclear how to determine a match
+    //Sink,
+    //NotSink,
+    //Through,
+}
+
+impl Default for PlanPositionSpec {
+    fn default() -> Self {
+        Self::All
     }
 }
 
-impl From<FlinkScope> for ScopeSpec {
-    fn from(scope: FlinkScope) -> Self {
-        Self { scope, name: None }
+impl PlanPositionSpec {
+    pub const fn is_all(&self) -> bool {
+        matches!(self, Self::All)
+    }
+
+    pub fn matches<'c>(&self, candidate: &PositionCandidate<'c>) -> bool {
+        const SOURCE_PREFIX: &str = "Source:";
+
+        match (self, candidate) {
+            (Self::Source, PositionCandidate::ByName(name)) => name.starts_with(SOURCE_PREFIX),
+            (Self::NotSource, PositionCandidate::ByName(name)) => !name.starts_with(SOURCE_PREFIX),
+            (Self::All, _) => true,
+            (Self::Source, _) => true,
+            (Self::NotSource, _) => true,
+        }
     }
 }
 
@@ -58,62 +82,62 @@ impl From<FlinkScope> for ScopeSpec {
 pub enum MetricOrder {
     Job {
         #[serde(flatten)]
-        spec: MetricSpec,
+        metric: MetricSpec,
     },
     TaskManager {
         #[serde(flatten)]
-        spec: MetricSpec,
+        metric: MetricSpec,
     },
     Task {
+        #[serde(default, skip_serializing_if = "PlanPositionSpec::is_all")]
+        position: PlanPositionSpec,
         #[serde(flatten)]
-        spec: MetricSpec,
+        metric: MetricSpec,
     },
     Operator {
         name: String,
+        #[serde(default, skip_serializing_if = "PlanPositionSpec::is_all")]
+        position: PlanPositionSpec,
         #[serde(flatten)]
-        spec: MetricSpec,
+        metric: MetricSpec,
     },
 }
 
-pub type MetricOrderMatcher = Box<dyn Fn(&str) -> bool + Send + Sync + 'static>;
+// #[derive(Debug, PartialEq, Eq)]
+#[derive(Debug)]
+pub struct Candidate<'c> {
+    pub metric: &'c str,
+    pub position: PositionCandidate<'c>,
+}
+
+pub type MetricOrderMatcher = Box<dyn for<'c> Fn(&Candidate<'c>) -> bool + Send + Sync + 'static>;
 
 impl MetricOrder {
-    pub fn new(scope: ScopeSpec, metric: MetricSpec) -> Result<Self, SenseError> {
-        match scope.scope {
-            FlinkScope::Job => Ok(Self::Job { spec: metric }),
-            FlinkScope::TaskManager => Ok(Self::TaskManager { spec: metric }),
-            FlinkScope::Task => Ok(Self::Task { spec: metric }),
-            FlinkScope::Operator if scope.name.is_some() => {
-                Ok(Self::Operator { name: scope.name.unwrap(), spec: metric })
-            },
-            _ => Err(SenseError::Stage(anyhow!(
-                "bad metric order scope specification: {:?}",
-                scope
-            ))),
-        }
-    }
-
     pub fn matcher(&self) -> Result<MetricOrderMatcher, SenseError> {
         let matcher: MetricOrderMatcher = match self {
-            Self::Job { spec } => {
+            Self::Job { metric: spec } => {
                 let match_metric = spec.metric.clone();
-                Box::new(move |flink_metric| flink_metric == match_metric.as_str())
+                Box::new(move |candidate| candidate.metric == match_metric.as_str())
             },
-            Self::TaskManager { spec } => {
+            Self::TaskManager { metric: spec } => {
                 let match_metric = spec.metric.clone();
-                Box::new(move |flink_metric| flink_metric == match_metric.as_str())
+                Box::new(move |candidate| candidate.metric == match_metric.as_str())
             },
-            Self::Task { spec } => {
+            Self::Task { position, metric: spec } => {
+                let pos_spec = *position;
                 let match_metric = spec.metric.clone();
-                Box::new(move |flink_metric| flink_metric == match_metric.as_str())
+                Box::new(move |candidate| {
+                    pos_spec.matches(&candidate.position) && candidate.metric == match_metric.as_str()
+                })
             },
-            Self::Operator { name, spec } => {
+            Self::Operator { name, position, metric: spec } => {
+                let pos_spec = *position;
                 let encoded_name = Self::encode_string(name);
                 let regex = Regex::new(&format!(r"^{encoded_name}\..+\..*{metric}$", metric = spec.metric))
                     .map_err(|err| SenseError::Stage(err.into()))?;
 
                 tracing::warn!(%encoded_name, ?regex, "DMR: MATCHER FOR OPERATOR [{name}]::[{}]", spec.metric);
-                Box::new(move |flink_metric| regex.is_match(flink_metric))
+                Box::new(move |candidate| pos_spec.matches(&candidate.position) && regex.is_match(candidate.metric))
             },
         };
 
@@ -204,37 +228,37 @@ impl MetricOrder {
 
     pub fn metric(&self) -> &str {
         match self {
-            Self::Job { spec } => spec.metric.as_str(),
-            Self::TaskManager { spec } => spec.metric.as_str(),
-            Self::Task { spec } => spec.metric.as_str(),
-            Self::Operator { spec, .. } => spec.metric.as_str(),
+            Self::Job { metric: spec } => spec.metric.as_str(),
+            Self::TaskManager { metric: spec } => spec.metric.as_str(),
+            Self::Task { metric: spec, .. } => spec.metric.as_str(),
+            Self::Operator { metric: spec, .. } => spec.metric.as_str(),
         }
     }
 
     pub const fn agg(&self) -> Aggregation {
         match self {
-            Self::Job { spec } => spec.agg,
-            Self::TaskManager { spec } => spec.agg,
-            Self::Task { spec } => spec.agg,
-            Self::Operator { spec, .. } => spec.agg,
+            Self::Job { metric: spec } => spec.agg,
+            Self::TaskManager { metric: spec } => spec.agg,
+            Self::Task { metric: spec, .. } => spec.agg,
+            Self::Operator { metric: spec, .. } => spec.agg,
         }
     }
 
     pub fn metric_path(&self) -> String {
         match self {
-            Self::Job { spec } => format!("Job::{}", spec.metric),
-            Self::TaskManager { spec } => format!("TaskManager::{}", spec.metric),
-            Self::Task { spec } => format!("Task::{}", spec.metric),
-            Self::Operator { name, spec } => format!("Operator::{name}::{}", spec.metric),
+            Self::Job { metric: spec } => format!("Job::{}", spec.metric),
+            Self::TaskManager { metric: spec } => format!("TaskManager::{}", spec.metric),
+            Self::Task { metric: spec, .. } => format!("Task::{}", spec.metric),
+            Self::Operator { name, metric: spec, .. } => format!("Operator::{name}::{}", spec.metric),
         }
     }
 
     pub fn telemetry(&self) -> (TelemetryType, &str) {
         match self {
-            Self::Job { spec } => (spec.telemetry_type, spec.telemetry_path.as_str()),
-            Self::TaskManager { spec } => (spec.telemetry_type, spec.telemetry_path.as_str()),
-            Self::Task { spec } => (spec.telemetry_type, spec.telemetry_path.as_str()),
-            Self::Operator { spec, .. } => (spec.telemetry_type, spec.telemetry_path.as_str()),
+            Self::Job { metric: spec } => (spec.telemetry_type, spec.telemetry_path.as_str()),
+            Self::TaskManager { metric: spec } => (spec.telemetry_type, spec.telemetry_path.as_str()),
+            Self::Task { metric: spec, .. } => (spec.telemetry_type, spec.telemetry_path.as_str()),
+            Self::Operator { metric: spec, .. } => (spec.telemetry_type, spec.telemetry_path.as_str()),
         }
     }
 
@@ -436,7 +460,7 @@ impl Aggregation {
 
 #[cfg(test)]
 mod tests {
-    use crate::phases::sense::flink::{Aggregation, MetricOrder, MetricSpec};
+    use crate::phases::sense::flink::{Aggregation, MetricOrder, MetricSpec, PlanPositionSpec};
     use claim::*;
     use pretty_assertions::assert_eq;
     use proctor::elements::TelemetryType;
@@ -509,7 +533,7 @@ mod tests {
     #[test]
     fn test_metric_order_serde_tokens() {
         let data_job = MetricOrder::Job {
-            spec: MetricSpec {
+            metric: MetricSpec {
                 metric: "lastCheckpointDuration".into(),
                 agg: Aggregation::Max,
                 telemetry_path: "health.last_checkpoint_duration".into(),
@@ -536,12 +560,13 @@ mod tests {
 
         let data_operator = MetricOrder::Operator {
             name: "Source: Data Stream".into(),
-            spec: MetricSpec {
+            metric: MetricSpec {
                 metric: "records-lag-max".into(),
                 agg: Aggregation::Sum,
                 telemetry_path: "flow.input_records_lag_max".into(),
                 telemetry_type: TelemetryType::Integer,
             },
+            position: PlanPositionSpec::NotSource,
         };
 
         assert_tokens(
@@ -551,6 +576,8 @@ mod tests {
                 Token::Map { len: None },
                 Token::Str("name"),
                 Token::Str("Source: Data Stream"),
+                Token::Str("position"),
+                Token::UnitVariant { name: "PlanPositionSpec", variant: "not_source" },
                 Token::Str("metric"),
                 Token::Str("records-lag-max"),
                 Token::Str("agg"),
@@ -578,6 +605,7 @@ mod tests {
             {
                 "Operator": {
                     "name": "Source: Data Stream",
+                    "position": "source",
                     "metric": "records-lag-max",
                     "agg": "sum",
                     "telemetry_path": "flow.input_records_lag_max",
@@ -587,6 +615,7 @@ mod tests {
             {
                 "Operator": {
                     "name": "Source: Supplement Stream",
+                    "position": "source",
                     "metric": "records-lag-max",
                     "agg": "sum",
                     "telemetry_path": "supplement.input_records_lag_max",
@@ -599,7 +628,7 @@ mod tests {
             actual,
             vec![
                 MetricOrder::Job {
-                    spec: MetricSpec {
+                    metric: MetricSpec {
                         metric: "lastCheckpointDuration".into(),
                         agg: Aggregation::Max,
                         telemetry_path: "health.last_checkpoint_duration".into(),
@@ -608,21 +637,23 @@ mod tests {
                 },
                 MetricOrder::Operator {
                     name: "Source: Data Stream".into(),
-                    spec: MetricSpec {
+                    metric: MetricSpec {
                         metric: "records-lag-max".into(),
                         agg: Aggregation::Sum,
                         telemetry_path: "flow.input_records_lag_max".into(),
                         telemetry_type: TelemetryType::Integer,
-                    }
+                    },
+                    position: PlanPositionSpec::Source,
                 },
                 MetricOrder::Operator {
                     name: "Source: Supplement Stream".into(),
-                    spec: MetricSpec {
+                    metric: MetricSpec {
                         metric: "records-lag-max".into(),
                         agg: Aggregation::Sum,
                         telemetry_path: "supplement.input_records_lag_max".into(),
                         telemetry_type: TelemetryType::Integer,
-                    }
+                    },
+                    position: PlanPositionSpec::Source,
                 },
             ]
         );
@@ -632,7 +663,7 @@ mod tests {
     fn test_metric_order_json_ser() {
         let data = vec![
             MetricOrder::Job {
-                spec: MetricSpec {
+                metric: MetricSpec {
                     metric: "lastCheckpointDuration".into(),
                     agg: Aggregation::Max,
                     telemetry_path: "health.last_checkpoint_duration".into(),
@@ -641,21 +672,23 @@ mod tests {
             },
             MetricOrder::Operator {
                 name: "Source: Data Stream".into(),
-                spec: MetricSpec {
+                metric: MetricSpec {
                     metric: "records-lag-max".into(),
                     agg: Aggregation::Sum,
                     telemetry_path: "flow.input_records_lag_max".into(),
                     telemetry_type: TelemetryType::Integer,
                 },
+                position: PlanPositionSpec::Source,
             },
             MetricOrder::Operator {
-                name: "Source: Supplement Stream".into(),
-                spec: MetricSpec {
+                name: "Supplement Stream".into(),
+                metric: MetricSpec {
                     metric: "records-lag-max".into(),
                     agg: Aggregation::Sum,
                     telemetry_path: "supplement.input_records_lag_max".into(),
                     telemetry_type: TelemetryType::Integer,
                 },
+                position: PlanPositionSpec::All,
             },
         ];
 
@@ -673,6 +706,7 @@ mod tests {
         |  {
         |    "Operator": {
         |      "name": "Source: Data Stream",
+        |      "position": "source",
         |      "metric": "records-lag-max",
         |      "agg": "sum",
         |      "telemetry_path": "flow.input_records_lag_max",
@@ -681,7 +715,7 @@ mod tests {
         |  },
         |  {
         |    "Operator": {
-        |      "name": "Source: Supplement Stream",
+        |      "name": "Supplement Stream",
         |      "metric": "records-lag-max",
         |      "agg": "sum",
         |      "telemetry_path": "supplement.input_records_lag_max",
@@ -710,7 +744,8 @@ mod tests {
         |    telemetry_path: flow.input_records_lag_max
         |    telemetry_type: Integer
         |- Operator:
-        |    name: "Source: Supplement Stream"
+        |    name: "Supplement Stream"
+        |    position: not_source
         |    metric: records-lag-max
         |    agg: sum
         |    telemetry_path: supplement.input_records_lag_max
@@ -724,7 +759,7 @@ mod tests {
             actual,
             vec![
                 MetricOrder::Job {
-                    spec: MetricSpec {
+                    metric: MetricSpec {
                         metric: "lastCheckpointDuration".into(),
                         agg: Aggregation::Max,
                         telemetry_path: "health.last_checkpoint_duration".into(),
@@ -733,21 +768,23 @@ mod tests {
                 },
                 MetricOrder::Operator {
                     name: "Source: Data Stream".into(),
-                    spec: MetricSpec {
+                    metric: MetricSpec {
                         metric: "records-lag-max".into(),
                         agg: Aggregation::Sum,
                         telemetry_path: "flow.input_records_lag_max".into(),
                         telemetry_type: TelemetryType::Integer,
-                    }
+                    },
+                    position: PlanPositionSpec::All,
                 },
                 MetricOrder::Operator {
-                    name: "Source: Supplement Stream".into(),
-                    spec: MetricSpec {
+                    name: "Supplement Stream".into(),
+                    metric: MetricSpec {
                         metric: "records-lag-max".into(),
                         agg: Aggregation::Sum,
                         telemetry_path: "supplement.input_records_lag_max".into(),
                         telemetry_type: TelemetryType::Integer,
-                    }
+                    },
+                    position: PlanPositionSpec::NotSource,
                 },
             ]
         );
@@ -757,7 +794,7 @@ mod tests {
     fn test_metric_order_yaml_ser() {
         let data = vec![
             MetricOrder::Job {
-                spec: MetricSpec {
+                metric: MetricSpec {
                     metric: "lastCheckpointDuration".into(),
                     agg: Aggregation::Max,
                     telemetry_path: "health.last_checkpoint_duration".into(),
@@ -765,22 +802,24 @@ mod tests {
                 },
             },
             MetricOrder::Operator {
-                name: "Source: Data Stream".into(),
-                spec: MetricSpec {
+                name: "Data Stream".into(),
+                metric: MetricSpec {
                     metric: "records-lag-max".into(),
                     agg: Aggregation::Sum,
                     telemetry_path: "flow.input_records_lag_max".into(),
                     telemetry_type: TelemetryType::Integer,
                 },
+                position: PlanPositionSpec::All,
             },
             MetricOrder::Operator {
-                name: "Source: Supplement Stream".into(),
-                spec: MetricSpec {
+                name: "Supplement Stream".into(),
+                metric: MetricSpec {
                     metric: "records-lag-max".into(),
                     agg: Aggregation::Sum,
                     telemetry_path: "supplement.input_records_lag_max".into(),
                     telemetry_type: TelemetryType::Integer,
                 },
+                position: PlanPositionSpec::NotSource,
             },
         ];
 
@@ -793,13 +832,14 @@ mod tests {
         |    telemetry_path: health.last_checkpoint_duration
         |    telemetry_type: Float
         |- Operator:
-        |    name: "Source: Data Stream"
+        |    name: Data Stream
         |    metric: records-lag-max
         |    agg: sum
         |    telemetry_path: flow.input_records_lag_max
         |    telemetry_type: Integer
         |- Operator:
-        |    name: "Source: Supplement Stream"
+        |    name: Supplement Stream
+        |    position: not_source
         |    metric: records-lag-max
         |    agg: sum
         |    telemetry_path: supplement.input_records_lag_max
@@ -830,6 +870,7 @@ mod tests {
         |   }),
         |   Operator({
         |       "name": "Source: Supplement Stream",
+        |       "position": source,
         |       "metric": "records-lag-max",
         |       "agg": sum,
         |       "telemetry_path": "supplement.input_records_lag_max",
@@ -844,7 +885,7 @@ mod tests {
             actual,
             vec![
                 MetricOrder::Job {
-                    spec: MetricSpec {
+                    metric: MetricSpec {
                         metric: "lastCheckpointDuration".into(),
                         agg: Aggregation::Max,
                         telemetry_path: "health.last_checkpoint_duration".into(),
@@ -853,21 +894,23 @@ mod tests {
                 },
                 MetricOrder::Operator {
                     name: "Source: Data Stream".into(),
-                    spec: MetricSpec {
+                    metric: MetricSpec {
                         metric: "records-lag-max".into(),
                         agg: Aggregation::Sum,
                         telemetry_path: "flow.input_records_lag_max".into(),
                         telemetry_type: TelemetryType::Integer,
-                    }
+                    },
+                    position: PlanPositionSpec::All,
                 },
                 MetricOrder::Operator {
                     name: "Source: Supplement Stream".into(),
-                    spec: MetricSpec {
+                    metric: MetricSpec {
                         metric: "records-lag-max".into(),
                         agg: Aggregation::Sum,
                         telemetry_path: "supplement.input_records_lag_max".into(),
                         telemetry_type: TelemetryType::Integer,
-                    }
+                    },
+                    position: PlanPositionSpec::Source,
                 },
             ]
         );
@@ -877,7 +920,7 @@ mod tests {
     fn test_metric_order_ron_ser() {
         let data = vec![
             MetricOrder::Job {
-                spec: MetricSpec {
+                metric: MetricSpec {
                     metric: "lastCheckpointDuration".into(),
                     agg: Aggregation::Max,
                     telemetry_path: "health.last_checkpoint_duration".into(),
@@ -886,21 +929,23 @@ mod tests {
             },
             MetricOrder::Operator {
                 name: "Source: Data Stream".into(),
-                spec: MetricSpec {
+                metric: MetricSpec {
                     metric: "records-lag-max".into(),
                     agg: Aggregation::Sum,
                     telemetry_path: "flow.input_records_lag_max".into(),
                     telemetry_type: TelemetryType::Integer,
                 },
+                position: PlanPositionSpec::All,
             },
             MetricOrder::Operator {
                 name: "Source: Supplement Stream".into(),
-                spec: MetricSpec {
+                metric: MetricSpec {
                     metric: "records-lag-max".into(),
                     agg: Aggregation::Sum,
                     telemetry_path: "supplement.input_records_lag_max".into(),
                     telemetry_type: TelemetryType::Integer,
                 },
+                position: PlanPositionSpec::Source,
             },
         ];
 
@@ -922,6 +967,7 @@ mod tests {
         |    }),
         |    Operator({
         |        "name": "Source: Supplement Stream",
+        |        "position": source,
         |        "metric": "records-lag-max",
         |        "agg": sum,
         |        "telemetry_path": "supplement.input_records_lag_max",
