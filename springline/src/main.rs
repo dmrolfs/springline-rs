@@ -12,6 +12,7 @@ use springline::kubernetes::KubernetesContext;
 use springline::phases::act::ScaleActuator;
 use springline::settings::{CliOptions, FlinkSettings, Settings};
 use springline::{engine, Result};
+use tokio::signal::unix::{self, SignalKind};
 use tracing::Subscriber;
 
 static METRICS_REGISTRY: Lazy<Registry> = Lazy::new(|| {
@@ -71,7 +72,10 @@ fn main() -> Result<()> {
                 let api_handle = api_handle.fuse();
                 tracing::info!("autoscale management server API running...");
 
-                pin_mut!(engine_handle, exporter_handle, api_handle,);
+                let ctrlc_signal = tokio::signal::ctrl_c().fuse();
+                let mut terminate_signal = unix::signal(SignalKind::terminate())?;
+
+                pin_mut!(engine_handle, exporter_handle, api_handle, );
 
                 futures::select! {
                     engine_result = engine_handle => {
@@ -117,6 +121,25 @@ fn main() -> Result<()> {
                             Err(err) => {
                                 tracing::error!(%restarts_remaining, "Autoscale metrics exporter failed with error: {}", err);
                             },
+                        }
+                    },
+
+                    ctrlc = ctrlc_signal.fuse() => {
+                        match ctrlc {
+                            Ok(()) => {
+                                tracing::info!("springline terminating on user request.");
+                                break;
+                            },
+                            Err(err) => {
+                                tracing::warn!(error=?err, "error in signal handling");
+                            },
+                        }
+                    },
+
+                    terminate = terminate_signal.recv().fuse() => {
+                        if terminate.is_some() {
+                            tracing::warn!("terminate signal received - terminating springline process.");
+                            break;
                         }
                     },
                 }
