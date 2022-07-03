@@ -99,7 +99,8 @@ sensor:
     # as an "order" of the form:
     metric_orders:
 #      - Operator:
-#          name: "Source: RWO Drives stream"
+#          name: "RWO Drives stream"
+#          position: source
 #          metric: records-lag-max
 #          agg: sum
 #          telemetry_path: flow.input_records_lag_max

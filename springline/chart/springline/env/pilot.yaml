@@ -15,7 +15,7 @@ application:
       metric_orders:
         flow:
           input_records_lag_max:
-            name: "Source: RWO Drives stream" #todo Source: should be populated via a Task type [Source, Through, Sink]
+            name: "RWO Drives stream"
 
   eligibility:
     template_data:

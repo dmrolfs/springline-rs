@@ -42,6 +42,8 @@ pub enum PositionCandidate<'c> {
     ByName(&'c str),
 }
 
+const SOURCE_PREFIX: &str = "Source:";
+
 #[derive(Debug, Display, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PlanPositionSpec {
@@ -66,8 +68,6 @@ impl PlanPositionSpec {
     }
 
     pub fn matches<'c>(&self, candidate: &PositionCandidate<'c>) -> bool {
-        const SOURCE_PREFIX: &str = "Source:";
-
         match (self, candidate) {
             (Self::Source, PositionCandidate::ByName(name)) => name.starts_with(SOURCE_PREFIX),
             (Self::NotSource, PositionCandidate::ByName(name)) => !name.starts_with(SOURCE_PREFIX),
@@ -127,17 +127,47 @@ impl MetricOrder {
                 let pos_spec = *position;
                 let match_metric = spec.metric.clone();
                 Box::new(move |candidate| {
-                    pos_spec.matches(&candidate.position) && candidate.metric == match_metric.as_str()
+                    let pos_match = pos_spec.matches(&candidate.position);
+                    tracing::debug!("metric_order pos_spec[{pos_spec}] matches candidate[{candidate:?}] = {pos_match}");
+                    if pos_match {
+                        let metric_match = candidate.metric == match_metric.as_str();
+                        tracing::debug!(
+                            "metric_order metric_spec[{match_metric}] matches candidate[{}] = {metric_match}",
+                            candidate.metric
+                        );
+                        metric_match
+                    } else {
+                        false
+                    }
+                    // pos_match && candidate.metric == match_metric.as_str()
                 })
             },
             Self::Operator { name, position, metric: spec } => {
                 let pos_spec = *position;
                 let encoded_name = Self::encode_string(name);
-                let regex = Regex::new(&format!(r"^{encoded_name}\..+\..*{metric}$", metric = spec.metric))
-                    .map_err(|err| SenseError::Stage(err.into()))?;
+                let regex = Regex::new(&format!(
+                    r"^({encoded_source_prefix})?{encoded_name}\..+\..*{metric}$",
+                    encoded_source_prefix = Self::encode_string(&format!("{SOURCE_PREFIX} ")),
+                    metric = spec.metric
+                ))
+                .map_err(|err| SenseError::Stage(err.into()))?;
 
-                tracing::warn!(%encoded_name, ?regex, "DMR: MATCHER FOR OPERATOR [{name}]::[{}]", spec.metric);
-                Box::new(move |candidate| pos_spec.matches(&candidate.position) && regex.is_match(candidate.metric))
+                tracing::debug!(%encoded_name, ?regex, "matcher for operator [{name}]::[{}]", spec.metric);
+                Box::new(move |candidate| {
+                    let pos_match = pos_spec.matches(&candidate.position);
+                    tracing::debug!("metric_order pos_spec[{pos_spec}] matches candidate[{candidate:?}] = {pos_match}");
+                    if pos_match {
+                        let metric_match = regex.is_match(candidate.metric);
+                        tracing::debug!(
+                            "metric_order metric_spec[{regex:?}] matches candidate[{}] = {metric_match}",
+                            candidate.metric
+                        );
+                        metric_match
+                    } else {
+                        false
+                    }
+                    // pos_match && regex.is_match(candidate.metric)
+                })
             },
         };
 

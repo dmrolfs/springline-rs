@@ -21,6 +21,7 @@ data:
         metric_orders:
           - Operator:
               name: "{{ .Values.application.sensor.flink.metric_orders.flow.input_records_lag_max.name }}"
+              position: source
               metric: records-lag-max
               agg: sum
               telemetry_path: flow.input_records_lag_max

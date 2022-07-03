@@ -127,9 +127,6 @@ pub static STD_METRIC_ORDERS: Lazy<Vec<MetricOrder>> = Lazy::new(|| {
             ),
         }, // Integer,
     ]
-    // .into_iter()
-    // .map(|m| m.expect("failed in standard MetricOrder definitions."))
-    // .collect()
 });
 
 #[derive(Debug)]

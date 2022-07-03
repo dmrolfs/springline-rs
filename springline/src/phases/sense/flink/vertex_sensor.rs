@@ -574,10 +574,12 @@ mod tests {
             ] )
     });
 
+    const VERTEX_NAME: &str = "Foo Data stream";
+
     static TEST_ORDERS: Lazy<Vec<MetricOrder>> = Lazy::new(|| {
         let mut orders = STD_METRIC_ORDERS.clone();
         orders.push(MetricOrder::Operator {
-            name: "Source: Foo Data stream".into(),
+            name: VERTEX_NAME.into(),
             metric: MetricSpec {
                 metric: "records-lag-max".into(),
                 agg: Aggregation::Sum,
@@ -586,6 +588,16 @@ mod tests {
             },
             position: PlanPositionSpec::Source,
         });
+        orders.push(MetricOrder::Task {
+            position: PlanPositionSpec::Source,
+            metric: MetricSpec::new(
+                "idleTimeMsPerSecond",
+                Aggregation::Avg,
+                "flow.source.idle_time_millis_per_sec",
+                TelemetryType::Float,
+            ),
+        });
+
         orders
     });
 
@@ -603,7 +615,7 @@ mod tests {
             let vertex_id: VertexId = "cbc357ccb763df2852fee8c4fc7d55f2".into();
             let vertex = VertexDetail {
                 id: vertex_id.clone(),
-                name: "Source: Foo Data Stream".to_string(),
+                name: format!("Source: {VERTEX_NAME}"),
                 max_parallelism: None,
                 parallelism: 4,
                 status: TaskState::Running,
@@ -667,7 +679,7 @@ mod tests {
             let vertex_id: VertexId = "cbc357ccb763df2852fee8c4fc7d55f2".into();
             let vertex = VertexDetail {
                 id: vertex_id.clone(),
-                name: "Source: Foo Data stream".to_string(),
+                name: format!("Source: {VERTEX_NAME}"),
                 max_parallelism: None,
                 parallelism: 4,
                 status: TaskState::Running,
@@ -699,25 +711,6 @@ mod tests {
             let context = assert_ok!(context_for(&mock_server));
             let (stage, ..) = test_stage_for(&TEST_ORDERS, context).await;
 
-            // let scopes = maplit::hashset! { FlinkScope::Task, FlinkScope::Operator };
-
-            let mut orders = STD_METRIC_ORDERS.clone();
-            let kafka_order = MetricOrder::Operator {
-                name: "Source: Foo Data stream".to_string(),
-                position: PlanPositionSpec::Source,
-                metric: MetricSpec::new(
-                    "records-lag-max",
-                    Aggregation::Value,
-                    "flow.input_records_lag_max",
-                    TelemetryType::Integer,
-                ),
-            };
-            orders.extend(vec![kafka_order.clone()]);
-
-            // let metric_orders: Vec<MetricOrder> = orders.iter().filter(|o| scopes.iter().find(|s| *s == &o.scope()).is_some()).cloned().collect();
-            // let agg_span: HashSet<Aggregation> = metric_orders.iter().map(|o| o.agg()).collect();
-            // tracing::info!(?metric_orders, ?agg_span, "orders distilled");
-
             let actual = assert_ok!(
                 stage
                     .query_vertex_telemetry(&job_id, &vertex, &Id::direct("test_query_vertex_telemetry", 23, "CBA"))
@@ -730,7 +723,7 @@ mod tests {
                     "flow.input_records_lag_max".to_string() => 123456_i64.into(),
                     MC_FLOW__RECORDS_IN_PER_SEC.to_string() => 0_f64.into(),
                     "flow.records_out_per_sec".to_string() => 20_f64.into(),
-                    "flow.idle_time_millis_per_sec".to_string() => 321.7_f64.into(),
+                    "flow.source.idle_time_millis_per_sec".to_string() => 321.7_f64.into(),
                     "cluster.task_network_input_queue_len".to_string() => 0_f64.into(),
                     "cluster.task_network_input_pool_usage".to_string() => 0_f64.into(),
                     "cluster.task_network_output_queue_len".to_string() => 1_f64.into(),

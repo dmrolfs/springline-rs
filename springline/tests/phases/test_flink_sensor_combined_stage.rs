@@ -47,7 +47,7 @@ impl Match for QueryParamKeyMatcher {
 static TEST_ORDERS: Lazy<Vec<MetricOrder>> = Lazy::new(|| {
     let mut orders = STD_METRIC_ORDERS.clone();
     orders.push(MetricOrder::Operator {
-        name: "Source: Foo Data stream".into(),
+        name: "Foo Data stream".into(),
         metric: MetricSpec {
             metric: "records-lag-max".into(),
             agg: Aggregation::Sum,
