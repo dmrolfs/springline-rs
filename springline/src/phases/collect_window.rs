@@ -9,44 +9,44 @@ use proctor::graph::{stage, Inlet, Outlet, Port, SinkShape, SourceShape, PORT_DA
 use proctor::{Ack, AppData, ProctorResult, ReceivedAt};
 use tokio::sync::{mpsc, oneshot};
 
-use crate::flink::{AppDataPortfolio, MetricCatalog, Portfolio};
+use crate::flink::{AppDataWindow, MetricCatalog, Window};
 use crate::settings::EngineSettings;
 
-pub type PortfolioApi = mpsc::UnboundedSender<PortfolioCmd>;
+pub type WindowApi = mpsc::UnboundedSender<WindowCmd>;
 
 #[derive(Debug)]
-pub enum PortfolioCmd {
+pub enum WindowCmd {
     Clear(oneshot::Sender<Ack>),
     Stop(oneshot::Sender<Ack>),
 }
 
-impl PortfolioCmd {
-    pub async fn clear(api: &PortfolioApi) -> anyhow::Result<Ack> {
+impl WindowCmd {
+    pub async fn clear(api: &WindowApi) -> anyhow::Result<Ack> {
         let (tx, rx) = oneshot::channel();
         api.send(Self::Clear(tx))?;
         rx.await.map_err(|err| err.into())
     }
 
-    pub async fn stop(api: &PortfolioApi) -> anyhow::Result<Ack> {
+    pub async fn stop(api: &WindowApi) -> anyhow::Result<Ack> {
         let (tx, rx) = oneshot::channel();
         api.send(Self::Stop(tx))?;
         rx.await.map_err(|err| err.into())
     }
 }
 
-pub struct CollectMetricPortfolio<In, Out> {
+pub struct CollectMetricWindow<In, Out> {
     name: String,
     time_window: Duration,
     sufficient_coverage: f64,
     inlet: Inlet<In>,
     outlet: Outlet<Out>,
-    tx_api: PortfolioApi,
-    rx_api: mpsc::UnboundedReceiver<PortfolioCmd>,
+    tx_api: WindowApi,
+    rx_api: mpsc::UnboundedReceiver<WindowCmd>,
 }
 
-impl<In, Out> Debug for CollectMetricPortfolio<In, Out> {
+impl<In, Out> Debug for CollectMetricWindow<In, Out> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("CollectMetricPortfolio")
+        f.debug_struct("CollectMetricWindow")
             .field("name", &self.name)
             .field("time_window", &self.time_window)
             .field("sufficient_coverage", &self.sufficient_coverage)
@@ -54,7 +54,7 @@ impl<In, Out> Debug for CollectMetricPortfolio<In, Out> {
     }
 }
 
-impl CollectMetricPortfolio<MetricCatalog, AppDataPortfolio<MetricCatalog>> {
+impl CollectMetricWindow<MetricCatalog, AppDataWindow<MetricCatalog>> {
     pub fn new(name: impl Into<String>, settings: &EngineSettings) -> Self {
         let name = name.into();
         let (tx_api, rx_api) = mpsc::unbounded_channel();
@@ -62,7 +62,7 @@ impl CollectMetricPortfolio<MetricCatalog, AppDataPortfolio<MetricCatalog>> {
         let outlet = Outlet::new(&name, PORT_DATA);
         Self {
             name,
-            time_window: settings.telemetry_portfolio_window,
+            time_window: settings.telemetry_window,
             sufficient_coverage: settings.sufficient_window_coverage_percentage,
             inlet,
             outlet,
@@ -72,7 +72,7 @@ impl CollectMetricPortfolio<MetricCatalog, AppDataPortfolio<MetricCatalog>> {
     }
 }
 
-impl<In, Out> SinkShape for CollectMetricPortfolio<In, Out> {
+impl<In, Out> SinkShape for CollectMetricWindow<In, Out> {
     type In = In;
 
     fn inlet(&self) -> Inlet<Self::In> {
@@ -80,7 +80,7 @@ impl<In, Out> SinkShape for CollectMetricPortfolio<In, Out> {
     }
 }
 
-impl<In, Out> SourceShape for CollectMetricPortfolio<In, Out> {
+impl<In, Out> SourceShape for CollectMetricWindow<In, Out> {
     type Out = Out;
 
     fn outlet(&self) -> Outlet<Self::Out> {
@@ -88,8 +88,8 @@ impl<In, Out> SourceShape for CollectMetricPortfolio<In, Out> {
     }
 }
 
-impl<In, Out> WithApi for CollectMetricPortfolio<In, Out> {
-    type Sender = PortfolioApi;
+impl<In, Out> WithApi for CollectMetricWindow<In, Out> {
+    type Sender = WindowApi;
 
     fn tx_api(&self) -> Self::Sender {
         self.tx_api.clone()
@@ -98,10 +98,10 @@ impl<In, Out> WithApi for CollectMetricPortfolio<In, Out> {
 
 #[dyn_upcast]
 #[async_trait]
-impl<In, Out> Stage for CollectMetricPortfolio<In, Out>
+impl<In, Out> Stage for CollectMetricWindow<In, Out>
 where
     In: AppData + ReceivedAt,
-    Out: Portfolio<Item = In>,
+    Out: Window<Item = In>,
 {
     #[inline]
     fn name(&self) -> &str {
@@ -115,7 +115,7 @@ where
         Ok(())
     }
 
-    #[tracing::instrument(level = "trace", name = "run collect metric portfolio", skip(self))]
+    #[tracing::instrument(level = "trace", name = "run collect metric window", skip(self))]
     async fn run(&mut self) -> ProctorResult<()> {
         let mut portfolio: Option<Out> = None;
 
@@ -126,7 +126,7 @@ where
                 catalog = self.inlet.recv() => {
                     match catalog {
                         None => {
-                            tracing::info!("collect portfolio inlet depleted -- stopping stage.");
+                            tracing::info!("collect window inlet depleted -- stopping stage.");
                             break;
                         },
 
@@ -143,7 +143,7 @@ where
 
                             tracing::debug!(
                                 portfolio=?out,
-                                "pushing metric catalog portfolio looking back {:?}",
+                                "pushing metric catalog window looking back {:?}",
                                 out.window_interval().map(|i| i.duration())
                             );
 
@@ -154,16 +154,16 @@ where
 
                 Some(command) = self.rx_api.recv() => {
                     match command {
-                        PortfolioCmd::Clear(tx) => {
+                        WindowCmd::Clear(tx) => {
                             portfolio = None;
                             if tx.send(()) == Err(()) {
-                                tracing::warn!("failed to ack clear portfolio command");
+                                tracing::warn!("failed to ack clear window command");
                             }
-                            tracing::info!("metric portfolio cleared, which resets policy rules over time.");
+                            tracing::info!("metric window cleared, which resets policy rules over time.");
                         },
 
-                        PortfolioCmd::Stop(tx) => {
-                            tracing::info!("metric portfolio stopped, which stops policy rules over time.");
+                        WindowCmd::Stop(tx) => {
+                            tracing::info!("metric window stopped, which stops policy rules over time.");
                             if tx.send(()) == Err(()) {
                                 tracing::warn!("failed to ack to policy collection stage");
                             }
@@ -180,17 +180,17 @@ where
     }
 
     async fn close(mut self: Box<Self>) -> ProctorResult<()> {
-        tracing::info!(stage=%self.name(), "closing collect metric portfolio ports.");
+        tracing::info!(stage=%self.name(), "closing collect metric window ports.");
         self.inlet.close().await;
         self.outlet.close().await;
         Ok(())
     }
 }
 
-impl<In, Out> CollectMetricPortfolio<In, Out>
+impl<In, Out> CollectMetricWindow<In, Out>
 where
     In: AppData + ReceivedAt,
-    Out: Portfolio<Item = In>,
+    Out: Window<Item = In>,
 {
     fn make_portfolio(&self, data: In) -> ProctorResult<Out> {
         Out::from_item(data, self.time_window, self.sufficient_coverage).map_err(|err| ProctorError::Phase(err.into()))

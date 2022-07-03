@@ -10,7 +10,7 @@ use prometheus::{IntCounterVec, Opts};
 use serde::{Deserialize, Serialize};
 
 use super::context::{ClusterStatus, EligibilityContext, TaskStatus};
-use crate::flink::AppDataPortfolio;
+use crate::flink::AppDataWindow;
 use crate::metrics::UpdateMetrics;
 use crate::phases::eligibility::EligibilityData;
 use crate::phases::REASON;
@@ -81,7 +81,7 @@ impl QueryPolicy for EligibilityPolicy {
 
     fn initialize_policy_engine(&self, oso: &mut Oso) -> Result<(), PolicyError> {
         Telemetry::register_with_policy_engine(oso)?;
-        AppDataPortfolio::register_with_policy_engine(oso)?;
+        AppDataWindow::register_with_policy_engine(oso)?;
 
         oso.register_class(
             EligibilityContext::get_polar_class_builder()

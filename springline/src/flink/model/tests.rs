@@ -481,7 +481,7 @@ mod catalog {
     }
 }
 
-mod portfolio {
+mod window {
     use std::time::Duration;
 
     use frunk::{Monoid, Semigroup};
@@ -492,10 +492,10 @@ mod portfolio {
     use super::*;
 
     #[tracing::instrument(level = "info", skip(catalogs))]
-    fn make_test_portfolio(
+    fn make_test_window(
         limit: usize, interval: Duration, catalogs: &[MetricCatalog],
-    ) -> (AppDataPortfolio<MetricCatalog>, Vec<MetricCatalog>) {
-        let mut portfolio = AppDataPortfolio::builder()
+    ) -> (AppDataWindow<MetricCatalog>, Vec<MetricCatalog>) {
+        let mut window = AppDataWindow::builder()
             .with_size_and_interval(limit, interval)
             .with_sufficient_coverage(0.5);
         let mut used = Vec::new();
@@ -509,68 +509,68 @@ mod portfolio {
         }
 
         for c in used {
-            tracing::debug!(portfolio_len=%(portfolio.len()+1), catalog=%c.correlation_id,"pushing catalog into portfolio.");
-            portfolio.push(c);
+            tracing::debug!(window_len=%(window.len()+1), catalog=%c.correlation_id,"pushing catalog into window.");
+            window.push(c);
         }
 
-        (assert_ok!(portfolio.build()), remaining)
+        (assert_ok!(window.build()), remaining)
     }
 
     #[test]
-    fn test_portfolio_invariants() {
-        let portfolio = AppDataPortfolio::<MetricCatalog>::builder()
+    fn test_window_invariants() {
+        let window = AppDataWindow::<MetricCatalog>::builder()
             .with_time_window(Duration::from_secs(1))
             .with_sufficient_coverage(0.5)
             .build();
-        assert_err!(portfolio, "portfolio is empty");
+        assert_err!(window, "window is empty");
 
-        let portfolio = AppDataPortfolio::<MetricCatalog>::builder()
+        let window = AppDataWindow::<MetricCatalog>::builder()
             .with_time_window(Duration::from_secs(1))
             .with_sufficient_coverage(0.0)
             .with_item(MetricCatalog::empty())
             .build();
-        assert_err!(portfolio, "zero sufficient coverage");
+        assert_err!(window, "zero sufficient coverage");
 
-        let portfolio = AppDataPortfolio::<MetricCatalog>::builder()
+        let window = AppDataWindow::<MetricCatalog>::builder()
             .with_time_window(Duration::from_secs(1))
             .with_sufficient_coverage(1.0)
             .with_item(MetricCatalog::empty())
             .build();
-        assert_ok!(portfolio);
+        assert_ok!(window);
 
-        let portfolio = AppDataPortfolio::<MetricCatalog>::builder()
+        let window = AppDataWindow::<MetricCatalog>::builder()
             .with_time_window(Duration::from_secs(1))
             .with_sufficient_coverage(-0.07)
             .with_item(MetricCatalog::empty())
             .build();
-        assert_err!(portfolio, "negative coverage");
+        assert_err!(window, "negative coverage");
 
-        let portfolio = AppDataPortfolio::<MetricCatalog>::builder()
+        let window = AppDataWindow::<MetricCatalog>::builder()
             .with_time_window(Duration::from_secs(1))
             .with_sufficient_coverage(1.00003)
             .with_item(MetricCatalog::empty())
             .build();
-        assert_err!(portfolio, "impossible sufficient coverage required");
+        assert_err!(window, "impossible sufficient coverage required");
     }
 
     #[test]
-    fn test_metric_portfolio_head() {
+    fn test_metric_window_head() {
         let m1 = make_test_catalog(Timestamp::new(1, 0), 1);
         let m2 = make_test_catalog(Timestamp::new(2, 0), 2);
 
-        let mut portfolio = AppDataPortfolio::from_size(m1.clone(), 3, Duration::from_secs(1));
-        assert_eq!(portfolio.correlation_id, m1.correlation_id);
-        assert_eq!(portfolio.recv_timestamp, m1.recv_timestamp);
+        let mut window = AppDataWindow::from_size(m1.clone(), 3, Duration::from_secs(1));
+        assert_eq!(window.correlation_id, m1.correlation_id);
+        assert_eq!(window.recv_timestamp, m1.recv_timestamp);
 
-        portfolio.push(m2.clone());
-        assert_eq!(portfolio.correlation_id, m2.correlation_id);
-        assert_eq!(portfolio.recv_timestamp, m2.recv_timestamp);
+        window.push(m2.clone());
+        assert_eq!(window.correlation_id, m2.correlation_id);
+        assert_eq!(window.recv_timestamp, m2.recv_timestamp);
     }
 
     #[test]
-    fn test_metric_portfolio_combine() {
+    fn test_metric_window_combine() {
         once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
-        let main_span = tracing::info_span!("test_metric_portfolio_combine");
+        let main_span = tracing::info_span!("test_metric_window_combine");
         let _main_span_guard = main_span.enter();
 
         let interval = Duration::from_secs(1);
@@ -592,13 +592,13 @@ mod portfolio {
             m7.clone(),
         ];
 
-        let (port_1, remaining) = make_test_portfolio(3, interval, &ms);
+        let (port_1, remaining) = make_test_window(3, interval, &ms);
         assert_eq!(port_1.len(), 3);
         assert_eq!(
             port_1.clone().into_iter().collect::<Vec<_>>(),
             vec![m1.clone(), m2.clone(), m3.clone()]
         );
-        let (port_2, _) = make_test_portfolio(4, interval, &remaining);
+        let (port_2, _) = make_test_window(4, interval, &remaining);
         assert_eq!(port_2.len(), 4);
         assert_eq!(
             port_2.clone().into_iter().collect::<Vec<_>>(),
@@ -613,8 +613,8 @@ mod portfolio {
         let actual: Vec<MetricCatalog> = combined.into_iter().collect();
         assert_eq!(actual, vec![m3.clone(), m4.clone(), m5.clone(), m6.clone(), m7.clone()]);
 
-        let (port_3, remaining) = make_test_portfolio(4, interval, &ms);
-        let (port_4, _) = make_test_portfolio(2, interval, &remaining);
+        let (port_3, remaining) = make_test_window(4, interval, &ms);
+        let (port_4, _) = make_test_window(2, interval, &remaining);
         let combined = port_3.clone().combine(&port_4);
         assert_eq!(combined.time_window, port_3.time_window);
         let actual: Vec<MetricCatalog> = combined.into_iter().collect();
@@ -626,9 +626,9 @@ mod portfolio {
     }
 
     #[test]
-    fn test_metric_portfolio_shuffled_combine() {
+    fn test_metric_window_shuffled_combine() {
         once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
-        let main_span = tracing::info_span!("test_metric_portfolio_shuffled_combine");
+        let main_span = tracing::info_span!("test_metric_window_shuffled_combine");
         let _main_span_guard = main_span.enter();
 
         let interval = Duration::from_secs(1);
@@ -653,8 +653,8 @@ mod portfolio {
         shuffled.shuffle(&mut thread_rng());
         assert_ne!(shuffled.as_slice(), &ms);
 
-        let (port_1, remaining) = make_test_portfolio(3, interval, &shuffled);
-        let (port_2, _) = make_test_portfolio(4, interval, &remaining);
+        let (port_1, remaining) = make_test_window(3, interval, &shuffled);
+        let (port_2, _) = make_test_window(4, interval, &remaining);
         let combined = port_1.clone().combine(&port_2);
         let actual: Vec<MetricCatalog> = combined.into_iter().collect();
         assert_eq!(actual, vec![m4.clone(), m5.clone(), m6.clone(), m7.clone()]);
@@ -662,9 +662,9 @@ mod portfolio {
         let actual: Vec<MetricCatalog> = combined.into_iter().collect();
         assert_eq!(actual, vec![m3.clone(), m4.clone(), m5.clone(), m6.clone(), m7.clone()]);
 
-        let (port_3, remaining) = make_test_portfolio(6, interval, &shuffled);
+        let (port_3, remaining) = make_test_window(6, interval, &shuffled);
         assert_eq!(port_3.len(), 6);
-        let (port_4, _) = make_test_portfolio(1, interval, &remaining);
+        let (port_4, _) = make_test_window(1, interval, &remaining);
         assert_eq!(port_4.len(), 1);
         let combined = port_3.clone().combine(&port_4);
         tracing::debug!(
@@ -696,9 +696,9 @@ mod portfolio {
     }
 
     #[test]
-    fn test_metric_portfolio_for_period() {
+    fn test_metric_window_for_period() {
         once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
-        let main_span = tracing::info_span!("test_metric_portfolio_for_period");
+        let main_span = tracing::info_span!("test_metric_window_for_period");
         let _main_span_guard = main_span.enter();
 
         let interval = Duration::from_secs(10);
@@ -733,46 +733,46 @@ mod portfolio {
             c.flow.records_in_per_sec <= 5.0
         };
 
-        let (portfolio, _) = make_test_portfolio(10, interval, &ms);
+        let (window, _) = make_test_window(10, interval, &ms);
         tracing::info!(
-            portfolio=?portfolio.history().map(|m| (m.recv_timestamp.to_string(), m.flow.records_in_per_sec)).collect::<Vec<_>>(),
-            "*** PORTFOLIO CREATED"
+            window=?window.history().map(|m| (m.recv_timestamp.to_string(), m.flow.records_in_per_sec)).collect::<Vec<_>>(),
+            "*** WINDOW CREATED"
         );
 
         tracing::info_span!("looking back for 5 seconds").in_scope(|| {
-            assert_eq!(portfolio.forall_from_head(Duration::from_secs(5), f), false);
+            assert_eq!(window.forall_from_head(Duration::from_secs(5), f), false);
         });
 
         tracing::info_span!("looking back for 11 seconds").in_scope(|| {
-            assert_eq!(portfolio.forall_from_head(Duration::from_secs(11), f), true);
+            assert_eq!(window.forall_from_head(Duration::from_secs(11), f), true);
         });
 
         tracing::info_span!("looking back for 21 seconds").in_scope(|| {
-            assert_eq!(portfolio.forall_from_head(Duration::from_secs(21), f), true);
+            assert_eq!(window.forall_from_head(Duration::from_secs(21), f), true);
         });
 
         tracing::info_span!("looking back for 31 seconds").in_scope(|| {
-            assert_eq!(portfolio.forall_from_head(Duration::from_secs(31), f), true);
+            assert_eq!(window.forall_from_head(Duration::from_secs(31), f), true);
         });
 
         tracing::info_span!("looking back for 41 seconds").in_scope(|| {
-            assert_eq!(portfolio.forall_from_head(Duration::from_secs(41), f), true);
+            assert_eq!(window.forall_from_head(Duration::from_secs(41), f), true);
         });
 
         tracing::info_span!("looking back for 51 seconds").in_scope(|| {
-            assert_eq!(portfolio.forall_from_head(Duration::from_secs(51), f), false);
+            assert_eq!(window.forall_from_head(Duration::from_secs(51), f), false);
         });
 
         tracing::info_span!("looking back for 61 seconds").in_scope(|| {
-            assert_eq!(portfolio.forall_from_head(Duration::from_secs(61), f), false);
+            assert_eq!(window.forall_from_head(Duration::from_secs(61), f), false);
         });
 
         tracing::info_span!("looking back for 71 seconds").in_scope(|| {
-            assert_eq!(portfolio.forall_from_head(Duration::from_secs(71), f), false);
+            assert_eq!(window.forall_from_head(Duration::from_secs(71), f), false);
         });
 
         tracing::info_span!("looking back for 2000 seconds").in_scope(|| {
-            assert_eq!(portfolio.forall_from_head(Duration::from_secs(2000), f), false);
+            assert_eq!(window.forall_from_head(Duration::from_secs(2000), f), false);
         });
     }
 }

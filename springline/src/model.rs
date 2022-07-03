@@ -1217,8 +1217,8 @@
 // /////////////////////////////////////////////////////
 // // Unit Tests ///////////////////////////////////////
 
-#[cfg(test)]
-mod tests {
+// #[cfg(test)]
+// mod tests {
     // use std::collections::HashMap;
     // use std::convert::TryFrom;
     // use std::sync::Mutex;
@@ -1903,4 +1903,4 @@ mod tests {
     //         assert_eq!(portfolio.forall_from_head(Duration::from_secs(2000), f), false);
     //     });
     // }
-}
+// }

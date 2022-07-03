@@ -1,4 +1,4 @@
-mod portfolio {
+mod window {
     use std::collections::{HashMap, HashSet};
     use std::time::Duration;
 
@@ -22,8 +22,8 @@ mod portfolio {
     use tokio_test::block_on;
     use tracing_futures::Instrument;
 
-    use crate::flink::{AppDataPortfolio, ClusterMetrics, FlowMetrics, JobHealthMetrics, MetricCatalog};
-    use crate::phases::CollectMetricPortfolio;
+    use crate::flink::{AppDataWindow, ClusterMetrics, FlowMetrics, JobHealthMetrics, MetricCatalog};
+    use crate::phases::CollectMetricWindow;
     use crate::settings::EngineSettings;
 
     fn make_test_catalog(ts: Timestamp, value: i32) -> MetricCatalog {
@@ -49,9 +49,9 @@ mod portfolio {
     }
 
     #[test]
-    fn test_basic_portfolio_collection() {
+    fn test_basic_window_collection() {
         once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
-        let main_span = tracing::info_span!("test_basic_portfolio_collection");
+        let main_span = tracing::info_span!("test_basic_window_collection");
         let _main_span_guard = main_span.enter();
 
         let now = Timestamp::now();
@@ -70,11 +70,11 @@ mod portfolio {
         let (tx_out, mut rx_out) = mpsc::channel(8);
 
         let engine_settings = EngineSettings {
-            telemetry_portfolio_window: Duration::from_secs(3),
+            telemetry_window: Duration::from_secs(3),
             sufficient_window_coverage_percentage: 0.5,
             ..EngineSettings::default()
         };
-        let mut stage = CollectMetricPortfolio::new("test_collect_metric_portfolio", &engine_settings);
+        let mut stage = CollectMetricWindow::new("test_collect_metric_window", &engine_settings);
 
         block_on(async {
             let mut inlet = stage.inlet();
@@ -167,7 +167,7 @@ mod portfolio {
     impl QueryPolicy for TestPolicy {
         type Args = (Self::Item, Self::Context);
         type Context = TestContext;
-        type Item = AppDataPortfolio<MetricCatalog>;
+        type Item = AppDataWindow<MetricCatalog>;
         type TemplateData = ();
 
         fn base_template_name() -> &'static str {
@@ -191,7 +191,7 @@ mod portfolio {
         }
 
         fn initialize_policy_engine(&self, engine: &mut Oso) -> Result<(), PolicyError> {
-            AppDataPortfolio::register_with_policy_engine(engine)
+            AppDataWindow::register_with_policy_engine(engine)
         }
 
         fn make_query_args(&self, item: &Self::Item, context: &Self::Context) -> Self::Args {
@@ -205,9 +205,9 @@ mod portfolio {
     }
 
     #[test]
-    fn test_portfolio_in_policy() {
+    fn test_window_in_policy() {
         once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
-        let main_span = tracing::info_span!("test_portfolio_in_policy");
+        let main_span = tracing::info_span!("test_window_in_policy");
         let _main_span_guard = main_span.enter();
 
         let now = Timestamp::now();
@@ -227,11 +227,11 @@ mod portfolio {
         let (tx_out, mut rx_out) = mpsc::channel(8);
 
         let engine_settings = EngineSettings {
-            telemetry_portfolio_window: Duration::from_secs(3),
+            telemetry_window: Duration::from_secs(3),
             sufficient_window_coverage_percentage: 0.5,
             ..EngineSettings::default()
         };
-        let mut collect_stage = CollectMetricPortfolio::new("test_collect_metric_portfolio", &engine_settings);
+        let mut collect_stage = CollectMetricWindow::new("test_collect_metric_window", &engine_settings);
         let policy = TestPolicy {
             policies: vec![assert_ok!(PolicySource::from_complete_string(
                 "test_policy",
@@ -305,7 +305,7 @@ mod portfolio {
                             &PolicyFilterEvent::ItemPassed(_, _)
                         );
 
-                        let actual: PolicyOutcome<AppDataPortfolio<MetricCatalog>, TestContext> =
+                        let actual: PolicyOutcome<AppDataWindow<MetricCatalog>, TestContext> =
                             assert_some!(rx_out.recv().await);
 
                         assert_eq!((i, assert_some!(actual.item.flow.input_records_lag_max)), (i, expected));

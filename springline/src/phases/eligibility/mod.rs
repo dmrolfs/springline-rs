@@ -22,9 +22,9 @@ pub(crate) use context::{
 pub(crate) use policy::ELIGIBILITY_POLICY_INELIGIBLE_DECISIONS_COUNT;
 pub use policy::{EligibilityPolicy, EligibilityTemplateData};
 
-use crate::flink::{AppDataPortfolio, MetricCatalog};
+use crate::flink::{AppDataWindow, MetricCatalog};
 
-pub type EligibilityData = AppDataPortfolio<MetricCatalog>;
+pub type EligibilityData = AppDataWindow<MetricCatalog>;
 pub type EligibilityOutcome = EligibilityData;
 pub type EligibilityApi = proctor::elements::PolicyFilterApi<EligibilityContext, EligibilityTemplateData>;
 pub type EligibilityMonitor = proctor::elements::PolicyFilterMonitor<EligibilityData, EligibilityContext>;

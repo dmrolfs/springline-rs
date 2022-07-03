@@ -12,7 +12,7 @@ use prometheus::{IntCounterVec, Opts};
 use serde::{Deserialize, Serialize};
 
 use super::context::DecisionContext;
-use crate::flink::AppDataPortfolio;
+use crate::flink::AppDataWindow;
 use crate::metrics::UpdateMetrics;
 use crate::phases::decision::result::DECISION_DIRECTION;
 use crate::phases::decision::DecisionData;
@@ -129,7 +129,7 @@ impl QueryPolicy for DecisionPolicy {
 
     fn initialize_policy_engine(&self, engine: &mut Oso) -> Result<(), PolicyError> {
         Telemetry::register_with_policy_engine(engine)?;
-        AppDataPortfolio::register_with_policy_engine(engine)?;
+        AppDataWindow::register_with_policy_engine(engine)?;
 
         engine.register_class(
             DecisionContext::get_polar_class_builder()

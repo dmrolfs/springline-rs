@@ -10,14 +10,14 @@ use crate::Result;
 mod tests;
 
 pub mod act;
+mod collect_window;
 pub mod decision;
 pub mod eligibility;
 pub mod governance;
 pub mod plan;
-mod portfolio;
 pub mod sense;
 
-pub use portfolio::{CollectMetricPortfolio, PortfolioApi, PortfolioCmd};
+pub use collect_window::{CollectMetricWindow, WindowApi, WindowCmd};
 
 pub const REASON: &str = "reason";
 

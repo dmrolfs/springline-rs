@@ -19,19 +19,19 @@ pub struct EngineSettings {
     /// environment. Different entity types can use the same machine id.
     pub node_id: i32,
 
-    /// Specify the span for telemetry collection into a portfolio available to eligibility and
+    /// Specify the span for telemetry collection into a data window available to eligibility and
     /// decision policies. It's more transparent if this span is set to a duration above what is
     /// used in a policy rule, but it is not required. If a policy rule exceeds this configured
-    /// span, then coverage of the portfolio must be more than half, otherwise the condition is not
+    /// span, then coverage of the window must be more than half, otherwise the condition is not
     /// met. The default is 10 minutes.
     #[serde_as(as = "serde_with::DurationSeconds<u64>")]
     #[serde(
-        rename = "telemetry_portfolio_window_secs",
-        default = "EngineSettings::default_telemetry_portfolio_window"
+        rename = "telemetry_window_secs",
+        default = "EngineSettings::default_telemetry_window"
     )]
-    pub telemetry_portfolio_window: Duration,
+    pub telemetry_window: Duration,
 
-    /// Optional tuning of the coverage percentage required before metric portfolio thresholds are
+    /// Optional tuning of the coverage percentage required before metric window thresholds are
     /// met. This parameter enables "sufficient" coverage of a threshold window to be tripped. This
     /// parameter enables policy rules to act on a sufficient telemetry level and enable policy
     /// decisions in the event of flapping telemetry. The default value is 0.8, which means at least
@@ -46,14 +46,14 @@ impl Default for EngineSettings {
         Self {
             machine_id: 1,
             node_id: 1,
-            telemetry_portfolio_window: Self::default_telemetry_portfolio_window(),
+            telemetry_window: Self::default_telemetry_window(),
             sufficient_window_coverage_percentage: DEFAULT_SUFFICIENT_COVERAGE,
         }
     }
 }
 
 impl EngineSettings {
-    pub const fn default_telemetry_portfolio_window() -> Duration {
+    pub const fn default_telemetry_window() -> Duration {
         Duration::from_secs(10 * 60)
     }
 }

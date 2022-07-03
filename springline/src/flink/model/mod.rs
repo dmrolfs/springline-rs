@@ -2,7 +2,7 @@
 mod tests;
 
 pub mod catalog;
-pub mod portfolio;
+pub mod window;
 
 use std::collections::HashMap;
 use std::fmt::{self, Debug, Display};

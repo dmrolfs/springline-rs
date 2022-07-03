@@ -13,7 +13,7 @@ use proctor::phases::policy_phase::PolicyPhase;
 use proctor::phases::sense::clearinghouse::TelemetryCacheSettings;
 use proctor::phases::sense::{self, Sense, SubscriptionRequirements, TelemetrySubscription};
 use proctor::{AppData, ProctorContext};
-use springline::flink::{AppDataPortfolio, MetricCatalog, MC_CLUSTER__NR_ACTIVE_JOBS, MC_CLUSTER__NR_TASK_MANAGERS};
+use springline::flink::{AppDataWindow, MetricCatalog, MC_CLUSTER__NR_ACTIVE_JOBS, MC_CLUSTER__NR_TASK_MANAGERS};
 use springline::phases::decision::{make_decision_transform, DecisionResult, DECISION_DIRECTION};
 use springline::phases::decision::{DecisionContext, DecisionPolicy, DecisionTemplateData};
 use springline::settings::{DecisionSettings, EngineSettings};
@@ -22,7 +22,7 @@ use tokio::task::JoinHandle;
 
 use super::fixtures::*;
 
-type Data = AppDataPortfolio<MetricCatalog>;
+type Data = AppDataWindow<MetricCatalog>;
 
 lazy_static::lazy_static! {
     static ref DECISION_PREAMBLE: PolicySource = PolicySource::from_template_file("../resources/decision.polar").expect("failed to create decision policy source");
@@ -82,7 +82,7 @@ where
         let sense = builder.build_for_out_subscription(sensor_out_subscription).await?;
 
         let engine_settings = EngineSettings::default();
-        let collect = springline::phases::CollectMetricPortfolio::new("collect_portfolio", &engine_settings);
+        let collect = springline::phases::CollectMetricWindow::new("collect_window", &engine_settings);
         let mut sink = stage::Fold::<_, Out, _>::new("sink", Vec::new(), |mut acc, item| {
             acc.push(item);
             acc

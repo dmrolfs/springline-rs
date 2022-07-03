@@ -20,7 +20,7 @@ use crate::phases::decision::{DecisionContext, DecisionEvent, DecisionMonitor, D
 use crate::phases::eligibility::{EligibilityContext, EligibilityEvent, EligibilityMonitor};
 use crate::phases::governance::{GovernanceContext, GovernanceEvent, GovernanceMonitor, GovernanceOutcome};
 use crate::phases::plan::{FlinkPlanningEvent, FlinkPlanningMonitor, PlanningStrategy, ScalePlan};
-use crate::phases::{decision, PortfolioApi, PortfolioCmd};
+use crate::phases::{decision, WindowApi, WindowCmd};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct PlanningFeedback {
@@ -109,7 +109,7 @@ pub struct Monitor {
     pub tx_feedback: Option<ActorSourceApi<Telemetry>>,
     pub tx_engine: EngineServiceApi,
     pub tx_clearinghouse_api: ClearinghouseApi,
-    pub tx_collect_portfolio_api: PortfolioApi,
+    pub tx_collect_window_api: WindowApi,
 }
 
 impl Monitor {
@@ -338,8 +338,8 @@ impl Monitor {
             tracing::warn!(error=?err, correlation=%plan.correlation(), "failed to clear clearinghouse on rescaling.");
         }
 
-        if let Err(err) = PortfolioCmd::clear(&self.tx_collect_portfolio_api).await {
-            tracing::warn!(error=?err, correlation=%plan.correlation(), "failed to clear portfolio on rescaling.");
+        if let Err(err) = WindowCmd::clear(&self.tx_collect_window_api).await {
+            tracing::warn!(error=?err, correlation=%plan.correlation(), "failed to clear window on rescaling.");
         }
 
         ActionFeedback {

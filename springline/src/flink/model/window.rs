@@ -14,7 +14,7 @@ use validator::{Validate, ValidationError, ValidationErrors};
 
 use super::MetricCatalog;
 
-pub trait Portfolio: AppData {
+pub trait Window: AppData {
     type Item: AppData;
     //todo: this needs to be rethought as builder would be appropriate; however this trait on the whole is a bit contrived.
     fn from_item(item: Self::Item, time_window: Duration, sufficient_coverage: f64) -> Result<Self, ValidationErrors>;
@@ -24,11 +24,11 @@ pub trait Portfolio: AppData {
     fn push(&mut self, item: Self::Item);
 }
 
-/// Portfolio of data objects used for range queries; e.g., has CPU utilization exceeded a threshold
+/// Window of data objects used for range queries; e.g., has CPU utilization exceeded a threshold
 /// for 5 minutes.
-/// AppDataPortfolio has an invariant that there is always at least one item in the portfolio.
+/// `AppDataWindow` has an invariant that there is always at least one item in the window..
 #[derive(Clone, PartialEq)]
-pub struct AppDataPortfolio<T>
+pub struct AppDataWindow<T>
 where
     T: AppData + ReceivedAt,
 {
@@ -37,14 +37,14 @@ where
     pub sufficient_coverage: f64,
 }
 
-impl<T> Validate for AppDataPortfolio<T>
+impl<T> Validate for AppDataWindow<T>
 where
     T: AppData + ReceivedAt,
 {
     fn validate(&self) -> Result<(), ValidationErrors> {
         let checks = vec![
             Self::check_sufficient_coverage(self.sufficient_coverage).map_err(|err| ("insufficient coverage", err)),
-            Self::check_nonempty(&self.data).map_err(|err| ("empty portfolio", err)),
+            Self::check_nonempty(&self.data).map_err(|err| ("empty window", err)),
         ];
 
         checks.into_iter().fold(Ok(()), |acc, check| match acc {
@@ -67,17 +67,17 @@ where
     }
 }
 
-impl<T> fmt::Debug for AppDataPortfolio<T>
+impl<T> fmt::Debug for AppDataWindow<T>
 where
     T: AppData + ReceivedAt,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("AppDataPortfolio")
+        f.debug_struct("AppDataWindow")
             .field("interval", &self.window_interval())
             .field("interval_duration", &self.window_interval().map(|w| w.duration()))
             .field("time_window", &self.time_window)
             .field("sufficient_coverage", &self.sufficient_coverage)
-            .field("portfolio_size", &self.data.len())
+            .field("window_size", &self.data.len())
             .field("head", &self.head().map(|c| c.recv_timestamp().to_string()))
             .finish()
     }
@@ -89,7 +89,7 @@ pub const fn default_sufficient_coverage() -> f64 {
     DEFAULT_SUFFICIENT_COVERAGE
 }
 
-impl<T> AppDataPortfolio<T>
+impl<T> AppDataWindow<T>
 where
     T: AppData + ReceivedAt,
 {
@@ -107,45 +107,45 @@ where
 
     fn check_nonempty(data: &VecDeque<T>) -> Result<(), ValidationError> {
         if data.is_empty() {
-            Err(ValidationError::new("portfolio data cannot be empty."))
+            Err(ValidationError::new("window data cannot be empty."))
         } else {
             Ok(())
         }
     }
 
-    pub fn from_size(data: T, window: usize, interval: Duration) -> Self {
-        let mut portfolio = VecDeque::with_capacity(window);
-        portfolio.push_back(data);
-        let time_window = interval * window as u32;
+    pub fn from_size(data: T, window_size: usize, interval: Duration) -> Self {
+        let mut window = VecDeque::with_capacity(window_size);
+        window.push_back(data);
+        let time_window = interval * window_size as u32;
         let result = Self {
-            data: portfolio,
+            data: window,
             time_window,
             sufficient_coverage: DEFAULT_SUFFICIENT_COVERAGE,
         };
-        result.validate().expect("portfolio parameters are not valid");
+        result.validate().expect("window parameters are not valid");
         result
     }
 
     pub fn from_time_window(data: T, time_window: Duration) -> Self {
-        let mut portfolio = VecDeque::new();
-        portfolio.push_back(data);
+        let mut window = VecDeque::new();
+        window.push_back(data);
         let result = Self {
-            data: portfolio,
+            data: window,
             time_window,
             sufficient_coverage: DEFAULT_SUFFICIENT_COVERAGE,
         };
-        result.validate().expect("portfolio parameters are not valid");
+        result.validate().expect("window parameters are not valid");
         result
     }
 
-    pub fn builder() -> AppDataPortfolioBuilder<T> {
-        AppDataPortfolioBuilder::default()
+    pub fn builder() -> AppDataWindowBuilder<T> {
+        AppDataWindowBuilder::default()
     }
 }
 
-impl<T: AppData + ReceivedAt> PolarClass for AppDataPortfolio<T> {}
+impl<T: AppData + ReceivedAt> PolarClass for AppDataWindow<T> {}
 
-impl<T: AppData + ReceivedAt> ReceivedAt for AppDataPortfolio<T>
+impl<T: AppData + ReceivedAt> ReceivedAt for AppDataWindow<T>
 where
     T: AppData + ReceivedAt,
 {
@@ -154,7 +154,7 @@ where
     }
 }
 
-impl PolicyContributor for AppDataPortfolio<MetricCatalog> {
+impl PolicyContributor for AppDataWindow<MetricCatalog> {
     #[tracing::instrument(level = "trace", skip(engine))]
     fn register_with_policy_engine(engine: &mut Oso) -> Result<(), PolicyError> {
         MetricCatalog::register_with_policy_engine(engine)?;
@@ -217,7 +217,7 @@ impl PolicyContributor for AppDataPortfolio<MetricCatalog> {
     }
 }
 
-impl<T> Correlation for AppDataPortfolio<T>
+impl<T> Correlation for AppDataWindow<T>
 where
     T: AppData + ReceivedAt + Correlation<Correlated = T>,
 {
@@ -228,7 +228,7 @@ where
     }
 }
 
-impl<T> IntoIterator for AppDataPortfolio<T>
+impl<T> IntoIterator for AppDataWindow<T>
 where
     T: AppData + ReceivedAt,
 {
@@ -240,7 +240,7 @@ where
     }
 }
 
-impl<T> AppDataPortfolio<T>
+impl<T> AppDataWindow<T>
 where
     T: AppData + ReceivedAt,
 {
@@ -281,7 +281,7 @@ where
                 if coverage_end.is_none() {
                     coverage_end = coverage_start;
                 }
-                tracing::trace!("portfolio catalog[{}] lies in {interval:?}", m_ts);
+                tracing::trace!("window catalog[{}] lies in {interval:?}", m_ts);
                 range.push(m);
             }
         }
@@ -291,7 +291,7 @@ where
             .map(|(start, end)| Interval::new(start, end))
             .transpose()
             .unwrap_or_else(|err| {
-                tracing::warn!(error=?err, "portfolio represents an invalid interval - using None");
+                tracing::warn!(error=?err, "window represents an invalid interval - using None");
                 None
             });
 
@@ -302,7 +302,7 @@ where
         (coverage, range.into_iter())
     }
 
-    /// Extracts metric properties from the head of the portfolio (i.e., the current catalog) toward
+    /// Extracts metric properties from the head of the window (i.e., the current catalog) toward
     /// the past.
     #[tracing::instrument(level = "trace", skip(self, extractor))]
     pub fn extract_from_head<F, D>(&self, looking_back: Duration, extractor: F) -> Vec<D>
@@ -347,13 +347,13 @@ where
         F: FnMut(&T) -> bool,
     {
         if self.is_empty() {
-            tracing::debug!("empty portfolio");
+            tracing::debug!("empty window");
             false
         } else if self.len() == 1 && interval.duration() == Duration::ZERO {
-            tracing::debug!("single metric portfolio");
+            tracing::debug!("single metric window");
             interval.contains_timestamp(self.recv_timestamp()) && f(self)
         } else {
-            tracing::debug!(portfolio_window=?self.window_interval(), ?interval, "Checking for interval");
+            tracing::debug!(window=?self.window_interval(), ?interval, "Checking for interval");
 
             let (coverage, range_iter) = self.coverage_for(interval);
             if coverage < self.sufficient_coverage {
@@ -382,19 +382,19 @@ where
     }
 }
 
-impl<T> Portfolio for AppDataPortfolio<T>
+impl<T> Window for AppDataWindow<T>
 where
     T: AppData + ReceivedAt,
 {
     type Item = T;
 
     fn window_interval(&self) -> Option<Interval> {
-        // portfolio vecdeque runs oldest to youngest
+        // window vecdeque runs oldest to youngest
         let start = self.data.front().map(|m| m.recv_timestamp());
         let end = self.data.back().map(|m| m.recv_timestamp());
         start.zip(end).map(|i| {
             i.try_into()
-                .expect("portfolio represents invalid interval (end before start): {i:?}")
+                .expect("window represents invalid interval (end before start): {i:?}")
         })
     }
 
@@ -432,7 +432,7 @@ where
     }
 }
 
-impl AppDataPortfolio<MetricCatalog> {
+impl AppDataWindow<MetricCatalog> {
     pub fn flow_input_records_lag_max_below_mark(&self, looking_back_secs: u32, max_value: i64) -> bool {
         self.forall_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
             m.flow
@@ -570,18 +570,18 @@ impl AppDataPortfolio<MetricCatalog> {
     }
 }
 
-impl<T> std::ops::Deref for AppDataPortfolio<T>
+impl<T> std::ops::Deref for AppDataWindow<T>
 where
     T: AppData + ReceivedAt,
 {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        self.head().expect("failed nonempty AppDataPortfolio invariant")
+        self.head().expect("failed nonempty AppDataWindow invariant")
     }
 }
 
-impl<T> std::ops::Add<T> for AppDataPortfolio<T>
+impl<T> std::ops::Add<T> for AppDataWindow<T>
 where
     T: AppData + ReceivedAt,
 {
@@ -593,7 +593,7 @@ where
     }
 }
 
-impl<T> std::ops::Add for AppDataPortfolio<T>
+impl<T> std::ops::Add for AppDataWindow<T>
 where
     T: AppData + ReceivedAt,
 {
@@ -604,7 +604,7 @@ where
     }
 }
 
-impl<T> Semigroup for AppDataPortfolio<T>
+impl<T> Semigroup for AppDataWindow<T>
 where
     T: AppData + ReceivedAt,
 {
@@ -620,7 +620,7 @@ where
     }
 }
 
-impl<T> AppDataPortfolio<T>
+impl<T> AppDataWindow<T>
 where
     T: AppData + ReceivedAt,
 {
@@ -651,32 +651,32 @@ where
         )
     }
 
-    #[tracing::instrument(level = "trace", skip(lhs_portfolio, rhs_portfolio))]
-    fn do_ordered_combine(lhs_portfolio: &Self, rhs_portfolio: &Self) -> VecDeque<T> {
-        let (lhs_interval, rhs_interval) = match (lhs_portfolio.window_interval(), rhs_portfolio.window_interval()) {
+    #[tracing::instrument(level = "trace", skip(lhs_window, rhs_window))]
+    fn do_ordered_combine(lhs_window: &Self, rhs_window: &Self) -> VecDeque<T> {
+        let (lhs_interval, rhs_interval) = match (lhs_window.window_interval(), rhs_window.window_interval()) {
             (None, None) => return VecDeque::new(),
-            (Some(_), None) => return lhs_portfolio.data.clone(),
-            (None, Some(_)) => return rhs_portfolio.data.clone(),
+            (Some(_), None) => return lhs_window.data.clone(),
+            (None, Some(_)) => return rhs_window.data.clone(),
             (Some(lhs), Some(rhs)) => (lhs, rhs),
         };
 
-        let time_window = lhs_portfolio.time_window;
+        let time_window = lhs_window.time_window;
         if lhs_interval.is_before(rhs_interval) {
-            Self::block_combine(time_window, &lhs_portfolio.data, &rhs_portfolio.data)
+            Self::block_combine(time_window, &lhs_window.data, &rhs_window.data)
         } else if rhs_interval.is_before(lhs_interval) {
-            Self::block_combine(time_window, &rhs_portfolio.data, &lhs_portfolio.data)
+            Self::block_combine(time_window, &rhs_window.data, &lhs_window.data)
         } else {
             tracing::trace_span!("interspersed combination", ?time_window).in_scope(|| {
-                let mut combined = lhs_portfolio
+                let mut combined = lhs_window
                     .data
                     .iter()
-                    .chain(rhs_portfolio.data.iter())
+                    .chain(rhs_window.data.iter())
                     .sorted_by(|lhs, rhs| lhs.recv_timestamp().cmp(&rhs.recv_timestamp()))
                     .cloned()
                     .collect::<VecDeque<_>>();
 
                 tracing::trace!(
-                    "combined portfolio: {:?}",
+                    "combined window: {:?}",
                     combined.iter().map(|m| m.recv_timestamp().to_string()).collect::<Vec<_>>()
                 );
                 if let Some(cutoff) = combined.back().map(|m| m.recv_timestamp() - time_window) {
@@ -695,17 +695,17 @@ where
 }
 
 #[derive(Debug, Clone, PartialEq, Validate)]
-pub struct AppDataPortfolioBuilder<T>
+pub struct AppDataWindowBuilder<T>
 where
     T: AppData + ReceivedAt,
 {
     data: Option<VecDeque<T>>,
     time_window: Option<Duration>,
-    #[validate(custom = "AppDataPortfolio::<T>::check_sufficient_coverage")]
+    #[validate(custom = "AppDataWindow::<T>::check_sufficient_coverage")]
     sufficient_coverage: Option<f64>,
 }
 
-impl<T> Default for AppDataPortfolioBuilder<T>
+impl<T> Default for AppDataWindowBuilder<T>
 where
     T: AppData + ReceivedAt,
 {
@@ -718,7 +718,7 @@ where
     }
 }
 
-impl<T> AppDataPortfolioBuilder<T>
+impl<T> AppDataWindowBuilder<T>
 where
     T: AppData + ReceivedAt,
 {
@@ -769,11 +769,11 @@ where
         self.data.as_ref().map_or(0, |d| d.len())
     }
 
-    pub fn build(self) -> Result<AppDataPortfolio<T>, ValidationErrors> {
-        let mut portfolio: Vec<T> = self.data.map_or(Vec::default(), |d| d.into_iter().collect());
-        portfolio.sort_by_key(|item| item.recv_timestamp());
-        let result = AppDataPortfolio {
-            data: portfolio.into_iter().collect(),
+    pub fn build(self) -> Result<AppDataWindow<T>, ValidationErrors> {
+        let mut window: Vec<T> = self.data.map_or(Vec::default(), |d| d.into_iter().collect());
+        window.sort_by_key(|item| item.recv_timestamp());
+        let result = AppDataWindow {
+            data: window.into_iter().collect(),
             time_window: self.time_window.expect("must supply time window before final build"),
             sufficient_coverage: self
                 .sufficient_coverage
