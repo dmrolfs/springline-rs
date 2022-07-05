@@ -1,9 +1,10 @@
 use std::collections::VecDeque;
+use std::convert::TryFrom;
 use std::fmt::{self, Debug};
 use std::ops::Deref;
 use std::time::Duration;
 
-use frunk::Semigroup;
+use frunk::{Monoid, Semigroup};
 use itertools::Itertools;
 use oso::{Oso, PolarClass};
 use pretty_snowflake::Id;
@@ -171,12 +172,60 @@ impl PolicyContributor for AppDataWindow<MetricCatalog> {
                     Self::has_sufficient_coverage_looking_back_secs,
                 )
                 .add_method(
+                    "flow_idle_time_millis_per_sec_rolling_average",
+                    Self::flow_idle_time_millis_per_sec_rolling_average,
+                )
+                .add_method(
+                    "flow_idle_time_millis_per_sec_rolling_change_per_sec",
+                    Self::flow_idle_time_millis_per_sec_rolling_change_per_sec,
+                )
+                .add_method(
+                    "flow_idle_time_millis_per_sec_below_mark",
+                    Self::flow_idle_time_millis_per_sec_below_mark,
+                )
+                .add_method(
+                    "flow_idle_time_millis_per_sec_above_mark",
+                    Self::flow_idle_time_millis_per_sec_above_mark,
+                )
+                .add_method(
+                    "flow_task_utilization_rolling_average",
+                    Self::flow_task_utilization_rolling_average,
+                )
+                .add_method(
+                    "flow_task_utilization_rolling_change_per_sec",
+                    Self::flow_task_utilization_rolling_change_per_sec,
+                )
+                .add_method(
+                    "flow_task_utilization_below_mark",
+                    Self::flow_task_utilization_below_mark,
+                )
+                .add_method(
+                    "flow_task_utilization_above_mark",
+                    Self::flow_task_utilization_above_mark,
+                )
+                .add_method(
+                    "flow_input_records_lag_max_rolling_average",
+                    Self::flow_input_records_lag_max_rolling_average,
+                )
+                .add_method(
+                    "flow_input_records_lag_max_rolling_change_per_sec",
+                    Self::flow_input_records_lag_max_rolling_change_per_sec,
+                )
+                .add_method(
                     "flow_input_records_lag_max_below_mark",
                     Self::flow_input_records_lag_max_below_mark,
                 )
                 .add_method(
                     "flow_input_records_lag_max_above_mark",
                     Self::flow_input_records_lag_max_above_mark,
+                )
+                .add_method(
+                    "flow_input_millis_behind_latest_rolling_average",
+                    Self::flow_input_millis_behind_latest_rolling_average,
+                )
+                .add_method(
+                    "flow_input_millis_behind_latest_rolling_change_per_sec",
+                    Self::flow_input_millis_behind_latest_rolling_change_per_sec,
                 )
                 .add_method(
                     "flow_input_millis_behind_latest_below_mark",
@@ -187,12 +236,28 @@ impl PolicyContributor for AppDataWindow<MetricCatalog> {
                     Self::flow_input_millis_behind_latest_above_mark,
                 )
                 .add_method(
+                    "cluster_task_cpu_load_rolling_average",
+                    Self::cluster_task_cpu_load_rolling_average,
+                )
+                .add_method(
+                    "cluster_task_cpu_load_rolling_change_per_sec",
+                    Self::cluster_task_cpu_load_rolling_change_per_sec,
+                )
+                .add_method(
                     "cluster_task_cpu_load_below_mark",
                     Self::cluster_task_cpu_load_below_mark,
                 )
                 .add_method(
                     "cluster_task_cpu_load_above_mark",
                     Self::cluster_task_cpu_load_above_mark,
+                )
+                .add_method(
+                    "cluster_task_heap_memory_used_rolling_average",
+                    Self::cluster_task_heap_memory_used_rolling_average,
+                )
+                .add_method(
+                    "cluster_task_heap_memory_used_rolling_change_per_sec",
+                    Self::cluster_task_heap_memory_used_rolling_change_per_sec,
                 )
                 .add_method(
                     "cluster_task_heap_memory_used_below_mark",
@@ -203,11 +268,19 @@ impl PolicyContributor for AppDataWindow<MetricCatalog> {
                     Self::cluster_task_heap_memory_used_above_mark,
                 )
                 .add_method(
-                    "cluster_task_memory_load_below_mark",
+                    "cluster_task_heap_memory_load_rolling_average",
+                    Self::cluster_task_heap_memory_load_rolling_average,
+                )
+                .add_method(
+                    "cluster_task_heap_memory_load_rolling_change_per_sec",
+                    Self::cluster_task_heap_memory_load_rolling_change_per_sec,
+                )
+                .add_method(
+                    "cluster_task_heap_memory_load_below_mark",
                     Self::cluster_task_heap_memory_load_below_mark,
                 )
                 .add_method(
-                    "cluster_task_memory_load_above_mark",
+                    "cluster_task_heap_memory_load_above_mark",
                     Self::cluster_task_heap_memory_load_above_mark,
                 )
                 .build(),
@@ -331,18 +404,51 @@ where
     }
 
     #[tracing::instrument(level = "trace", skip(self, f))]
-    pub fn forall_from_head<F>(&self, looking_back: Duration, f: F) -> bool
+    pub fn fold_duration_from_head<F, R>(&self, looking_back: Duration, f: F) -> R
+    where
+        F: FnMut(R, &T) -> R,
+        R: Monoid,
+    {
+        self.head().map_or_else(
+            || R::empty(),
+            |h| {
+                let head_ts = h.recv_timestamp();
+                let interval = Interval::new(head_ts - looking_back, head_ts).unwrap();
+                let (coverage, range_iter) = self.coverage_for(interval);
+                tracing::debug!(
+                    ?looking_back, ?interval, %coverage, coverage_duration=?(looking_back.mul_f64(coverage)),
+                    "folding looking back from head"
+                );
+                range_iter.fold(R::empty(), f)
+            },
+        )
+    }
+
+    #[tracing::instrument(level = "trace", skip(self, f))]
+    pub fn sum_from_head<F, R>(&self, looking_back: Duration, mut f: F) -> (R, usize)
+    where
+        F: FnMut(&T) -> R,
+        R: Monoid,
+    {
+        self.fold_duration_from_head(looking_back, |(acc_sum, acc_size): (R, usize), item| {
+            let rhs = f(item);
+            (acc_sum.combine(&rhs), acc_size + 1)
+        })
+    }
+
+    #[tracing::instrument(level = "trace", skip(self, f))]
+    pub fn for_duration_from_head<F>(&self, looking_back: Duration, f: F) -> bool
     where
         F: FnMut(&T) -> bool,
     {
         self.head().map_or(false, |h| {
             let head_ts = h.recv_timestamp();
-            self.forall_in_interval(Interval::new(head_ts - looking_back, head_ts).unwrap(), f)
+            self.for_coverage_in_interval(Interval::new(head_ts - looking_back, head_ts).unwrap(), f)
         })
     }
 
     #[tracing::instrument(level = "trace", skip(self, f))]
-    pub fn forall_in_interval<F>(&self, interval: Interval, mut f: F) -> bool
+    pub fn for_coverage_in_interval<F>(&self, interval: Interval, mut f: F) -> bool
     where
         F: FnMut(&T) -> bool,
     {
@@ -433,8 +539,141 @@ where
 }
 
 impl AppDataWindow<MetricCatalog> {
+    pub fn flow_idle_time_millis_per_sec_rolling_average(&self, looking_back_secs: u32) -> f64 {
+        let (sum, size) = self.sum_from_head(Duration::from_secs(looking_back_secs as u64), |m| {
+            m.flow.idle_time_millis_per_sec
+        });
+
+        if size == 0 {
+            0.0
+        } else {
+            sum / size as f64
+        }
+    }
+
+    pub fn flow_idle_time_millis_per_sec_rolling_change_per_sec(&self, looking_back_secs: u32) -> f64 {
+        let values = self
+            .extract_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+                (m.recv_timestamp, m.flow.idle_time_millis_per_sec)
+            })
+            .into_iter()
+            .collect::<Vec<_>>();
+
+        // remember: head is the most recent, so we want to diff accordingly
+        values
+            .last()
+            .zip(values.first())
+            .and_then(|(first, last)| {
+                if first.0 == last.0 {
+                    None
+                } else {
+                    let duration_secs = (last.0 - first.0).as_secs_f64();
+                    Some((last.1 - first.1) / duration_secs)
+                }
+            })
+            .unwrap_or(0.0)
+    }
+
+    pub fn flow_idle_time_millis_per_sec_below_mark(&self, looking_back_secs: u32, max_value: f64) -> bool {
+        self.for_duration_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+            m.flow.idle_time_millis_per_sec <= max_value
+        })
+    }
+
+    pub fn flow_idle_time_millis_per_sec_above_mark(&self, looking_back_secs: u32, min_value: f64) -> bool {
+        self.for_duration_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+            min_value <= m.flow.idle_time_millis_per_sec
+        })
+    }
+
+    pub fn flow_task_utilization_rolling_average(&self, looking_back_secs: u32) -> f64 {
+        let (sum, size) = self.sum_from_head(Duration::from_secs(looking_back_secs as u64), |m| {
+            m.flow.task_utilization()
+        });
+
+        if size == 0 {
+            0.0
+        } else {
+            sum / size as f64
+        }
+    }
+
+    pub fn flow_task_utilization_rolling_change_per_sec(&self, looking_back_secs: u32) -> f64 {
+        let values = self
+            .extract_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+                (m.recv_timestamp, m.flow.task_utilization())
+            })
+            .into_iter()
+            .collect::<Vec<_>>();
+
+        // remember: head is the most recent, so we want to diff accordingly
+        values
+            .last()
+            .zip(values.first())
+            .and_then(|(first, last)| {
+                if first.0 == last.0 {
+                    None
+                } else {
+                    let duration_secs = (last.0 - first.0).as_secs_f64();
+                    Some((last.1 - first.1) / duration_secs)
+                }
+            })
+            .unwrap_or(0.0)
+    }
+
+    pub fn flow_task_utilization_below_mark(&self, looking_back_secs: u32, max_value: f64) -> bool {
+        self.for_duration_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+            m.flow.task_utilization() <= max_value
+        })
+    }
+
+    pub fn flow_task_utilization_above_mark(&self, looking_back_secs: u32, min_value: f64) -> bool {
+        self.for_duration_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+            min_value <= m.flow.task_utilization()
+        })
+    }
+
+    pub fn flow_input_records_lag_max_rolling_average(&self, looking_back_secs: u32) -> f64 {
+        let (sum, size) = self.sum_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+            m.flow.input_records_lag_max
+        });
+
+        if size == 0 {
+            0.0
+        } else {
+            sum.and_then(|lag| i32::try_from(lag).ok().map(|l| f64::from(l) / size as f64))
+                .unwrap_or(0.0)
+        }
+    }
+
+    pub fn flow_input_records_lag_max_rolling_change_per_sec(&self, looking_back_secs: u32) -> f64 {
+        let values: Vec<(Timestamp, i64)> = self
+            .extract_from_head(Duration::from_secs(u64::from(looking_back_secs)), |metric| {
+                (metric.recv_timestamp, metric.flow.input_records_lag_max)
+            })
+            .into_iter()
+            .flat_map(|(ts, lag)| lag.map(|l| (ts, l)))
+            .collect();
+
+        // remember: head is the most recent, so we want to diff accordingly
+        values
+            .last()
+            .zip(values.first())
+            .and_then(|(first, last)| {
+                if first.0 == last.0 {
+                    None
+                } else {
+                    let duration_secs = (last.0 - first.0).as_secs_f64();
+                    i32::try_from(last.1 - first.1)
+                        .ok()
+                        .map(|diff| f64::from(diff) / duration_secs)
+                }
+            })
+            .unwrap_or(0.0)
+    }
+
     pub fn flow_input_records_lag_max_below_mark(&self, looking_back_secs: u32, max_value: i64) -> bool {
-        self.forall_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+        self.for_duration_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
             m.flow
                 .input_records_lag_max
                 .map(|lag| {
@@ -450,7 +689,7 @@ impl AppDataWindow<MetricCatalog> {
     }
 
     pub fn flow_input_records_lag_max_above_mark(&self, looking_back_secs: u32, min_value: i64) -> bool {
-        self.forall_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+        self.for_duration_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
             m.flow
                 .input_records_lag_max
                 .map(|lag| {
@@ -465,8 +704,47 @@ impl AppDataWindow<MetricCatalog> {
         })
     }
 
+    pub fn flow_input_millis_behind_latest_rolling_average(&self, looking_back_secs: u32) -> f64 {
+        let (sum, size) = self.sum_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+            m.flow.input_millis_behind_latest
+        });
+
+        if size == 0 {
+            0.0
+        } else {
+            sum.and_then(|lag| i32::try_from(lag).ok().map(|l| f64::from(l) / size as f64))
+                .unwrap_or(0.0)
+        }
+    }
+
+    pub fn flow_input_millis_behind_latest_rolling_change_per_sec(&self, looking_back_secs: u32) -> f64 {
+        let values = self
+            .extract_from_head(Duration::from_secs(u64::from(looking_back_secs)), |metric| {
+                (metric.recv_timestamp, metric.flow.input_millis_behind_latest)
+            })
+            .into_iter()
+            .flat_map(|(ts, lag)| lag.map(|l| (ts, l)))
+            .collect::<Vec<_>>();
+
+        // remember: head is the most recent, so we want to diff accordingly
+        values
+            .last()
+            .zip(values.first())
+            .and_then(|(first, last)| {
+                if first.0 == last.0 {
+                    None
+                } else {
+                    let duration_secs = (last.0 - first.0).as_secs_f64();
+                    i32::try_from(last.1 - first.1)
+                        .ok()
+                        .map(|diff| f64::from(diff) / duration_secs)
+                }
+            })
+            .unwrap_or(0.0)
+    }
+
     pub fn flow_input_millis_behind_latest_below_mark(&self, looking_back_secs: u32, max_value: i64) -> bool {
-        self.forall_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+        self.for_duration_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
             m.flow
                 .input_millis_behind_latest
                 .map(|millis_behind_latest| {
@@ -482,7 +760,7 @@ impl AppDataWindow<MetricCatalog> {
     }
 
     pub fn flow_input_millis_behind_latest_above_mark(&self, looking_back_secs: u32, min_value: i64) -> bool {
-        self.forall_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+        self.for_duration_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
             m.flow
                 .input_millis_behind_latest
                 .map(|millis_behind_latest| {
@@ -497,8 +775,43 @@ impl AppDataWindow<MetricCatalog> {
         })
     }
 
+    pub fn cluster_task_cpu_load_rolling_average(&self, looking_back_secs: u32) -> f64 {
+        let (sum, size) = self.sum_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+            m.cluster.task_cpu_load
+        });
+
+        if size == 0 {
+            0.0
+        } else {
+            sum / size as f64
+        }
+    }
+
+    pub fn cluster_task_cpu_load_rolling_change_per_sec(&self, looking_back_secs: u32) -> f64 {
+        let values = self
+            .extract_from_head(Duration::from_secs(u64::from(looking_back_secs)), |metric| {
+                (metric.recv_timestamp, metric.cluster.task_cpu_load)
+            })
+            .into_iter()
+            .collect::<Vec<_>>();
+
+        // remember: head is the most recent, so we want to diff accordingly
+        values
+            .last()
+            .zip(values.first())
+            .and_then(|(first, last)| {
+                if first.0 == last.0 {
+                    None
+                } else {
+                    let duration_secs = (last.0 - first.0).as_secs_f64();
+                    Some((last.1 - first.1) / duration_secs)
+                }
+            })
+            .unwrap_or(0.0)
+    }
+
     pub fn cluster_task_cpu_load_below_mark(&self, looking_back_secs: u32, max_value: f64) -> bool {
-        self.forall_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+        self.for_duration_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
             tracing::debug!(
                 "eval task_cpu_load in catalog[{}]: {} <= {max_value} = {}",
                 m.recv_timestamp,
@@ -510,7 +823,7 @@ impl AppDataWindow<MetricCatalog> {
     }
 
     pub fn cluster_task_cpu_load_above_mark(&self, looking_back_secs: u32, min_value: f64) -> bool {
-        self.forall_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+        self.for_duration_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
             tracing::debug!(
                 "eval task_cpu_load in catalog[{}]: {min_value} <= {} = {}",
                 m.recv_timestamp,
@@ -521,8 +834,43 @@ impl AppDataWindow<MetricCatalog> {
         })
     }
 
+    pub fn cluster_task_heap_memory_used_rolling_average(&self, looking_back_secs: u32) -> f64 {
+        let (sum, size) = self.sum_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+            m.cluster.task_heap_memory_used
+        });
+
+        if size == 0 {
+            0.0
+        } else {
+            sum / size as f64
+        }
+    }
+
+    pub fn cluster_task_heap_memory_used_rolling_change_per_sec(&self, looking_back_secs: u32) -> f64 {
+        let values = self
+            .extract_from_head(Duration::from_secs(u64::from(looking_back_secs)), |metric| {
+                (metric.recv_timestamp, metric.cluster.task_heap_memory_used)
+            })
+            .into_iter()
+            .collect::<Vec<_>>();
+
+        // remember: head is the most recent, so we want to diff accordingly
+        values
+            .last()
+            .zip(values.first())
+            .and_then(|(first, last)| {
+                if first.0 == last.0 {
+                    None
+                } else {
+                    let duration_secs = (last.0 - first.0).as_secs_f64();
+                    Some((last.1 - first.1) / duration_secs)
+                }
+            })
+            .unwrap_or(0.0)
+    }
+
     pub fn cluster_task_heap_memory_used_below_mark(&self, looking_back_secs: u32, max_value: f64) -> bool {
-        self.forall_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+        self.for_duration_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
             tracing::debug!(
                 "eval task_heap_memory_used in catalog[{}]: {} <= {max_value} = {}",
                 m.recv_timestamp,
@@ -534,7 +882,7 @@ impl AppDataWindow<MetricCatalog> {
     }
 
     pub fn cluster_task_heap_memory_used_above_mark(&self, looking_back_secs: u32, min_value: f64) -> bool {
-        self.forall_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+        self.for_duration_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
             tracing::debug!(
                 "eval task_heap_memory_used in catalog[{}]: {min_value} <= {} = {}",
                 m.recv_timestamp,
@@ -545,25 +893,60 @@ impl AppDataWindow<MetricCatalog> {
         })
     }
 
+    pub fn cluster_task_heap_memory_load_rolling_average(&self, looking_back_secs: u32) -> f64 {
+        let (sum, size) = self.sum_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+            m.cluster.task_heap_memory_load()
+        });
+
+        if size == 0 {
+            0.0
+        } else {
+            sum / size as f64
+        }
+    }
+
+    pub fn cluster_task_heap_memory_load_rolling_change_per_sec(&self, looking_back_secs: u32) -> f64 {
+        let values = self
+            .extract_from_head(Duration::from_secs(u64::from(looking_back_secs)), |metric| {
+                (metric.recv_timestamp, metric.cluster.task_heap_memory_load())
+            })
+            .into_iter()
+            .collect::<Vec<_>>();
+
+        // remember: head is the most recent, so we want to diff accordingly
+        values
+            .last()
+            .zip(values.first())
+            .and_then(|(first, last)| {
+                if first.0 == last.0 {
+                    None
+                } else {
+                    let duration_secs = (last.0 - first.0).as_secs_f64();
+                    Some((last.1 - first.1) / duration_secs)
+                }
+            })
+            .unwrap_or(0.0)
+    }
+
     pub fn cluster_task_heap_memory_load_below_mark(&self, looking_back_secs: u32, max_value: f64) -> bool {
-        self.forall_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+        self.for_duration_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
             tracing::debug!(
                 "eval task_heap_memory_load in catalog[{}]: {} <= {max_value} = {}",
                 m.recv_timestamp,
-                m.cluster.task_cpu_load,
-                m.cluster.task_cpu_load <= max_value
+                m.cluster.task_heap_memory_load(),
+                m.cluster.task_heap_memory_load() <= max_value
             );
             m.cluster.task_heap_memory_load() <= max_value
         })
     }
 
     pub fn cluster_task_heap_memory_load_above_mark(&self, looking_back_secs: u32, min_value: f64) -> bool {
-        self.forall_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+        self.for_duration_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
             tracing::debug!(
                 "eval task_heap_memory_load in catalog[{}]: {min_value} <= {} = {}",
                 m.recv_timestamp,
-                m.cluster.task_cpu_load,
-                min_value <= m.cluster.task_cpu_load
+                m.cluster.task_heap_memory_load(),
+                min_value <= m.cluster.task_heap_memory_load()
             );
             min_value <= m.cluster.task_heap_memory_load()
         })

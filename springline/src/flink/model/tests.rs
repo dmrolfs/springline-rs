@@ -76,21 +76,21 @@ mod catalog {
             idle_time_millis_per_sec: 500.0,
             ..FlowMetrics::default()
         };
-        assert_eq!(flow.average_task_utilization(), 0.5);
+        assert_eq!(flow.task_utilization(), 0.5);
 
         flow.idle_time_millis_per_sec = 1000.0;
-        assert_eq!(flow.average_task_utilization(), 0.0);
+        assert_eq!(flow.task_utilization(), 0.0);
 
         flow.idle_time_millis_per_sec = 0.0;
-        assert_eq!(flow.average_task_utilization(), 1.0);
+        assert_eq!(flow.task_utilization(), 1.0);
 
         // by flink definition can't happen but want to reasonably handle:
 
         flow.idle_time_millis_per_sec = 201_312.7;
-        assert_eq!(flow.average_task_utilization(), 0.0);
+        assert_eq!(flow.task_utilization(), 0.0);
 
         flow.idle_time_millis_per_sec = -2.1;
-        assert_eq!(flow.average_task_utilization(), 1.0);
+        assert_eq!(flow.task_utilization(), 1.0);
     }
 
     #[test]
@@ -740,39 +740,39 @@ mod window {
         );
 
         tracing::info_span!("looking back for 5 seconds").in_scope(|| {
-            assert_eq!(window.forall_from_head(Duration::from_secs(5), f), false);
+            assert_eq!(window.for_duration_from_head(Duration::from_secs(5), f), false);
         });
 
         tracing::info_span!("looking back for 11 seconds").in_scope(|| {
-            assert_eq!(window.forall_from_head(Duration::from_secs(11), f), true);
+            assert_eq!(window.for_duration_from_head(Duration::from_secs(11), f), true);
         });
 
         tracing::info_span!("looking back for 21 seconds").in_scope(|| {
-            assert_eq!(window.forall_from_head(Duration::from_secs(21), f), true);
+            assert_eq!(window.for_duration_from_head(Duration::from_secs(21), f), true);
         });
 
         tracing::info_span!("looking back for 31 seconds").in_scope(|| {
-            assert_eq!(window.forall_from_head(Duration::from_secs(31), f), true);
+            assert_eq!(window.for_duration_from_head(Duration::from_secs(31), f), true);
         });
 
         tracing::info_span!("looking back for 41 seconds").in_scope(|| {
-            assert_eq!(window.forall_from_head(Duration::from_secs(41), f), true);
+            assert_eq!(window.for_duration_from_head(Duration::from_secs(41), f), true);
         });
 
         tracing::info_span!("looking back for 51 seconds").in_scope(|| {
-            assert_eq!(window.forall_from_head(Duration::from_secs(51), f), false);
+            assert_eq!(window.for_duration_from_head(Duration::from_secs(51), f), false);
         });
 
         tracing::info_span!("looking back for 61 seconds").in_scope(|| {
-            assert_eq!(window.forall_from_head(Duration::from_secs(61), f), false);
+            assert_eq!(window.for_duration_from_head(Duration::from_secs(61), f), false);
         });
 
         tracing::info_span!("looking back for 71 seconds").in_scope(|| {
-            assert_eq!(window.forall_from_head(Duration::from_secs(71), f), false);
+            assert_eq!(window.for_duration_from_head(Duration::from_secs(71), f), false);
         });
 
         tracing::info_span!("looking back for 2000 seconds").in_scope(|| {
-            assert_eq!(window.forall_from_head(Duration::from_secs(2000), f), false);
+            assert_eq!(window.for_duration_from_head(Duration::from_secs(2000), f), false);
         });
     }
 }

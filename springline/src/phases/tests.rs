@@ -2,6 +2,7 @@ mod window {
     use std::collections::{HashMap, HashSet};
     use std::time::Duration;
 
+    use approx::assert_relative_eq;
     use async_trait::async_trait;
     use claim::*;
     use oso::Oso;
@@ -116,6 +117,174 @@ mod window {
                     );
                 }
                 .instrument(tracing::info_span!("test item", INDEX=%i))
+                .await;
+            }
+
+            stage_handle.abort();
+            inlet.close().await;
+        })
+    }
+
+    #[test]
+    fn test_basic_window_rolling_average() {
+        // unimplemented!("test_basic_window_rolling_average");
+
+        once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
+        let main_span = tracing::info_span!("test_basic_window_rolling_average");
+        let _main_span_guard = main_span.enter();
+
+        let now = Timestamp::now();
+        let start = now - Duration::from_secs(10);
+        tracing::info!("NOW = {now:?} == {now}");
+        tracing::info!("START = {start:?} == {start}");
+
+        let data: Vec<MetricCatalog> = (0..20)
+            .map(|i: u32| {
+                let value = if i < 10 { (i + 1) as i32 } else { (20 - i) as i32 };
+                make_test_catalog(start + Duration::from_secs(i as u64), value)
+            })
+            .collect();
+
+        let (tx_in, rx_in) = mpsc::channel(8);
+        let (tx_out, mut rx_out) = mpsc::channel(8);
+
+        let engine_settings = EngineSettings {
+            telemetry_window: Duration::from_secs(3),
+            sufficient_window_coverage_percentage: 0.5,
+            ..EngineSettings::default()
+        };
+        let mut stage = CollectMetricWindow::new("test_window", &engine_settings);
+
+        block_on(async {
+            let mut inlet = stage.inlet();
+            stage.inlet().attach("test_source".into(), rx_in).await;
+            stage.outlet().attach("test_sink".into(), tx_out).await;
+
+            let stage_handle = tokio::spawn(async move { assert_ok!(stage.run().await) });
+
+            let expected = [
+                1.0,  // 0s, [1]
+                1.5,  // 1s - [1, 2]
+                2.0,  // 2s - [1, 2, 3]
+                2.5,  // 3s - [1, 2, 3, 4]
+                3.5,  // 4s - coverage: 0.6 [5,4,3,2]
+                4.5,  // 5s - coverage: 0.6 [6,5,4,3]
+                5.5,  // 6s - coverage: 0.6 [7,6,5,4]
+                6.5,  // 7s - coverage: 0.6 [8,7,6,5]
+                7.5,  // 8s - coverage: 0.6 [9,8,7,6]
+                8.5,  // 9s - coverage: 0.6 [10,9,8,7]
+                9.25, // 10s - coverage: 0.6 [10,10,9,8]
+                9.5,  // 11s - coverage: 0.6 [9,10,10,9]
+                9.25, // 12s - coverage: 0.6 [8,9,10,10]
+                8.5,  // 13s - coverage: 0.6 [7,8,9,10]
+                7.5,  // 14s - coverage: 0.6 [6,7,8,9]
+                6.5,  // 15s - coverage: 0.6 [5,6,7,8]
+                5.5,  // 16s - coverage: 0.6 [4,5,6,7]
+                4.5,  // 17s - coverage: 0.6 [3,4,5,6]
+                3.5,  // 18s - coverage: 0.6 [2,3,4,5]
+                2.5,  // 19s - coverage: 0.6 [1,2,3,4]
+            ];
+
+            for i in 0..data.len() {
+                async {
+                    assert_ok!(tx_in.send(data[i].clone()).await);
+                    let actual = assert_some!(rx_out.recv().await);
+                    let result = std::panic::catch_unwind(|| {
+                        assert_relative_eq!(
+                            actual.flow_input_records_lag_max_rolling_average(5),
+                            expected[i],
+                            epsilon = 1.0e-10
+                        );
+                    });
+
+                    if let Err(err) = result {
+                        panic!("assertion failed on item {}: {:?}", i, err);
+                    }
+                }
+                    .instrument(tracing::info_span!("test item", INDEX=%i))
+                    .await;
+            }
+
+            stage_handle.abort();
+            inlet.close().await;
+        })
+    }
+
+    #[test]
+    fn test_basic_window_rolling_change_rate() {
+        // unimplemented!("test_basic_window_rolling_average");
+
+        once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
+        let main_span = tracing::info_span!("test_basic_window_rolling_change_rate");
+        let _main_span_guard = main_span.enter();
+
+        let now = Timestamp::now();
+        let start = now - Duration::from_secs(10);
+        tracing::info!("NOW = {now:?} == {now}");
+        tracing::info!("START = {start:?} == {start}");
+
+        let data: Vec<MetricCatalog> = (0..20)
+            .map(|i: u32| {
+                let value = if i < 10 { (i + 1) as i32 } else { (20 - i) as i32 };
+                make_test_catalog(start + Duration::from_secs(i as u64), value)
+            })
+            .collect();
+
+        let (tx_in, rx_in) = mpsc::channel(8);
+        let (tx_out, mut rx_out) = mpsc::channel(8);
+
+        let engine_settings = EngineSettings {
+            telemetry_window: Duration::from_secs(3),
+            sufficient_window_coverage_percentage: 0.5,
+            ..EngineSettings::default()
+        };
+        let mut stage = CollectMetricWindow::new("test_window", &engine_settings);
+
+        block_on(async {
+            let mut inlet = stage.inlet();
+            stage.inlet().attach("test_source".into(), rx_in).await;
+            stage.outlet().attach("test_sink".into(), tx_out).await;
+
+            let stage_handle = tokio::spawn(async move { assert_ok!(stage.run().await) });
+
+            let expected = [
+                0.0,  // 0s, [1] => 0.0
+                1.0,  // 1s - [1, 2] => (2 - 1) / (2 - 1) = 1.0
+                1.0,  // 2s - [1, 2, 3] => (3 - 1) / (3 - 1) = 1.0
+                1.0,  // 3s - [1, 2, 3, 4] => (4 - 1) / (4 - 1) = 1.0
+                1.0,  // 4s - coverage: 0.6 [5,4,3,2] => (5 - 2) / (5 - 2) = 1.0
+                1.0,  // 5s - coverage: 0.6 [6,5,4,3] => (6 - 3) / (6 - 3) = 1.0
+                1.0,  // 6s - coverage: 0.6 [7,6,5,4] => (7 - 4) / (7 - 4) = 1.0
+                1.0,  // 7s - coverage: 0.6 [8,7,6,5] => (8 - 5) / (8 - 5) = 1.0
+                1.0,  // 8s - coverage: 0.6 [9,8,7,6] => (9 - 6) / (9 - 6) = 1.0
+                1.0,  // 9s - coverage: 0.6 [10,9,8,7] => (10 - 7) / (10 - 7) = 1.0
+                0.666666666666666666, // 10s - coverage: 0.6 [10,10,9,8] => (10 - 8) / (11 - 8) = 0.666666666666666666
+                0.0,  // 11s - coverage: 0.6 [9,10,10,9] => (9 - 9) / (12 - 9) = 0.0
+                -0.666666666666666666, // 12s - coverage: 0.6 [8,9,10,10] => (8 - 10) / (13 - 10) = -0.666666666666666666
+                -1.0,  // 13s - coverage: 0.6 [7,8,9,10] => (7 - 10) / (14 - 11) = -1.0
+                -1.0,  // 14s - coverage: 0.6 [6,7,8,9] => (6 - 9) / (15 - 12) = -1.0
+                -1.0,  // 15s - coverage: 0.6 [5,6,7,8] => (5 - 8) / (16 - 13) = -1.0
+                -1.0,  // 16s - coverage: 0.6 [4,5,6,7] => (4 - 7) / (17 - 14) = -1.0
+                -1.0,  // 17s - coverage: 0.6 [3,4,5,6] => (3 - 6) / (18 - 15) = -1.0
+                -1.0,  // 18s - coverage: 0.6 [2,3,4,5] => (2 - 5) / (19 - 16) = -1.0
+                -1.0,  // 19s - coverage: 0.6 [1,2,3,4] => (1 - 4) / (20 - 17) = -1.0
+            ];
+
+            for i in 0..data.len() {
+                async {
+                    assert_ok!(tx_in.send(data[i].clone()).await);
+                    let actual_window = assert_some!(rx_out.recv().await);
+                    let actual = actual_window.flow_input_records_lag_max_rolling_change_per_sec(5);
+                    tracing::debug!(%actual, ?actual_window, "received test data window");
+                    let result = std::panic::catch_unwind(|| {
+                        assert_relative_eq!(actual, expected[i], epsilon = 1.0e-10);
+                    });
+
+                    if let Err(err) = result {
+                        panic!("assertion failed on item {}: {:?}", i, err);
+                    }
+                }
+                .instrument(tracing::info_span!("test item", INDEX=%i, EXPECTED=%expected[i]))
                 .await;
             }
 

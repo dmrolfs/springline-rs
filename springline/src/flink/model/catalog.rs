@@ -75,7 +75,7 @@ impl PolicyContributor for MetricCatalog {
         engine.register_class(
             FlowMetrics::get_polar_class_builder()
                 .name("FlowMetrics")
-                .add_method("average_task_utilization", FlowMetrics::average_task_utilization)
+                .add_method("task_utilization", FlowMetrics::task_utilization)
                 .build(),
         )?;
         engine.register_class(
@@ -269,7 +269,7 @@ impl fmt::Debug for FlowMetrics {
 }
 
 impl FlowMetrics {
-    pub fn average_task_utilization(&self) -> f64 {
+    pub fn task_utilization(&self) -> f64 {
         let idle = self.idle_time_millis_per_sec.max(0.0).min(1_000.0);
         1.0 - idle / 1_000.0
     }
