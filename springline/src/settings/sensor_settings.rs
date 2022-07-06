@@ -193,7 +193,7 @@ mod tests {
                 metrics_interval: Duration::from_secs(15),
                 metric_orders: vec![
                     MetricOrder::Task {
-                        position: PlanPositionSpec::All,
+                        position: PlanPositionSpec::Any,
                         metric: MetricSpec::new(
                             "Status.JVM.Memory.NonHeap.Committed",
                             Max,

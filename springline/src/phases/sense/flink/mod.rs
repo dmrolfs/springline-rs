@@ -57,11 +57,11 @@ pub static STD_METRIC_ORDERS: Lazy<Vec<MetricOrder>> = Lazy::new(|| {
             ),
         },
         MetricOrder::Task {
-            position: PlanPositionSpec::All,
+            position: PlanPositionSpec::Any,
             metric: MetricSpec::new("numRecordsInPerSecond", Max, MC_FLOW__RECORDS_IN_PER_SEC, Float),
         },
         MetricOrder::Task {
-            position: PlanPositionSpec::All,
+            position: PlanPositionSpec::Any,
             metric: MetricSpec::new("numRecordsOutPerSecond", Max, "flow.records_out_per_sec", Float),
         },
         MetricOrder::Task {
@@ -91,7 +91,7 @@ pub static STD_METRIC_ORDERS: Lazy<Vec<MetricOrder>> = Lazy::new(|| {
             metric: MetricSpec::new("Status.JVM.Threads.Count", Max, "cluster.task_nr_threads", Integer),
         },
         MetricOrder::Task {
-            position: PlanPositionSpec::All,
+            position: PlanPositionSpec::Any,
             metric: MetricSpec::new(
                 "buffers.inputQueueLength",
                 Max,
@@ -100,7 +100,7 @@ pub static STD_METRIC_ORDERS: Lazy<Vec<MetricOrder>> = Lazy::new(|| {
             ),
         }, // Integer,
         MetricOrder::Task {
-            position: PlanPositionSpec::All,
+            position: PlanPositionSpec::Any,
             metric: MetricSpec::new(
                 "buffers.inPoolUsage",
                 Max,
@@ -109,7 +109,7 @@ pub static STD_METRIC_ORDERS: Lazy<Vec<MetricOrder>> = Lazy::new(|| {
             ),
         }, // Integer,
         MetricOrder::Task {
-            position: PlanPositionSpec::All,
+            position: PlanPositionSpec::Any,
             metric: MetricSpec::new(
                 "buffers.outputQueueLength",
                 Max,
@@ -118,7 +118,7 @@ pub static STD_METRIC_ORDERS: Lazy<Vec<MetricOrder>> = Lazy::new(|| {
             ),
         }, // Integer,
         MetricOrder::Task {
-            position: PlanPositionSpec::All,
+            position: PlanPositionSpec::Any,
             metric: MetricSpec::new(
                 "buffers.outPoolUsage",
                 Max,

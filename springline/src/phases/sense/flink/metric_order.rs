@@ -42,38 +42,42 @@ pub enum PositionCandidate<'c> {
     ByName(&'c str),
 }
 
-const SOURCE_PREFIX: &str = "Source:";
+const FLINK_SOURCE_PREFIX: &str = "Source:";
+const FLINK_SINK_PREFIX: &str = "Sink:";
 
 #[derive(Debug, Display, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PlanPositionSpec {
-    All,
+    Any,
     Source,
     NotSource,
-    //todo Can include the following for completness but unclear how to determine a match
-    //Sink,
-    //NotSink,
-    //Through,
+    Sink,
+    NotSink,
+    Through,
 }
 
 impl Default for PlanPositionSpec {
     fn default() -> Self {
-        Self::All
+        Self::Any
     }
 }
 
 impl PlanPositionSpec {
     pub const fn is_all(&self) -> bool {
-        matches!(self, Self::All)
+        matches!(self, Self::Any)
     }
 
     pub fn matches<'c>(&self, candidate: &PositionCandidate<'c>) -> bool {
         match (self, candidate) {
-            (Self::Source, PositionCandidate::ByName(name)) => name.starts_with(SOURCE_PREFIX),
-            (Self::NotSource, PositionCandidate::ByName(name)) => !name.starts_with(SOURCE_PREFIX),
-            (Self::All, _) => true,
-            (Self::Source, _) => true,
-            (Self::NotSource, _) => true,
+            (Self::Any, _) => true,
+            (_, PositionCandidate::Any) => true,
+            (Self::Source, PositionCandidate::ByName(name)) => name.starts_with(FLINK_SOURCE_PREFIX),
+            (Self::NotSource, PositionCandidate::ByName(name)) => !name.starts_with(FLINK_SOURCE_PREFIX),
+            (Self::Sink, PositionCandidate::ByName(name)) => name.starts_with(FLINK_SINK_PREFIX),
+            (Self::NotSink, PositionCandidate::ByName(name)) => !name.starts_with(FLINK_SINK_PREFIX),
+            (Self::Through, PositionCandidate::ByName(name)) => {
+                !name.starts_with(FLINK_SOURCE_PREFIX) && !name.starts_with(FLINK_SINK_PREFIX)
+            },
         }
     }
 }
@@ -128,18 +132,7 @@ impl MetricOrder {
                 let match_metric = spec.metric.clone();
                 Box::new(move |candidate| {
                     let pos_match = pos_spec.matches(&candidate.position);
-                    tracing::debug!("metric_order pos_spec[{pos_spec}] matches candidate[{candidate:?}] = {pos_match}");
-                    if pos_match {
-                        let metric_match = candidate.metric == match_metric.as_str();
-                        tracing::debug!(
-                            "metric_order metric_spec[{match_metric}] matches candidate[{}] = {metric_match}",
-                            candidate.metric
-                        );
-                        metric_match
-                    } else {
-                        false
-                    }
-                    // pos_match && candidate.metric == match_metric.as_str()
+                    pos_match && candidate.metric == match_metric.as_str()
                 })
             },
             Self::Operator { name, position, metric: spec } => {
@@ -147,7 +140,7 @@ impl MetricOrder {
                 let encoded_name = Self::encode_string(name);
                 let regex = Regex::new(&format!(
                     r"^({encoded_source_prefix})?{encoded_name}\..+\..*{metric}$",
-                    encoded_source_prefix = Self::encode_string(&format!("{SOURCE_PREFIX} ")),
+                    encoded_source_prefix = Self::encode_string(&format!("{FLINK_SOURCE_PREFIX} ")),
                     metric = spec.metric
                 ))
                 .map_err(|err| SenseError::Stage(err.into()))?;
@@ -155,18 +148,7 @@ impl MetricOrder {
                 tracing::debug!(%encoded_name, ?regex, "matcher for operator [{name}]::[{}]", spec.metric);
                 Box::new(move |candidate| {
                     let pos_match = pos_spec.matches(&candidate.position);
-                    tracing::debug!("metric_order pos_spec[{pos_spec}] matches candidate[{candidate:?}] = {pos_match}");
-                    if pos_match {
-                        let metric_match = regex.is_match(candidate.metric);
-                        tracing::debug!(
-                            "metric_order metric_spec[{regex:?}] matches candidate[{}] = {metric_match}",
-                            candidate.metric
-                        );
-                        metric_match
-                    } else {
-                        false
-                    }
-                    // pos_match && regex.is_match(candidate.metric)
+                    pos_match && regex.is_match(candidate.metric)
                 })
             },
         };
@@ -718,7 +700,7 @@ mod tests {
                     telemetry_path: "supplement.input_records_lag_max".into(),
                     telemetry_type: TelemetryType::Integer,
                 },
-                position: PlanPositionSpec::All,
+                position: PlanPositionSpec::Any,
             },
         ];
 
@@ -804,7 +786,7 @@ mod tests {
                         telemetry_path: "flow.input_records_lag_max".into(),
                         telemetry_type: TelemetryType::Integer,
                     },
-                    position: PlanPositionSpec::All,
+                    position: PlanPositionSpec::Any,
                 },
                 MetricOrder::Operator {
                     name: "Supplement Stream".into(),
@@ -839,7 +821,7 @@ mod tests {
                     telemetry_path: "flow.input_records_lag_max".into(),
                     telemetry_type: TelemetryType::Integer,
                 },
-                position: PlanPositionSpec::All,
+                position: PlanPositionSpec::Any,
             },
             MetricOrder::Operator {
                 name: "Supplement Stream".into(),
@@ -930,7 +912,7 @@ mod tests {
                         telemetry_path: "flow.input_records_lag_max".into(),
                         telemetry_type: TelemetryType::Integer,
                     },
-                    position: PlanPositionSpec::All,
+                    position: PlanPositionSpec::Any,
                 },
                 MetricOrder::Operator {
                     name: "Source: Supplement Stream".into(),
@@ -965,7 +947,7 @@ mod tests {
                     telemetry_path: "flow.input_records_lag_max".into(),
                     telemetry_type: TelemetryType::Integer,
                 },
-                position: PlanPositionSpec::All,
+                position: PlanPositionSpec::Any,
             },
             MetricOrder::Operator {
                 name: "Source: Supplement Stream".into(),
