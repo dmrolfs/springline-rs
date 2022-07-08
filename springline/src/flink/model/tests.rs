@@ -189,6 +189,9 @@ mod catalog {
                     forecasted_timestamp: Some(Timestamp::new(1647307440, 378969192)),
                     forecasted_records_in_per_sec: Some(21.4504261933966),
                     input_records_lag_max: None,
+                    input_assigned_partitions: None,
+                    input_total_lag: None,
+                    input_records_consumed_rate: None,
                     input_millis_behind_latest: None,
                 },
                 cluster: ClusterMetrics {
@@ -281,6 +284,9 @@ mod catalog {
                 forecasted_records_in_per_sec: Some(23.),
                 idle_time_millis_per_sec: 777.7,
                 input_records_lag_max: Some(314),
+                input_assigned_partitions: Some(2),
+                input_total_lag: Some(628),
+                input_records_consumed_rate: Some(471.0),
                 input_millis_behind_latest: None,
                 records_out_per_sec: 0.0,
             },
@@ -343,6 +349,15 @@ mod catalog {
                 Token::Str("flow.input_records_lag_max"),
                 Token::Some,
                 Token::I64(314),
+                Token::Str("flow.input_assigned_partitions"),
+                Token::Some,
+                Token::I64(2),
+                Token::Str("flow.input_total_lag"),
+                Token::Some,
+                Token::I64(628),
+                Token::Str("flow.input_records_consumed_rate"),
+                Token::Some,
+                Token::F64(471.0),
                 Token::Str(MC_CLUSTER__NR_ACTIVE_JOBS),
                 Token::U32(1),
                 Token::Str(MC_CLUSTER__NR_TASK_MANAGERS),
@@ -393,6 +408,9 @@ mod catalog {
                 forecasted_timestamp: None,
                 forecasted_records_in_per_sec: None,
                 input_records_lag_max: Some(314),
+                input_assigned_partitions: Some(3),
+                input_total_lag: Some(1_042),
+                input_records_consumed_rate: Some(521.0),
                 input_millis_behind_latest: None,
                 records_out_per_sec: 0.0,
             },
@@ -430,6 +448,9 @@ mod catalog {
                 MC_FLOW__RECORDS_IN_PER_SEC.to_string() => (17.).to_telemetry(),
                 "flow.records_out_per_sec".to_string() => (0.).to_telemetry(),
                 "flow.input_records_lag_max".to_string() => 314.to_telemetry(),
+                "flow.input_assigned_partitions".to_string() => 3.to_telemetry(),
+                "flow.input_total_lag".to_string() => 1_042.to_telemetry(),
+                "flow.input_records_consumed_rate".to_string() => 521_f64.to_telemetry(),
                 "flow.idle_time_millis_per_sec".to_string() => 333.3.to_telemetry(),
 
                 MC_CLUSTER__NR_ACTIVE_JOBS.to_string() => 1.to_telemetry(),
@@ -451,15 +472,6 @@ mod catalog {
 
         Ok(())
     }
-
-    // #[test]
-    // fn test_metric_to_f64() {
-    //     let expected = 3.14159_f64;
-    //     let m: Metric<f64> = Metric::new("pi", expected);
-    //
-    //     let actual: f64 = m.into();
-    //     assert_eq!(actual, expected);
-    // }
 
     #[tracing::instrument(level = "info")]
     pub fn make_test_catalog(ts: Timestamp, value: u32) -> MetricCatalog {
@@ -497,7 +509,7 @@ mod window {
     ) -> (AppDataWindow<MetricCatalog>, Vec<MetricCatalog>) {
         let mut window = AppDataWindow::builder()
             .with_size_and_interval(limit, interval)
-            .with_sufficient_coverage(0.5);
+            .with_quorum_percentage(0.5);
         let mut used = Vec::new();
         let mut remaining = Vec::new();
         for c in catalogs {
@@ -520,34 +532,34 @@ mod window {
     fn test_window_invariants() {
         let window = AppDataWindow::<MetricCatalog>::builder()
             .with_time_window(Duration::from_secs(1))
-            .with_sufficient_coverage(0.5)
+            .with_quorum_percentage(0.5)
             .build();
         assert_err!(window, "window is empty");
 
         let window = AppDataWindow::<MetricCatalog>::builder()
             .with_time_window(Duration::from_secs(1))
-            .with_sufficient_coverage(0.0)
+            .with_quorum_percentage(0.0)
             .with_item(MetricCatalog::empty())
             .build();
         assert_err!(window, "zero sufficient coverage");
 
         let window = AppDataWindow::<MetricCatalog>::builder()
             .with_time_window(Duration::from_secs(1))
-            .with_sufficient_coverage(1.0)
+            .with_quorum_percentage(1.0)
             .with_item(MetricCatalog::empty())
             .build();
         assert_ok!(window);
 
         let window = AppDataWindow::<MetricCatalog>::builder()
             .with_time_window(Duration::from_secs(1))
-            .with_sufficient_coverage(-0.07)
+            .with_quorum_percentage(-0.07)
             .with_item(MetricCatalog::empty())
             .build();
         assert_err!(window, "negative coverage");
 
         let window = AppDataWindow::<MetricCatalog>::builder()
             .with_time_window(Duration::from_secs(1))
-            .with_sufficient_coverage(1.00003)
+            .with_quorum_percentage(1.00003)
             .with_item(MetricCatalog::empty())
             .build();
         assert_err!(window, "impossible sufficient coverage required");

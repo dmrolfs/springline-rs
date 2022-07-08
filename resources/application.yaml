@@ -99,12 +99,27 @@ sensor:
     # as an "order" of the form:
     metric_orders:
 #      - Operator:
-#          name: "RWO Drives stream"
+#          name: "Data Input stream"
 #          position: source
 #          metric: records-lag-max
 #          agg: sum
 #          telemetry_path: flow.input_records_lag_max
 #          telemetry_type: Integer
+#
+#      - Operator:
+#          name: "Data Input stream"
+#          position: source
+#          metric: assigned-partitions
+#          agg: sum
+#          telemetry_path: flow.input_assigned_partitions
+#          telemetry_type: Integer
+#      - Operator:
+#          name: "Data Output stream"
+#          position: source
+#          metric: records-consumed-rate
+#          agg: sum
+#          telemetry_path: flow.input_records_consumed_rate
+#          telemetry_type: Float
 #
       - Job:
           metric: lastCheckpointDuration

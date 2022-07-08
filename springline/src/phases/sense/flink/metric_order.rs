@@ -1,14 +1,12 @@
 // use anyhow::anyhow;
 use std::borrow::Cow;
-use std::collections::HashMap;
 use std::fmt::Display;
 use std::hash::Hash;
 
-use itertools::Itertools;
 use once_cell::sync::Lazy;
 use proctor::elements::telemetry::combine::{self, TelemetryCombinator};
-use proctor::elements::TelemetryType;
-use proctor::error::SenseError;
+use proctor::elements::{TelemetryType, TelemetryValue};
+use proctor::error::{SenseError, TelemetryError};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
@@ -37,7 +35,7 @@ impl MetricSpec {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum PositionCandidate<'c> {
+pub enum PlanPositionCandidate<'c> {
     Any,
     ByName(&'c str),
 }
@@ -67,17 +65,42 @@ impl PlanPositionSpec {
         matches!(self, Self::Any)
     }
 
-    pub fn matches<'c>(&self, candidate: &PositionCandidate<'c>) -> bool {
+    pub fn matches<'c>(&self, candidate: &PlanPositionCandidate<'c>) -> bool {
         match (self, candidate) {
             (Self::Any, _) => true,
-            (_, PositionCandidate::Any) => true,
-            (Self::Source, PositionCandidate::ByName(name)) => name.starts_with(FLINK_SOURCE_PREFIX),
-            (Self::NotSource, PositionCandidate::ByName(name)) => !name.starts_with(FLINK_SOURCE_PREFIX),
-            (Self::Sink, PositionCandidate::ByName(name)) => name.starts_with(FLINK_SINK_PREFIX),
-            (Self::NotSink, PositionCandidate::ByName(name)) => !name.starts_with(FLINK_SINK_PREFIX),
-            (Self::Through, PositionCandidate::ByName(name)) => {
+            (_, PlanPositionCandidate::Any) => true,
+            (Self::Source, PlanPositionCandidate::ByName(name)) => name.starts_with(FLINK_SOURCE_PREFIX),
+            (Self::NotSource, PlanPositionCandidate::ByName(name)) => !name.starts_with(FLINK_SOURCE_PREFIX),
+            (Self::Sink, PlanPositionCandidate::ByName(name)) => name.starts_with(FLINK_SINK_PREFIX),
+            (Self::NotSink, PlanPositionCandidate::ByName(name)) => !name.starts_with(FLINK_SINK_PREFIX),
+            (Self::Through, PlanPositionCandidate::ByName(name)) => {
                 !name.starts_with(FLINK_SOURCE_PREFIX) && !name.starts_with(FLINK_SINK_PREFIX)
             },
+        }
+    }
+}
+
+#[derive(Debug, Display, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DerivativeCombinator {
+    Product,
+}
+
+impl DerivativeCombinator {
+    pub fn combine(&self, lhs: &TelemetryValue, rhs: &TelemetryValue) -> Result<TelemetryValue, TelemetryError> {
+        let items = Self::do_normalize_types(lhs, rhs);
+        match self {
+            Self::Product => combine::Product.combine(items).map(|v| v.unwrap()),
+        }
+    }
+
+    fn do_normalize_types(lhs: &TelemetryValue, rhs: &TelemetryValue) -> Vec<TelemetryValue> {
+        match (lhs.as_telemetry_type(), rhs.as_telemetry_type()) {
+            (TelemetryType::Float, _) => vec![lhs.clone(), rhs.clone()],
+            (_, TelemetryType::Float) => vec![rhs.clone(), lhs.clone()],
+            (TelemetryType::Integer, _) => vec![lhs.clone(), rhs.clone()],
+            (_, TelemetryType::Integer) => vec![rhs.clone(), lhs.clone()],
+            _ => vec![lhs.clone(), rhs.clone()],
         }
     }
 }
@@ -105,19 +128,27 @@ pub enum MetricOrder {
         #[serde(flatten)]
         metric: MetricSpec,
     },
+    Derivative {
+        telemetry_path: String,
+        telemetry_type: TelemetryType,
+        telemetry_lhs: String,
+        telemetry_rhs: String,
+        combinator: DerivativeCombinator,
+        agg: Aggregation,
+    },
 }
 
 // #[derive(Debug, PartialEq, Eq)]
 #[derive(Debug)]
-pub struct Candidate<'c> {
+pub struct MetricCandidate<'c> {
     pub metric: &'c str,
-    pub position: PositionCandidate<'c>,
+    pub position: PlanPositionCandidate<'c>,
 }
 
-pub type MetricOrderMatcher = Box<dyn for<'c> Fn(&Candidate<'c>) -> bool + Send + Sync + 'static>;
+pub type MetricOrderMatcher = Box<dyn for<'c> Fn(&MetricCandidate<'c>) -> bool + Send + Sync + 'static>;
 
 impl MetricOrder {
-    pub fn matcher(&self) -> Result<MetricOrderMatcher, SenseError> {
+    pub fn metric_matcher(&self) -> Result<MetricOrderMatcher, SenseError> {
         let matcher: MetricOrderMatcher = match self {
             Self::Job { metric: spec } => {
                 let match_metric = spec.metric.clone();
@@ -151,6 +182,7 @@ impl MetricOrder {
                     pos_match && regex.is_match(candidate.metric)
                 })
             },
+            Self::Derivative { .. } => Box::new(|_| false), // creates and doesn't pull metrics
         };
 
         Ok(matcher)
@@ -228,6 +260,7 @@ impl MetricOrder {
             Self::TaskManager { .. } => FlinkScope::TaskManager,
             Self::Task { .. } => FlinkScope::Task,
             Self::Operator { .. } => FlinkScope::Operator,
+            Self::Derivative { .. } => FlinkScope::Any,
         }
     }
 
@@ -244,6 +277,7 @@ impl MetricOrder {
             Self::TaskManager { metric: spec } => spec.metric.as_str(),
             Self::Task { metric: spec, .. } => spec.metric.as_str(),
             Self::Operator { metric: spec, .. } => spec.metric.as_str(),
+            Self::Derivative { .. } => "",
         }
     }
 
@@ -253,17 +287,18 @@ impl MetricOrder {
             Self::TaskManager { metric: spec } => spec.agg,
             Self::Task { metric: spec, .. } => spec.agg,
             Self::Operator { metric: spec, .. } => spec.agg,
+            Self::Derivative { agg, .. } => *agg,
         }
     }
 
-    pub fn metric_path(&self) -> String {
-        match self {
-            Self::Job { metric: spec } => format!("Job::{}", spec.metric),
-            Self::TaskManager { metric: spec } => format!("TaskManager::{}", spec.metric),
-            Self::Task { metric: spec, .. } => format!("Task::{}", spec.metric),
-            Self::Operator { name, metric: spec, .. } => format!("Operator::{name}::{}", spec.metric),
-        }
-    }
+    // pub fn metric_path(&self) -> String {
+    //     match self {
+    //         Self::Job { metric: spec } => format!("Job::{}", spec.metric),
+    //         Self::TaskManager { metric: spec } => format!("TaskManager::{}", spec.metric),
+    //         Self::Task { metric: spec, .. } => format!("Task::{}", spec.metric),
+    //         Self::Operator { name, metric: spec, .. } => format!("Operator::{name}::{}", spec.metric),
+    //     }
+    // }
 
     pub fn telemetry(&self) -> (TelemetryType, &str) {
         match self {
@@ -271,6 +306,7 @@ impl MetricOrder {
             Self::TaskManager { metric: spec } => (spec.telemetry_type, spec.telemetry_path.as_str()),
             Self::Task { metric: spec, .. } => (spec.telemetry_type, spec.telemetry_path.as_str()),
             Self::Operator { metric: spec, .. } => (spec.telemetry_type, spec.telemetry_path.as_str()),
+            Self::Derivative { telemetry_type, telemetry_path, .. } => (*telemetry_type, telemetry_path.as_str()),
         }
     }
 
@@ -280,17 +316,17 @@ impl MetricOrder {
         orders
     }
 
-    pub fn organize_by_scope(orders: &[Self]) -> HashMap<FlinkScope, Vec<Self>> {
-        let mut result: HashMap<FlinkScope, Vec<Self>> = HashMap::default();
-
-        for (scope, group) in &orders.iter().group_by(|o| o.scope()) {
-            let orders = result.entry(scope).or_insert_with(Vec::new);
-            let group: Vec<Self> = group.cloned().collect();
-            orders.extend(group);
-        }
-
-        result
-    }
+    // pub fn organize_by_scope(orders: &[Self]) -> HashMap<FlinkScope, Vec<Self>> {
+    //     let mut result: HashMap<FlinkScope, Vec<Self>> = HashMap::default();
+    //
+    //     for (scope, group) in &orders.iter().group_by(|o| o.scope()) {
+    //         let orders = result.entry(scope).or_insert_with(Vec::new);
+    //         let group: Vec<Self> = group.cloned().collect();
+    //         orders.extend(group);
+    //     }
+    //
+    //     result
+    // }
 }
 
 // impl Serialize for MetricOrder {
@@ -425,17 +461,26 @@ impl MetricOrder {
 // }
 
 #[derive(Debug, Display, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum FlinkScope {
     Job,
     TaskManager,
     Task,
     Operator,
+    Any,
+}
+
+impl FlinkScope {
+    pub fn matches(&self, other: &FlinkScope) -> bool {
+        *self == Self::Any || *other == Self::Any || *self == *other
+    }
 }
 
 static FLINK_SCOPE_JOB: Lazy<String> = Lazy::new(|| FlinkScope::Job.to_string());
 static FLINK_SCOPE_TASKMANAGER: Lazy<String> = Lazy::new(|| FlinkScope::TaskManager.to_string());
 static FLINK_SCOPE_TASK: Lazy<String> = Lazy::new(|| FlinkScope::Task.to_string());
 static FLINK_SCOPE_OPERATOR: Lazy<String> = Lazy::new(|| FlinkScope::Operator.to_string());
+static FLINK_SCOPE_ANY: Lazy<String> = Lazy::new(|| FlinkScope::Any.to_string());
 
 impl AsRef<str> for FlinkScope {
     fn as_ref(&self) -> &str {
@@ -444,6 +489,7 @@ impl AsRef<str> for FlinkScope {
             Self::Task => FLINK_SCOPE_TASK.as_ref(),
             Self::TaskManager => FLINK_SCOPE_TASKMANAGER.as_ref(),
             Self::Operator => FLINK_SCOPE_OPERATOR.as_ref(),
+            Self::Any => FLINK_SCOPE_ANY.as_ref(),
         }
     }
 }

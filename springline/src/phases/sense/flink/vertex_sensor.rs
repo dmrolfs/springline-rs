@@ -18,11 +18,11 @@ use tokio::sync::Mutex;
 use tracing::Instrument;
 use url::Url;
 
-use super::FlinkScope;
 use super::{api_model, metric_order, Aggregation, MetricOrder, Unpack};
 use crate::flink::{self, JobId, JobSummary, VertexDetail, MC_CLUSTER__NR_ACTIVE_JOBS};
 use crate::phases::sense::flink::api_model::FlinkMetricResponse;
 use crate::phases::sense::flink::metric_order::MetricOrderMatcher;
+use crate::phases::sense::flink::{self as sense_flink, FlinkScope};
 use crate::phases::sense::flink::{CorrelationGenerator, FlinkContext, JOB_SCOPE, TASK_SCOPE};
 use crate::CorrelationId;
 
@@ -35,6 +35,7 @@ pub struct VertexSensor<Out> {
     scopes: Vec<FlinkScope>,
     orders: Vec<MetricOrder>,
     order_matchers: HashMap<MetricOrder, MetricOrderMatcher>,
+    derivative_orders: Vec<MetricOrder>,
     correlation_gen: CorrelationGenerator,
     trigger: Inlet<()>,
     outlet: Outlet<Out>,
@@ -46,6 +47,7 @@ impl<Out> fmt::Debug for VertexSensor<Out> {
             .field("context", &self.context)
             .field("scopes", &self.scopes)
             .field("orders", &self.orders)
+            .field("derivative_orders", &self.derivative_orders)
             .field("trigger", &self.trigger)
             .field("outlet", &self.outlet)
             .finish()
@@ -63,13 +65,19 @@ impl<Out> VertexSensor<Out> {
         let outlet = Outlet::new(NAME, "outlet");
 
         let mut my_orders = Vec::new();
+        let mut derivative_orders = Vec::new();
         let mut order_matchers = HashMap::new();
         for order in orders {
-            let found = scopes.iter().any(|s| *s == order.scope());
+            let found = scopes.iter().any(|s| order.scope().matches(s));
             if found {
-                my_orders.push(order.clone());
-                let matcher = order.matcher()?;
-                order_matchers.insert(order.clone(), matcher);
+                match order {
+                    MetricOrder::Derivative { .. } => derivative_orders.push(order.clone()),
+                    _ => {
+                        my_orders.push(order.clone());
+                        let matcher = order.metric_matcher()?;
+                        order_matchers.insert(order.clone(), matcher);
+                    },
+                }
             }
         }
 
@@ -79,6 +87,7 @@ impl<Out> VertexSensor<Out> {
             scopes,
             orders: my_orders,
             order_matchers,
+            derivative_orders,
             correlation_gen,
             trigger,
             outlet,
@@ -241,6 +250,7 @@ where
             })
             .instrument(span)
             .await
+            .map(|telemetry| sense_flink::apply_derivative_orders(telemetry, &self.derivative_orders))
     }
 
     #[tracing::instrument(level = "trace", skip(self, vertex_metrics_url))]
@@ -270,9 +280,9 @@ where
                     .into_iter()
                     .filter_map(|metric| {
                         self.order_matchers.iter().find_map(|(_, matches)| {
-                            let candidate = metric_order::Candidate {
+                            let candidate = metric_order::MetricCandidate {
                                 metric: &metric.id,
-                                position: metric_order::PositionCandidate::ByName(&vertex.name),
+                                position: metric_order::PlanPositionCandidate::ByName(&vertex.name),
                             };
                             if matches(&candidate) {
                                 Some(metric.id.clone())
@@ -339,7 +349,7 @@ where
                 .await
                 .and_then(|metric_response: FlinkMetricResponse| {
                     api_model::build_telemetry(
-                        &metric_order::PositionCandidate::ByName(&vertex.name),
+                        &metric_order::PlanPositionCandidate::ByName(&vertex.name),
                         metric_response,
                         &self.order_matchers,
                     )
@@ -358,9 +368,9 @@ where
             .iter()
             .flat_map(|pick_metric| {
                 self.order_matchers.iter().filter_map(move |(o, matches)| {
-                    let candidate = metric_order::Candidate {
+                    let candidate = metric_order::MetricCandidate {
                         metric: pick_metric.as_str(),
-                        position: metric_order::PositionCandidate::ByName(&vertex.name),
+                        position: metric_order::PlanPositionCandidate::ByName(&vertex.name),
                     };
 
                     tracing::debug!(
@@ -517,6 +527,8 @@ mod tests {
     const METRIC_SUMMARY: Lazy<serde_json::Value> = Lazy::new(|| {
         json!([
                 { "id": "Source__Foo_Data_stream.KafkaConsumer.client-id.fce7d7241a2648da85a99be91e4f2b77.catalog.ingestion-service.layer.observations.consumer-fetch-manager-metrics_records-lag-max" },
+                { "id": "Source__Foo_Data_stream.KafkaConsumer.client-id.fce7d7241a2648da85a99be91e4f2b77.catalog.ingestion-service.layer.observations.consumer-fetch-manager-metrics_assigned-partitions" },
+                { "id": "Source__Foo_Data_stream.KafkaConsumer.client-id.fce7d7241a2648da85a99be91e4f2b77.catalog.ingestion-service.layer.observations.consumer-fetch-manager-metrics_records-consumed-rate" },
                 { "id": "Shuffle.Netty.Output.Buffers.outPoolUsage" },
                 { "id": "checkpointStartDelayNanos" },
                 { "id": "numBytesInLocal" },
@@ -585,6 +597,26 @@ mod tests {
                 agg: Aggregation::Sum,
                 telemetry_path: "flow.input_records_lag_max".into(),
                 telemetry_type: TelemetryType::Integer,
+            },
+            position: PlanPositionSpec::Source,
+        });
+        orders.push(MetricOrder::Operator {
+            name: VERTEX_NAME.into(),
+            metric: MetricSpec {
+                metric: "assigned-partitions".into(),
+                agg: Aggregation::Sum,
+                telemetry_path: "flow.input_assigned_partitions".into(),
+                telemetry_type: TelemetryType::Integer,
+            },
+            position: PlanPositionSpec::Source,
+        });
+        orders.push(MetricOrder::Operator {
+            name: VERTEX_NAME.into(),
+            metric: MetricSpec {
+                metric: "records-consumed-rate".into(),
+                agg: Aggregation::Sum,
+                telemetry_path: "flow.input_records_consumed_rate".into(),
+                telemetry_type: TelemetryType::Float,
             },
             position: PlanPositionSpec::Source,
         });
@@ -664,6 +696,14 @@ mod tests {
                     "id": "Source__Foo_Data_stream.KafkaConsumer.client-id.fce7d7241a2648da85a99be91e4f2b77.catalog.ingestion-service.layer.observations.consumer-fetch-manager-metrics_records-lag-max",
                     "sum": 123456_i64,
                 },
+                {
+                    "id": "Source__Foo_Data_stream.KafkaConsumer.client-id.fce7d7241a2648da85a99be91e4f2b77.catalog.ingestion-service.layer.observations.consumer-fetch-manager-metrics_assigned-partitions",
+                    "sum": 3_i64,
+                },
+                {
+                    "id": "Source__Foo_Data_stream.KafkaConsumer.client-id.fce7d7241a2648da85a99be91e4f2b77.catalog.ingestion-service.layer.observations.consumer-fetch-manager-metrics_records-consumed-rate",
+                    "sum": 3.14159_f64,
+                },
                 { "id": "numRecordsInPerSecond", "max": 0_f64 },
                 { "id": "numRecordsOutPerSecond", "max": 20_f64 },
                 { "id": "idleTimeMsPerSecond", "avg": 321.7_f64 },
@@ -721,6 +761,9 @@ mod tests {
                 actual,
                 maplit::hashmap! {
                     "flow.input_records_lag_max".to_string() => 123456_i64.into(),
+                    "flow.input_assigned_partitions".to_string() => 3_i64.into(),
+                    "flow.input_total_lag".to_string() => 370_368_i64.into(),
+                    "flow.input_records_consumed_rate".to_string() => 3.14159_f64.into(),
                     MC_FLOW__RECORDS_IN_PER_SEC.to_string() => 0_f64.into(),
                     "flow.records_out_per_sec".to_string() => 20_f64.into(),
                     "flow.source.idle_time_millis_per_sec".to_string() => 321.7_f64.into(),

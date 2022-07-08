@@ -14,7 +14,7 @@ application:
     flink:
       metric_orders:
         flow:
-          input_records_lag_max:
+          source:
             name: "RWO Drives stream"
 
   eligibility:

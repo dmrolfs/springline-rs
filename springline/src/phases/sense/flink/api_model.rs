@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::phases::sense::flink::metric_order::{self, MetricOrderMatcher};
-use crate::phases::sense::flink::PositionCandidate;
+use crate::phases::sense::flink::PlanPositionCandidate;
 use once_cell::sync::Lazy;
 use proctor::elements::{Telemetry, TelemetryValue};
 use proctor::error::TelemetryError;
@@ -13,8 +13,8 @@ use super::{Aggregation, MetricOrder};
 pub struct FlinkMetricResponse(pub Vec<FlinkMetric>);
 
 impl IntoIterator for FlinkMetricResponse {
-    type IntoIter = std::vec::IntoIter<Self::Item>;
     type Item = FlinkMetric;
+    type IntoIter = std::vec::IntoIter<Self::Item>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.0.into_iter()
@@ -58,7 +58,8 @@ impl FlinkMetric {
 
 #[tracing::instrument(level = "trace", skip(metrics, order_matchers))]
 pub fn build_telemetry<'c, M>(
-    position_candidate: &PositionCandidate<'c>, metrics: M, order_matchers: &HashMap<MetricOrder, MetricOrderMatcher>,
+    position_candidate: &PlanPositionCandidate<'c>, metrics: M,
+    order_matchers: &HashMap<MetricOrder, MetricOrderMatcher>,
 ) -> Result<Telemetry, TelemetryError>
 where
     M: IntoIterator<Item = FlinkMetric>,
@@ -71,7 +72,7 @@ where
         let matched_orders: Vec<&MetricOrder> = order_matchers
             .iter()
             .filter_map(|(order, matches)| {
-                let candidate = metric_order::Candidate {
+                let candidate = metric_order::MetricCandidate {
                     metric: &metric.id,
                     position: position_candidate.clone(),
                 };
@@ -93,20 +94,6 @@ where
                 let _ = telemetry.insert(key, val);
             });
         }
-
-        //     // match matched_orders {
-        //     //     Some(os) => {
-        //     //         satisfied.insert(m.id.clone());
-        //     //         m.populate_telemetry(&mut telemetry, os);
-        //     //     },
-        //     //     None => {
-        //     //         tracing::warn!(unexpected_metric=?m, "unexpected metric in response not ordered - adding with minimal translation");
-        //     //         m.values.into_iter().for_each(|(agg, val)| {
-        //     //             let key = format!("{}{}", m.id, suffix_for(m.id.as_str(), agg));
-        //     //             let _ = telemetry.insert(key, val);
-        //     //         });
-        //     //     },
-        //     // }
     }
 
     let all: HashSet<&MetricOrder> = order_matchers.iter().map(|(order, _)| order).collect();

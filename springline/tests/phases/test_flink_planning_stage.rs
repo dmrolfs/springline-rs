@@ -199,6 +199,9 @@ fn make_test_data(
             forecasted_timestamp: Some(forecasted_timestamp),
             forecasted_records_in_per_sec: Some(records_per_sec),
             input_records_lag_max: Some(input_records_lag_max),
+            input_assigned_partitions: Some(nr_task_managers as i64),
+            input_total_lag: Some(input_records_lag_max * nr_task_managers as i64),
+            input_records_consumed_rate: Some((input_records_lag_max * nr_task_managers as i64 * 2) as f64),
             input_millis_behind_latest: None,
         },
         cluster: ClusterMetrics {

@@ -21,7 +21,9 @@ mod metric_order;
 mod taskmanager_admin_sensor;
 mod vertex_sensor;
 
-pub use metric_order::{Aggregation, FlinkScope, MetricOrder, MetricSpec, PlanPositionSpec, PositionCandidate};
+pub use metric_order::{
+    Aggregation, DerivativeCombinator, FlinkScope, MetricOrder, MetricSpec, PlanPositionCandidate, PlanPositionSpec,
+};
 pub use vertex_sensor::{
     FLINK_VERTEX_SENSOR_AVAIL_TELEMETRY_TIME, FLINK_VERTEX_SENSOR_METRIC_PICKLIST_TIME, FLINK_VERTEX_SENSOR_TIME,
 };
@@ -126,6 +128,14 @@ pub static STD_METRIC_ORDERS: Lazy<Vec<MetricOrder>> = Lazy::new(|| {
                 Float,
             ),
         }, // Integer,
+        MetricOrder::Derivative {
+            telemetry_path: "flow.input_total_lag".to_string(),
+            telemetry_type: Integer,
+            telemetry_lhs: "flow.input_records_lag_max".to_string(),
+            telemetry_rhs: "flow.input_assigned_partitions".to_string(),
+            combinator: DerivativeCombinator::Product,
+            agg: Sum,
+        },
     ]
 });
 
@@ -238,26 +248,6 @@ where
     }
 }
 
-// type OrdersByMetric = HashMap<String, Vec<MetricOrder>>;
-// /// Distills orders to requested scope and reorganizes them (order has metric+agg) to metric and
-// /// consolidates aggregation span.
-// #[tracing::instrument(level = "debug")]
-// fn distill_metric_orders_for_sensor_scopes(
-//     scopes: &HashSet<FlinkScope>, orders: &[MetricOrder],
-// ) -> (OrdersByMetric, HashSet<Aggregation>) {
-//     let mut order_domain = HashMap::default();
-//     let mut agg_span = HashSet::default();
-//
-//     for o in orders.iter().filter(|o| scopes.contains(&o.scope())) {
-//         agg_span.insert(o.agg());
-//         let entry = order_domain.entry(o.metric().to_string()).or_insert_with(Vec::new);
-//         entry.push(o.clone());
-//     }
-//
-//     tracing::debug!("orders distilled:{order_domain:?} and aggregations:{agg_span:?}.");
-//     (order_domain, agg_span)
-// }
-
 fn merge_into_metric_groups(metric_telemetry: &mut HashMap<String, Vec<TelemetryValue>>, vertex_telemetry: Telemetry) {
     for (metric, vertex_val) in vertex_telemetry.into_iter() {
         metric_telemetry
@@ -299,6 +289,42 @@ fn consolidate_active_job_telemetry_for_order(
         .into();
 
     Ok(telemetry)
+}
+
+#[tracing::instrument(level = "trace", skip(telemetry))]
+pub fn apply_derivative_orders(mut telemetry: Telemetry, derivative_orders: &[MetricOrder]) -> Telemetry {
+    fn extract_terms<'t>(
+        t: &'t Telemetry, lhs_path: &'t str, rhs_path: &'t str,
+    ) -> Option<(&'t TelemetryValue, &'t TelemetryValue)> {
+        let lhs = t.get(lhs_path);
+        let rhs = t.get(rhs_path);
+        lhs.zip(rhs)
+    }
+
+    for order in derivative_orders {
+        if let MetricOrder::Derivative {
+            telemetry_path,
+            telemetry_type,
+            telemetry_lhs,
+            telemetry_rhs,
+            combinator,
+            ..
+        } = order
+        {
+            if let Some((lhs, rhs)) = extract_terms(&telemetry, telemetry_lhs, telemetry_rhs) {
+                match combinator.combine(lhs, rhs).and_then(|c| telemetry_type.cast_telemetry(c)) {
+                    Ok(value) => {
+                        let _ = telemetry.insert(telemetry_path.clone(), value);
+                    },
+                    Err(err) => {
+                        tracing::warn!(error=?err, "failed to compute derivative metric order - skipping");
+                    },
+                }
+            }
+        }
+    }
+
+    telemetry
 }
 
 #[cfg(test)]

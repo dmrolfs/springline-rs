@@ -72,9 +72,9 @@ impl<Out> JobTaskmanagerSensor<Out> {
         let mut my_orders = Vec::new();
         let mut order_matchers = HashMap::new();
         for order in orders {
-            if order.scope() == scope {
+            if order.scope().matches(&scope) {
                 my_orders.push(order.clone());
-                let matcher = order.matcher()?;
+                let matcher = order.metric_matcher()?;
                 order_matchers.insert(order.clone(), matcher);
             }
         }
@@ -216,9 +216,9 @@ where
         for order in self.orders.iter() {
             let matches = &self.order_matchers[order];
             for metric in flink_scope_metrics.iter() {
-                let candidate = metric_order::Candidate {
+                let candidate = metric_order::MetricCandidate {
                     metric,
-                    position: metric_order::PositionCandidate::ByName(&self.name),
+                    position: metric_order::PlanPositionCandidate::ByName(&self.name),
                 };
                 if matches(&candidate) {
                     requested_metrics.insert(metric.clone());
@@ -283,9 +283,9 @@ where
                         .await
                         .and_then(|metric_response: FlinkMetricResponse| {
                             api_model::build_telemetry(
-                                &metric_order::PositionCandidate::Any,
+                                &metric_order::PlanPositionCandidate::Any,
                                 metric_response,
-                                 &self.order_matchers
+                                &self.order_matchers
                             )
                                 // this is only needed because async_trait forcing me to parameterize this stage
                                 .and_then(|telemetry| Out::unpack(telemetry))

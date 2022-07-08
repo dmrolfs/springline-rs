@@ -219,7 +219,7 @@ mod tests {
     use crate::kubernetes::{KubernetesApiConstraints, KubernetesDeployResource};
     use crate::phases::plan::{PerformanceRepositorySettings, PerformanceRepositoryType, SpikeSettings};
     use crate::phases::sense::flink::Aggregation::Sum;
-    use crate::phases::sense::flink::{Aggregation, MetricOrder, MetricSpec, PlanPositionSpec};
+    use crate::phases::sense::flink::{Aggregation, DerivativeCombinator, MetricOrder, MetricSpec, PlanPositionSpec};
     use crate::settings::action_settings::SavepointSettings;
     use crate::settings::sensor_settings::FlinkSensorSettings;
     use Aggregation::{Max, Min, Value};
@@ -327,6 +327,24 @@ mod tests {
                             name: "Source: Data Stream".to_string(),
                             position: PlanPositionSpec::Source,
                             metric: MetricSpec::new("records-lag-max", Sum, "flow.input_records_lag_max", Integer),
+                        },
+                        MetricOrder::Operator {
+                            name: "Data Stream".to_string(),
+                            position: PlanPositionSpec::Source,
+                            metric: MetricSpec::new(
+                                "assigned-partitions",
+                                Sum,
+                                "flow.input_assigned_partitions",
+                                Integer,
+                            ),
+                        },
+                        MetricOrder::Derivative {
+                            telemetry_path: "flow.input_total_lag".to_string(),
+                            telemetry_type: Float,
+                            telemetry_lhs: "flow.input_records_lag_max".to_string(),
+                            telemetry_rhs: "flow.input_assigned_partitions".to_string(),
+                            combinator: DerivativeCombinator::Product,
+                            agg: Sum,
                         },
                     ],
                 },

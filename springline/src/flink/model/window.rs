@@ -6,23 +6,28 @@ use std::time::Duration;
 
 use frunk::{Monoid, Semigroup};
 use itertools::Itertools;
+use once_cell::sync::Lazy;
 use oso::{Oso, PolarClass};
 use pretty_snowflake::Id;
 use proctor::elements::{Interval, PolicyContributor, Timestamp};
 use proctor::error::PolicyError;
 use proctor::{AppData, Correlation, ReceivedAt};
+use prometheus::Gauge;
 use validator::{Validate, ValidationError, ValidationErrors};
 
 use super::MetricCatalog;
 
-pub trait Window: AppData {
+pub trait Window: Sized {
     type Item: AppData;
     //todo: this needs to be rethought as builder would be appropriate; however this trait on the whole is a bit contrived.
-    fn from_item(item: Self::Item, time_window: Duration, sufficient_coverage: f64) -> Result<Self, ValidationErrors>;
+    fn from_item(item: Self::Item, time_window: Duration, quorum_percentage: f64) -> Result<Self, ValidationErrors>;
     fn time_window(&self) -> Duration;
     fn window_interval(&self) -> Option<Interval>;
-    fn required_coverage(&self) -> f64;
     fn push(&mut self, item: Self::Item);
+}
+
+pub trait UpdateWindowMetrics: Window {
+    fn update_metrics(&self);
 }
 
 /// Window of data objects used for range queries; e.g., has CPU utilization exceeded a threshold
@@ -35,7 +40,7 @@ where
 {
     data: VecDeque<T>,
     pub time_window: Duration,
-    pub sufficient_coverage: f64,
+    pub quorum_percentage: f64,
 }
 
 impl<T> Validate for AppDataWindow<T>
@@ -44,7 +49,7 @@ where
 {
     fn validate(&self) -> Result<(), ValidationErrors> {
         let checks = vec![
-            Self::check_sufficient_coverage(self.sufficient_coverage).map_err(|err| ("insufficient coverage", err)),
+            Self::check_quorum_percentage(self.quorum_percentage).map_err(|err| ("insufficient quorum", err)),
             Self::check_nonempty(&self.data).map_err(|err| ("empty window", err)),
         ];
 
@@ -68,38 +73,41 @@ where
     }
 }
 
-impl<T> fmt::Debug for AppDataWindow<T>
-where
-    T: AppData + ReceivedAt,
-{
+impl Debug for AppDataWindow<MetricCatalog> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("AppDataWindow")
             .field("interval", &self.window_interval())
             .field("interval_duration", &self.window_interval().map(|w| w.duration()))
             .field("time_window", &self.time_window)
-            .field("sufficient_coverage", &self.sufficient_coverage)
+            .field("quorum_percentage", &self.quorum_percentage)
             .field("window_size", &self.data.len())
             .field("head", &self.head().map(|c| c.recv_timestamp().to_string()))
+            .field(
+                "1_min_flow_input_relative_lag_change_rate",
+                &self.flow_input_relative_lag_change_rate(60),
+            )
             .finish()
     }
 }
 
-pub const DEFAULT_SUFFICIENT_COVERAGE: f64 = 0.8;
+pub const DEFAULT_QUORUM_PERCENTAGE: f64 = 0.8;
 
-pub const fn default_sufficient_coverage() -> f64 {
-    DEFAULT_SUFFICIENT_COVERAGE
+pub const fn default_quorum_percentage() -> f64 {
+    DEFAULT_QUORUM_PERCENTAGE
 }
 
 impl<T> AppDataWindow<T>
 where
     T: AppData + ReceivedAt,
 {
-    fn check_sufficient_coverage(value: f64) -> Result<(), ValidationError> {
-        if value <= 0.0 {
-            Err(ValidationError::new("not enough window coverage to be meaningful."))
-        } else if 1.0 < value {
+    fn check_quorum_percentage(percentage: f64) -> Result<(), ValidationError> {
+        if percentage <= 0.0 {
             Err(ValidationError::new(
-                "available telemetry window cannot meet sufficient coverage.",
+                "not enough window quorum coverage to be meaningful.",
+            ))
+        } else if 1.0 < percentage {
+            Err(ValidationError::new(
+                "impossible for telemetry window to meet quorum coverage requirement.",
             ))
         } else {
             Ok(())
@@ -121,7 +129,7 @@ where
         let result = Self {
             data: window,
             time_window,
-            sufficient_coverage: DEFAULT_SUFFICIENT_COVERAGE,
+            quorum_percentage: DEFAULT_QUORUM_PERCENTAGE,
         };
         result.validate().expect("window parameters are not valid");
         result
@@ -133,7 +141,7 @@ where
         let result = Self {
             data: window,
             time_window,
-            sufficient_coverage: DEFAULT_SUFFICIENT_COVERAGE,
+            quorum_percentage: DEFAULT_QUORUM_PERCENTAGE,
         };
         result.validate().expect("window parameters are not valid");
         result
@@ -169,7 +177,7 @@ impl PolicyContributor for AppDataWindow<MetricCatalog> {
                 .add_attribute_getter("custom", |p| p.custom.clone())
                 .add_method(
                     "has_sufficient_coverage_looking_back_secs",
-                    Self::has_sufficient_coverage_looking_back_secs,
+                    Self::has_quorum_looking_back_secs,
                 )
                 .add_method(
                     "flow_idle_time_millis_per_sec_rolling_average",
@@ -220,6 +228,36 @@ impl PolicyContributor for AppDataWindow<MetricCatalog> {
                     Self::flow_input_records_lag_max_above_mark,
                 )
                 .add_method(
+                    "flow_input_total_lag_rolling_average",
+                    Self::flow_input_total_lag_rolling_average,
+                )
+                .add_method(
+                    "flow_input_total_lag_rolling_change_per_sec",
+                    Self::flow_input_total_lag_rolling_change_per_sec,
+                )
+                .add_method("flow_input_total_lag_below_mark", Self::flow_input_total_lag_below_mark)
+                .add_method("flow_input_total_lag_above_mark", Self::flow_input_total_lag_above_mark)
+                .add_method(
+                    "flow_input_records_consumed_rate_rolling_average",
+                    Self::flow_input_records_consumed_rate_rolling_average,
+                )
+                .add_method(
+                    "flow_input_records_consumed_rate_rolling_change_per_sec",
+                    Self::flow_input_records_consumed_rate_rolling_change_per_sec,
+                )
+                .add_method(
+                    "flow_input_records_consumed_rate_below_mark",
+                    Self::flow_input_records_consumed_rate_below_mark,
+                )
+                .add_method(
+                    "flow_input_records_consumed_rate_above_mark",
+                    Self::flow_input_records_consumed_rate_above_mark,
+                )
+                .add_method(
+                    "flow_input_relative_lag_change_rate",
+                    Self::flow_input_relative_lag_change_rate,
+                )
+                .add_method(
                     "flow_input_millis_behind_latest_rolling_average",
                     Self::flow_input_millis_behind_latest_rolling_average,
                 )
@@ -234,6 +272,14 @@ impl PolicyContributor for AppDataWindow<MetricCatalog> {
                 .add_method(
                     "flow_input_millis_behind_latest_above_mark",
                     Self::flow_input_millis_behind_latest_above_mark,
+                )
+                .add_method(
+                    "flow_records_out_per_sec_rolling_average",
+                    Self::flow_records_out_per_sec_rolling_average,
+                )
+                .add_method(
+                    "flow_records_out_per_sec_rolling_change_per_sec",
+                    Self::flow_records_out_per_sec_rolling_change_per_sec,
                 )
                 .add_method(
                     "cluster_task_cpu_load_rolling_average",
@@ -333,17 +379,17 @@ where
         self.data.len()
     }
 
-    pub fn has_sufficient_coverage_looking_back_secs(&self, looking_back_secs: u32) -> bool {
+    pub fn has_quorum_looking_back_secs(&self, looking_back_secs: u32) -> bool {
         let head_ts = self.recv_timestamp();
         let looking_back = Duration::from_secs(looking_back_secs as u64);
-        self.has_sufficient_coverage(Interval::new(head_ts - looking_back, head_ts).unwrap())
+        self.has_quorum(Interval::new(head_ts - looking_back, head_ts).unwrap())
     }
 
-    pub fn has_sufficient_coverage(&self, interval: Interval) -> bool {
-        self.sufficient_coverage <= self.coverage_for(interval).0
+    pub fn has_quorum(&self, interval: Interval) -> bool {
+        self.quorum_percentage <= self.assess_coverage_of(interval).0
     }
 
-    pub fn coverage_for(&self, interval: Interval) -> (f64, impl Iterator<Item = &T>) {
+    pub fn assess_coverage_of(&self, interval: Interval) -> (f64, impl Iterator<Item = &T>) {
         let mut coverage_start: Option<Timestamp> = None;
         let mut coverage_end: Option<Timestamp> = None;
         let mut range = Vec::new();
@@ -369,7 +415,7 @@ where
             });
 
         let coverage = coverage_interval
-            .map(|coverage| coverage.duration().as_secs_f64() / interval.duration().as_secs_f64())
+            .map(|quorum| quorum.duration().as_secs_f64() / interval.duration().as_secs_f64())
             .unwrap_or(0.0);
 
         (coverage, range.into_iter())
@@ -414,9 +460,9 @@ where
             |h| {
                 let head_ts = h.recv_timestamp();
                 let interval = Interval::new(head_ts - looking_back, head_ts).unwrap();
-                let (coverage, range_iter) = self.coverage_for(interval);
+                let (quorum_percentage, range_iter) = self.assess_coverage_of(interval);
                 tracing::debug!(
-                    ?looking_back, ?interval, %coverage, coverage_duration=?(looking_back.mul_f64(coverage)),
+                    ?looking_back, ?interval, %quorum_percentage, quorum_duration=?(looking_back.mul_f64(quorum_percentage)),
                     "folding looking back from head"
                 );
                 range_iter.fold(R::empty(), f)
@@ -461,8 +507,8 @@ where
         } else {
             tracing::debug!(window=?self.window_interval(), ?interval, "Checking for interval");
 
-            let (coverage, range_iter) = self.coverage_for(interval);
-            if coverage < self.sufficient_coverage {
+            let (coverage, range_iter) = self.assess_coverage_of(interval);
+            if coverage < self.quorum_percentage {
                 tracing::debug!(
                     ?interval,
                     interval_duration=?interval.duration(),
@@ -485,56 +531,6 @@ where
 
             range.into_iter().all(f)
         }
-    }
-}
-
-impl<T> Window for AppDataWindow<T>
-where
-    T: AppData + ReceivedAt,
-{
-    type Item = T;
-
-    fn window_interval(&self) -> Option<Interval> {
-        // window vecdeque runs oldest to youngest
-        let start = self.data.front().map(|m| m.recv_timestamp());
-        let end = self.data.back().map(|m| m.recv_timestamp());
-        start.zip(end).map(|i| {
-            i.try_into()
-                .expect("window represents invalid interval (end before start): {i:?}")
-        })
-    }
-
-    fn time_window(&self) -> Duration {
-        self.time_window
-    }
-
-    fn push(&mut self, data: T) {
-        // todo: assumes monotonically increasing recv_timestamp -- check if not true and insert accordingly
-        // or sort after push and before pop?
-        let oldest_allowed = data.recv_timestamp() - self.time_window;
-
-        self.data.push_back(data);
-
-        while let Some(metric) = self.data.front() {
-            if metric.recv_timestamp() < oldest_allowed {
-                let too_old = self.data.pop_front();
-                tracing::debug!(?too_old, %oldest_allowed, "popping metric outside of time window");
-            } else {
-                break;
-            }
-        }
-    }
-
-    fn required_coverage(&self) -> f64 {
-        self.sufficient_coverage
-    }
-
-    fn from_item(item: Self::Item, time_window: Duration, sufficient_coverage: f64) -> Result<Self, ValidationErrors> {
-        Self::builder()
-            .with_item(item)
-            .with_time_window(time_window)
-            .with_sufficient_coverage(sufficient_coverage)
-            .build()
     }
 }
 
@@ -586,6 +582,19 @@ impl AppDataWindow<MetricCatalog> {
         })
     }
 
+    /// If a task is idle due to a lack of incoming records, then the job is over-provisioned for
+    /// the current load. Utilization is the average portion of time the job tasks spend in a
+    /// non-idle state. To be useful, it is important to exclude source operators from the
+    /// calculation of this metric (e.g., via a non_source position specifier in the Operator metric
+    /// order).
+    ///
+    /// Utilization is calculated based on the idle_time_millis_per_sec metric:
+    ///     1 - average(idle_time_millis_per_sec) / 1_000
+    ///
+    /// This metric should be used for downscaling decisions only. If utilization is low and
+    /// total_lag is 0, the job is able to process more records than the incoming rate.
+    ///
+    /// (For upscaling, it may trigger a scale up before a lag metric.)
     pub fn flow_task_utilization_rolling_average(&self, looking_back_secs: u32) -> f64 {
         let (sum, size) = self.sum_from_head(Duration::from_secs(looking_back_secs as u64), |m| {
             m.flow.task_utilization()
@@ -704,6 +713,170 @@ impl AppDataWindow<MetricCatalog> {
         })
     }
 
+    pub fn flow_input_total_lag_rolling_average(&self, looking_back_secs: u32) -> f64 {
+        let (sum, size) = self.sum_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+            m.flow.input_total_lag
+        });
+
+        if size == 0 {
+            0.0
+        } else {
+            sum.and_then(|lag| i32::try_from(lag).ok().map(|l| f64::from(l) / size as f64))
+                .unwrap_or(0.0)
+        }
+    }
+
+    pub fn flow_input_total_lag_rolling_change_per_sec(&self, looking_back_secs: u32) -> f64 {
+        let values = self
+            .extract_from_head(Duration::from_secs(u64::from(looking_back_secs)), |metric| {
+                (metric.recv_timestamp, metric.flow.input_total_lag)
+            })
+            .into_iter()
+            .flat_map(|(ts, lag)| lag.map(|l| (ts, l)))
+            .collect::<Vec<_>>();
+
+        // remember: head is the most recent, so we want to diff accordingly
+        values
+            .last()
+            .zip(values.first())
+            .and_then(|(first, last)| {
+                if first.0 == last.0 {
+                    None
+                } else {
+                    let duration_secs = (last.0 - first.0).as_secs_f64();
+                    i32::try_from(last.1 - first.1)
+                        .ok()
+                        .map(|diff| f64::from(diff) / duration_secs)
+                }
+            })
+            .unwrap_or(0.0)
+    }
+
+    pub fn flow_input_total_lag_below_mark(&self, looking_back_secs: u32, max_value: i64) -> bool {
+        self.for_duration_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+            m.flow
+                .input_total_lag
+                .map(|lag| {
+                    tracing::debug!(
+                        "eval total lag in catalog[{}]: {lag} <= {max_value} = {}",
+                        m.recv_timestamp,
+                        lag <= max_value
+                    );
+                    lag <= max_value
+                })
+                .unwrap_or(false)
+        })
+    }
+
+    pub fn flow_input_total_lag_above_mark(&self, looking_back_secs: u32, min_value: i64) -> bool {
+        self.for_duration_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+            m.flow
+                .input_total_lag
+                .map(|lag| {
+                    tracing::debug!(
+                        "eval total lag in catalog[{}]: {min_value} <= {lag} = {}",
+                        m.recv_timestamp,
+                        min_value <= lag
+                    );
+                    min_value <= lag
+                })
+                .unwrap_or(false)
+        })
+    }
+
+    /// Rolling average of the source `records_consumed_rate` kafka metric on the source operator.
+    /// This metric is used with `total_lag` to calculate the `relative_lag_change_rate`.
+    pub fn flow_input_records_consumed_rate_rolling_average(&self, looking_back_secs: u32) -> f64 {
+        let (sum, size) = self.sum_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+            m.flow.input_records_consumed_rate
+        });
+
+        if size == 0 {
+            0.0
+        } else {
+            sum.map(|rate| rate / size as f64).unwrap_or(0.0)
+        }
+    }
+
+    pub fn flow_input_records_consumed_rate_rolling_change_per_sec(&self, looking_back_secs: u32) -> f64 {
+        let values = self
+            .extract_from_head(Duration::from_secs(u64::from(looking_back_secs)), |metric| {
+                (metric.recv_timestamp, metric.flow.input_records_consumed_rate)
+            })
+            .into_iter()
+            .flat_map(|(ts, rate)| rate.map(|r| (ts, r)))
+            .collect::<Vec<_>>();
+
+        // remember: head is the most recent, so we want to diff accordingly
+        values
+            .last()
+            .zip(values.first())
+            .and_then(|(first, last)| {
+                if first.0 == last.0 {
+                    None
+                } else {
+                    let duration_secs = (last.0 - first.0).as_secs_f64();
+                    Some((last.1 - first.1) / duration_secs)
+                }
+            })
+            .unwrap_or(0.0)
+    }
+
+    pub fn flow_input_records_consumed_rate_below_mark(&self, looking_back_secs: u32, max_value: f64) -> bool {
+        self.for_duration_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+            m.flow
+                .input_records_consumed_rate
+                .map(|rate| {
+                    tracing::debug!(
+                        "eval input consumed rate in catalog[{}]: {rate} <= {max_value} = {}",
+                        m.recv_timestamp,
+                        rate <= max_value
+                    );
+                    rate <= max_value
+                })
+                .unwrap_or(false)
+        })
+    }
+
+    pub fn flow_input_records_consumed_rate_above_mark(&self, looking_back_secs: u32, min_value: f64) -> bool {
+        self.for_duration_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+            m.flow
+                .input_records_consumed_rate
+                .map(|rate| {
+                    tracing::debug!(
+                        "eval input consumed rate in catalog[{}]: {min_value} <= {rate} = {}",
+                        m.recv_timestamp,
+                        min_value <= rate
+                    );
+                    min_value <= rate
+                })
+                .unwrap_or(false)
+        })
+    }
+
+    /// Metric that compares the rate of change of total lag with the rate at which the job
+    /// processes records (in records/second). In order to smooth the effect of temporary spikes, a
+    /// rolling average is used for the components. The ratio is a dimensionless value, which
+    /// represents how much the workload is increasing (positive) or decreasing (negative) relative
+    /// to the current processing capabilities.
+    ///
+    /// This number is only meaningful for scale up decisions, since a decreasing lag might still
+    /// warrant the current number of task managers, until the application catches up to the latest
+    /// records. Downscaling is likely not warranted until the lag is below a certain threshold.
+    /// Utilization is a better measure to use for downscaling.
+    ///
+    /// (see B. Varga, M. Balassi, A. Kiss, Towards autoscaling of Apache Flink jobs,
+    /// April 2021Acta Universitatis Sapientiae, Informatica 13(1):1-21)
+    pub fn flow_input_relative_lag_change_rate(&self, looking_back_secs: u32) -> f64 {
+        let deriv_total_lag = self.flow_input_total_lag_rolling_change_per_sec(looking_back_secs);
+        let total_rate = self.flow_input_records_consumed_rate_rolling_average(looking_back_secs);
+        if total_rate == 0.0 {
+            0.0
+        } else {
+            deriv_total_lag / total_rate
+        }
+    }
+
     pub fn flow_input_millis_behind_latest_rolling_average(&self, looking_back_secs: u32) -> f64 {
         let (sum, size) = self.sum_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
             m.flow.input_millis_behind_latest
@@ -773,6 +946,41 @@ impl AppDataWindow<MetricCatalog> {
                 })
                 .unwrap_or(false)
         })
+    }
+
+    pub fn flow_records_out_per_sec_rolling_average(&self, looking_back_secs: u32) -> f64 {
+        let (sum, size) = self.sum_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+            m.flow.records_out_per_sec
+        });
+
+        if size == 0 {
+            0.0
+        } else {
+            sum / size as f64
+        }
+    }
+
+    pub fn flow_records_out_per_sec_rolling_change_per_sec(&self, looking_back_secs: u32) -> f64 {
+        let values = self
+            .extract_from_head(Duration::from_secs(u64::from(looking_back_secs)), |metric| {
+                (metric.recv_timestamp, metric.flow.records_out_per_sec)
+            })
+            .into_iter()
+            .collect::<Vec<_>>();
+
+        // remember: head is the most recent, so we want to diff accordingly
+        values
+            .last()
+            .zip(values.first())
+            .and_then(|(first, last)| {
+                if first.0 == last.0 {
+                    None
+                } else {
+                    let duration_secs = (last.0 - first.0).as_secs_f64();
+                    Some((last.1 - first.1) / duration_secs)
+                }
+            })
+            .unwrap_or(0.0)
     }
 
     pub fn cluster_task_cpu_load_rolling_average(&self, looking_back_secs: u32) -> f64 {
@@ -953,6 +1161,61 @@ impl AppDataWindow<MetricCatalog> {
     }
 }
 
+impl<T> Window for AppDataWindow<T>
+where
+    T: AppData + ReceivedAt,
+    // AppDataWindow<T>: Debug,
+{
+    type Item = T;
+
+    fn window_interval(&self) -> Option<Interval> {
+        // window vecdeque runs oldest to youngest
+        let start = self.data.front().map(|m| m.recv_timestamp());
+        let end = self.data.back().map(|m| m.recv_timestamp());
+        start.zip(end).map(|i| {
+            i.try_into()
+                .expect("window represents invalid interval (end before start): {i:?}")
+        })
+    }
+
+    fn time_window(&self) -> Duration {
+        self.time_window
+    }
+
+    fn push(&mut self, data: Self::Item) {
+        // todo: assumes monotonically increasing recv_timestamp -- check if not true and insert accordingly
+        // or sort after push and before pop?
+        let oldest_allowed = data.recv_timestamp() - self.time_window;
+
+        self.data.push_back(data);
+
+        while let Some(metric) = self.data.front() {
+            if metric.recv_timestamp() < oldest_allowed {
+                let too_old = self.data.pop_front();
+                tracing::debug!(?too_old, %oldest_allowed, "popping metric outside of time window");
+            } else {
+                break;
+            }
+        }
+    }
+
+    fn from_item(item: Self::Item, time_window: Duration, quorum_percentage: f64) -> Result<Self, ValidationErrors> {
+        Self::builder()
+            .with_item(item)
+            .with_time_window(time_window)
+            .with_quorum_percentage(quorum_percentage)
+            .build()
+    }
+}
+
+impl UpdateWindowMetrics for AppDataWindow<MetricCatalog> {
+    fn update_metrics(&self) {
+        METRIC_CATALOG_FLOW_TASK_UTILIZATION_1_MIN_ROLLING_AVG.set(self.flow_task_utilization_rolling_average(60));
+        METRIC_CATALOG_FLOW_INPUT_RELATIVE_LAG_CHANGE_RATE_1_MIN_ROLLING_AVG
+            .set(self.flow_input_relative_lag_change_rate(60));
+    }
+}
+
 impl<T> std::ops::Deref for AppDataWindow<T>
 where
     T: AppData + ReceivedAt,
@@ -991,14 +1254,13 @@ impl<T> Semigroup for AppDataWindow<T>
 where
     T: AppData + ReceivedAt,
 {
-    #[tracing::instrument(level = "trace")]
     fn combine(&self, other: &Self) -> Self {
         let book = Self::do_ordered_combine(self, other);
-        let required_coverage = self.sufficient_coverage.max(other.sufficient_coverage);
+        let required_coverage = self.quorum_percentage.max(other.quorum_percentage);
         Self {
             data: book,
             time_window: self.time_window,
-            sufficient_coverage: required_coverage,
+            quorum_percentage: required_coverage,
         }
     }
 }
@@ -1084,8 +1346,8 @@ where
 {
     data: Option<VecDeque<T>>,
     time_window: Option<Duration>,
-    #[validate(custom = "AppDataWindow::<T>::check_sufficient_coverage")]
-    sufficient_coverage: Option<f64>,
+    #[validate(custom = "AppDataWindow::<T>::check_quorum_percentage")]
+    quorum_percentage: Option<f64>,
 }
 
 impl<T> Default for AppDataWindowBuilder<T>
@@ -1096,7 +1358,7 @@ where
         Self {
             data: None,
             time_window: None,
-            sufficient_coverage: None,
+            quorum_percentage: None,
         }
     }
 }
@@ -1127,8 +1389,8 @@ where
         self
     }
 
-    pub const fn with_sufficient_coverage(mut self, sufficient_coverage: f64) -> Self {
-        self.sufficient_coverage = Some(sufficient_coverage);
+    pub const fn with_quorum_percentage(mut self, quorum_percentage: f64) -> Self {
+        self.quorum_percentage = Some(quorum_percentage);
         self
     }
 
@@ -1158,11 +1420,25 @@ where
         let result = AppDataWindow {
             data: window.into_iter().collect(),
             time_window: self.time_window.expect("must supply time window before final build"),
-            sufficient_coverage: self
-                .sufficient_coverage
-                .expect("must supply required time window coverage"),
+            quorum_percentage: self.quorum_percentage.expect("must supply required time window coverage"),
         };
         result.validate()?;
         Ok(result)
     }
 }
+
+pub static METRIC_CATALOG_FLOW_TASK_UTILIZATION_1_MIN_ROLLING_AVG: Lazy<Gauge> = Lazy::new(|| {
+    Gauge::new(
+        "metric_catalog_flow_task_utilization_1_min_rolling_avg",
+        "1 min rolling average of task utilization",
+    )
+    .expect("failed creating metric_catalog_flow_task_utilization_1_min_rolling_avg")
+});
+
+pub static METRIC_CATALOG_FLOW_INPUT_RELATIVE_LAG_CHANGE_RATE_1_MIN_ROLLING_AVG: Lazy<Gauge> = Lazy::new(|| {
+    Gauge::new(
+        "metric_catalog_flow_input_relative_lag_change_rate_1_min_rolling_avg",
+        "1 min rolling average of input relative lag change rate",
+    )
+    .expect("failed creating metric_catalog_flow_input_relative_lag_change_rate_1_min_rolling_avg")
+});

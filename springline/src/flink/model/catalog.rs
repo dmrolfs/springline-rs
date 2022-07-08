@@ -233,6 +233,24 @@ pub struct FlowMetrics {
     )]
     pub input_records_lag_max: Option<i64>,
 
+    #[polar(attribute)]
+    #[serde(
+        default,
+        rename = "flow.input_assigned_partitions",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub input_assigned_partitions: Option<i64>,
+
+    #[polar(attribute)]
+    #[serde(default, rename = "flow.input_total_lag", skip_serializing_if = "Option::is_none")]
+    pub input_total_lag: Option<i64>,
+
+    /// The rate at which the job processes records, which is calculated by summing the
+    /// `records_consumed_rate` for each operator instance of the Kafka Source.
+    #[polar(attribute)]
+    #[serde(rename = "flow.input_records_consumed_rate")]
+    pub input_records_consumed_rate: Option<f64>,
+
     /// Applies to Kinesis input connections. Pulled from the FlinkKinesisConsumer
     /// millisBehindLatest metric.
     #[polar(attribute)]
@@ -250,6 +268,7 @@ impl fmt::Debug for FlowMetrics {
         out.field("records_out_per_sec", &self.records_out_per_sec);
         out.field("records_in_per_sec", &self.records_in_per_sec);
         out.field("idle_time_millis_per_sec", &self.idle_time_millis_per_sec);
+        out.field("task_utilization", &self.task_utilization());
 
         if let Some((ts, recs_in_rate)) = self.forecasted_timestamp.zip(self.forecasted_records_in_per_sec) {
             out.field("forecasted_timestamp", &ts.to_string());
@@ -258,6 +277,18 @@ impl fmt::Debug for FlowMetrics {
 
         if let Some(lag) = self.input_records_lag_max {
             out.field("input_records_lag_max", &lag);
+        }
+
+        if let Some(partitions) = self.input_assigned_partitions {
+            out.field("input_assigned_partitions", &partitions);
+        }
+
+        if let Some(total_lag) = self.input_total_lag {
+            out.field("input_total_lag", &total_lag);
+        }
+
+        if let Some(total_rate) = self.input_records_consumed_rate {
+            out.field("input_records_consumed_rate", &total_rate);
         }
 
         if let Some(behind) = self.input_millis_behind_latest {
@@ -284,6 +315,9 @@ impl Monoid for FlowMetrics {
             forecasted_timestamp: None,
             forecasted_records_in_per_sec: None,
             input_records_lag_max: None,
+            input_assigned_partitions: None,
+            input_total_lag: None,
+            input_records_consumed_rate: None,
             input_millis_behind_latest: None,
         }
     }
@@ -482,6 +516,9 @@ impl SubscriptionRequirements for MetricCatalog {
             "flow.forecasted_timestamp".into(),
             "flow.forecasted_records_in_per_sec".into(),
             "flow.input_records_lag_max".into(),
+            "flow_input_assigned_partitions".into(),
+            "flow_input_total_lag".into(),
+            "flow_input_records_consumed_rate".into(),
             "flow.input_millis_behind_latest".into(),
         }
     }
@@ -503,9 +540,22 @@ impl UpdateMetrics for MetricCatalog {
                 METRIC_CATALOG_FLOW_RECORDS_IN_PER_SEC.set(catalog.flow.records_in_per_sec);
                 METRIC_CATALOG_FLOW_RECORDS_OUT_PER_SEC.set(catalog.flow.records_out_per_sec);
                 METRIC_CATALOG_FLOW_IDLE_TIME_MILLIS_PER_SEC.set(catalog.flow.idle_time_millis_per_sec);
+                METRIC_CATALOG_FLOW_TASK_UTILIZATION.set(catalog.flow.task_utilization());
 
                 if let Some(lag) = catalog.flow.input_records_lag_max {
                     METRIC_CATALOG_FLOW_INPUT_RECORDS_LAG_MAX.set(lag);
+                }
+
+                if let Some(partitions) = catalog.flow.input_assigned_partitions {
+                    METRIC_CATALOG_FLOW_INPUT_ASSIGNED_PARTITIONS.set(partitions);
+                }
+
+                if let Some(total_lag) = catalog.flow.input_total_lag {
+                    METRIC_CATALOG_FLOW_INPUT_TOTAL_LAG.set(total_lag);
+                }
+
+                if let Some(total_rate) = catalog.flow.input_records_consumed_rate {
+                    METRIC_CATALOG_FLOW_INPUT_RECORDS_CONSUMED_RATE.set(total_rate);
                 }
 
                 if let Some(lag) = catalog.flow.input_millis_behind_latest {
@@ -602,12 +652,44 @@ pub static METRIC_CATALOG_FLOW_IDLE_TIME_MILLIS_PER_SEC: Lazy<Gauge> = Lazy::new
     .expect("failed creating metric_catalog_flow_idle_time_millis_per_sec metric")
 });
 
+pub static METRIC_CATALOG_FLOW_TASK_UTILIZATION: Lazy<Gauge> = Lazy::new(|| {
+    Gauge::new(
+        "metric_catalog_flow_task_utilization",
+        "Current average task utilization",
+    )
+    .expect("failed creating metric_catalog_flow_task_utilization metric")
+});
+
 pub static METRIC_CATALOG_FLOW_INPUT_RECORDS_LAG_MAX: Lazy<IntGauge> = Lazy::new(|| {
     IntGauge::new(
         "metric_catalog_flow_input_records_lag_max",
         "Current lag in handling messages from the Kafka ingress topic",
     )
     .expect("failed creating metric_catalog_flow_input_records_lag_max metric")
+});
+
+pub static METRIC_CATALOG_FLOW_INPUT_ASSIGNED_PARTITIONS: Lazy<IntGauge> = Lazy::new(|| {
+    IntGauge::new(
+        "metric_catalog_flow_input_assigned_partitions",
+        "total assigned partitions in handling messages from the Kafka ingress topic",
+    )
+    .expect("failed creating metric_catalog_flow_input_assigned_partitions metric")
+});
+
+pub static METRIC_CATALOG_FLOW_INPUT_TOTAL_LAG: Lazy<IntGauge> = Lazy::new(|| {
+    IntGauge::new(
+        "metric_catalog_flow_input_total_lag",
+        "total estimated lag considering partitions in handling messages from the Kafka ingress topic",
+    )
+    .expect("failed creating metric_catalog_flow_input_total_lag metric")
+});
+
+pub static METRIC_CATALOG_FLOW_INPUT_RECORDS_CONSUMED_RATE: Lazy<Gauge> = Lazy::new(|| {
+    Gauge::new(
+        "metric_catalog_flow_input_records_consumed_rate",
+        "total rate at which the job processes records from Kafka.",
+    )
+    .expect("failed creating metric_catalog_flow_input_records_consumed_rate metric")
 });
 
 pub static METRIC_CATALOG_FLOW_INPUT_MILLIS_BEHIND_LATEST: Lazy<IntGauge> = Lazy::new(|| {

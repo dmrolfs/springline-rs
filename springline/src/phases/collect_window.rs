@@ -9,7 +9,7 @@ use proctor::graph::{stage, Inlet, Outlet, Port, SinkShape, SourceShape, PORT_DA
 use proctor::{Ack, AppData, ProctorResult, ReceivedAt};
 use tokio::sync::{mpsc, oneshot};
 
-use crate::flink::{AppDataWindow, MetricCatalog, Window};
+use crate::flink::{AppDataWindow, MetricCatalog, UpdateWindowMetrics, Window};
 use crate::settings::EngineSettings;
 
 pub type WindowApi = mpsc::UnboundedSender<WindowCmd>;
@@ -37,7 +37,7 @@ impl WindowCmd {
 pub struct CollectMetricWindow<In, Out> {
     name: String,
     time_window: Duration,
-    sufficient_coverage: f64,
+    quorum_percentage: f64,
     inlet: Inlet<In>,
     outlet: Outlet<Out>,
     tx_api: WindowApi,
@@ -49,7 +49,7 @@ impl<In, Out> Debug for CollectMetricWindow<In, Out> {
         f.debug_struct("CollectMetricWindow")
             .field("name", &self.name)
             .field("time_window", &self.time_window)
-            .field("sufficient_coverage", &self.sufficient_coverage)
+            .field("quorum_percentage", &self.quorum_percentage)
             .finish()
     }
 }
@@ -63,7 +63,7 @@ impl CollectMetricWindow<MetricCatalog, AppDataWindow<MetricCatalog>> {
         Self {
             name,
             time_window: settings.telemetry_window,
-            sufficient_coverage: settings.sufficient_window_coverage_percentage,
+            quorum_percentage: settings.telemetry_window_quorum_percentage,
             inlet,
             outlet,
             tx_api,
@@ -101,7 +101,7 @@ impl<In, Out> WithApi for CollectMetricWindow<In, Out> {
 impl<In, Out> Stage for CollectMetricWindow<In, Out>
 where
     In: AppData + ReceivedAt,
-    Out: Window<Item = In>,
+    Out: AppData + Window<Item = In> + UpdateWindowMetrics,
 {
     #[inline]
     fn name(&self) -> &str {
@@ -117,32 +117,32 @@ where
 
     #[tracing::instrument(level = "trace", name = "run collect metric window", skip(self))]
     async fn run(&mut self) -> ProctorResult<()> {
-        let mut portfolio: Option<Out> = None;
+        let mut window: Option<Out> = None;
 
         loop {
             let _timer = stage::start_stage_eval_time(self.name());
 
             tokio::select! {
-                catalog = self.inlet.recv() => {
-                    match catalog {
+                item = self.inlet.recv() => {
+                    match item {
                         None => {
                             tracing::info!("collect window inlet depleted -- stopping stage.");
                             break;
                         },
 
-                        Some(catalog) => {
-                            match portfolio.as_mut() {
-                                Some(p) => p.push(catalog),
+                        Some(item) => {
+                            match window.as_mut() {
+                                Some(w) => w.push(item),
                                 None => {
-                                    let p = self.make_portfolio(catalog)?;
-                                    portfolio = Some(p);
+                                    let w = self.make_window(item)?;
+                                    window = Some(w);
                                 }
                             }
 
-                            let out = portfolio.as_ref().cloned().unwrap();
+                            let out = window.as_ref().cloned().unwrap();
+                            out.update_metrics();
 
                             tracing::debug!(
-                                portfolio=?out,
                                 "pushing metric catalog window looking back {:?}",
                                 out.window_interval().map(|i| i.duration())
                             );
@@ -155,7 +155,7 @@ where
                 Some(command) = self.rx_api.recv() => {
                     match command {
                         WindowCmd::Clear(tx) => {
-                            portfolio = None;
+                            window = None;
                             if tx.send(()) == Err(()) {
                                 tracing::warn!("failed to ack clear window command");
                             }
@@ -192,7 +192,7 @@ where
     In: AppData + ReceivedAt,
     Out: Window<Item = In>,
 {
-    fn make_portfolio(&self, data: In) -> ProctorResult<Out> {
-        Out::from_item(data, self.time_window, self.sufficient_coverage).map_err(|err| ProctorError::Phase(err.into()))
+    fn make_window(&self, data: In) -> ProctorResult<Out> {
+        Out::from_item(data, self.time_window, self.quorum_percentage).map_err(|err| ProctorError::Phase(err.into()))
     }
 }

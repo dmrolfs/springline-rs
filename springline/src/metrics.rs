@@ -25,7 +25,16 @@ pub fn register_metrics(registry: &Registry) -> Result<()> {
     registry.register(Box::new(flink::METRIC_CATALOG_FLOW_RECORDS_OUT_PER_SEC.clone()))?;
     registry.register(Box::new(flink::METRIC_CATALOG_FLOW_IDLE_TIME_MILLIS_PER_SEC.clone()))?;
     registry.register(Box::new(flink::METRIC_CATALOG_FLOW_INPUT_RECORDS_LAG_MAX.clone()))?;
+    registry.register(Box::new(flink::METRIC_CATALOG_FLOW_INPUT_ASSIGNED_PARTITIONS.clone()))?;
+    registry.register(Box::new(flink::METRIC_CATALOG_FLOW_INPUT_TOTAL_LAG.clone()))?;
+    registry.register(Box::new(flink::METRIC_CATALOG_FLOW_INPUT_RECORDS_CONSUMED_RATE.clone()))?;
     registry.register(Box::new(flink::METRIC_CATALOG_FLOW_INPUT_MILLIS_BEHIND_LATEST.clone()))?;
+    registry.register(Box::new(
+        flink::METRIC_CATALOG_FLOW_INPUT_RELATIVE_LAG_CHANGE_RATE_1_MIN_ROLLING_AVG.clone(),
+    ))?;
+    registry.register(Box::new(
+        flink::METRIC_CATALOG_FLOW_TASK_UTILIZATION_1_MIN_ROLLING_AVG.clone(),
+    ))?;
     registry.register(Box::new(flink::METRIC_CATALOG_CLUSTER_NR_ACTIVE_JOBS.clone()))?;
     registry.register(Box::new(flink::METRIC_CATALOG_CLUSTER_NR_TASK_MANAGERS.clone()))?;
     registry.register(Box::new(flink::METRIC_CATALOG_CLUSTER_TASK_CPU_LOAD.clone()))?;
