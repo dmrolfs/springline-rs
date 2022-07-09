@@ -57,7 +57,7 @@ futures-util = "0.3.21"
 fuzzy-matcher = "0.3.7"
 heck = "0.4.0"
 http = "0.2.8"
-hyper = { version = "0.14.19", features = ["server", "tcp", "stream"] }
+hyper = { version = "0.14.20", features = ["server", "tcp", "stream"] }
 itertools = "0.10.3"
 kube = { version = "0.73.1", features = ["oauth", "client", "rustls-tls"] }
 k8s-openapi = { version = "0.15.0", features = ["v1_22"] } # kube-client 0.69.1 is fixed on v1_22
@@ -108,5 +108,5 @@ serde-transcode = "1.1.1"
 fake = { version = "2.5.0", features = ["chrono"] }
 wiremock = "0.5.13"
 rand = "0.8.5"
-serde_yaml = "0.8.24"
+serde_yaml = "0.8.25"
 #inspect_prometheus = { git = "https://github.com/dmrolfs/inspect_prometheus" }

@@ -122,6 +122,12 @@ application:
       cooling_secs: 600
       stable_secs: 900
 
+  decision:
+    template_data:
+      max_healthy_relative_lag_velocity: 3.0
+      min_task_utilization: 0.8
+      evaluate_duration_secs: 60
+
   action:
     taskmanager:
       kubernetes_api:
