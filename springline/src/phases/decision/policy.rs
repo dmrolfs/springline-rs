@@ -24,33 +24,56 @@ use crate::settings::DecisionSettings;
 pub struct DecisionTemplateData {
     pub basis: String,
 
+    /// Optional threshold representing the maximum ratio the
+    /// `total_lag` rate / `consumed_records_rate` that is healthy.
+    /// This value represents how much the workload is increasing (positive)
+    /// or decreasing (negative). This value is used for scale up decisions
+    /// and not scale down decisions.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_healthy_relative_lag_velocity: Option<f64>,
+
+    /// Optional threshold representing the maximum `total_lag`
+    /// that is healthy. This factor does not consider the workload,
+    /// so its usefulness may be limited compared to the
+    /// `max_healthy_relative_lag_velocity`. This could be used to
+    /// define a cap to `total_lag` as a supplemental rule to the
+    /// relative lag velocity.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_healthy_lag: Option<f64>,
 
+    /// Optional threshold on the target task utilization, which is
+    /// calculated based on the `idle_time_millis_per_sec`. This value
+    /// is used for scale down decisions and is typically coupled with
+    /// a check that the `total_lag` is 0 -- meaning the application
+    /// is caught up on workload and underutilized.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub min_healthy_lag: Option<f64>,
+    pub min_task_utilization: Option<f64>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub max_task_idle_time_millis_per_sec: Option<f64>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub min_task_idle_time_millis_per_sec: Option<f64>,
-
+    /// Optional threshold that may scale up the application if the CPU load
+    /// is too high. High resource utilization (CPU, Memory, Network)) may suggest
+    /// the application is destablizing, which scaling up may help.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_healthy_cpu_load: Option<f64>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub min_healthy_cpu_load: Option<f64>,
-
+    /// Optional threshold that may scale up the application if the heap memory load
+    /// is too high. High resource utilization (CPU, Memory, Network) may suggest
+    /// the application is destablizing, which scaling up may help.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_healthy_heap_memory_load: Option<f64>,
 
+    /// Optional threshold that may scale up the application if network IO
+    /// is too high. High resource utilization (CPU, Memory, Network) may suggest
+    /// the application is destablizing, which scaling up may help.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_healthy_network_io_utilization: Option<f64>,
 
+    /// Many of the rules look at the rolling average of the values to reduce the
+    /// affects of short-term spikes. This optional valueset the common evaluation
+    /// window for these range metric forms.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub evaluate_duration_secs: Option<i64>,
 
+    /// Custom template values are collected in the custom property.
     #[serde(flatten, skip_serializing_if = "HashMap::is_empty")]
     pub custom: HashMap<String, String>,
 }
@@ -59,12 +82,10 @@ impl Default for DecisionTemplateData {
     fn default() -> Self {
         Self {
             basis: format!("{}_basis", DecisionPolicy::base_template_name()),
+            max_healthy_relative_lag_velocity: None,
             max_healthy_lag: None,
-            min_healthy_lag: None,
-            max_task_idle_time_millis_per_sec: None,
-            min_task_idle_time_millis_per_sec: None,
+            min_task_utilization: None,
             max_healthy_cpu_load: None,
-            min_healthy_cpu_load: None,
             max_healthy_heap_memory_load: None,
             max_healthy_network_io_utilization: None,
             evaluate_duration_secs: None,
@@ -195,8 +216,8 @@ mod tests {
     fn test_decision_data_serde() {
         let data = DecisionTemplateData {
             basis: "decision_basis".to_string(),
+            max_healthy_relative_lag_velocity: Some(-1.25),
             max_healthy_lag: Some(133_f64),
-            min_healthy_lag: Some(1_f64),
             max_healthy_cpu_load: Some(0.7),
             ..DecisionTemplateData::default()
         };
@@ -207,12 +228,12 @@ mod tests {
                 Token::Map { len: None },
                 Token::Str("basis"),
                 Token::Str("decision_basis"),
+                Token::Str("max_healthy_relative_lag_velocity"),
+                Token::Some,
+                Token::F64(-1.25_f64),
                 Token::Str("max_healthy_lag"),
                 Token::Some,
                 Token::F64(133_f64),
-                Token::Str("min_healthy_lag"),
-                Token::Some,
-                Token::F64(1_f64),
                 Token::Str("max_healthy_cpu_load"),
                 Token::Some,
                 Token::F64(0.7),
@@ -241,7 +262,7 @@ mod tests {
         let data = DecisionTemplateData {
             basis: "decision_basis".to_string(),
             max_healthy_lag: Some(133_f64),
-            min_healthy_lag: Some(1_f64),
+            max_healthy_relative_lag_velocity: Some(1_f64),
             max_healthy_cpu_load: Some(0.7),
             custom: maplit::hashmap! { "foo".to_string() => "zed".to_string(), },
             ..DecisionTemplateData::default()
@@ -250,8 +271,8 @@ mod tests {
         let rep = assert_ok!(ron::ser::to_string_pretty(&data, ron::ser::PrettyConfig::default()));
         let expected_rep = r##"|{
         |    "basis": "decision_basis",
+        |    "max_healthy_relative_lag_velocity": Some(1.0),
         |    "max_healthy_lag": Some(133.0),
-        |    "min_healthy_lag": Some(1.0),
         |    "max_healthy_cpu_load": Some(0.7),
         |    "foo": "zed",
         |}"##

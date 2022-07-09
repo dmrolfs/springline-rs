@@ -2,7 +2,7 @@
   template_data: (
     basis: "decision_basis",
     max_healthy_lag: 133,
-    min_healthy_lag: 1,
+    max_healthy_relative_lag_velocity: -1.25,
     max_healthy_cpu_load: 0.7,
   )
 )

@@ -160,11 +160,14 @@ decision:
         is_template: true
   template_data:
     basis: decision_basis
-    max_healthy_lag: 133.0
-    min_healthy_lag: 0.0
-    max_healthy_network_io_utilization: 0.6
-    max_healthy_cpu_load: 0.0016
-    min_healthy_cpu_load: 0.0012
+    max_healthy_relative_lag_velocity: 3.0
+    min_task_utilization: 0.8
+    evaluate_duration_secs: 60
+
+#   max_healthy_lag: 133.1
+#   max_healthy_cpu_load: 0.0016
+#   max_healthy_heap_memory_load: 0.0012
+#   max_healthy_network_io_utilization: 0.6
 
 plan:
   performance_repository:

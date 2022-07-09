@@ -375,7 +375,7 @@ mod tests {
                 template_data: Some(DecisionTemplateData {
                     basis: "decision_basis".to_string(),
                     max_healthy_lag: Some(133.),
-                    min_healthy_lag: Some(0.),
+                    max_healthy_relative_lag_velocity: Some(1.75),
                     max_healthy_cpu_load: Some(0.7),
                     ..DecisionTemplateData::default()
                 }),
@@ -554,10 +554,9 @@ mod tests {
             )))
             .with_template_data(DecisionTemplateData {
                 basis: "decision_basis".to_string(),
-                max_healthy_lag: Some(133_f64),
-                min_healthy_lag: Some(0.0),
-                max_healthy_cpu_load: Some(0.025),
-                max_healthy_network_io_utilization: Some(0.6),
+                max_healthy_relative_lag_velocity: Some(3.0),
+                min_task_utilization: Some(0.8),
+                evaluate_duration_secs: Some(60),
                 ..DecisionTemplateData::default()
             }),
         plan: PlanSettings {
@@ -702,9 +701,6 @@ mod tests {
                     },
                     decision: DecisionSettings {
                         template_data: Some(DecisionTemplateData {
-                            // max_healthy_heap_memory_load: Some(0.5),
-                            max_healthy_cpu_load: Some(0.0016),
-                            min_healthy_cpu_load: Some(0.0012),
                             ..SETTINGS.decision.template_data.clone().unwrap()
                         }),
                         ..SETTINGS.decision.clone()
@@ -821,8 +817,9 @@ mod tests {
                 },
                 decision: DecisionSettings {
                     template_data: Some(DecisionTemplateData {
+                        max_healthy_relative_lag_velocity: Some(3.3),
+                        max_healthy_lag: Some(133_f64),
                         max_healthy_cpu_load: Some(0.0006),
-                        min_healthy_cpu_load: Some(0.0003),
                         // max_healthy_heap_memory_load: Some(0.5),
                         ..SETTINGS.decision.template_data.clone().unwrap()
                     }),
@@ -934,8 +931,6 @@ mod tests {
                     },
                     decision: DecisionSettings {
                         template_data: Some(DecisionTemplateData {
-                            max_healthy_cpu_load: Some(0.016),
-                            min_healthy_cpu_load: Some(0.012),
                             ..SETTINGS.decision.template_data.clone().unwrap()
                         }),
                         ..SETTINGS.decision.clone()

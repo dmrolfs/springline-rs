@@ -25,8 +25,10 @@ eligibility:
 
 decision:
   template_data:
+    max_healthy_relative_lag_velocity: 3.3
+    max_healthy_lag: 133.0
     max_healthy_cpu_load: 0.0006
-    min_healthy_cpu_load: 0.0003
+    evaluate_duration_secs: 60
 
 plan:
   performance_repository:

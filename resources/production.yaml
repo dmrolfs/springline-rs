@@ -18,10 +18,11 @@ http:
 #  template_data:
 #    cooling_secs: 60
 
-decision:
-  template_data:
-    max_healthy_cpu_load: 0.016
-    min_healthy_cpu_load: 0.012
+#decision:
+# template_data:
+#   max_healthy_relative_lag_velocity: 3.0
+#   min_task_utilization: 0.6
+#   evaluate_duration_secs: 60
 
 plan:
   performance_repository:

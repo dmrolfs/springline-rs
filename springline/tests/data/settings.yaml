@@ -85,8 +85,8 @@ decision:
         path: "../resources/decision_basis.polar"
   template_data:
     basis: decision_basis
+    max_healthy_relative_lag_velocity: 1.75
     max_healthy_lag: 133.0
-    min_healthy_lag: 0.0
     max_healthy_cpu_load: 0.7
 
 plan:
