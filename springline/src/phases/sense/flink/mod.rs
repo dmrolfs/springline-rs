@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use cast_trait_object::DynCastExt;
 use once_cell::sync::Lazy;
@@ -129,6 +129,7 @@ pub static STD_METRIC_ORDERS: Lazy<Vec<MetricOrder>> = Lazy::new(|| {
             ),
         }, // Integer,
         MetricOrder::Derivative {
+            scope: FlinkScope::Operator,
             telemetry_path: "flow.input_total_lag".to_string(),
             telemetry_type: Integer,
             telemetry_lhs: "flow.input_records_lag_max".to_string(),
@@ -272,16 +273,20 @@ fn consolidate_active_job_telemetry_for_order(
     // merge via order aggregation
     let telemetry: Telemetry = job_telemetry
         .into_iter()
-        .map(
-            |(metric, values)| match telemetry_agg.get(metric.as_str()).map(|agg| (agg, agg.combinator())) {
-                None => Ok(Some((metric, TelemetryValue::Seq(values)))),
+        .map(|(metric, values)| {
+            let agg_combinator = telemetry_agg.get(metric.as_str()).map(|agg| (agg, agg.combinator()));
+            match agg_combinator {
+                None => {
+                    tracing::warn!("no aggregation combinator found for metric: {metric}");
+                    Ok(Some((metric, TelemetryValue::Seq(values))))
+                },
                 Some((agg, combo)) => {
                     let merger = combo.combine(values.clone()).map(|combined| combined.map(|c| (metric, c)));
                     tracing::debug!(?merger, ?values, %agg, "merging metric values per order aggregator");
                     merger
                 },
-            },
-        )
+            }
+        })
         .collect::<Result<Vec<_>, TelemetryError>>()?
         .into_iter()
         .flatten()
@@ -291,8 +296,10 @@ fn consolidate_active_job_telemetry_for_order(
     Ok(telemetry)
 }
 
-#[tracing::instrument(level = "trace", skip(telemetry))]
-pub fn apply_derivative_orders(mut telemetry: Telemetry, derivative_orders: &[MetricOrder]) -> Telemetry {
+#[tracing::instrument(level = "debug", skip(telemetry))]
+pub fn apply_derivative_orders(
+    mut telemetry: Telemetry, derivative_orders: &[MetricOrder],
+) -> (Telemetry, HashSet<&MetricOrder>) {
     fn extract_terms<'t>(
         t: &'t Telemetry, lhs_path: &'t str, rhs_path: &'t str,
     ) -> Option<(&'t TelemetryValue, &'t TelemetryValue)> {
@@ -301,6 +308,7 @@ pub fn apply_derivative_orders(mut telemetry: Telemetry, derivative_orders: &[Me
         lhs.zip(rhs)
     }
 
+    let mut satisfied = HashSet::new();
     for order in derivative_orders {
         if let MetricOrder::Derivative {
             telemetry_path,
@@ -312,7 +320,13 @@ pub fn apply_derivative_orders(mut telemetry: Telemetry, derivative_orders: &[Me
         } = order
         {
             if let Some((lhs, rhs)) = extract_terms(&telemetry, telemetry_lhs, telemetry_rhs) {
-                match combinator.combine(lhs, rhs).and_then(|c| telemetry_type.cast_telemetry(c)) {
+                satisfied.insert(order);
+                tracing::debug!(lhs=?(telemetry_lhs, lhs), rhs=?(telemetry_rhs, rhs), "DMR: input terms for derivative order: {telemetry_path}");
+                match combinator.combine(lhs, rhs).and_then(|c| {
+                    let c2 = telemetry_type.cast_telemetry(c.clone());
+                    tracing::debug!("DMR: casting combined telemetry_value {c:?} to {c2:?}");
+                    c2
+                }) {
                     Ok(value) => {
                         let _ = telemetry.insert(telemetry_path.clone(), value);
                     },
@@ -324,11 +338,14 @@ pub fn apply_derivative_orders(mut telemetry: Telemetry, derivative_orders: &[Me
         }
     }
 
-    telemetry
+    (telemetry, satisfied)
 }
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use pretty_assertions::assert_eq;
+    use proctor::elements::TelemetryType;
     use wiremock::{Match, Request};
 
     pub struct EmptyQueryParamMatcher;
@@ -350,5 +367,92 @@ mod tests {
         fn matches(&self, request: &Request) -> bool {
             request.url.query_pairs().any(|q| q.0 == self.0.as_str())
         }
+    }
+
+    fn order_names<'o>(orders: impl IntoIterator<Item = &'o MetricOrder>) -> Vec<&'o str> {
+        orders
+            .into_iter()
+            .map(|o| match o {
+                MetricOrder::Derivative { telemetry_path, .. } => telemetry_path.as_str(),
+                MetricOrder::Job { metric, .. } => metric.metric.as_str(),
+                MetricOrder::Task { metric, .. } => metric.metric.as_str(),
+                MetricOrder::Operator { metric, .. } => metric.metric.as_str(),
+                MetricOrder::TaskManager { metric, .. } => metric.metric.as_str(),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn test_apply_derivative_orders() {
+        once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
+        let main_span = tracing::info_span!("test_apply_derivative_orders");
+        let _ = main_span.enter();
+
+        let orders = vec![MetricOrder::Derivative {
+            scope: FlinkScope::Operator,
+            telemetry_path: "flow.input_total_lag".to_string(),
+            telemetry_type: TelemetryType::Integer,
+            telemetry_lhs: "flow.input_records_lag_max".to_string(),
+            telemetry_rhs: "flow.input_assigned_partitions".to_string(),
+            combinator: DerivativeCombinator::Product,
+            agg: Aggregation::Sum,
+        }];
+
+        let happy = maplit::hashmap! {
+            "flow.input_records_lag_max".into() => TelemetryValue::Integer(7757),
+            "flow.input_assigned_partitions".into() => TelemetryValue::Integer(32),
+        }
+        .into();
+
+        let (actual, satisfied) = apply_derivative_orders(happy, &orders);
+        let satisfied = order_names(satisfied);
+        assert_eq!(satisfied, vec!["flow.input_total_lag"]);
+        assert_eq!(
+            actual,
+            maplit::hashmap! {
+                "flow.input_total_lag".into() => TelemetryValue::Integer(248224),
+                "flow.input_records_lag_max".into() => TelemetryValue::Integer(7757),
+                "flow.input_assigned_partitions".into() => TelemetryValue::Integer(32),
+            }
+            .into()
+        );
+
+        let f_i = maplit::hashmap! {
+            "flow.input_records_lag_max".into() => TelemetryValue::Float(7757.),
+            "flow.input_assigned_partitions".into() => TelemetryValue::Integer(32),
+        }
+        .into();
+
+        let (actual, satisfied) = apply_derivative_orders(f_i, &orders);
+        let satisfied = order_names(satisfied);
+        assert_eq!(satisfied, vec!["flow.input_total_lag"]);
+        assert_eq!(
+            actual,
+            maplit::hashmap! {
+                "flow.input_total_lag".into() => TelemetryValue::Integer(248224),
+                "flow.input_records_lag_max".into() => TelemetryValue::Float(7757.),
+                "flow.input_assigned_partitions".into() => TelemetryValue::Integer(32),
+            }
+            .into()
+        );
+
+        let i_f = maplit::hashmap! {
+            "flow.input_records_lag_max".into() => TelemetryValue::Integer(7757),
+            "flow.input_assigned_partitions".into() => TelemetryValue::Float(32.),
+        }
+        .into();
+
+        let (actual, satisfied) = apply_derivative_orders(i_f, &orders);
+        let satisfied = order_names(satisfied);
+        assert_eq!(satisfied, vec!["flow.input_total_lag"]);
+        assert_eq!(
+            actual,
+            maplit::hashmap! {
+                "flow.input_total_lag".into() => TelemetryValue::Integer(248224),
+                "flow.input_records_lag_max".into() => TelemetryValue::Integer(7757),
+                "flow.input_assigned_partitions".into() => TelemetryValue::Float(32.),
+            }
+            .into()
+        );
     }
 }

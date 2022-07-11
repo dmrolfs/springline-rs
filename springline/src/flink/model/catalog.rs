@@ -516,9 +516,9 @@ impl SubscriptionRequirements for MetricCatalog {
             "flow.forecasted_timestamp".into(),
             "flow.forecasted_records_in_per_sec".into(),
             "flow.input_records_lag_max".into(),
-            "flow_input_assigned_partitions".into(),
-            "flow_input_total_lag".into(),
-            "flow_input_records_consumed_rate".into(),
+            "flow.input_assigned_partitions".into(),
+            "flow.input_total_lag".into(),
+            "flow.input_records_consumed_rate".into(),
             "flow.input_millis_behind_latest".into(),
         }
     }

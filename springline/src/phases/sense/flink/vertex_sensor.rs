@@ -22,8 +22,7 @@ use super::{api_model, metric_order, Aggregation, MetricOrder, Unpack};
 use crate::flink::{self, JobId, JobSummary, VertexDetail, MC_CLUSTER__NR_ACTIVE_JOBS};
 use crate::phases::sense::flink::api_model::FlinkMetricResponse;
 use crate::phases::sense::flink::metric_order::MetricOrderMatcher;
-use crate::phases::sense::flink::{self as sense_flink, FlinkScope};
-use crate::phases::sense::flink::{CorrelationGenerator, FlinkContext, JOB_SCOPE, TASK_SCOPE};
+use crate::phases::sense::flink::{CorrelationGenerator, FlinkContext, FlinkScope, JOB_SCOPE, TASK_SCOPE};
 use crate::CorrelationId;
 
 /// Load telemetry for a specify scope from the Flink Job Manager REST API; e.g., Job or
@@ -64,7 +63,7 @@ impl<Out> VertexSensor<Out> {
         let trigger = Inlet::new(NAME, "trigger");
         let outlet = Outlet::new(NAME, "outlet");
 
-        let mut my_orders = Vec::new();
+        let my_orders = orders.to_vec();
         let mut derivative_orders = Vec::new();
         let mut order_matchers = HashMap::new();
         for order in orders {
@@ -73,7 +72,6 @@ impl<Out> VertexSensor<Out> {
                 match order {
                     MetricOrder::Derivative { .. } => derivative_orders.push(order.clone()),
                     _ => {
-                        my_orders.push(order.clone());
                         let matcher = order.metric_matcher()?;
                         order_matchers.insert(order.clone(), matcher);
                     },
@@ -250,7 +248,6 @@ where
             })
             .instrument(span)
             .await
-            .map(|telemetry| sense_flink::apply_derivative_orders(telemetry, &self.derivative_orders))
     }
 
     #[tracing::instrument(level = "trace", skip(self, vertex_metrics_url))]
@@ -352,6 +349,7 @@ where
                         &metric_order::PlanPositionCandidate::ByName(&vertex.name),
                         metric_response,
                         &self.order_matchers,
+                        &self.derivative_orders,
                     )
                     .map_err(|err| err.into())
                 })
@@ -373,7 +371,7 @@ where
                         position: metric_order::PlanPositionCandidate::ByName(&vertex.name),
                     };
 
-                    tracing::debug!(
+                    tracing::trace!(
                         order=?o,
                         "picklist metric[{}] matches order[{}:{}] = {}",
                         pick_metric, o.agg(), o.metric(), matches(&candidate)

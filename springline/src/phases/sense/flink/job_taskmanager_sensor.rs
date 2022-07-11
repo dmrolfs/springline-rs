@@ -31,6 +31,7 @@ pub struct JobTaskmanagerSensor<Out> {
     context: FlinkContext,
     orders: Vec<MetricOrder>,
     order_matchers: HashMap<MetricOrder, MetricOrderMatcher>,
+    derivative_orders: Vec<MetricOrder>,
     correlation_gen: CorrelationGenerator,
     trigger: Inlet<()>,
     outlet: Outlet<Out>,
@@ -43,6 +44,7 @@ impl<Out> fmt::Debug for JobTaskmanagerSensor<Out> {
             .field("name", &self.name)
             .field("context", &self.context)
             .field("orders", &self.orders)
+            .field("derivative_orders", &self.derivative_orders)
             .field("trigger", &self.trigger)
             .field("outlet", &self.outlet)
             .finish()
@@ -69,13 +71,18 @@ impl<Out> JobTaskmanagerSensor<Out> {
         let trigger = Inlet::new(&name, "trigger");
         let outlet = Outlet::new(&name, "outlet");
 
-        let mut my_orders = Vec::new();
+        let my_orders = orders.to_vec();
+        let mut derivative_orders = Vec::new();
         let mut order_matchers = HashMap::new();
         for order in orders {
             if order.scope().matches(&scope) {
-                my_orders.push(order.clone());
-                let matcher = order.metric_matcher()?;
-                order_matchers.insert(order.clone(), matcher);
+                match order {
+                    MetricOrder::Derivative { .. } => derivative_orders.push(order.clone()),
+                    _ => {
+                        let matcher = order.metric_matcher()?;
+                        order_matchers.insert(order.clone(), matcher);
+                    },
+                }
             }
         }
 
@@ -85,6 +92,7 @@ impl<Out> JobTaskmanagerSensor<Out> {
             context,
             orders: my_orders,
             order_matchers,
+            derivative_orders,
             correlation_gen,
             trigger,
             outlet,
@@ -213,8 +221,7 @@ where
 
         let mut requested_metrics = HashSet::new();
         let mut available_orders = Vec::new();
-        for order in self.orders.iter() {
-            let matches = &self.order_matchers[order];
+        for (order, matches) in self.order_matchers.iter() {
             for metric in flink_scope_metrics.iter() {
                 let candidate = metric_order::MetricCandidate {
                     metric,
@@ -285,7 +292,8 @@ where
                             api_model::build_telemetry(
                                 &metric_order::PlanPositionCandidate::Any,
                                 metric_response,
-                                &self.order_matchers
+                                &self.order_matchers,
+                                &self.derivative_orders,
                             )
                                 // this is only needed because async_trait forcing me to parameterize this stage
                                 .and_then(|telemetry| Out::unpack(telemetry))

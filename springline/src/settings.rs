@@ -219,7 +219,7 @@ mod tests {
     use crate::kubernetes::{KubernetesApiConstraints, KubernetesDeployResource};
     use crate::phases::plan::{PerformanceRepositorySettings, PerformanceRepositoryType, SpikeSettings};
     use crate::phases::sense::flink::Aggregation::Sum;
-    use crate::phases::sense::flink::{Aggregation, DerivativeCombinator, MetricOrder, MetricSpec, PlanPositionSpec};
+    use crate::phases::sense::flink::{Aggregation, DerivativeCombinator, FlinkScope, MetricOrder, MetricSpec, PlanPositionSpec};
     use crate::settings::action_settings::SavepointSettings;
     use crate::settings::sensor_settings::FlinkSensorSettings;
     use Aggregation::{Max, Min, Value};
@@ -339,6 +339,7 @@ mod tests {
                             ),
                         },
                         MetricOrder::Derivative {
+                            scope: FlinkScope::Operator,
                             telemetry_path: "flow.input_total_lag".to_string(),
                             telemetry_type: Float,
                             telemetry_lhs: "flow.input_records_lag_max".to_string(),

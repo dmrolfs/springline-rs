@@ -132,7 +132,10 @@ where
 
                         Some(item) => {
                             match window.as_mut() {
-                                Some(w) => w.push(item),
+                                Some(w) => {
+                                    tracing::debug!(?item, "DMR: pushing item into data window.");
+                                    w.push(item)
+                                },
                                 None => {
                                     let w = self.make_window(item)?;
                                     window = Some(w);

@@ -13,6 +13,7 @@ data:
     ---
     flink:
       job_manager_host: {{ include "pipeline.jobName" . }}{{ .Values.global.convention.jobManagerSuffix }}{{ .Values.global.convention.serviceSuffix }}.{{ .Release.Namespace }}.svc.cluster.local
+    
     kubernetes:
       namespace: {{ .Release.Namespace }}
 
@@ -40,6 +41,16 @@ data:
               agg: sum
               telemetry_path: flow.input_records_consumed_rate
               telemetry_type: Float
+          - Job:
+              metric: Status.JVM.ClassLoader.ClassesLoaded
+              agg: max
+              telemetry_path: cluster.classes_loaded
+              telemetry_type: Integer
+          - Job:
+              metric: Status.JVM.ClassLoader.ClassesUnloaded
+              agg: max
+              telemetry_path: cluster.classes_loaded
+              telemetry_type: Integer
 
     eligibility:
       template_data:

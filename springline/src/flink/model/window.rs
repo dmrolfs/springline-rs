@@ -713,20 +713,26 @@ impl AppDataWindow<MetricCatalog> {
         })
     }
 
+    #[tracing::instrument(level = "trace")]
     pub fn flow_input_total_lag_rolling_average(&self, looking_back_secs: u32) -> f64 {
         let (sum, size) = self.sum_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
             m.flow.input_total_lag
         });
 
-        if size == 0 {
+        let result = if size == 0 {
             0.0
         } else {
             sum.and_then(|lag| i32::try_from(lag).ok().map(|l| f64::from(l) / size as f64))
                 .unwrap_or(0.0)
-        }
+        };
+
+        tracing::debug!("DMR: total_lag_rolling_average: {sum:?} / {size} = {result}");
+        result
     }
 
+    #[tracing::instrument(level = "debug", name = "DMR: flow_input_total_lag_rolling_change_per_sec")]
     pub fn flow_input_total_lag_rolling_change_per_sec(&self, looking_back_secs: u32) -> f64 {
+        tracing::debug!("DMR: data window items: {:?}", self.data);
         let values = self
             .extract_from_head(Duration::from_secs(u64::from(looking_back_secs)), |metric| {
                 (metric.recv_timestamp, metric.flow.input_total_lag)
@@ -735,19 +741,35 @@ impl AppDataWindow<MetricCatalog> {
             .flat_map(|(ts, lag)| lag.map(|l| (ts, l)))
             .collect::<Vec<_>>();
 
+        tracing::debug!(
+            nr_total_lag_values=%values.len(),
+            first_ts=?values.first().map(|f| f.0.to_string()), last_ts=?values.last().map(|l| l.0.to_string()),
+            first_val=?values.first().map(|f| f.1), last_val=?values.last().map(|l| l.1),
+            "DMR: total_lag values = {:?}", values
+        );
+
         // remember: head is the most recent, so we want to diff accordingly
         values
             .last()
             .zip(values.first())
             .and_then(|(first, last)| {
-                if first.0 == last.0 {
+                let result = if first.0 == last.0 {
+                    tracing::warn!("DMR: first and last timestamps are the same!");
                     None
                 } else {
                     let duration_secs = (last.0 - first.0).as_secs_f64();
+                    tracing::debug!("DMR: duration_secs = {duration_secs}");
                     i32::try_from(last.1 - first.1)
                         .ok()
                         .map(|diff| f64::from(diff) / duration_secs)
-                }
+                };
+                tracing::debug!(
+                    "DMR: total_lag_rolling_change_per_sec: last[{}] - first[{}] / secs[{:?}] = {result:?}",
+                    last.1,
+                    first.1,
+                    last.0 - first.0,
+                );
+                result
             })
             .unwrap_or(0.0)
     }
@@ -786,16 +808,20 @@ impl AppDataWindow<MetricCatalog> {
 
     /// Rolling average of the source `records_consumed_rate` kafka metric on the source operator.
     /// This metric is used with `total_lag` to calculate the `relative_lag_change_rate`.
+    #[tracing::instrument(level = "trace")]
     pub fn flow_input_records_consumed_rate_rolling_average(&self, looking_back_secs: u32) -> f64 {
         let (sum, size) = self.sum_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
             m.flow.input_records_consumed_rate
         });
 
-        if size == 0 {
+        let result = if size == 0 {
             0.0
         } else {
             sum.map(|rate| rate / size as f64).unwrap_or(0.0)
-        }
+        };
+
+        tracing::debug!("DMR: input_records_consumed_rate_rolling_average: {sum:?} / {size} = {result}");
+        result
     }
 
     pub fn flow_input_records_consumed_rate_rolling_change_per_sec(&self, looking_back_secs: u32) -> f64 {
@@ -867,14 +893,18 @@ impl AppDataWindow<MetricCatalog> {
     ///
     /// (see B. Varga, M. Balassi, A. Kiss, Towards autoscaling of Apache Flink jobs,
     /// April 2021Acta Universitatis Sapientiae, Informatica 13(1):1-21)
+    #[tracing::instrument(level = "trace")]
     pub fn flow_input_relative_lag_change_rate(&self, looking_back_secs: u32) -> f64 {
         let deriv_total_lag = self.flow_input_total_lag_rolling_change_per_sec(looking_back_secs);
         let total_rate = self.flow_input_records_consumed_rate_rolling_average(looking_back_secs);
-        if total_rate == 0.0 {
-            0.0
-        } else {
-            deriv_total_lag / total_rate
-        }
+        let result = if total_rate == 0.0 { 0.0 } else { deriv_total_lag / total_rate };
+
+        tracing::debug!(
+            "DMR: input_relative_lag_change_rate: derive_total_lag[{}] / total_rate[{}] = {result}",
+            deriv_total_lag,
+            total_rate
+        );
+        result
     }
 
     pub fn flow_input_millis_behind_latest_rolling_average(&self, looking_back_secs: u32) -> f64 {

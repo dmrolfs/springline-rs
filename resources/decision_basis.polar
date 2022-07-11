@@ -1,16 +1,16 @@
 {{> preamble}}
 
 {{#if max_healthy_relative_lag_velocity}}
-scale_up(item, context, _, reason) if
+scale_up(item, _context, _, reason) if
     evaluation_window(window)
     and relative_lag_velocity = item.flow_input_relative_lag_change_rate(window)
-    and {{max_healthy_relative_lag_velocity}} < relative_lag_change_rate
+    and {{max_healthy_relative_lag_velocity}} < relative_lag_velocity
     and reason = "relative_lag_velocity";
 {{/if}}
 
 
 {{#if min_task_utilization}}
-scale_down(item, context, _, reason) if
+scale_down(item, _context, _, reason) if
     evaluation_window(window)
     and utilization = item.flow_task_utilization_rolling_average(window)
     and utilization < {{min_task_utilization}}

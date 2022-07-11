@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::phases::sense::flink::metric_order::{self, MetricOrderMatcher};
-use crate::phases::sense::flink::PlanPositionCandidate;
+use crate::phases::sense::flink::{self as sense_flink, PlanPositionCandidate};
 use once_cell::sync::Lazy;
 use proctor::elements::{Telemetry, TelemetryValue};
 use proctor::error::TelemetryError;
@@ -59,7 +59,7 @@ impl FlinkMetric {
 #[tracing::instrument(level = "trace", skip(metrics, order_matchers))]
 pub fn build_telemetry<'c, M>(
     position_candidate: &PlanPositionCandidate<'c>, metrics: M,
-    order_matchers: &HashMap<MetricOrder, MetricOrderMatcher>,
+    order_matchers: &HashMap<MetricOrder, MetricOrderMatcher>, derivative_orders: &Vec<MetricOrder>,
 ) -> Result<Telemetry, TelemetryError>
 where
     M: IntoIterator<Item = FlinkMetric>,
@@ -96,10 +96,15 @@ where
         }
     }
 
-    let all: HashSet<&MetricOrder> = order_matchers.iter().map(|(order, _)| order).collect();
-    let unfulfilled = all.difference(&satisfied).collect::<HashSet<_>>();
+    let (telemetry, derivatives_satisfied) = sense_flink::apply_derivative_orders(telemetry, derivative_orders);
+    satisfied.extend(derivatives_satisfied);
+
+    let mut all: HashSet<&MetricOrder> = order_matchers.keys().collect();
+    all.extend(derivative_orders.as_slice());
+
+    let unfulfilled: HashSet<_> = all.difference(&satisfied).collect();
     if !unfulfilled.is_empty() {
-        tracing::info!(?unfulfilled, "some metrics orders were not fulfilled.");
+        tracing::warn!(?unfulfilled, "some metric orders were not fulfilled.");
     }
 
     Ok(telemetry)

@@ -87,11 +87,14 @@ pub enum DerivativeCombinator {
 }
 
 impl DerivativeCombinator {
+    #[tracing::instrument(level = "trace", name = "derivative_order_combine")]
     pub fn combine(&self, lhs: &TelemetryValue, rhs: &TelemetryValue) -> Result<TelemetryValue, TelemetryError> {
         let items = Self::do_normalize_types(lhs, rhs);
-        match self {
-            Self::Product => combine::Product.combine(items).map(|v| v.unwrap()),
-        }
+        let result = match self {
+            Self::Product => combine::Product.combine(items.clone()).map(|v| v.unwrap()),
+        };
+        tracing::debug!("derivative_order_combine({:?}) = {:?}", items, result);
+        result
     }
 
     fn do_normalize_types(lhs: &TelemetryValue, rhs: &TelemetryValue) -> Vec<TelemetryValue> {
@@ -129,6 +132,7 @@ pub enum MetricOrder {
         metric: MetricSpec,
     },
     Derivative {
+        scope: FlinkScope,
         telemetry_path: String,
         telemetry_type: TelemetryType,
         telemetry_lhs: String,
@@ -260,7 +264,7 @@ impl MetricOrder {
             Self::TaskManager { .. } => FlinkScope::TaskManager,
             Self::Task { .. } => FlinkScope::Task,
             Self::Operator { .. } => FlinkScope::Operator,
-            Self::Derivative { .. } => FlinkScope::Any,
+            Self::Derivative { scope, .. } => *scope,
         }
     }
 

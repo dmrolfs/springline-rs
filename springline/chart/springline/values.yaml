@@ -125,8 +125,8 @@ application:
   decision:
     template_data:
       max_healthy_relative_lag_velocity: 3.0
-      min_task_utilization: 0.8
-      evaluate_duration_secs: 60
+      min_task_utilization: 0.6
+      evaluate_duration_secs: 120
 
   action:
     taskmanager:

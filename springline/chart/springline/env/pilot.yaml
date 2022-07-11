@@ -19,7 +19,14 @@ application:
 
   eligibility:
     template_data:
-      cooling_secs: 900
+      cooling_secs: 120
+
+  decision:
+    template_data:
+      basis: chart_decision_basis
+      max_healthy_relative_lag_velocity: 3.0
+      min_task_utilization: 0.6
+      evaluate_duration_secs: 120
 
   action:
     taskmanager:
