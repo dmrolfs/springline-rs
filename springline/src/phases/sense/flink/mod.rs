@@ -296,7 +296,7 @@ fn consolidate_active_job_telemetry_for_order(
     Ok(telemetry)
 }
 
-#[tracing::instrument(level = "debug", skip(telemetry))]
+#[tracing::instrument(level = "trace", skip(telemetry))]
 pub fn apply_derivative_orders(
     mut telemetry: Telemetry, derivative_orders: &[MetricOrder],
 ) -> (Telemetry, HashSet<&MetricOrder>) {
@@ -321,18 +321,13 @@ pub fn apply_derivative_orders(
         {
             if let Some((lhs, rhs)) = extract_terms(&telemetry, telemetry_lhs, telemetry_rhs) {
                 satisfied.insert(order);
-                tracing::debug!(lhs=?(telemetry_lhs, lhs), rhs=?(telemetry_rhs, rhs), "DMR: input terms for derivative order: {telemetry_path}");
-                match combinator.combine(lhs, rhs).and_then(|c| {
-                    let c2 = telemetry_type.cast_telemetry(c.clone());
-                    tracing::debug!("DMR: casting combined telemetry_value {c:?} to {c2:?}");
-                    c2
-                }) {
+                tracing::trace!(lhs=?(telemetry_lhs, lhs), rhs=?(telemetry_rhs, rhs), "input terms for derivative order: {telemetry_path}");
+                let result = combinator.combine(lhs, rhs).and_then(|c| telemetry_type.cast_telemetry(c));
+                match result {
                     Ok(value) => {
                         let _ = telemetry.insert(telemetry_path.clone(), value);
                     },
-                    Err(err) => {
-                        tracing::warn!(error=?err, "failed to compute derivative metric order - skipping");
-                    },
+                    Err(err) => tracing::warn!(error=?err, "failed to compute derivative metric order - skipping"),
                 }
             }
         }

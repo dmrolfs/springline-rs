@@ -219,7 +219,9 @@ mod tests {
     use crate::kubernetes::{KubernetesApiConstraints, KubernetesDeployResource};
     use crate::phases::plan::{PerformanceRepositorySettings, PerformanceRepositoryType, SpikeSettings};
     use crate::phases::sense::flink::Aggregation::Sum;
-    use crate::phases::sense::flink::{Aggregation, DerivativeCombinator, FlinkScope, MetricOrder, MetricSpec, PlanPositionSpec};
+    use crate::phases::sense::flink::{
+        Aggregation, DerivativeCombinator, FlinkScope, MetricOrder, MetricSpec, PlanPositionSpec,
+    };
     use crate::settings::action_settings::SavepointSettings;
     use crate::settings::sensor_settings::FlinkSensorSettings;
     use Aggregation::{Max, Min, Value};
@@ -556,7 +558,7 @@ mod tests {
             .with_template_data(DecisionTemplateData {
                 basis: "decision_basis".to_string(),
                 max_healthy_relative_lag_velocity: Some(3.0),
-                min_task_utilization: Some(0.8),
+                min_task_utilization: Some(0.6),
                 evaluate_duration_secs: Some(60),
                 ..DecisionTemplateData::default()
             }),
@@ -702,6 +704,7 @@ mod tests {
                     },
                     decision: DecisionSettings {
                         template_data: Some(DecisionTemplateData {
+                            evaluate_duration_secs: Some(120),
                             ..SETTINGS.decision.template_data.clone().unwrap()
                         }),
                         ..SETTINGS.decision.clone()
@@ -932,6 +935,7 @@ mod tests {
                     },
                     decision: DecisionSettings {
                         template_data: Some(DecisionTemplateData {
+                            evaluate_duration_secs: Some(120),
                             ..SETTINGS.decision.template_data.clone().unwrap()
                         }),
                         ..SETTINGS.decision.clone()

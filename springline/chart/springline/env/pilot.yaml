@@ -5,7 +5,7 @@ imagePullSecrets:
 #  dnsTail: -api-dev.plm.platform.in.here.com
 deployment:
   log:
-    level: "info,springline::flink=debug,springline::kubernetes=trace,springline::phases::act=trace,kube=trace,kube_client=trace,springline::phases::sense::flink=debug"
+    level: "info,springline::flink=info,springline::kubernetes=info,springline::phases::act=trace,kube=info,kube_client=info,springline::phases::sense::flink=info"
     polar: "info"
     backtrace: "1"
 
@@ -27,6 +27,10 @@ application:
       max_healthy_relative_lag_velocity: 3.0
       min_task_utilization: 0.6
       evaluate_duration_secs: 120
+
+  governance:
+    rules:
+      max_cluster_size: 10
 
   action:
     taskmanager:
