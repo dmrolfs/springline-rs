@@ -342,6 +342,7 @@ mod tests {
                         },
                         MetricOrder::Derivative {
                             scope: FlinkScope::Operator,
+                            position: PlanPositionSpec::Source,
                             telemetry_path: "flow.input_total_lag".to_string(),
                             telemetry_type: Float,
                             telemetry_lhs: "flow.input_records_lag_max".to_string(),
@@ -687,7 +688,7 @@ mod tests {
                                     "lastCheckpointDuration",
                                     Max,
                                     "health.last_checkpoint_duration",
-                                    Float,
+                                    Integer,
                                 ),
                             }],
                             ..SETTINGS.sensor.flink.clone()
@@ -804,7 +805,7 @@ mod tests {
                                 "lastCheckpointDuration",
                                 Max,
                                 "health.last_checkpoint_duration",
-                                Float,
+                                Integer,
                             ),
                         }],
                         ..SETTINGS.sensor.flink.clone()
@@ -925,7 +926,7 @@ mod tests {
                                     "lastCheckpointDuration",
                                     Max,
                                     "health.last_checkpoint_duration",
-                                    Float,
+                                    Integer,
                                 ),
                             }],
                             ..SETTINGS.sensor.flink.clone()
