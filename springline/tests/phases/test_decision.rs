@@ -293,7 +293,7 @@ async fn test_decision_carry_policy_result() -> anyhow::Result<()> {
     flow.push_telemetry(padding).await?;
 
     let ts = *DT_1 + chrono::Duration::hours(1);
-    let item = make_test_item(&ts, std::f64::consts::PI, 1.0);
+    let item = make_test_item(&ts, std::f64::consts::PI, 1);
     tracing::warn!(?item, "DMR-A.1: created item to push.");
     flow.push_telemetry(item).await?;
     let event = &*flow.recv_policy_event().await?;
@@ -304,14 +304,14 @@ async fn test_decision_carry_policy_result() -> anyhow::Result<()> {
             .await?
     );
 
-    let item = make_test_item(&ts, std::f64::consts::E, 2.0);
+    let item = make_test_item(&ts, std::f64::consts::E, 2);
     // let telemetry = Telemetry::try_from(&item);
     flow.push_telemetry(item).await?;
     let event = &*flow.recv_policy_event().await?;
     claim::assert_matches!(event, &elements::PolicyFilterEvent::ItemBlocked(_, _));
     tracing::warn!(?event, "DMR-C: item dropped confirmed");
 
-    let item = make_test_item(&ts, std::f64::consts::LN_2, 1.0);
+    let item = make_test_item(&ts, std::f64::consts::LN_2, 1);
     tracing::warn!(?item, "DMR-D.1: created item to push.");
     flow.push_telemetry(item).await?;
     tracing::info!("waiting for item to reach sink...");
@@ -354,6 +354,7 @@ async fn test_decision_common() -> anyhow::Result<()> {
 
     let telemetry_subscription = TelemetrySubscription::new("measurements")
         .with_required_fields(<MetricCatalog as SubscriptionRequirements>::required_fields())
+        .with_optional_fields(<MetricCatalog as SubscriptionRequirements>::optional_fields())
         // .with_optional_fields(maplit::hashset! {
         //     "all_sinks_healthy",
         // });
@@ -363,7 +364,10 @@ async fn test_decision_common() -> anyhow::Result<()> {
         format!("{}_basis", DecisionPolicy::base_template_name()),
         r###"
             | {{> preamble}}
-            | scale_up(item, _context, _, reason) if {{max_records_in_per_sec}} < item.flow.records_in_per_sec and reason = "lagging_behind";
+            | scale_up(item, _context, _, reason) if
+            |   not item.flow.input_records_lag_max == nil
+            |   and {{max_records_in_per_sec}} < item.flow.records_in_per_sec
+            |   and reason = "lagging_behind";
             | scale_down(item, _context, _, reason) if item.flow.records_in_per_sec < {{min_records_in_per_sec}} and reason = "too comfortable";
             "###,
     )?));
@@ -408,7 +412,7 @@ async fn test_decision_common() -> anyhow::Result<()> {
     flow.push_telemetry(make_test_item_padding()).await?;
 
     let ts = *DT_1 + chrono::Duration::hours(1);
-    let item = make_test_item(&ts, std::f64::consts::PI, 1.0);
+    let item = make_test_item(&ts, std::f64::consts::PI, 1);
     tracing::warn!(?item, "DMR-A.1: created item to push.");
 
     flow.push_telemetry(item).await?;
@@ -420,14 +424,14 @@ async fn test_decision_common() -> anyhow::Result<()> {
             .await?
     );
 
-    let item = make_test_item(&ts, std::f64::consts::E, 2.0);
+    let item = make_test_item(&ts, std::f64::consts::E, 2);
     flow.push_telemetry(item).await?;
     let event = &*flow.recv_policy_event().await?;
     tracing::info!(?event, "DMR-2: TESTING policy event for blockage");
     claim::assert_matches!(event, &elements::PolicyFilterEvent::ItemBlocked(_, _));
     tracing::warn!(?event, "DMR-C: item dropped confirmed");
 
-    let item = make_test_item(&ts, std::f64::consts::LN_2, 1.0);
+    let item = make_test_item(&ts, std::f64::consts::LN_2, 1);
     tracing::warn!(?item, "DMR-D.1: created item to push.");
     flow.push_telemetry(item).await?;
     tracing::info!("waiting for item to reach sink...");
