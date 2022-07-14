@@ -256,6 +256,8 @@ where
         );
         tracing::debug!(?metrics, ?agg_span, "flink sensing url = {:?}", url);
 
+        let order_matchers: HashMap<&MetricOrder, &MetricOrderMatcher> = self.order_matchers.iter().collect();
+
         while self.trigger.recv().await.is_some() {
             let _stage_timer = stage::start_stage_eval_time(self.name());
 
@@ -292,7 +294,7 @@ where
                             api_model::build_telemetry(
                                 &metric_order::PlanPositionCandidate::Any,
                                 metric_response,
-                                &self.order_matchers,
+                                &order_matchers,
                                 &self.derivative_orders,
                             )
                                 // this is only needed because async_trait forcing me to parameterize this stage

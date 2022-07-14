@@ -35,7 +35,7 @@ impl ScaleActuator<ScalePlan> {
 
         let composite: CompositeAction<ScalePlan> = action::CompositeAction::default()
             .add_action_step(action::PrepareData)
-            .add_action_step(action::TriggerSavepoint::from_settings(flink_action_settings))
+            .add_action_step(action::CancelWithSavepoint::from_settings(flink_action_settings))
             .add_action_step(action::PatchReplicas::from_settings(settings))
             .add_action_step(action::RestartJobs::from_settings(flink_action_settings));
 

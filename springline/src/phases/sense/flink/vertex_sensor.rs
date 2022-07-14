@@ -22,7 +22,9 @@ use super::{api_model, metric_order, Aggregation, MetricOrder, Unpack};
 use crate::flink::{self, JobId, JobSummary, VertexDetail, MC_CLUSTER__NR_ACTIVE_JOBS};
 use crate::phases::sense::flink::api_model::FlinkMetricResponse;
 use crate::phases::sense::flink::metric_order::MetricOrderMatcher;
-use crate::phases::sense::flink::{CorrelationGenerator, FlinkContext, FlinkScope, JOB_SCOPE, TASK_SCOPE};
+use crate::phases::sense::flink::{
+    CorrelationGenerator, FlinkContext, FlinkScope, PlanPositionCandidate, JOB_SCOPE, TASK_SCOPE,
+};
 use crate::CorrelationId;
 
 /// Load telemetry for a specify scope from the Flink Job Manager REST API; e.g., Job or
@@ -300,6 +302,12 @@ where
         &self, vertex: &VertexDetail, picklist: Vec<String>, mut vertex_metrics_url: Url, correlation: &CorrelationId,
     ) -> Result<Telemetry, SenseError> {
         let agg_span = self.agg_span_for(vertex, &picklist);
+        let vertex_position_candidate = PlanPositionCandidate::ByName(&vertex.name);
+        let vertex_orders: HashMap<&MetricOrder, &MetricOrderMatcher> = self
+            .order_matchers
+            .iter()
+            .filter(|(o, _)| o.matches_plan_position(&vertex_position_candidate))
+            .collect();
 
         tracing::debug!(
             ?picklist,
@@ -346,9 +354,9 @@ where
                 .await
                 .and_then(|metric_response: FlinkMetricResponse| {
                     api_model::build_telemetry(
-                        &metric_order::PlanPositionCandidate::ByName(&vertex.name),
+                        &PlanPositionCandidate::ByName(&vertex.name),
                         metric_response,
-                        &self.order_matchers,
+                        &vertex_orders,
                         &self.derivative_orders,
                     )
                     .map_err(|err| err.into())

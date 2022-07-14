@@ -59,7 +59,7 @@ impl FlinkMetric {
 #[tracing::instrument(level = "trace", skip(metrics, order_matchers))]
 pub fn build_telemetry<'c, M>(
     position_candidate: &PlanPositionCandidate<'c>, metrics: M,
-    order_matchers: &HashMap<MetricOrder, MetricOrderMatcher>, derivative_orders: &Vec<MetricOrder>,
+    order_matchers: &HashMap<&MetricOrder, &MetricOrderMatcher>, derivative_orders: &Vec<MetricOrder>,
 ) -> Result<Telemetry, TelemetryError>
 where
     M: IntoIterator<Item = FlinkMetric>,
@@ -69,7 +69,7 @@ where
     let mut satisfied = HashSet::new();
 
     for metric in metrics.into_iter() {
-        let matched_orders: Vec<&MetricOrder> = order_matchers
+        let matched_orders = order_matchers
             .iter()
             .filter_map(|(order, matches)| {
                 let candidate = metric_order::MetricCandidate {
@@ -77,12 +77,12 @@ where
                     position: position_candidate.clone(),
                 };
                 if matches(&candidate) {
-                    Some(order)
+                    Some(*order)
                 } else {
                     None
                 }
             })
-            .collect();
+            .collect::<Vec<_>>();
 
         if !matched_orders.is_empty() {
             satisfied.extend(matched_orders.iter().copied());
@@ -97,14 +97,23 @@ where
     }
 
     let (telemetry, derivatives_satisfied) = sense_flink::apply_derivative_orders(telemetry, derivative_orders);
-    satisfied.extend(derivatives_satisfied);
+    if !derivatives_satisfied.is_empty() {
+        tracing::info!(
+            ?position_candidate,
+            "derivative orders added: {derivatives_satisfied:?}"
+        );
+    }
 
-    let mut all: HashSet<&MetricOrder> = order_matchers.keys().collect();
+    let mut all: HashSet<&MetricOrder> = order_matchers.keys().copied().collect();
     all.extend(derivative_orders.as_slice());
 
     let unfulfilled: HashSet<_> = all.difference(&satisfied).collect();
     if !unfulfilled.is_empty() {
-        tracing::warn!(?unfulfilled, "some metric orders were not fulfilled.");
+        tracing::warn!(
+            ?position_candidate,
+            ?unfulfilled,
+            "some metric orders were not fulfilled."
+        );
     }
 
     Ok(telemetry)

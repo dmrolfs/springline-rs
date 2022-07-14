@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use cast_trait_object::DynCastExt;
 use once_cell::sync::Lazy;
@@ -130,6 +130,7 @@ pub static STD_METRIC_ORDERS: Lazy<Vec<MetricOrder>> = Lazy::new(|| {
         }, // Integer,
         MetricOrder::Derivative {
             scope: FlinkScope::Operator,
+            position: PlanPositionSpec::Source,
             telemetry_path: "flow.input_total_lag".to_string(),
             telemetry_type: Integer,
             telemetry_lhs: "flow.input_records_lag_max".to_string(),
@@ -299,7 +300,7 @@ fn consolidate_active_job_telemetry_for_order(
 #[tracing::instrument(level = "trace", skip(telemetry))]
 pub fn apply_derivative_orders(
     mut telemetry: Telemetry, derivative_orders: &[MetricOrder],
-) -> (Telemetry, HashSet<&MetricOrder>) {
+) -> (Telemetry, Vec<&MetricOrder>) {
     fn extract_terms<'t>(
         t: &'t Telemetry, lhs_path: &'t str, rhs_path: &'t str,
     ) -> Option<(&'t TelemetryValue, &'t TelemetryValue)> {
@@ -308,7 +309,7 @@ pub fn apply_derivative_orders(
         lhs.zip(rhs)
     }
 
-    let mut satisfied = HashSet::new();
+    let mut satisfied = Vec::new();
     for order in derivative_orders {
         if let MetricOrder::Derivative {
             telemetry_path,
@@ -320,7 +321,7 @@ pub fn apply_derivative_orders(
         } = order
         {
             if let Some((lhs, rhs)) = extract_terms(&telemetry, telemetry_lhs, telemetry_rhs) {
-                satisfied.insert(order);
+                satisfied.push(order);
                 tracing::trace!(lhs=?(telemetry_lhs, lhs), rhs=?(telemetry_rhs, rhs), "input terms for derivative order: {telemetry_path}");
                 let result = combinator.combine(lhs, rhs).and_then(|c| telemetry_type.cast_telemetry(c));
                 match result {
@@ -385,6 +386,7 @@ mod tests {
 
         let orders = vec![MetricOrder::Derivative {
             scope: FlinkScope::Operator,
+            position: PlanPositionSpec::Source,
             telemetry_path: "flow.input_total_lag".to_string(),
             telemetry_type: TelemetryType::Integer,
             telemetry_lhs: "flow.input_records_lag_max".to_string(),

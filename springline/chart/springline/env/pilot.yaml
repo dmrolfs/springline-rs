@@ -5,7 +5,7 @@ imagePullSecrets:
 #  dnsTail: -api-dev.plm.platform.in.here.com
 deployment:
   log:
-    level: "info,springline::flink=info,springline::kubernetes=info,springline::phases::act=trace,kube=info,kube_client=info,springline::phases::sense::flink=info"
+    level: "info,springline::phases::sense::flink=info,springline::flink::model=info,springline::phases::act=trace"
     polar: "info"
     backtrace: "1"
 
@@ -19,7 +19,7 @@ application:
 
   eligibility:
     template_data:
-      cooling_secs: 120
+      cooling_secs: 180
 
   decision:
     template_data:
@@ -30,7 +30,7 @@ application:
 
   governance:
     rules:
-      max_cluster_size: 10
+      max_cluster_size: 16
 
   action:
     taskmanager:
@@ -45,8 +45,8 @@ global:
   realm: "olp-here"
   pipeline:
     id: "7de2037f-4fe3-466d-b2d7-ab92954f966c"
-    versionId: "b7c5d122-77b6-4bd7-98cc-8316aa77a826"
-    templateId: "3ec2f478-9488-4390-86eb-d746c6551e0c"
+    versionId: "768aecf4-e5f0-4f9d-9e50-4bd386b9ebfe"
+    templateId: "43937ba9-11da-4db5-9fad-e4ea299495b2"
 #    jobId: "732218bb-c165-490b-b70b-b2513592caff"
     customerBillingTag: "2460zDz92553"
     billingClientAppId: "patappid"

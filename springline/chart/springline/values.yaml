@@ -110,6 +110,9 @@ probes:
     livenessInterval: 120000
 
 application:
+  kubernetes:
+    patch_settle_timeout_secs: 60
+
   sensor:
     flink:
       metric_orders:
@@ -139,7 +142,7 @@ application:
     flink:
       polling_interval_secs: 10
       restart:
-        operation_timeout_secs: 60
+        operation_timeout_secs: 120
 
 global:
   annotations: {}

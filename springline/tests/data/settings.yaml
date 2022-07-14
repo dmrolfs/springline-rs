@@ -46,6 +46,7 @@ sensor:
           telemetry_type: Integer
       - Derivative:
           scope: operator
+          position: source
           telemetry_path: flow.input_total_lag
           telemetry_type: Float
           telemetry_lhs: flow.input_records_lag_max

@@ -133,6 +133,8 @@ pub enum MetricOrder {
     },
     Derivative {
         scope: FlinkScope,
+        #[serde(default, skip_serializing_if = "PlanPositionSpec::is_all")]
+        position: PlanPositionSpec,
         telemetry_path: String,
         telemetry_type: TelemetryType,
         telemetry_lhs: String,
@@ -152,6 +154,16 @@ pub struct MetricCandidate<'c> {
 pub type MetricOrderMatcher = Box<dyn for<'c> Fn(&MetricCandidate<'c>) -> bool + Send + Sync + 'static>;
 
 impl MetricOrder {
+    pub fn matches_plan_position(&self, candidate: &PlanPositionCandidate<'_>) -> bool {
+        match self {
+            Self::Job { .. } => true,
+            Self::TaskManager { .. } => true,
+            Self::Task { position, .. } => position.matches(candidate),
+            Self::Operator { position, .. } => position.matches(candidate),
+            Self::Derivative { position, .. } => position.matches(candidate),
+        }
+    }
+
     pub fn metric_matcher(&self) -> Result<MetricOrderMatcher, SenseError> {
         let matcher: MetricOrderMatcher = match self {
             Self::Job { metric: spec } => {
@@ -174,15 +186,20 @@ impl MetricOrder {
                 let pos_spec = *position;
                 let encoded_name = Self::encode_string(name);
                 let regex = Regex::new(&format!(
-                    r"^({encoded_source_prefix})?{encoded_name}\..+\..*{metric}$",
+                    r"^({encoded_source_prefix})?{encoded_name}.*\..*{metric}$",
                     encoded_source_prefix = Self::encode_string(&format!("{FLINK_SOURCE_PREFIX} ")),
                     metric = spec.metric
                 ))
                 .map_err(|err| SenseError::Stage(err.into()))?;
 
-                tracing::debug!(%encoded_name, ?regex, "matcher for operator [{name}]::[{}]", spec.metric);
+                // let dmr_name = name.clone();
+                // let dmr_spec = spec.clone();
                 Box::new(move |candidate| {
                     let pos_match = pos_spec.matches(&candidate.position);
+                    // tracing::trace!(?candidate, "DMR: operator[{}]::[{}] position match = {pos_match}", dmr_name, dmr_spec.metric);
+                    // let regex_match = regex.is_match(candidate.metric);
+                    // tracing::warn!(?regex, candidate=%candidate.metric, "DMR: operator[{}]::[{}] regex match = {regex_match}", dmr_name, dmr_spec.metric);
+
                     pos_match && regex.is_match(candidate.metric)
                 })
             },
@@ -468,6 +485,7 @@ impl MetricOrder {
 #[serde(rename_all = "snake_case")]
 pub enum FlinkScope {
     Job,
+    //todo: JobManager,
     TaskManager,
     Task,
     Operator,
@@ -522,7 +540,8 @@ impl Aggregation {
 
 #[cfg(test)]
 mod tests {
-    use crate::phases::sense::flink::{Aggregation, MetricOrder, MetricSpec, PlanPositionSpec};
+    use crate::phases::sense::flink::metric_order::MetricCandidate;
+    use crate::phases::sense::flink::{Aggregation, MetricOrder, MetricSpec, PlanPositionCandidate, PlanPositionSpec};
     use claim::*;
     use pretty_assertions::assert_eq;
     use proctor::elements::TelemetryType;
@@ -531,6 +550,36 @@ mod tests {
     use std::collections::HashSet;
     use std::hash::{Hash, Hasher};
     use trim_margin::MarginTrimmable;
+
+    #[test]
+    fn test_operator_order_matches() {
+        once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
+        let main_span = tracing::info_span!("test_operator_order_matches");
+        let _ = main_span.enter();
+
+        let order = MetricOrder::Operator {
+            name: "FOO Data stream".to_string(),
+            position: PlanPositionSpec::Source,
+            metric: MetricSpec::new(
+                "records-lag-max",
+                Aggregation::Sum,
+                "flow.input_records_lag_max",
+                TelemetryType::Integer,
+            ),
+        };
+        let order_matcher = assert_ok!(order.metric_matcher());
+
+        let pos_candidate = PlanPositionCandidate::ByName(
+            "Source: FOO Data stream -> Processing partitions to stream. -> Filtering records that fail score check. -> Indexing source data.."
+        );
+
+        let metric_candidate = MetricCandidate {
+            metric: "Source__FOO_Data_stream.KafkaConsumer.client-id.18b9e5dd74ea45fcb2397212225b8dd2.topic.zed-xyz-abc-ingestion-service-stg.layer.observations.consumer-fetch-manager-metrics_records-lag-max",
+            position: pos_candidate,
+        };
+
+        assert!(order_matcher(&metric_candidate));
+    }
 
     #[test]
     fn test_aggregation_hash_eq() {

@@ -19,13 +19,13 @@ use crate::CorrelationId;
 pub const ACTION_LABEL: &str = "savepoint";
 
 #[derive(Debug)]
-pub struct TriggerSavepoint {
+pub struct CancelWithSavepoint {
     pub polling_interval: Duration,
     pub savepoint_timeout: Duration,
     pub savepoint_dir: Option<String>,
 }
 
-impl TriggerSavepoint {
+impl CancelWithSavepoint {
     pub fn from_settings(settings: &FlinkActionSettings) -> Self {
         Self {
             polling_interval: settings.polling_interval,
@@ -36,7 +36,7 @@ impl TriggerSavepoint {
 }
 
 #[async_trait]
-impl ScaleAction for TriggerSavepoint {
+impl ScaleAction for CancelWithSavepoint {
     type In = ScalePlan;
 
     fn label(&self) -> &str {
@@ -75,25 +75,11 @@ impl ScaleAction for TriggerSavepoint {
     async fn execute<'s>(&self, _plan: &'s Self::In, session: &'s mut ActionSession) -> Result<(), ActError> {
         let timer = act::start_scale_action_timer(session.cluster_label(), self.label());
 
-        let correlation = session.correlation();
         let active_jobs = session.active_jobs.clone().unwrap_or_default();
         let job_triggers = Self::trigger_savepoints_for(&active_jobs, session).await?;
 
-        let tasks = job_triggers
-            .into_iter()
-            .map(|(job, trigger)| {
-                Self::wait_on_savepoint(
-                    job.clone(),
-                    trigger,
-                    self.polling_interval,
-                    self.savepoint_timeout,
-                    session,
-                )
-                .map(|savepoint_info| (job, savepoint_info))
-            })
-            .collect::<Vec<_>>();
-
-        let savepoint_report = Self::block_for_all_savepoints(tasks, &correlation).await?;
+        let savepoint_report = self.do_collect_savepoint_report(&job_triggers, session).await?;
+        self.do_wait_for_job_cancel(&job_triggers, session).await?;
         session.savepoints = Some(savepoint_report);
 
         session.mark_duration(self.label(), Duration::from_secs_f64(timer.stop_and_record()));
@@ -101,7 +87,44 @@ impl ScaleAction for TriggerSavepoint {
     }
 }
 
-impl TriggerSavepoint {
+impl CancelWithSavepoint {
+    #[tracing::instrument(level = "info", skip(self, job_triggers, session))]
+    async fn do_collect_savepoint_report<'s>(
+        &self, job_triggers: &[(JobId, trigger::TriggerId)], session: &'s ActionSession,
+    ) -> Result<JobSavepointReport, ActError> {
+        let mut tasks = Vec::new();
+        for (job, trigger) in job_triggers.iter().cloned() {
+            let job_info = Self::wait_on_savepoint(
+                job.clone(),
+                trigger,
+                self.polling_interval,
+                self.savepoint_timeout,
+                session,
+            )
+            .map(|info| (job, info));
+
+            tasks.push(job_info);
+        }
+
+        Self::block_for_all_savepoints(tasks, &session.correlation()).await
+    }
+
+    #[tracing::instrument(level = "info", skip(self, job_triggers, session))]
+    async fn do_wait_for_job_cancel<'s>(
+        &self, job_triggers: &[(JobId, trigger::TriggerId)], session: &'s ActionSession,
+    ) -> Result<Vec<JobId>, ActError> {
+        let mut tasks = Vec::new();
+        for (job, _) in job_triggers.iter().cloned() {
+            let cancelled =
+                Self::wait_on_job_cancel(job.clone(), self.polling_interval, self.savepoint_timeout, session)
+                    .map(|outcome| (job, outcome));
+            tasks.push(cancelled);
+        }
+
+        Self::block_for_all_cancellations(tasks, &session.correlation()).await
+        // Future<Output = (JobId, Result<SavepointStatus, FlinkError>)> + Send,
+    }
+
     async fn trigger_savepoints_for(
         jobs: &[JobId], session: &ActionSession,
     ) -> Result<Vec<(JobId, trigger::TriggerId)>, ActError> {
@@ -185,6 +208,38 @@ impl TriggerSavepoint {
         Ok(endpoint_url)
     }
 
+    #[tracing::instrument(level = "debug", skip(session))]
+    async fn wait_on_job_cancel(
+        job: JobId, polling_interval: Duration, cancel_timeout: Duration, session: &ActionSession,
+    ) -> Result<(), FlinkError> {
+        let task = async {
+            loop {
+                let job_detail = session.flink.query_job_details(&job, &session.correlation()).await;
+                match job_detail {
+                    Ok(details) if !details.state.is_active() => {
+                        tracing::info!(job_status=%details.state, "job {job} is not active.");
+                        break;
+                    },
+                    Ok(details) => {
+                        tracing::info!(job_status=%details.state, "job {job} is active - checking again in {polling_interval:?}.");
+                    },
+                    Err(err) => {
+                        tracing::warn!(
+                            error=?err, ?job, correlation=%session.correlation(),
+                            "check on cancellation of job {job} failed - checking again in {polling_interval:?}.",
+                        );
+                    },
+                }
+
+                tokio::time::sleep(polling_interval).await;
+            }
+        };
+
+        tokio::time::timeout(cancel_timeout, task)
+            .await
+            .map_err(|_elapsed| FlinkError::Timeout(format!("flink cancel job {job}"), cancel_timeout))
+    }
+
     #[tracing::instrument(level = "trace", skip(session))]
     async fn wait_on_savepoint(
         job: JobId, trigger: trigger::TriggerId, polling_interval: Duration, savepoint_timeout: Duration,
@@ -229,7 +284,7 @@ impl TriggerSavepoint {
         job_id: &JobId, trigger_id: &trigger::TriggerId, session: &ActionSession,
     ) -> Result<SavepointStatus, FlinkError> {
         let step_label = super::action_step(ACTION_LABEL, "check_savepoint");
-        let url = Self::info_endpoint_url_for(&session.flink, job_id, trigger_id)?;
+        let url = Self::savepoint_info_url_for(&session.flink, job_id, trigger_id)?;
         let span = tracing::info_span!(
             "act::savepoint - check_savepoint", %job_id, %trigger_id, %url, correlation=%session.correlation()
         );
@@ -268,7 +323,7 @@ impl TriggerSavepoint {
         }
     }
 
-    fn info_endpoint_url_for(
+    fn savepoint_info_url_for(
         flink: &FlinkContext, job_id: &JobId, trigger_id: &trigger::TriggerId,
     ) -> Result<Url, UrlError> {
         let mut endpoint_url = flink.jobs_endpoint();
@@ -326,6 +381,37 @@ impl TriggerSavepoint {
         }
 
         JobSavepointReport::new(completed, failed).map_err(|err| err.into())
+    }
+
+    #[tracing::instrument(level = "trace", skip(tasks))]
+    async fn block_for_all_cancellations<F>(tasks: Vec<F>, correlation: &CorrelationId) -> Result<Vec<JobId>, ActError>
+    where
+        F: Future<Output = (JobId, Result<(), FlinkError>)> + Send,
+    {
+        let mut errors = Vec::new();
+        let mut completed = Vec::with_capacity(tasks.len());
+        // let mut failed = Vec::new();
+        for (job, cancel_outcome) in futures::future::join_all(tasks).await {
+            match cancel_outcome {
+                Err(err) => errors.push((job, err)),
+                Ok(_) => {
+                    tracing::info!(%job, "cancel job completed successfully");
+                    completed.push(job)
+                },
+            }
+        }
+
+        if !errors.is_empty() {
+            let failed_jobs = errors.iter().map(|(job, _)| job).cloned().collect();
+            tracing::warn!(
+                nr_job_cancel_errors=%errors.len(), ?correlation, error=?errors.first().unwrap(),
+                "failed to cancel jobs - cannot scale Flink server"
+            );
+            let source = errors.remove(0).1;
+            return Err(ActError::Savepoint { source, job_ids: failed_jobs });
+        }
+
+        Ok(completed)
     }
 }
 

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use pretty_snowflake::MachineNode;
 use proctor::elements::Telemetry;

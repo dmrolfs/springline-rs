@@ -22,7 +22,7 @@ pub use patch_replicas::PatchReplicas;
 pub use prepare_data::PrepareData;
 pub use restart_jobs::RestartJobs;
 pub use restart_jobs::FLINK_MISSED_JAR_RESTARTS;
-pub use savepoint::TriggerSavepoint;
+pub use savepoint::CancelWithSavepoint;
 
 #[async_trait]
 pub trait ScaleAction: Debug + Send + Sync {
