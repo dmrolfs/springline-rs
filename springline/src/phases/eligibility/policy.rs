@@ -162,7 +162,8 @@ pub static ELIGIBILITY_POLICY_INELIGIBLE_DECISIONS_COUNT: Lazy<IntCounterVec> = 
         Opts::new(
             "eligibility_policy_ineligible_decisions_count",
             "number of ineligible decisions",
-        ),
+        )
+        .const_labels(proctor::metrics::CONST_LABELS.clone()),
         &["reason"],
     )
     .expect("failed creating eligibility_policy_ineligible_decisions_count metric")

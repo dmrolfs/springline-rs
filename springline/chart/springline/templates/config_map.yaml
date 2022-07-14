@@ -9,6 +9,16 @@ metadata:
 data:
   decision_basis: |
 {{ .Files.Get "env/decision_basis.polar" | indent 4 }}
+
+  metrics_labels: |
+    ---
+    realm: {{ .Values.global.realm }}
+    pipelineId: {{ .Values.global.pipeline.id }}
+    pipelineVersionId: {{ .Values.global.pipeline.versionId }}
+    pipelineTemplateId: {{ .Values.global.pipeline.templateId }}
+    pipelineDeploymentId: {{ .Values.global.pipeline.jobId }}
+    
+
   config: |
     ---
     flink:
@@ -16,6 +26,7 @@ data:
 
     kubernetes:
       namespace: {{ .Release.Namespace }}
+      patch_settle_timeout_secs: {{ .Values.application.kubernetes.patch_settle_timeout_secs }}
 
     sensor:
       flink:
@@ -41,7 +52,14 @@ data:
               agg: sum
               telemetry_path: flow.input_records_consumed_rate
               telemetry_type: Float
-          - Job:
+          - Task:
+              position: source
+              metric: backPressuredTimeMsPerSecond
+              agg: avg
+              telemetry_path: flow.input_backPressuredTimeMsPerSecond
+              telemetry_type: Float
+          #todo: These are actually in JobManager Scope, which needs to be added to sensor
+          - Job: 
               metric: Status.JVM.ClassLoader.ClassesLoaded
               agg: max
               telemetry_path: cluster.classes_loaded

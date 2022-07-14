@@ -8,7 +8,7 @@ use futures_util::{FutureExt, StreamExt, TryFutureExt};
 use http::{Method, StatusCode};
 use once_cell::sync::Lazy;
 use proctor::error::UrlError;
-use prometheus::IntCounter;
+use prometheus::{IntCounter, Opts};
 use tracing_futures::Instrument;
 use url::Url;
 
@@ -572,9 +572,12 @@ pub fn track_missed_jar_restarts() {
 }
 
 pub static FLINK_MISSED_JAR_RESTARTS: Lazy<IntCounter> = Lazy::new(|| {
-    IntCounter::new(
-        "flink_missed_jar_restarts",
-        "Number of jars failed to find a savepoint to restart.",
+    IntCounter::with_opts(
+        Opts::new(
+            "flink_missed_jar_restarts",
+            "Number of jars failed to find a savepoint to restart.",
+        )
+        .const_labels(proctor::metrics::CONST_LABELS.clone()),
     )
     .expect("failed creating flink_missed_jar_restarts metric")
 });

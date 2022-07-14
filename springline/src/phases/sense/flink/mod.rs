@@ -218,6 +218,7 @@ pub(crate) static FLINK_SENSOR_TIME: Lazy<HistogramVec> = Lazy::new(|| {
             "flink_sensor_time",
             "Time spent collecting telemetry from Flink in seconds",
         )
+        .const_labels(proctor::metrics::CONST_LABELS.clone())
         .buckets(vec![0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.75, 1.0, 2.5, 5.0, 10.0]),
         &["flink_scope"],
     )

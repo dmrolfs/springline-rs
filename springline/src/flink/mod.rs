@@ -4,6 +4,7 @@ mod model;
 
 pub use context::FlinkContext;
 pub use error::FlinkError;
+pub(crate) use model::catalog::SUPPLEMENTAL_TELEMETRY;
 pub use model::catalog::{ClusterMetrics, FlowMetrics, JobHealthMetrics, MetricCatalog};
 pub use model::catalog::{
     MC_CLUSTER__NR_ACTIVE_JOBS, MC_CLUSTER__NR_TASK_MANAGERS, MC_FLOW__FORECASTED_RECORDS_IN_PER_SEC,
@@ -19,8 +20,9 @@ pub(crate) use model::catalog::{
     METRIC_CATALOG_FLOW_INPUT_MILLIS_BEHIND_LATEST, METRIC_CATALOG_FLOW_INPUT_RECORDS_CONSUMED_RATE,
     METRIC_CATALOG_FLOW_INPUT_RECORDS_LAG_MAX, METRIC_CATALOG_FLOW_INPUT_TOTAL_LAG,
     METRIC_CATALOG_FLOW_RECORDS_IN_PER_SEC, METRIC_CATALOG_FLOW_RECORDS_OUT_PER_SEC,
-    METRIC_CATALOG_JOB_HEALTH_NR_COMPLETED_CHECKPOINTS, METRIC_CATALOG_JOB_HEALTH_NR_FAILED_CHECKPOINTS,
-    METRIC_CATALOG_JOB_HEALTH_NR_RESTARTS, METRIC_CATALOG_JOB_HEALTH_UPTIME, METRIC_CATALOG_TIMESTAMP,
+    METRIC_CATALOG_FLOW_TASK_UTILIZATION, METRIC_CATALOG_JOB_HEALTH_NR_COMPLETED_CHECKPOINTS,
+    METRIC_CATALOG_JOB_HEALTH_NR_FAILED_CHECKPOINTS, METRIC_CATALOG_JOB_HEALTH_NR_RESTARTS,
+    METRIC_CATALOG_JOB_HEALTH_UPTIME, METRIC_CATALOG_TIMESTAMP,
 };
 pub(crate) use model::window::{
     METRIC_CATALOG_FLOW_INPUT_RELATIVE_LAG_CHANGE_RATE_1_MIN_ROLLING_AVG,
@@ -61,6 +63,7 @@ pub static FLINK_UPLOADED_JARS_TIME: Lazy<HistogramVec> = Lazy::new(|| {
             "flink_uploaded_jars_time",
             "Time spent querying uploaded jars from Flink in seconds",
         )
+        .const_labels(proctor::metrics::CONST_LABELS.clone())
         .buckets(vec![0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 1.0, 2.5, 5.0, 7.5, 10.0]),
         &["action"],
     )
@@ -78,6 +81,7 @@ pub static FLINK_ACTIVE_JOBS_TIME: Lazy<HistogramVec> = Lazy::new(|| {
             "flink_active_jobs_time",
             "Time spent collecting active jobs from Flink in seconds",
         )
+        .const_labels(proctor::metrics::CONST_LABELS.clone())
         .buckets(vec![0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 1.0, 2.5, 5.0, 7.5, 10.0]),
         &["action"],
     )
@@ -95,6 +99,7 @@ pub static FLINK_QUERY_JOB_DETAIL_TIME: Lazy<HistogramVec> = Lazy::new(|| {
             "flink_query_job_detail_time",
             "Time spent collecting job detail from Flink in seconds",
         )
+        .const_labels(proctor::metrics::CONST_LABELS.clone())
         .buckets(vec![0.2, 0.225, 0.25, 0.275, 0.3, 0.35, 0.4, 0.45, 0.5, 0.75, 1.0]),
         &["action"],
     )
@@ -112,6 +117,7 @@ pub static FLINK_QUERY_TASKMANAGER_ADMIN_TIME: Lazy<HistogramVec> = Lazy::new(||
             "flink_query_taskmanager_admin_time",
             "Time spent querying Flink taskmanager admin in seconds",
         )
+        .const_labels(proctor::metrics::CONST_LABELS.clone())
         .buckets(vec![0.2, 0.225, 0.25, 0.275, 0.3, 0.35, 0.4, 0.45, 0.5, 0.75, 1.0]),
         &["action"],
     )
@@ -127,7 +133,8 @@ fn start_flink_query_taskmanager_admin_timer(label: &str) -> HistogramTimer {
 
 pub(crate) static FLINK_ERRORS: Lazy<IntCounterVec> = Lazy::new(|| {
     IntCounterVec::new(
-        Opts::new("flink_errors", "Number of errors calling the Flink API"),
+        Opts::new("flink_errors", "Number of errors calling the Flink API")
+            .const_labels(proctor::metrics::CONST_LABELS.clone()),
         &["action", "error_type"],
     )
     .expect("failed creating flink_errors metric")

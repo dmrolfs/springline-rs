@@ -12,7 +12,7 @@ use pretty_snowflake::Id;
 use proctor::elements::{Interval, PolicyContributor, Timestamp};
 use proctor::error::PolicyError;
 use proctor::{AppData, Correlation, ReceivedAt};
-use prometheus::Gauge;
+use prometheus::{Gauge, Opts};
 use validator::{Validate, ValidationError, ValidationErrors};
 
 use super::MetricCatalog;
@@ -1453,17 +1453,23 @@ where
 }
 
 pub static METRIC_CATALOG_FLOW_TASK_UTILIZATION_1_MIN_ROLLING_AVG: Lazy<Gauge> = Lazy::new(|| {
-    Gauge::new(
-        "metric_catalog_flow_task_utilization_1_min_rolling_avg",
-        "1 min rolling average of task utilization",
+    Gauge::with_opts(
+        Opts::new(
+            "metric_catalog_flow_task_utilization_1_min_rolling_avg",
+            "1 min rolling average of task utilization",
+        )
+        .const_labels(proctor::metrics::CONST_LABELS.clone()),
     )
     .expect("failed creating metric_catalog_flow_task_utilization_1_min_rolling_avg")
 });
 
 pub static METRIC_CATALOG_FLOW_INPUT_RELATIVE_LAG_CHANGE_RATE_1_MIN_ROLLING_AVG: Lazy<Gauge> = Lazy::new(|| {
-    Gauge::new(
-        "metric_catalog_flow_input_relative_lag_change_rate_1_min_rolling_avg",
-        "1 min rolling average of input relative lag change rate",
+    Gauge::with_opts(
+        Opts::new(
+            "metric_catalog_flow_input_relative_lag_change_rate_1_min_rolling_avg",
+            "1 min rolling average of input relative lag change rate",
+        )
+        .const_labels(proctor::metrics::CONST_LABELS.clone()),
     )
     .expect("failed creating metric_catalog_flow_input_relative_lag_change_rate_1_min_rolling_avg")
 });

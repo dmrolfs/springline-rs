@@ -10,7 +10,7 @@ use proctor::graph::stage::{ActorSourceApi, ActorSourceCmd};
 use proctor::phases::plan::{PlanEvent, PlanMonitor};
 use proctor::phases::sense::{ClearinghouseApi, ClearinghouseCmd};
 use proctor::Correlation;
-use prometheus::{IntCounter, IntGauge};
+use prometheus::{IntCounter, IntGauge, Opts};
 
 use crate::engine::service::{EngineCmd, EngineServiceApi, Health};
 use crate::engine::{PhaseFlag, PhaseFlags};
@@ -364,54 +364,72 @@ impl Monitor {
 }
 
 pub static ELIGIBILITY_IS_ELIGIBLE_FOR_SCALING: Lazy<IntGauge> = Lazy::new(|| {
-    IntGauge::new(
-        "eligibility_is_eligible_for_scaling",
-        "Is the cluster in a state deemed eligible for scaling",
+    IntGauge::with_opts(
+        Opts::new(
+            "eligibility_is_eligible_for_scaling",
+            "Is the cluster in a state deemed eligible for scaling",
+        )
+        .const_labels(proctor::metrics::CONST_LABELS.clone()),
     )
     .expect("failed creating eligibility_is_eligible_for_scaling metric")
 });
 
 // pub static DECISION_SHOULD_PLAN_FOR_SCALING: Lazy<IntGauge> = Lazy::new(|| {
-//     IntGauge::new(
+//     IntGauge::with_opts(Opts::new(
 //         "decision_should_plan_for_scaling",
 //         "Should plan for scaling the cluster",
-//     )
+//     ).const_labels(proctor::metrics::CONST_LABELS.clone()))
 //     .expect("failed creating decision_should_plan_for_scaling metric")
 // });
 
 pub static DECISION_RESCALE_DECISION: Lazy<IntGauge> = Lazy::new(|| {
-    IntGauge::new(
-        "decision_rescale_decision",
-        "Decision on rescaling the cluster: -1 = rescale down, 0 = no action, 1 = rescale up",
+    IntGauge::with_opts(
+        Opts::new(
+            "decision_rescale_decision",
+            "Decision on rescaling the cluster: -1 = rescale down, 0 = no action, 1 = rescale up",
+        )
+        .const_labels(proctor::metrics::CONST_LABELS.clone()),
     )
     .expect("failed creating decision_rescale_decision metric")
 });
 
 pub static PLAN_OBSERVATION_COUNT: Lazy<IntCounter> = Lazy::new(|| {
-    IntCounter::new("plan_observation_count", "Number of observations made for planning.")
-        .expect("failed creating plan_observation_count metric")
+    IntCounter::with_opts(
+        Opts::new("plan_observation_count", "Number of observations made for planning.")
+            .const_labels(proctor::metrics::CONST_LABELS.clone()),
+    )
+    .expect("failed creating plan_observation_count metric")
 });
 
 pub static DECISION_PLAN_CURRENT_NR_TASK_MANAGERS: Lazy<IntGauge> = Lazy::new(|| {
-    IntGauge::new(
-        "decision_plan_current_nr_task_managers",
-        "Number of task managers currently known to Decision and Planning",
+    IntGauge::with_opts(
+        Opts::new(
+            "decision_plan_current_nr_task_managers",
+            "Number of task managers currently known to Decision and Planning",
+        )
+        .const_labels(proctor::metrics::CONST_LABELS.clone()),
     )
     .expect("failed creating decision_plan_current_nr_task_managers metric")
 });
 
 pub static PLAN_TARGET_NR_TASK_MANAGERS: Lazy<IntGauge> = Lazy::new(|| {
-    IntGauge::new(
-        "plan_target_nr_task_managers",
-        "Number of task managers targeted by Planning",
+    IntGauge::with_opts(
+        Opts::new(
+            "plan_target_nr_task_managers",
+            "Number of task managers targeted by Planning",
+        )
+        .const_labels(proctor::metrics::CONST_LABELS.clone()),
     )
     .expect("failed creating plan_target_nr_task_managers metric")
 });
 
 pub static GOVERNANCE_PLAN_ACCEPTED: Lazy<IntGauge> = Lazy::new(|| {
-    IntGauge::new(
-        "governance_plan_accepted",
-        "Has Springline governance accepted the last scaling plan presented",
+    IntGauge::with_opts(
+        Opts::new(
+            "governance_plan_accepted",
+            "Has Springline governance accepted the last scaling plan presented",
+        )
+        .const_labels(proctor::metrics::CONST_LABELS.clone()),
     )
     .expect("failed creating governance_plan_accepted metric")
 });

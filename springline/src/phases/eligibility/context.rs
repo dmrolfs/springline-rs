@@ -11,7 +11,7 @@ use proctor::elements::{telemetry, Telemetry, Timestamp};
 use proctor::error::{EligibilityError, ProctorError};
 use proctor::phases::sense::SubscriptionRequirements;
 use proctor::{Correlation, ProctorContext};
-use prometheus::IntGauge;
+use prometheus::{IntGauge, Opts};
 use serde::{Deserialize, Serialize};
 
 use crate::metrics::UpdateMetrics;
@@ -246,33 +246,45 @@ impl Semigroup for ClusterStatus {
 }
 
 pub static ELIGIBILITY_CTX_ALL_SINKS_HEALTHY: Lazy<IntGauge> = Lazy::new(|| {
-    IntGauge::new(
-        "eligibility_ctx_all_sinks_healthy",
-        "Are all sinks for the FLink jobs healthy",
+    IntGauge::with_opts(
+        Opts::new(
+            "eligibility_ctx_all_sinks_healthy",
+            "Are all sinks for the FLink jobs healthy",
+        )
+        .const_labels(proctor::metrics::CONST_LABELS.clone()),
     )
     .expect("failed creating eligibility_ctx_all_sinks_healthy metric")
 });
 
 pub static ELIGIBILITY_CTX_TASK_LAST_FAILURE: Lazy<IntGauge> = Lazy::new(|| {
-    IntGauge::new(
-        "eligibility_ctx_task_last_failure",
-        "UNIX timestamp in seconds of last Flink Task Manager failure in environment",
+    IntGauge::with_opts(
+        Opts::new(
+            "eligibility_ctx_task_last_failure",
+            "UNIX timestamp in seconds of last Flink Task Manager failure in environment",
+        )
+        .const_labels(proctor::metrics::CONST_LABELS.clone()),
     )
     .expect("failed creating eligibility_ctx_task_last_failure metric")
 });
 
 pub static ELIGIBILITY_CTX_CLUSTER_IS_DEPLOYING: Lazy<IntGauge> = Lazy::new(|| {
-    IntGauge::new(
-        "eligibility_ctx_cluster_is_deploying",
-        "Is the Flink cluster actively deploying: 1=yes, 0=no",
+    IntGauge::with_opts(
+        Opts::new(
+            "eligibility_ctx_cluster_is_deploying",
+            "Is the Flink cluster actively deploying: 1=yes, 0=no",
+        )
+        .const_labels(proctor::metrics::CONST_LABELS.clone()),
     )
     .expect("failed creating eligibility_ctx_cluster_is_deploying metric")
 });
 
 pub static ELIGIBILITY_CTX_CLUSTER_LAST_DEPLOYMENT: Lazy<IntGauge> = Lazy::new(|| {
-    IntGauge::new(
-        "eligibility_ctx_cluster_last_deployment",
-        "UNIX timestamp in seconds of last deployment of the Flink cluster",
+    IntGauge::with_opts(
+        Opts::new(
+            "eligibility_ctx_cluster_last_deployment",
+            "UNIX timestamp in seconds of last deployment of the Flink cluster",
+        )
+        .const_labels(proctor::metrics::CONST_LABELS.clone()),
     )
     .expect("failed creating eligibility_ctx_cluster_last_deployment metric")
 });

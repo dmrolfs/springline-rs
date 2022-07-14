@@ -9,7 +9,7 @@ use proctor::elements::{Telemetry, Timestamp};
 use proctor::error::ProctorError;
 use proctor::phases::sense::SubscriptionRequirements;
 use proctor::Correlation;
-use prometheus::IntGauge;
+use prometheus::{IntGauge, Opts};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 
@@ -151,33 +151,45 @@ impl UpdateMetrics for PlanningContext {
 }
 
 pub static PLANNING_CTX_MIN_SCALING_STEP: Lazy<IntGauge> = Lazy::new(|| {
-    IntGauge::new(
-        "planning_ctx_min_scaling_step",
-        "Minimum step when rescaling the cluster",
+    IntGauge::with_opts(
+        Opts::new(
+            "planning_ctx_min_scaling_step",
+            "Minimum step when rescaling the cluster",
+        )
+        .const_labels(proctor::metrics::CONST_LABELS.clone()),
     )
     .expect("failed creating planning_ctx_min_scaling_step metric")
 });
 
 pub static PLANNING_CTX_FORECASTING_RESTART_SECS: Lazy<IntGauge> = Lazy::new(|| {
-    IntGauge::new(
-        "planning_ctx_forecasting_restart_secs",
-        "expected restart duration in secs used for forecasting",
+    IntGauge::with_opts(
+        Opts::new(
+            "planning_ctx_forecasting_restart_secs",
+            "expected restart duration in secs used for forecasting",
+        )
+        .const_labels(proctor::metrics::CONST_LABELS.clone()),
     )
     .expect("failed creating planning_ctx_forecasting_restart_secs metric")
 });
 
 pub static PLANNING_CTX_FORECASTING_MAX_CATCH_UP_SECS: Lazy<IntGauge> = Lazy::new(|| {
-    IntGauge::new(
-        "planning_ctx_forecasting_max_catch_up_secs",
-        "expected max catch-up duration in secs used for forecasting",
+    IntGauge::with_opts(
+        Opts::new(
+            "planning_ctx_forecasting_max_catch_up_secs",
+            "expected max catch-up duration in secs used for forecasting",
+        )
+        .const_labels(proctor::metrics::CONST_LABELS.clone()),
     )
     .expect("failed creating planning_ctx_forecasting_max_catch_up_secs metric")
 });
 
 pub static PLANNING_CTX_FORECASTING_RECOVERY_VALID_SECS: Lazy<IntGauge> = Lazy::new(|| {
-    IntGauge::new(
-        "planning_ctx_forecasting_recovery_valid_secs",
-        "expected duration in secs until the recovery is valid - used for forecasting",
+    IntGauge::with_opts(
+        Opts::new(
+            "planning_ctx_forecasting_recovery_valid_secs",
+            "expected duration in secs until the recovery is valid - used for forecasting",
+        )
+        .const_labels(proctor::metrics::CONST_LABELS.clone()),
     )
     .expect("failed creating planning_ctx_forecasting_recovery_valid_secs metric")
 });

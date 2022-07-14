@@ -53,6 +53,8 @@ spec:
         env:
         - name: APP_ENVIRONMENT
           value: "cluster"
+        - name: METRICS_CONST_LABELS
+          value: "/opt/springline/resources/metrics_labels.yaml"
         - name: RUST_LOG
           value: {{ default "info" .Values.deployment.log.level }}
         - name: RUST_BACKTRACE
@@ -102,6 +104,8 @@ spec:
           items:
           - key: config
             path: cluster.yaml
+          - key: metrics_labels
+            path: metrics_labels.yaml
           - key: decision_basis
             path: chart_decision_basis.polar
       - name: {{ include "common.name" . }}-aaa-credentials

@@ -9,7 +9,7 @@ use proctor::phases::sense::{
     ClearinghouseSubscriptionAgent, SubscriptionChannel, SubscriptionRequirements, TelemetrySubscription,
 };
 use proctor::AppData;
-use prometheus::Gauge;
+use prometheus::{Gauge, Opts};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
@@ -101,25 +101,32 @@ where
 }
 
 pub(crate) static PLANNING_FORECASTED_WORKLOAD: Lazy<Gauge> = Lazy::new(|| {
-    Gauge::new(
-        "planning_forecasted_workload",
-        "forecasted workload (records per second), which the maximum of recovery and at valid point",
+    Gauge::with_opts(
+        Opts::new(
+            "planning_forecasted_workload",
+            "forecasted workload (records per second), which the maximum of recovery and at valid point",
+        )
+        .const_labels(proctor::metrics::CONST_LABELS.clone()),
     )
     .expect("failed creating planning_forecasted_workload metric")
 });
 
-pub(crate) static PLANNING_RECOVERY_WORKLOAD_RATE: Lazy<Gauge> = Lazy::new(|| {
-    Gauge::new(
+pub(crate) static PLANNING_RECOVERY_WORKLOAD_RATE: Lazy<Gauge> =
+    Lazy::new(|| {
+        Gauge::with_opts(Opts::new(
         "planning_recovery_workload_rate",
         "workload rate (records per second) required to recover from restart, included processing buffered records",
-    )
+    ).const_labels(proctor::metrics::CONST_LABELS.clone()))
     .expect("failed creating planning_recovery_workload_rate metric")
-});
+    });
 
 pub(crate) static PLANNING_VALID_WORKLOAD_RATE: Lazy<Gauge> = Lazy::new(|| {
-    Gauge::new(
-        "planning_valid_workload_rate",
-        "workload rate (records per second) required to reach target valid point after autoscale",
+    Gauge::with_opts(
+        Opts::new(
+            "planning_valid_workload_rate",
+            "workload rate (records per second) required to reach target valid point after autoscale",
+        )
+        .const_labels(proctor::metrics::CONST_LABELS.clone()),
     )
     .expect("failed creating planning_valid_workload_rate metric")
 });

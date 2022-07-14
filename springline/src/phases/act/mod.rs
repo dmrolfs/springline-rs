@@ -160,6 +160,7 @@ pub(crate) static ACT_SCALE_ACTION_TIME: Lazy<HistogramVec> = Lazy::new(|| {
             "act_scale_action_time_seconds",
             "Time spent during the entire scale action",
         )
+        .const_labels(proctor::metrics::CONST_LABELS.clone())
         .buckets(vec![1., 1.5, 2., 3., 4., 5., 10.0, 25., 50., 75., 100.]),
         &["label", "action"],
     )
@@ -168,7 +169,8 @@ pub(crate) static ACT_SCALE_ACTION_TIME: Lazy<HistogramVec> = Lazy::new(|| {
 
 pub(crate) static ACT_SCALE_ACTION_COUNT: Lazy<IntCounterVec> = Lazy::new(|| {
     IntCounterVec::new(
-        Opts::new("act_scale_action_count", "Count of action taken to target sizes"),
+        Opts::new("act_scale_action_count", "Count of action taken to target sizes")
+            .const_labels(proctor::metrics::CONST_LABELS.clone()),
         &["current_nr_task_managers", "target_nr_task_managers"],
     )
     .expect("failed creating act_scale_action_count metric")
@@ -180,6 +182,7 @@ pub(crate) static PIPELINE_CYCLE_TIME: Lazy<Histogram> = Lazy::new(|| {
             "pipeline_cycle_time",
             "cycle time processing for act actions taken on telemetry from receipt in seconds",
         )
+        .const_labels(proctor::metrics::CONST_LABELS.clone())
         .buckets(vec![0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.75, 1.0]),
     )
     .expect("failed creating pipeline_cycle_time metric")
@@ -187,7 +190,8 @@ pub(crate) static PIPELINE_CYCLE_TIME: Lazy<Histogram> = Lazy::new(|| {
 
 pub(crate) static ACT_PHASE_ERRORS: Lazy<IntCounterVec> = Lazy::new(|| {
     IntCounterVec::new(
-        Opts::new("act_phase_errors", "Count of errors executing scale plans"),
+        Opts::new("act_phase_errors", "Count of errors executing scale plans")
+            .const_labels(proctor::metrics::CONST_LABELS.clone()),
         &["current_nr_task_managers", "target_nr_task_managers", "error_type"],
     )
     .expect("failed creating act_phase_errors metric")

@@ -196,7 +196,8 @@ pub static DECISION_SCALING_DECISION_COUNT_METRIC: Lazy<IntCounterVec> = Lazy::n
         Opts::new(
             "decision_scaling_decision_count",
             "Count of decisions for scaling planning made.",
-        ),
+        )
+        .const_labels(proctor::metrics::CONST_LABELS.clone()),
         &["decision", "reason"],
     )
     .expect("failed creating decision_scaling_decision_count metric")
