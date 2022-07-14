@@ -49,8 +49,8 @@ kubernetes:
   # kubernetes namespace is used.
 #  namespace:
 
-  # Period to allow cluster to stabilize after a patch operation. Defaults to 5 seconds.
-#  patch_settle_timeout_secs: 5
+  # Period to allow cluster to stabilize after a patch operation. Defaults to 1 minute.
+#  patch_settle_timeout_secs: 60
 
 sensor:
   clearinghouse:
@@ -125,7 +125,7 @@ sensor:
           metric: lastCheckpointDuration
           agg: max
           telemetry_path: health.last_checkpoint_duration
-          telemetry_type: Float
+          telemetry_type: Integer
 
   # Sensors may be specified and loaded from this block. Currently, two form are supported:
   # 1. `csv` Sensors loaded at startup for the given `path` file.
