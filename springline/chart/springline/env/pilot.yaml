@@ -45,7 +45,7 @@ global:
   realm: "olp-here"
   pipeline:
     id: "7de2037f-4fe3-466d-b2d7-ab92954f966c"
-    versionId: "768aecf4-e5f0-4f9d-9e50-4bd386b9ebfe"
+    versionId: "67ec885d-3172-4f2d-8d91-366de2267755"
     templateId: "43937ba9-11da-4db5-9fad-e4ea299495b2"
 #    jobId: "732218bb-c165-490b-b70b-b2513592caff"
     customerBillingTag: "2460zDz92553"

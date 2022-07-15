@@ -563,7 +563,7 @@ mod tests {
             metric: MetricSpec::new(
                 "records-lag-max",
                 Aggregation::Sum,
-                "flow.input_records_lag_max",
+                "flow.source_records_lag_max",
                 TelemetryType::Integer,
             ),
         };
@@ -674,7 +674,7 @@ mod tests {
             metric: MetricSpec {
                 metric: "records-lag-max".into(),
                 agg: Aggregation::Sum,
-                telemetry_path: "flow.input_records_lag_max".into(),
+                telemetry_path: "flow.source_records_lag_max".into(),
                 telemetry_type: TelemetryType::Integer,
             },
             position: PlanPositionSpec::NotSource,
@@ -694,7 +694,7 @@ mod tests {
                 Token::Str("agg"),
                 Token::UnitVariant { name: "Aggregation", variant: "sum" },
                 Token::Str("telemetry_path"),
-                Token::Str("flow.input_records_lag_max"),
+                Token::Str("flow.source_records_lag_max"),
                 Token::Str("telemetry_type"),
                 Token::UnitVariant { name: "TelemetryType", variant: "Integer" },
                 Token::MapEnd,
@@ -719,7 +719,7 @@ mod tests {
                     "position": "source",
                     "metric": "records-lag-max",
                     "agg": "sum",
-                    "telemetry_path": "flow.input_records_lag_max",
+                    "telemetry_path": "flow.source_records_lag_max",
                     "telemetry_type": "Integer"
                 }
             },
@@ -729,7 +729,7 @@ mod tests {
                     "position": "source",
                     "metric": "records-lag-max",
                     "agg": "sum",
-                    "telemetry_path": "supplement.input_records_lag_max",
+                    "telemetry_path": "supplement.source_records_lag_max",
                     "telemetry_type": "Integer"
                 }
             }
@@ -751,7 +751,7 @@ mod tests {
                     metric: MetricSpec {
                         metric: "records-lag-max".into(),
                         agg: Aggregation::Sum,
-                        telemetry_path: "flow.input_records_lag_max".into(),
+                        telemetry_path: "flow.source_records_lag_max".into(),
                         telemetry_type: TelemetryType::Integer,
                     },
                     position: PlanPositionSpec::Source,
@@ -761,7 +761,7 @@ mod tests {
                     metric: MetricSpec {
                         metric: "records-lag-max".into(),
                         agg: Aggregation::Sum,
-                        telemetry_path: "supplement.input_records_lag_max".into(),
+                        telemetry_path: "supplement.source_records_lag_max".into(),
                         telemetry_type: TelemetryType::Integer,
                     },
                     position: PlanPositionSpec::Source,
@@ -786,7 +786,7 @@ mod tests {
                 metric: MetricSpec {
                     metric: "records-lag-max".into(),
                     agg: Aggregation::Sum,
-                    telemetry_path: "flow.input_records_lag_max".into(),
+                    telemetry_path: "flow.source_records_lag_max".into(),
                     telemetry_type: TelemetryType::Integer,
                 },
                 position: PlanPositionSpec::Source,
@@ -796,7 +796,7 @@ mod tests {
                 metric: MetricSpec {
                     metric: "records-lag-max".into(),
                     agg: Aggregation::Sum,
-                    telemetry_path: "supplement.input_records_lag_max".into(),
+                    telemetry_path: "supplement.source_records_lag_max".into(),
                     telemetry_type: TelemetryType::Integer,
                 },
                 position: PlanPositionSpec::Any,
@@ -820,7 +820,7 @@ mod tests {
         |      "position": "source",
         |      "metric": "records-lag-max",
         |      "agg": "sum",
-        |      "telemetry_path": "flow.input_records_lag_max",
+        |      "telemetry_path": "flow.source_records_lag_max",
         |      "telemetry_type": "Integer"
         |    }
         |  },
@@ -829,7 +829,7 @@ mod tests {
         |      "name": "Supplement Stream",
         |      "metric": "records-lag-max",
         |      "agg": "sum",
-        |      "telemetry_path": "supplement.input_records_lag_max",
+        |      "telemetry_path": "supplement.source_records_lag_max",
         |      "telemetry_type": "Integer"
         |    }
         |  }
@@ -852,14 +852,14 @@ mod tests {
         |    name: "Source: Data Stream"
         |    metric: records-lag-max
         |    agg: sum
-        |    telemetry_path: flow.input_records_lag_max
+        |    telemetry_path: flow.source_records_lag_max
         |    telemetry_type: Integer
         |- Operator:
         |    name: "Supplement Stream"
         |    position: not_source
         |    metric: records-lag-max
         |    agg: sum
-        |    telemetry_path: supplement.input_records_lag_max
+        |    telemetry_path: supplement.source_records_lag_max
         |    telemetry_type: Integer
         |"##
         .trim_margin_with("|")
@@ -882,7 +882,7 @@ mod tests {
                     metric: MetricSpec {
                         metric: "records-lag-max".into(),
                         agg: Aggregation::Sum,
-                        telemetry_path: "flow.input_records_lag_max".into(),
+                        telemetry_path: "flow.source_records_lag_max".into(),
                         telemetry_type: TelemetryType::Integer,
                     },
                     position: PlanPositionSpec::Any,
@@ -892,7 +892,7 @@ mod tests {
                     metric: MetricSpec {
                         metric: "records-lag-max".into(),
                         agg: Aggregation::Sum,
-                        telemetry_path: "supplement.input_records_lag_max".into(),
+                        telemetry_path: "supplement.source_records_lag_max".into(),
                         telemetry_type: TelemetryType::Integer,
                     },
                     position: PlanPositionSpec::NotSource,
@@ -917,7 +917,7 @@ mod tests {
                 metric: MetricSpec {
                     metric: "records-lag-max".into(),
                     agg: Aggregation::Sum,
-                    telemetry_path: "flow.input_records_lag_max".into(),
+                    telemetry_path: "flow.source_records_lag_max".into(),
                     telemetry_type: TelemetryType::Integer,
                 },
                 position: PlanPositionSpec::Any,
@@ -927,7 +927,7 @@ mod tests {
                 metric: MetricSpec {
                     metric: "records-lag-max".into(),
                     agg: Aggregation::Sum,
-                    telemetry_path: "supplement.input_records_lag_max".into(),
+                    telemetry_path: "supplement.source_records_lag_max".into(),
                     telemetry_type: TelemetryType::Integer,
                 },
                 position: PlanPositionSpec::NotSource,
@@ -946,14 +946,14 @@ mod tests {
         |    name: Data Stream
         |    metric: records-lag-max
         |    agg: sum
-        |    telemetry_path: flow.input_records_lag_max
+        |    telemetry_path: flow.source_records_lag_max
         |    telemetry_type: Integer
         |- Operator:
         |    name: Supplement Stream
         |    position: not_source
         |    metric: records-lag-max
         |    agg: sum
-        |    telemetry_path: supplement.input_records_lag_max
+        |    telemetry_path: supplement.source_records_lag_max
         |    telemetry_type: Integer
         |"##
         .trim_margin_with("|")
@@ -976,7 +976,7 @@ mod tests {
         |       "name": "Source: Data Stream",
         |       "metric": "records-lag-max",
         |       "agg": sum,
-        |       "telemetry_path": "flow.input_records_lag_max",
+        |       "telemetry_path": "flow.source_records_lag_max",
         |       "telemetry_type": Integer,
         |   }),
         |   Operator({
@@ -984,7 +984,7 @@ mod tests {
         |       "position": source,
         |       "metric": "records-lag-max",
         |       "agg": sum,
-        |       "telemetry_path": "supplement.input_records_lag_max",
+        |       "telemetry_path": "supplement.source_records_lag_max",
         |       "telemetry_type": Integer,
         |   }),
         |]"##
@@ -1008,7 +1008,7 @@ mod tests {
                     metric: MetricSpec {
                         metric: "records-lag-max".into(),
                         agg: Aggregation::Sum,
-                        telemetry_path: "flow.input_records_lag_max".into(),
+                        telemetry_path: "flow.source_records_lag_max".into(),
                         telemetry_type: TelemetryType::Integer,
                     },
                     position: PlanPositionSpec::Any,
@@ -1018,7 +1018,7 @@ mod tests {
                     metric: MetricSpec {
                         metric: "records-lag-max".into(),
                         agg: Aggregation::Sum,
-                        telemetry_path: "supplement.input_records_lag_max".into(),
+                        telemetry_path: "supplement.source_records_lag_max".into(),
                         telemetry_type: TelemetryType::Integer,
                     },
                     position: PlanPositionSpec::Source,
@@ -1043,7 +1043,7 @@ mod tests {
                 metric: MetricSpec {
                     metric: "records-lag-max".into(),
                     agg: Aggregation::Sum,
-                    telemetry_path: "flow.input_records_lag_max".into(),
+                    telemetry_path: "flow.source_records_lag_max".into(),
                     telemetry_type: TelemetryType::Integer,
                 },
                 position: PlanPositionSpec::Any,
@@ -1053,7 +1053,7 @@ mod tests {
                 metric: MetricSpec {
                     metric: "records-lag-max".into(),
                     agg: Aggregation::Sum,
-                    telemetry_path: "supplement.input_records_lag_max".into(),
+                    telemetry_path: "supplement.source_records_lag_max".into(),
                     telemetry_type: TelemetryType::Integer,
                 },
                 position: PlanPositionSpec::Source,
@@ -1073,7 +1073,7 @@ mod tests {
         |        "name": "Source: Data Stream",
         |        "metric": "records-lag-max",
         |        "agg": sum,
-        |        "telemetry_path": "flow.input_records_lag_max",
+        |        "telemetry_path": "flow.source_records_lag_max",
         |        "telemetry_type": Integer,
         |    }),
         |    Operator({
@@ -1081,7 +1081,7 @@ mod tests {
         |        "position": source,
         |        "metric": "records-lag-max",
         |        "agg": sum,
-        |        "telemetry_path": "supplement.input_records_lag_max",
+        |        "telemetry_path": "supplement.source_records_lag_max",
         |        "telemetry_type": Integer,
         |    }),
         |]"##

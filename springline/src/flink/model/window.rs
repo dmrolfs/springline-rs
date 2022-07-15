@@ -83,8 +83,8 @@ impl Debug for AppDataWindow<MetricCatalog> {
             .field("window_size", &self.data.len())
             .field("head", &self.head().map(|c| c.recv_timestamp().to_string()))
             .field(
-                "1_min_flow_input_relative_lag_change_rate",
-                &self.flow_input_relative_lag_change_rate(60),
+                "1_min_flow_source_relative_lag_change_rate",
+                &self.flow_source_relative_lag_change_rate(60),
             )
             .finish()
     }
@@ -212,66 +212,72 @@ impl PolicyContributor for AppDataWindow<MetricCatalog> {
                     Self::flow_task_utilization_above_mark,
                 )
                 .add_method(
-                    "flow_input_records_lag_max_rolling_average",
-                    Self::flow_input_records_lag_max_rolling_average,
+                    "flow_source_records_lag_max_rolling_average",
+                    Self::flow_source_records_lag_max_rolling_average,
                 )
                 .add_method(
-                    "flow_input_records_lag_max_rolling_change_per_sec",
-                    Self::flow_input_records_lag_max_rolling_change_per_sec,
+                    "flow_source_records_lag_max_rolling_change_per_sec",
+                    Self::flow_source_records_lag_max_rolling_change_per_sec,
                 )
                 .add_method(
-                    "flow_input_records_lag_max_below_mark",
-                    Self::flow_input_records_lag_max_below_mark,
+                    "flow_source_records_lag_max_below_mark",
+                    Self::flow_source_records_lag_max_below_mark,
                 )
                 .add_method(
-                    "flow_input_records_lag_max_above_mark",
-                    Self::flow_input_records_lag_max_above_mark,
+                    "flow_source_records_lag_max_above_mark",
+                    Self::flow_source_records_lag_max_above_mark,
                 )
                 .add_method(
-                    "flow_input_total_lag_rolling_average",
-                    Self::flow_input_total_lag_rolling_average,
+                    "flow_source_total_lag_rolling_average",
+                    Self::flow_source_total_lag_rolling_average,
                 )
                 .add_method(
-                    "flow_input_total_lag_rolling_change_per_sec",
-                    Self::flow_input_total_lag_rolling_change_per_sec,
-                )
-                .add_method("flow_input_total_lag_below_mark", Self::flow_input_total_lag_below_mark)
-                .add_method("flow_input_total_lag_above_mark", Self::flow_input_total_lag_above_mark)
-                .add_method(
-                    "flow_input_records_consumed_rate_rolling_average",
-                    Self::flow_input_records_consumed_rate_rolling_average,
+                    "flow_source_total_lag_rolling_change_per_sec",
+                    Self::flow_source_total_lag_rolling_change_per_sec,
                 )
                 .add_method(
-                    "flow_input_records_consumed_rate_rolling_change_per_sec",
-                    Self::flow_input_records_consumed_rate_rolling_change_per_sec,
+                    "flow_source_total_lag_below_mark",
+                    Self::flow_source_total_lag_below_mark,
                 )
                 .add_method(
-                    "flow_input_records_consumed_rate_below_mark",
-                    Self::flow_input_records_consumed_rate_below_mark,
+                    "flow_source_total_lag_above_mark",
+                    Self::flow_source_total_lag_above_mark,
                 )
                 .add_method(
-                    "flow_input_records_consumed_rate_above_mark",
-                    Self::flow_input_records_consumed_rate_above_mark,
+                    "flow_source_records_consumed_rate_rolling_average",
+                    Self::flow_source_records_consumed_rate_rolling_average,
                 )
                 .add_method(
-                    "flow_input_relative_lag_change_rate",
-                    Self::flow_input_relative_lag_change_rate,
+                    "flow_source_records_consumed_rate_rolling_change_per_sec",
+                    Self::flow_source_records_consumed_rate_rolling_change_per_sec,
                 )
                 .add_method(
-                    "flow_input_millis_behind_latest_rolling_average",
-                    Self::flow_input_millis_behind_latest_rolling_average,
+                    "flow_source_records_consumed_rate_below_mark",
+                    Self::flow_source_records_consumed_rate_below_mark,
                 )
                 .add_method(
-                    "flow_input_millis_behind_latest_rolling_change_per_sec",
-                    Self::flow_input_millis_behind_latest_rolling_change_per_sec,
+                    "flow_source_records_consumed_rate_above_mark",
+                    Self::flow_source_records_consumed_rate_above_mark,
                 )
                 .add_method(
-                    "flow_input_millis_behind_latest_below_mark",
-                    Self::flow_input_millis_behind_latest_below_mark,
+                    "flow_source_relative_lag_change_rate",
+                    Self::flow_source_relative_lag_change_rate,
                 )
                 .add_method(
-                    "flow_input_millis_behind_latest_above_mark",
-                    Self::flow_input_millis_behind_latest_above_mark,
+                    "flow_source_millis_behind_latest_rolling_average",
+                    Self::flow_source_millis_behind_latest_rolling_average,
+                )
+                .add_method(
+                    "flow_source_millis_behind_latest_rolling_change_per_sec",
+                    Self::flow_source_millis_behind_latest_rolling_change_per_sec,
+                )
+                .add_method(
+                    "flow_source_millis_behind_latest_below_mark",
+                    Self::flow_source_millis_behind_latest_below_mark,
+                )
+                .add_method(
+                    "flow_source_millis_behind_latest_above_mark",
+                    Self::flow_source_millis_behind_latest_above_mark,
                 )
                 .add_method(
                     "flow_records_out_per_sec_rolling_average",
@@ -642,9 +648,9 @@ impl AppDataWindow<MetricCatalog> {
         })
     }
 
-    pub fn flow_input_records_lag_max_rolling_average(&self, looking_back_secs: u32) -> f64 {
+    pub fn flow_source_records_lag_max_rolling_average(&self, looking_back_secs: u32) -> f64 {
         let (sum, size) = self.sum_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
-            m.flow.input_records_lag_max
+            m.flow.source_records_lag_max
         });
 
         if size == 0 {
@@ -655,10 +661,10 @@ impl AppDataWindow<MetricCatalog> {
         }
     }
 
-    pub fn flow_input_records_lag_max_rolling_change_per_sec(&self, looking_back_secs: u32) -> f64 {
+    pub fn flow_source_records_lag_max_rolling_change_per_sec(&self, looking_back_secs: u32) -> f64 {
         let values: Vec<(Timestamp, i64)> = self
             .extract_from_head(Duration::from_secs(u64::from(looking_back_secs)), |metric| {
-                (metric.recv_timestamp, metric.flow.input_records_lag_max)
+                (metric.recv_timestamp, metric.flow.source_records_lag_max)
             })
             .into_iter()
             .flat_map(|(ts, lag)| lag.map(|l| (ts, l)))
@@ -681,10 +687,10 @@ impl AppDataWindow<MetricCatalog> {
             .unwrap_or(0.0)
     }
 
-    pub fn flow_input_records_lag_max_below_mark(&self, looking_back_secs: u32, max_value: i64) -> bool {
+    pub fn flow_source_records_lag_max_below_mark(&self, looking_back_secs: u32, max_value: i64) -> bool {
         self.for_duration_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
             m.flow
-                .input_records_lag_max
+                .source_records_lag_max
                 .map(|lag| {
                     tracing::debug!(
                         "eval lag in catalog[{}]: {lag} <= {max_value} = {}",
@@ -697,10 +703,10 @@ impl AppDataWindow<MetricCatalog> {
         })
     }
 
-    pub fn flow_input_records_lag_max_above_mark(&self, looking_back_secs: u32, min_value: i64) -> bool {
+    pub fn flow_source_records_lag_max_above_mark(&self, looking_back_secs: u32, min_value: i64) -> bool {
         self.for_duration_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
             m.flow
-                .input_records_lag_max
+                .source_records_lag_max
                 .map(|lag| {
                     tracing::debug!(
                         "eval lag in catalog[{}]: {min_value} <= {lag} = {}",
@@ -713,9 +719,9 @@ impl AppDataWindow<MetricCatalog> {
         })
     }
 
-    pub fn flow_input_total_lag_rolling_average(&self, looking_back_secs: u32) -> f64 {
+    pub fn flow_source_total_lag_rolling_average(&self, looking_back_secs: u32) -> f64 {
         let (sum, size) = self.sum_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
-            m.flow.input_total_lag
+            m.flow.source_total_lag
         });
 
         if size == 0 {
@@ -727,10 +733,10 @@ impl AppDataWindow<MetricCatalog> {
     }
 
     #[tracing::instrument(level = "trace")]
-    pub fn flow_input_total_lag_rolling_change_per_sec(&self, looking_back_secs: u32) -> f64 {
+    pub fn flow_source_total_lag_rolling_change_per_sec(&self, looking_back_secs: u32) -> f64 {
         let values = self
             .extract_from_head(Duration::from_secs(u64::from(looking_back_secs)), |metric| {
-                (metric.recv_timestamp, metric.flow.input_total_lag)
+                (metric.recv_timestamp, metric.flow.source_total_lag)
             })
             .into_iter()
             .flat_map(|(ts, lag)| lag.map(|l| (ts, l)))
@@ -769,10 +775,10 @@ impl AppDataWindow<MetricCatalog> {
             .unwrap_or(0.0)
     }
 
-    pub fn flow_input_total_lag_below_mark(&self, looking_back_secs: u32, max_value: i64) -> bool {
+    pub fn flow_source_total_lag_below_mark(&self, looking_back_secs: u32, max_value: i64) -> bool {
         self.for_duration_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
             m.flow
-                .input_total_lag
+                .source_total_lag
                 .map(|lag| {
                     tracing::debug!(
                         "eval total lag in catalog[{}]: {lag} <= {max_value} = {}",
@@ -785,10 +791,10 @@ impl AppDataWindow<MetricCatalog> {
         })
     }
 
-    pub fn flow_input_total_lag_above_mark(&self, looking_back_secs: u32, min_value: i64) -> bool {
+    pub fn flow_source_total_lag_above_mark(&self, looking_back_secs: u32, min_value: i64) -> bool {
         self.for_duration_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
             m.flow
-                .input_total_lag
+                .source_total_lag
                 .map(|lag| {
                     tracing::debug!(
                         "eval total lag in catalog[{}]: {min_value} <= {lag} = {}",
@@ -804,9 +810,9 @@ impl AppDataWindow<MetricCatalog> {
     /// Rolling average of the source `records_consumed_rate` kafka metric on the source operator.
     /// This metric is used with `total_lag` to calculate the `relative_lag_change_rate`.
     #[tracing::instrument(level = "trace")]
-    pub fn flow_input_records_consumed_rate_rolling_average(&self, looking_back_secs: u32) -> f64 {
+    pub fn flow_source_records_consumed_rate_rolling_average(&self, looking_back_secs: u32) -> f64 {
         let (sum, size) = self.sum_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
-            m.flow.input_records_consumed_rate
+            m.flow.source_records_consumed_rate
         });
 
         let result = if size == 0 {
@@ -815,14 +821,14 @@ impl AppDataWindow<MetricCatalog> {
             sum.map(|rate| rate / size as f64).unwrap_or(0.0)
         };
 
-        tracing::debug!("input_records_consumed_rate_rolling_average: {sum:?} / {size} = {result}");
+        tracing::debug!("source_records_consumed_rate_rolling_average: {sum:?} / {size} = {result}");
         result
     }
 
-    pub fn flow_input_records_consumed_rate_rolling_change_per_sec(&self, looking_back_secs: u32) -> f64 {
+    pub fn flow_source_records_consumed_rate_rolling_change_per_sec(&self, looking_back_secs: u32) -> f64 {
         let values = self
             .extract_from_head(Duration::from_secs(u64::from(looking_back_secs)), |metric| {
-                (metric.recv_timestamp, metric.flow.input_records_consumed_rate)
+                (metric.recv_timestamp, metric.flow.source_records_consumed_rate)
             })
             .into_iter()
             .flat_map(|(ts, rate)| rate.map(|r| (ts, r)))
@@ -843,13 +849,13 @@ impl AppDataWindow<MetricCatalog> {
             .unwrap_or(0.0)
     }
 
-    pub fn flow_input_records_consumed_rate_below_mark(&self, looking_back_secs: u32, max_value: f64) -> bool {
+    pub fn flow_source_records_consumed_rate_below_mark(&self, looking_back_secs: u32, max_value: f64) -> bool {
         self.for_duration_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
             m.flow
-                .input_records_consumed_rate
+                .source_records_consumed_rate
                 .map(|rate| {
                     tracing::debug!(
-                        "eval input consumed rate in catalog[{}]: {rate} <= {max_value} = {}",
+                        "eval source consumed rate in catalog[{}]: {rate} <= {max_value} = {}",
                         m.recv_timestamp,
                         rate <= max_value
                     );
@@ -859,13 +865,13 @@ impl AppDataWindow<MetricCatalog> {
         })
     }
 
-    pub fn flow_input_records_consumed_rate_above_mark(&self, looking_back_secs: u32, min_value: f64) -> bool {
+    pub fn flow_source_records_consumed_rate_above_mark(&self, looking_back_secs: u32, min_value: f64) -> bool {
         self.for_duration_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
             m.flow
-                .input_records_consumed_rate
+                .source_records_consumed_rate
                 .map(|rate| {
                     tracing::debug!(
-                        "eval input consumed rate in catalog[{}]: {min_value} <= {rate} = {}",
+                        "eval source consumed rate in catalog[{}]: {min_value} <= {rate} = {}",
                         m.recv_timestamp,
                         min_value <= rate
                     );
@@ -889,22 +895,22 @@ impl AppDataWindow<MetricCatalog> {
     /// (see B. Varga, M. Balassi, A. Kiss, Towards autoscaling of Apache Flink jobs,
     /// April 2021Acta Universitatis Sapientiae, Informatica 13(1):1-21)
     #[tracing::instrument(level = "trace")]
-    pub fn flow_input_relative_lag_change_rate(&self, looking_back_secs: u32) -> f64 {
-        let deriv_total_lag = self.flow_input_total_lag_rolling_change_per_sec(looking_back_secs);
-        let total_rate = self.flow_input_records_consumed_rate_rolling_average(looking_back_secs);
+    pub fn flow_source_relative_lag_change_rate(&self, looking_back_secs: u32) -> f64 {
+        let deriv_total_lag = self.flow_source_total_lag_rolling_change_per_sec(looking_back_secs);
+        let total_rate = self.flow_source_records_consumed_rate_rolling_average(looking_back_secs);
         let result = if total_rate == 0.0 { 0.0 } else { deriv_total_lag / total_rate };
 
         tracing::trace!(
-            "input_relative_lag_change_rate: derive_total_lag[{}] / total_rate[{}] = {result}",
+            "source_relative_lag_change_rate: derive_total_lag[{}] / total_rate[{}] = {result}",
             deriv_total_lag,
             total_rate
         );
         result
     }
 
-    pub fn flow_input_millis_behind_latest_rolling_average(&self, looking_back_secs: u32) -> f64 {
+    pub fn flow_source_millis_behind_latest_rolling_average(&self, looking_back_secs: u32) -> f64 {
         let (sum, size) = self.sum_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
-            m.flow.input_millis_behind_latest
+            m.flow.source_millis_behind_latest
         });
 
         if size == 0 {
@@ -915,10 +921,10 @@ impl AppDataWindow<MetricCatalog> {
         }
     }
 
-    pub fn flow_input_millis_behind_latest_rolling_change_per_sec(&self, looking_back_secs: u32) -> f64 {
+    pub fn flow_source_millis_behind_latest_rolling_change_per_sec(&self, looking_back_secs: u32) -> f64 {
         let values = self
             .extract_from_head(Duration::from_secs(u64::from(looking_back_secs)), |metric| {
-                (metric.recv_timestamp, metric.flow.input_millis_behind_latest)
+                (metric.recv_timestamp, metric.flow.source_millis_behind_latest)
             })
             .into_iter()
             .flat_map(|(ts, lag)| lag.map(|l| (ts, l)))
@@ -941,10 +947,10 @@ impl AppDataWindow<MetricCatalog> {
             .unwrap_or(0.0)
     }
 
-    pub fn flow_input_millis_behind_latest_below_mark(&self, looking_back_secs: u32, max_value: i64) -> bool {
+    pub fn flow_source_millis_behind_latest_below_mark(&self, looking_back_secs: u32, max_value: i64) -> bool {
         self.for_duration_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
             m.flow
-                .input_millis_behind_latest
+                .source_millis_behind_latest
                 .map(|millis_behind_latest| {
                     tracing::debug!(
                         "eval millis_behind_latest in catalog[{}]: {millis_behind_latest} <= {max_value} = {}",
@@ -957,10 +963,10 @@ impl AppDataWindow<MetricCatalog> {
         })
     }
 
-    pub fn flow_input_millis_behind_latest_above_mark(&self, looking_back_secs: u32, min_value: i64) -> bool {
+    pub fn flow_source_millis_behind_latest_above_mark(&self, looking_back_secs: u32, min_value: i64) -> bool {
         self.for_duration_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
             m.flow
-                .input_millis_behind_latest
+                .source_millis_behind_latest
                 .map(|millis_behind_latest| {
                     tracing::debug!(
                         "eval millis_behind_latest in catalog[{}]: {min_value} <= {millis_behind_latest} = {}",
@@ -1236,8 +1242,8 @@ where
 impl UpdateWindowMetrics for AppDataWindow<MetricCatalog> {
     fn update_metrics(&self) {
         METRIC_CATALOG_FLOW_TASK_UTILIZATION_1_MIN_ROLLING_AVG.set(self.flow_task_utilization_rolling_average(60));
-        METRIC_CATALOG_FLOW_INPUT_RELATIVE_LAG_CHANGE_RATE_1_MIN_ROLLING_AVG
-            .set(self.flow_input_relative_lag_change_rate(60));
+        METRIC_CATALOG_FLOW_SOURCE_RELATIVE_LAG_CHANGE_RATE_1_MIN_ROLLING_AVG
+            .set(self.flow_source_relative_lag_change_rate(60));
     }
 }
 
@@ -1463,13 +1469,13 @@ pub static METRIC_CATALOG_FLOW_TASK_UTILIZATION_1_MIN_ROLLING_AVG: Lazy<Gauge> =
     .expect("failed creating metric_catalog_flow_task_utilization_1_min_rolling_avg")
 });
 
-pub static METRIC_CATALOG_FLOW_INPUT_RELATIVE_LAG_CHANGE_RATE_1_MIN_ROLLING_AVG: Lazy<Gauge> = Lazy::new(|| {
+pub static METRIC_CATALOG_FLOW_SOURCE_RELATIVE_LAG_CHANGE_RATE_1_MIN_ROLLING_AVG: Lazy<Gauge> = Lazy::new(|| {
     Gauge::with_opts(
         Opts::new(
-            "metric_catalog_flow_input_relative_lag_change_rate_1_min_rolling_avg",
-            "1 min rolling average of input relative lag change rate",
+            "metric_catalog_flow_source_relative_lag_change_rate_1_min_rolling_avg",
+            "1 min rolling average of source relative lag change rate",
         )
         .const_labels(proctor::metrics::CONST_LABELS.clone()),
     )
-    .expect("failed creating metric_catalog_flow_input_relative_lag_change_rate_1_min_rolling_avg")
+    .expect("failed creating metric_catalog_flow_source_relative_lag_change_rate_1_min_rolling_avg")
 });

@@ -131,10 +131,10 @@ pub static STD_METRIC_ORDERS: Lazy<Vec<MetricOrder>> = Lazy::new(|| {
         MetricOrder::Derivative {
             scope: FlinkScope::Operator,
             position: PlanPositionSpec::Source,
-            telemetry_path: "flow.input_total_lag".to_string(),
+            telemetry_path: "flow.source_total_lag".to_string(),
             telemetry_type: Integer,
-            telemetry_lhs: "flow.input_records_lag_max".to_string(),
-            telemetry_rhs: "flow.input_assigned_partitions".to_string(),
+            telemetry_lhs: "flow.source_records_lag_max".to_string(),
+            telemetry_rhs: "flow.source_assigned_partitions".to_string(),
             combinator: DerivativeCombinator::Product,
             agg: Sum,
         },
@@ -388,67 +388,67 @@ mod tests {
         let orders = vec![MetricOrder::Derivative {
             scope: FlinkScope::Operator,
             position: PlanPositionSpec::Source,
-            telemetry_path: "flow.input_total_lag".to_string(),
+            telemetry_path: "flow.source_total_lag".to_string(),
             telemetry_type: TelemetryType::Integer,
-            telemetry_lhs: "flow.input_records_lag_max".to_string(),
-            telemetry_rhs: "flow.input_assigned_partitions".to_string(),
+            telemetry_lhs: "flow.source_records_lag_max".to_string(),
+            telemetry_rhs: "flow.source_assigned_partitions".to_string(),
             combinator: DerivativeCombinator::Product,
             agg: Aggregation::Sum,
         }];
 
         let happy = maplit::hashmap! {
-            "flow.input_records_lag_max".into() => TelemetryValue::Integer(7757),
-            "flow.input_assigned_partitions".into() => TelemetryValue::Integer(32),
+            "flow.source_records_lag_max".into() => TelemetryValue::Integer(7757),
+            "flow.source_assigned_partitions".into() => TelemetryValue::Integer(32),
         }
         .into();
 
         let (actual, satisfied) = apply_derivative_orders(happy, &orders);
         let satisfied = order_names(satisfied);
-        assert_eq!(satisfied, vec!["flow.input_total_lag"]);
+        assert_eq!(satisfied, vec!["flow.source_total_lag"]);
         assert_eq!(
             actual,
             maplit::hashmap! {
-                "flow.input_total_lag".into() => TelemetryValue::Integer(248224),
-                "flow.input_records_lag_max".into() => TelemetryValue::Integer(7757),
-                "flow.input_assigned_partitions".into() => TelemetryValue::Integer(32),
+                "flow.source_total_lag".into() => TelemetryValue::Integer(248224),
+                "flow.source_records_lag_max".into() => TelemetryValue::Integer(7757),
+                "flow.source_assigned_partitions".into() => TelemetryValue::Integer(32),
             }
             .into()
         );
 
         let f_i = maplit::hashmap! {
-            "flow.input_records_lag_max".into() => TelemetryValue::Float(7757.),
-            "flow.input_assigned_partitions".into() => TelemetryValue::Integer(32),
+            "flow.source_records_lag_max".into() => TelemetryValue::Float(7757.),
+            "flow.source_assigned_partitions".into() => TelemetryValue::Integer(32),
         }
         .into();
 
         let (actual, satisfied) = apply_derivative_orders(f_i, &orders);
         let satisfied = order_names(satisfied);
-        assert_eq!(satisfied, vec!["flow.input_total_lag"]);
+        assert_eq!(satisfied, vec!["flow.source_total_lag"]);
         assert_eq!(
             actual,
             maplit::hashmap! {
-                "flow.input_total_lag".into() => TelemetryValue::Integer(248224),
-                "flow.input_records_lag_max".into() => TelemetryValue::Float(7757.),
-                "flow.input_assigned_partitions".into() => TelemetryValue::Integer(32),
+                "flow.source_total_lag".into() => TelemetryValue::Integer(248224),
+                "flow.source_records_lag_max".into() => TelemetryValue::Float(7757.),
+                "flow.source_assigned_partitions".into() => TelemetryValue::Integer(32),
             }
             .into()
         );
 
         let i_f = maplit::hashmap! {
-            "flow.input_records_lag_max".into() => TelemetryValue::Integer(7757),
-            "flow.input_assigned_partitions".into() => TelemetryValue::Float(32.),
+            "flow.source_records_lag_max".into() => TelemetryValue::Integer(7757),
+            "flow.source_assigned_partitions".into() => TelemetryValue::Float(32.),
         }
         .into();
 
         let (actual, satisfied) = apply_derivative_orders(i_f, &orders);
         let satisfied = order_names(satisfied);
-        assert_eq!(satisfied, vec!["flow.input_total_lag"]);
+        assert_eq!(satisfied, vec!["flow.source_total_lag"]);
         assert_eq!(
             actual,
             maplit::hashmap! {
-                "flow.input_total_lag".into() => TelemetryValue::Integer(248224),
-                "flow.input_records_lag_max".into() => TelemetryValue::Integer(7757),
-                "flow.input_assigned_partitions".into() => TelemetryValue::Float(32.),
+                "flow.source_total_lag".into() => TelemetryValue::Integer(248224),
+                "flow.source_records_lag_max".into() => TelemetryValue::Integer(7757),
+                "flow.source_assigned_partitions".into() => TelemetryValue::Float(32.),
             }
             .into()
         );

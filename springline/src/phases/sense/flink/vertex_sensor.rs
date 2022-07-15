@@ -604,7 +604,7 @@ mod tests {
             metric: MetricSpec {
                 metric: "records-lag-max".into(),
                 agg: Aggregation::Sum,
-                telemetry_path: "flow.input_records_lag_max".into(),
+                telemetry_path: "flow.source_records_lag_max".into(),
                 telemetry_type: TelemetryType::Integer,
             },
             position: PlanPositionSpec::Source,
@@ -614,7 +614,7 @@ mod tests {
             metric: MetricSpec {
                 metric: "assigned-partitions".into(),
                 agg: Aggregation::Sum,
-                telemetry_path: "flow.input_assigned_partitions".into(),
+                telemetry_path: "flow.source_assigned_partitions".into(),
                 telemetry_type: TelemetryType::Integer,
             },
             position: PlanPositionSpec::Source,
@@ -624,7 +624,7 @@ mod tests {
             metric: MetricSpec {
                 metric: "records-consumed-rate".into(),
                 agg: Aggregation::Sum,
-                telemetry_path: "flow.input_records_consumed_rate".into(),
+                telemetry_path: "flow.source_records_consumed_rate".into(),
                 telemetry_type: TelemetryType::Float,
             },
             position: PlanPositionSpec::Source,
@@ -769,10 +769,10 @@ mod tests {
             assert_eq!(
                 actual,
                 maplit::hashmap! {
-                    "flow.input_records_lag_max".to_string() => 123456_i64.into(),
-                    "flow.input_assigned_partitions".to_string() => 3_i64.into(),
-                    "flow.input_total_lag".to_string() => 370_368_i64.into(),
-                    "flow.input_records_consumed_rate".to_string() => 3.14159_f64.into(),
+                    "flow.source_records_lag_max".to_string() => 123456_i64.into(),
+                    "flow.source_assigned_partitions".to_string() => 3_i64.into(),
+                    "flow.source_total_lag".to_string() => 370_368_i64.into(),
+                    "flow.source_records_consumed_rate".to_string() => 3.14159_f64.into(),
                     MC_FLOW__RECORDS_IN_PER_SEC.to_string() => 0_f64.into(),
                     "flow.records_out_per_sec".to_string() => 20_f64.into(),
                     "flow.source.idle_time_millis_per_sec".to_string() => 321.7_f64.into(),

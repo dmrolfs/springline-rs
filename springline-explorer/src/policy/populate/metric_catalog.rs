@@ -72,12 +72,12 @@ impl PopulateData for MetricCatalog {
                 Some(MetricCatalogLens::Flow(FlowLens::RecordsOutPerSec)),
             ),
             (
-                "flow.input_records_lag_max",
-                Some(MetricCatalogLens::Flow(FlowLens::InputRecordsLagMax)),
+                "flow.source_records_lag_max",
+                Some(MetricCatalogLens::Flow(FlowLens::SourceRecordsLagMax)),
             ),
             (
-                "flow.input_millis_behind_latest",
-                Some(MetricCatalogLens::Flow(FlowLens::InputMillisBehindLatest)),
+                "flow.source_millis_behind_latest",
+                Some(MetricCatalogLens::Flow(FlowLens::SourceMillisBehindLatest)),
             ),
             (
                 "cluster.nr_active_jobs",
@@ -265,8 +265,8 @@ impl Lens for JobHealthLens {
 enum FlowLens {
     RecordsInPerSec,
     RecordsOutPerSec,
-    InputRecordsLagMax,
-    InputMillisBehindLatest,
+    SourceRecordsLagMax,
+    SourceMillisBehindLatest,
 }
 
 impl Lens for FlowLens {
@@ -276,12 +276,12 @@ impl Lens for FlowLens {
         match self {
             Self::RecordsInPerSec => format!("{}", telemetry.records_in_per_sec),
             Self::RecordsOutPerSec => format!("{}", telemetry.records_out_per_sec),
-            Self::InputRecordsLagMax => telemetry
-                .input_records_lag_max
+            Self::SourceRecordsLagMax => telemetry
+                .source_records_lag_max
                 .map(|t| format!("{}", t))
                 .unwrap_or_default(),
-            Self::InputMillisBehindLatest => telemetry
-                .input_millis_behind_latest
+            Self::SourceMillisBehindLatest => telemetry
+                .source_millis_behind_latest
                 .map(|t| format!("{}", t))
                 .unwrap_or_default(),
         }
@@ -291,15 +291,15 @@ impl Lens for FlowLens {
         match self {
             Self::RecordsInPerSec => telemetry.records_in_per_sec = f64::from_str(value_rep.as_ref())?,
             Self::RecordsOutPerSec => telemetry.records_out_per_sec = f64::from_str(value_rep.as_ref())?,
-            Self::InputRecordsLagMax => {
-                telemetry.input_records_lag_max = if value_rep.as_ref().is_empty() {
+            Self::SourceRecordsLagMax => {
+                telemetry.source_records_lag_max = if value_rep.as_ref().is_empty() {
                     None
                 } else {
                     Some(i64::from_str(value_rep.as_ref())?)
                 };
             },
-            Self::InputMillisBehindLatest => {
-                telemetry.input_millis_behind_latest = if value_rep.as_ref().is_empty() {
+            Self::SourceMillisBehindLatest => {
+                telemetry.source_millis_behind_latest = if value_rep.as_ref().is_empty() {
                     None
                 } else {
                     Some(i64::from_str(value_rep.as_ref())?)

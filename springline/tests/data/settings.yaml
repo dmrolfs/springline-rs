@@ -35,22 +35,22 @@ sensor:
           position: source
           metric: records-lag-max
           agg: sum
-          telemetry_path: flow.input_records_lag_max
+          telemetry_path: flow.source_records_lag_max
           telemetry_type: Integer
       - Operator:
           name: "Data Stream"
           position: source
           metric: assigned-partitions
           agg: sum
-          telemetry_path: flow.input_assigned_partitions
+          telemetry_path: flow.source_assigned_partitions
           telemetry_type: Integer
       - Derivative:
           scope: operator
           position: source
-          telemetry_path: flow.input_total_lag
+          telemetry_path: flow.source_total_lag
           telemetry_type: Float
-          telemetry_lhs: flow.input_records_lag_max
-          telemetry_rhs: flow.input_assigned_partitions
+          telemetry_lhs: flow.source_records_lag_max
+          telemetry_rhs: flow.source_assigned_partitions
           combinator: product
           agg: sum
 

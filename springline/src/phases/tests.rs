@@ -37,7 +37,7 @@ mod window {
             recv_timestamp: ts,
             health: JobHealthMetrics::default(),
             flow: FlowMetrics {
-                input_records_lag_max: Some(i64::from(value)),
+                source_records_lag_max: Some(i64::from(value)),
                 records_in_per_sec: value as f64,
                 ..FlowMetrics::default()
             },
@@ -112,7 +112,7 @@ mod window {
                     assert_ok!(tx_in.send(data[i].clone()).await);
                     let actual = assert_some!(rx_out.recv().await);
                     assert_eq!(
-                        (i, actual.flow_input_records_lag_max_below_mark(5, 8)),
+                        (i, actual.flow_source_records_lag_max_below_mark(5, 8)),
                         (i, expected[i])
                     );
                 }
@@ -191,7 +191,7 @@ mod window {
                     let actual = assert_some!(rx_out.recv().await);
                     let result = std::panic::catch_unwind(|| {
                         assert_relative_eq!(
-                            actual.flow_input_records_lag_max_rolling_average(5),
+                            actual.flow_source_records_lag_max_rolling_average(5),
                             expected[i],
                             epsilon = 1.0e-10
                         );
@@ -274,7 +274,7 @@ mod window {
                 async {
                     assert_ok!(tx_in.send(data[i].clone()).await);
                     let actual_window = assert_some!(rx_out.recv().await);
-                    let actual = actual_window.flow_input_records_lag_max_rolling_change_per_sec(5);
+                    let actual = actual_window.flow_source_records_lag_max_rolling_change_per_sec(5);
                     tracing::debug!(%actual, ?actual_window, "received test data window");
                     let result = std::panic::catch_unwind(|| {
                         assert_relative_eq!(actual, expected[i], epsilon = 1.0e-10);
@@ -405,8 +405,8 @@ mod window {
             policies: vec![assert_ok!(PolicySource::from_complete_string(
                 "test_policy",
                 r##"|healthy(item, c) if above_low_water(item, c) and below_high_water(item, c);
-                    |below_high_water(item, _) if item.flow_input_records_lag_max_below_mark(5, 8);
-                    |above_low_water(item, _) if item.flow_input_records_lag_max_above_mark(5, 3);
+                    |below_high_water(item, _) if item.flow_source_records_lag_max_below_mark(5, 8);
+                    |above_low_water(item, _) if item.flow_source_records_lag_max_above_mark(5, 3);
                     |"##
             ))],
         };
@@ -477,7 +477,10 @@ mod window {
                         let actual: PolicyOutcome<AppDataWindow<MetricCatalog>, TestContext> =
                             assert_some!(rx_out.recv().await);
 
-                        assert_eq!((i, assert_some!(actual.item.flow.input_records_lag_max)), (i, expected));
+                        assert_eq!(
+                            (i, assert_some!(actual.item.flow.source_records_lag_max)),
+                            (i, expected)
+                        );
                     } else {
                         assert_matches!(
                             (i, &*assert_ok!(rx_monitor.recv().await)),

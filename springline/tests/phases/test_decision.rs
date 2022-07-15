@@ -365,7 +365,7 @@ async fn test_decision_common() -> anyhow::Result<()> {
         r###"
             | {{> preamble}}
             | scale_up(item, _context, _, reason) if
-            |   not item.flow.input_records_lag_max == nil
+            |   not item.flow.source_records_lag_max == nil
             |   and {{max_records_in_per_sec}} < item.flow.records_in_per_sec
             |   and reason = "lagging_behind";
             | scale_down(item, _context, _, reason) if item.flow.records_in_per_sec < {{min_records_in_per_sec}} and reason = "too comfortable";

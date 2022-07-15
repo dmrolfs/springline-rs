@@ -9,7 +9,7 @@ autoscale its cluster for workload, leaving users to choose between over-provisi
 living with a possibly unhealthy pipeline. Data processing can be unrelenting for pipelines. Flink 
 effectively handles heavy data processing loads. Workloads vary over time; however, and without an 
 autoscaling solution Flink is unable to adjust accordingly. Without considering load, the user may 
-have an under-provisioned cluster at times, which results in an unhealthy lag seen in the input; 
+have an under-provisioned cluster at times, which results in an unhealthy lag seen in the source; 
 e.g., Kafka or Kinesis. Alternatively, the user may scale the cluster for the anticipated  maximum 
 load, but this can be very expensive and wasteful since many of the workers are left underutilized 
 as the workload dips.
@@ -27,7 +27,7 @@ Traditionally, scaling Flink involves three steps:
 3) resume Flink job with the Savepoint and adjusted parallelism. 
 
 This process is time consuming and can take many minutes — all the while records keep buffering at 
-the input. Released with version 1.13, Reactive Flink dynamically adjusts parallelism to match the 
+the source. Released with version 1.13, Reactive Flink dynamically adjusts parallelism to match the 
 available TaskManagers. This helps a lot by substantially reducing by avoiding the need to take a 
 savepoint and resume the pipeline, but Reactive Flink does not help you further. You are left to 
 determine when to scale; you need to calculate how much to scale; and, you must execute the 

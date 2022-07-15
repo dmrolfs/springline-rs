@@ -2,10 +2,10 @@
 
 {{#if max_healthy_relative_lag_velocity}}
 scale_up(item, _context, _, reason) if
-    not item.flow.input_records_lag_max == nil
-    and not item.flow.input_assigned_partitions == nil
+    not item.flow.source_records_lag_max == nil
+    and not item.flow.source_assigned_partitions == nil
     and evaluation_window(window)
-    and relative_lag_velocity = item.flow_input_relative_lag_change_rate(window)
+    and relative_lag_velocity = item.flow_source_relative_lag_change_rate(window)
     and {{max_healthy_relative_lag_velocity}} < relative_lag_velocity
     and reason = "relative_lag_velocity";
 {{/if}}
@@ -13,24 +13,24 @@ scale_up(item, _context, _, reason) if
 
 {{#if min_task_utilization}}
 scale_down(item, _context, _, reason) if
-    not item.flow.input_records_lag_max == nil
-    and not item.flow.input_assigned_partitions == nil
+    not item.flow.source_records_lag_max == nil
+    and not item.flow.source_assigned_partitions == nil
     and evaluation_window(window)
     and utilization = item.flow_task_utilization_rolling_average(window)
     and utilization < {{min_task_utilization}}
-    and total_lag = item.flow_input_total_lag_rolling_average(window)
+    and total_lag = item.flow_source_total_lag_rolling_average(window)
     and total_lag == 0.0
     and reason = "low_utilization_and_zero_lag";
 {{/if}}
 
-# add input_backpressured_time_ms_per_sec order on source operator
+# add source_backpressured_time_ms_per_sec order on source operator
 # {{#if min_task_utilization}}
 # scale_down(item, _context, _, reason) if
-#     not item.flow.input_backpressured_time_ms_per_sec == nil
+#     not item.flow.source_backpressured_time_ms_per_sec == nil
 #     and evaluation_window(window)
 #     and utilization = item.flow_task_utilization_rolling_average(window)
 #     and utilization < {{min_task_utilization}}
-#     and total_lag = item.flow_input_total_lag_rolling_average(window)
+#     and total_lag = item.flow_source_total_lag_rolling_average(window)
 #     and total_lag == 0.0
 #     and reason = "low_utilization_and_zero_lag";
 # {{/if}}
@@ -45,9 +45,9 @@ evaluation_window(window) if
 
 {{#if max_healthy_lag}}
 scale_up(item, _context, _, reason) if
-    not item.flow.input_records_lag_max == nil
+    not item.flow.source_records_lag_max == nil
     and evaluation_window(window)
-    and lag = item.flow_input_total_lag_rolling_average(window)
+    and lag = item.flow_source_total_lag_rolling_average(window)
     and {{max_healthy_lag}} < lag
     and reason = "total_lag";
 {{/if}}

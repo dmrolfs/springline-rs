@@ -187,7 +187,7 @@ impl<F: Forecaster> FlinkPlanning<F> {
     #[allow(clippy::missing_const_for_fn)]
     fn buffered_lag_score(item: &MetricCatalog) -> f64 {
         // todo: how to support other options?
-        match (item.flow.input_records_lag_max, item.flow.input_millis_behind_latest) {
+        match (item.flow.source_records_lag_max, item.flow.source_millis_behind_latest) {
             (Some(lag), _) => lag as f64,
             (None, Some(lag)) => lag as f64,
             (None, None) => 0_f64,
@@ -307,7 +307,7 @@ mod tests {
         health: JobHealthMetrics::default(),
         flow: FlowMetrics {
             // input_records_lag_max: 314.15926535897932384264,
-            input_records_lag_max: Some(314),
+            source_records_lag_max: Some(314),
             ..FlowMetrics::default()
         },
         cluster: ClusterMetrics {

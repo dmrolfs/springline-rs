@@ -36,27 +36,27 @@ data:
               position: source
               metric: records-lag-max
               agg: sum
-              telemetry_path: flow.input_records_lag_max
+              telemetry_path: flow.source_records_lag_max
               telemetry_type: Integer
           - Operator:
               name: "{{ .Values.application.sensor.flink.metric_orders.flow.source.name }}"
               position: source
               metric: assigned-partitions
               agg: sum
-              telemetry_path: flow.input_assigned_partitions
+              telemetry_path: flow.source_assigned_partitions
               telemetry_type: Integer
           - Operator:
               name: "{{ .Values.application.sensor.flink.metric_orders.flow.source.name }}"
               position: source
               metric: records-consumed-rate
               agg: sum
-              telemetry_path: flow.input_records_consumed_rate
+              telemetry_path: flow.source_records_consumed_rate
               telemetry_type: Float
           - Task:
               position: source
               metric: backPressuredTimeMsPerSecond
               agg: avg
-              telemetry_path: flow.input_backPressuredTimeMsPerSecond
+              telemetry_path: flow.source_backPressuredTimeMsPerSecond
               telemetry_type: Float
           #todo: These are actually in JobManager Scope, which needs to be added to sensor
           - Job: 

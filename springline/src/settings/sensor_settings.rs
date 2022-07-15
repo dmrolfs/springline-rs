@@ -78,7 +78,7 @@ mod tests {
                     MetricOrder::Operator {
                         name: "Source: Baz input".to_string(),
                         position: PlanPositionSpec::Source,
-                        metric: MetricSpec::new("records-lag-max", Value, "flow.input_records_lag_max", Integer),
+                        metric: MetricSpec::new("records-lag-max", Value, "flow.source_records_lag_max", Integer),
                     },
                     MetricOrder::TaskManager {
                         metric: MetricSpec::new(
@@ -146,7 +146,7 @@ mod tests {
                 Token::Str("agg"),
                 Token::UnitVariant { name: "Aggregation", variant: "value" },
                 Token::Str("telemetry_path"),
-                Token::Str("flow.input_records_lag_max"),
+                Token::Str("flow.source_records_lag_max"),
                 Token::Str("telemetry_type"),
                 Token::UnitVariant { name: "TelemetryType", variant: "Integer" },
                 Token::MapEnd,
@@ -322,7 +322,7 @@ mod tests {
             MetricOrder::Operator {
                 name: "Input: The best data".to_string(),
                 position: PlanPositionSpec::Source,
-                metric: MetricSpec::new("records-lag-max", Value, "flow.input_records_lag_max", Integer),
+                metric: MetricSpec::new("records-lag-max", Value, "flow.source_records_lag_max", Integer),
             },
             MetricOrder::TaskManager {
                 metric: MetricSpec::new(
@@ -348,7 +348,7 @@ mod tests {
                 |    position: source
                 |    metric: records-lag-max
                 |    agg: value
-                |    telemetry_path: flow.input_records_lag_max
+                |    telemetry_path: flow.source_records_lag_max
                 |    telemetry_type: Integer
                 |- TaskManager:
                 |    metric: Status.JVM.Memory.Heap.Committed
@@ -377,7 +377,7 @@ mod tests {
 //                 |        "name": "Input: The best data",
 //                 |        "metric": "records-lag-max",
 //                 |        "agg": value,
-//                 |        "telemetry_path": "flow.input_records_lag_max",
+//                 |        "telemetry_path": "flow.source_records_lag_max",
 //                 |        "telemetry_type": Integer,
 //                 |    }),
 //                 |    TaskManager({

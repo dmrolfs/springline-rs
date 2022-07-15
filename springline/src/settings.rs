@@ -328,7 +328,7 @@ mod tests {
                         MetricOrder::Operator {
                             name: "Source: Data Stream".to_string(),
                             position: PlanPositionSpec::Source,
-                            metric: MetricSpec::new("records-lag-max", Sum, "flow.input_records_lag_max", Integer),
+                            metric: MetricSpec::new("records-lag-max", Sum, "flow.source_records_lag_max", Integer),
                         },
                         MetricOrder::Operator {
                             name: "Data Stream".to_string(),
@@ -336,17 +336,17 @@ mod tests {
                             metric: MetricSpec::new(
                                 "assigned-partitions",
                                 Sum,
-                                "flow.input_assigned_partitions",
+                                "flow.source_assigned_partitions",
                                 Integer,
                             ),
                         },
                         MetricOrder::Derivative {
                             scope: FlinkScope::Operator,
                             position: PlanPositionSpec::Source,
-                            telemetry_path: "flow.input_total_lag".to_string(),
+                            telemetry_path: "flow.source_total_lag".to_string(),
                             telemetry_type: Float,
-                            telemetry_lhs: "flow.input_records_lag_max".to_string(),
-                            telemetry_rhs: "flow.input_assigned_partitions".to_string(),
+                            telemetry_lhs: "flow.source_records_lag_max".to_string(),
+                            telemetry_rhs: "flow.source_assigned_partitions".to_string(),
                             combinator: DerivativeCombinator::Product,
                             agg: Sum,
                         },
@@ -529,7 +529,7 @@ mod tests {
                 metric_orders: vec![MetricOrder::Operator {
                     name: "Source: my data".to_string(),
                     position: PlanPositionSpec::NotSource,
-                    metric: MetricSpec::new("records-lag-max", Value, "flow.input_records_lag_max", Integer),
+                    metric: MetricSpec::new("records-lag-max", Value, "flow.source_records_lag_max", Integer),
                 }],
             },
             sensors: maplit::hashmap! {
