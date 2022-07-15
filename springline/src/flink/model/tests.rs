@@ -141,6 +141,10 @@ mod catalog {
             TelemetryValue::Float(555.5),
         );
         telemetry.insert(
+            "flow.source_back_pressured_time_millis_per_sec".to_string(),
+            TelemetryValue::Float(257.0),
+        );
+        telemetry.insert(
             "cluster.task_heap_memory_committed".to_string(),
             TelemetryValue::Float(3623878656.0),
         );
@@ -186,6 +190,7 @@ mod catalog {
                     records_in_per_sec: 20.0,
                     records_out_per_sec: 19.966666666666665,
                     idle_time_millis_per_sec: 555.5,
+                    source_back_pressured_time_millis_per_sec: 257.0,
                     forecasted_timestamp: Some(Timestamp::new(1647307440, 378969192)),
                     forecasted_records_in_per_sec: Some(21.4504261933966),
                     source_records_lag_max: None,
@@ -283,6 +288,7 @@ mod catalog {
                 forecasted_timestamp: Some(ts),
                 forecasted_records_in_per_sec: Some(23.),
                 idle_time_millis_per_sec: 777.7,
+                source_back_pressured_time_millis_per_sec: 111.0,
                 source_records_lag_max: Some(314),
                 source_assigned_partitions: Some(2),
                 source_total_lag: Some(628),
@@ -337,6 +343,8 @@ mod catalog {
                 Token::F64(0.),
                 Token::Str("flow.idle_time_millis_per_sec"),
                 Token::F64(777.7),
+                Token::Str("flow.source_back_pressured_time_millis_per_sec"),
+                Token::F64(111.0),
                 Token::Str("flow.forecasted_timestamp"),
                 Token::Some,
                 Token::TupleStruct { name: "Timestamp", len: 2 },
@@ -405,6 +413,7 @@ mod catalog {
             flow: FlowMetrics {
                 records_in_per_sec: 17.,
                 idle_time_millis_per_sec: 333.3,
+                source_back_pressured_time_millis_per_sec: 928.0,
                 forecasted_timestamp: None,
                 forecasted_records_in_per_sec: None,
                 source_records_lag_max: Some(314),
@@ -452,6 +461,7 @@ mod catalog {
                 "flow.source_total_lag".to_string() => 1_042.to_telemetry(),
                 "flow.source_records_consumed_rate".to_string() => 521_f64.to_telemetry(),
                 "flow.idle_time_millis_per_sec".to_string() => 333.3.to_telemetry(),
+                "flow.source_back_pressured_time_millis_per_sec".to_string() => 928.0.to_telemetry(),
 
                 MC_CLUSTER__NR_ACTIVE_JOBS.to_string() => 1.to_telemetry(),
                 MC_CLUSTER__NR_TASK_MANAGERS.to_string() => 4.to_telemetry(),

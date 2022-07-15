@@ -201,11 +201,18 @@ pub struct FlowMetrics {
     #[serde(rename = "flow.records_out_per_sec")]
     pub records_out_per_sec: f64,
 
-    /// average rate of idle time in (ideally non-source) tasks. Currently source tasks are not removed
-    /// so this metric is skewed downward.
+    /// average rate of idle time in non-source tasks.
     #[polar(attribute)]
     #[serde(rename = "flow.idle_time_millis_per_sec")]
     pub idle_time_millis_per_sec: f64,
+
+    /// The average time (in milliseconds) this source tasks are back pressured per second.
+    #[polar(attribute)]
+    #[serde(
+    default,
+    rename = "flow.source_back_pressured_time_millis_per_sec",
+    )]
+    pub source_back_pressured_time_millis_per_sec: f64,
 
     /// Timestamp (in fractional secs) for the forecasted_records_in_per_sec value.
     #[polar(attribute)]
@@ -270,6 +277,7 @@ impl fmt::Debug for FlowMetrics {
         out.field("records_out_per_sec", &self.records_out_per_sec);
         out.field("records_in_per_sec", &self.records_in_per_sec);
         out.field("idle_time_millis_per_sec", &self.idle_time_millis_per_sec);
+        out.field("source_back_pressured_time_millis_per_sec", &self.source_back_pressured_time_millis_per_sec);
         out.field("task_utilization", &self.task_utilization());
 
         if let Some((ts, recs_in_rate)) = self.forecasted_timestamp.zip(self.forecasted_records_in_per_sec) {
@@ -306,6 +314,11 @@ impl FlowMetrics {
         let idle = self.idle_time_millis_per_sec.max(0.0).min(1_000.0);
         1.0 - idle / 1_000.0
     }
+
+    pub fn source_back_pressure_percentage(&self) -> f64 {
+        let backpressure = self.source_back_pressured_time_millis_per_sec.max(0.0).min(1_000.0);
+        backpressure / 1_000.0
+    }
 }
 
 impl Monoid for FlowMetrics {
@@ -314,6 +327,7 @@ impl Monoid for FlowMetrics {
             records_in_per_sec: 0.0,
             records_out_per_sec: 0.0,
             idle_time_millis_per_sec: 0.0,
+            source_back_pressured_time_millis_per_sec: 0.0,
             forecasted_timestamp: None,
             forecasted_records_in_per_sec: None,
             source_records_lag_max: None,
@@ -497,6 +511,7 @@ impl SubscriptionRequirements for MetricCatalog {
             MC_FLOW__RECORDS_IN_PER_SEC.into(),
             "flow.records_out_per_sec".into(),
             "flow.idle_time_millis_per_sec".into(),
+            "flow.source_back_pressured_time_millis_per_sec".into(),
 
             // ClusterMetrics
             MC_CLUSTER__NR_ACTIVE_JOBS.into(),
@@ -552,6 +567,7 @@ impl UpdateMetrics for MetricCatalog {
                 METRIC_CATALOG_FLOW_RECORDS_IN_PER_SEC.set(catalog.flow.records_in_per_sec);
                 METRIC_CATALOG_FLOW_RECORDS_OUT_PER_SEC.set(catalog.flow.records_out_per_sec);
                 METRIC_CATALOG_FLOW_IDLE_TIME_MILLIS_PER_SEC.set(catalog.flow.idle_time_millis_per_sec);
+                METRIC_CATALOG_FLOW_SOURCE_BACK_PRESSURE_TIME_MILLIS_PER_SEC.set(catalog.flow.source_back_pressured_time_millis_per_sec);
                 METRIC_CATALOG_FLOW_TASK_UTILIZATION.set(catalog.flow.task_utilization());
 
                 if let Some(lag) = catalog.flow.source_records_lag_max {
@@ -682,9 +698,20 @@ pub static METRIC_CATALOG_FLOW_IDLE_TIME_MILLIS_PER_SEC: Lazy<Gauge> = Lazy::new
             "metric_catalog_flow_idle_time_millis_per_sec",
             "Current average idle time in millis per second",
         )
+            .const_labels(proctor::metrics::CONST_LABELS.clone()),
+    )
+        .expect("failed creating metric_catalog_flow_idle_time_millis_per_sec metric")
+});
+
+pub static METRIC_CATALOG_FLOW_SOURCE_BACK_PRESSURE_TIME_MILLIS_PER_SEC: Lazy<Gauge> = Lazy::new(|| {
+    Gauge::with_opts(
+        Opts::new(
+            "metric_catalog_flow_source_back_pressure_time_millis_per_sec",
+            "Average source back pressure time in millis per second",
+        )
         .const_labels(proctor::metrics::CONST_LABELS.clone()),
     )
-    .expect("failed creating metric_catalog_flow_idle_time_millis_per_sec metric")
+    .expect("failed creating metric_catalog_flow_back_pressure_time_millis_per_sec metric")
 });
 
 pub static METRIC_CATALOG_FLOW_TASK_UTILIZATION: Lazy<Gauge> = Lazy::new(|| {

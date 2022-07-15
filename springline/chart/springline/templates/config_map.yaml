@@ -52,12 +52,6 @@ data:
               agg: sum
               telemetry_path: flow.source_records_consumed_rate
               telemetry_type: Float
-          - Task:
-              position: source
-              metric: backPressuredTimeMsPerSecond
-              agg: avg
-              telemetry_path: flow.source_backPressuredTimeMsPerSecond
-              telemetry_type: Float
           #todo: These are actually in JobManager Scope, which needs to be added to sensor
           - Job: 
               metric: Status.JVM.ClassLoader.ClassesLoaded

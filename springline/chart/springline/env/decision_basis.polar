@@ -10,7 +10,6 @@ scale_up(item, _context, _, reason) if
     and reason = "relative_lag_velocity";
 {{/if}}
 
-
 {{#if min_task_utilization}}
 scale_down(item, _context, _, reason) if
     not item.flow.source_records_lag_max == nil

@@ -196,6 +196,7 @@ fn make_test_data(
             records_in_per_sec: records_per_sec,
             records_out_per_sec: records_per_sec,
             idle_time_millis_per_sec: 222.2,
+            source_back_pressured_time_millis_per_sec: 127.0,
             forecasted_timestamp: Some(forecasted_timestamp),
             forecasted_records_in_per_sec: Some(records_per_sec),
             source_records_lag_max: Some(source_records_lag_max),

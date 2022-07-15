@@ -212,6 +212,38 @@ impl PolicyContributor for AppDataWindow<MetricCatalog> {
                     Self::flow_task_utilization_above_mark,
                 )
                 .add_method(
+                    "flow_source_back_pressured_time_millis_per_sec_rolling_average",
+                    Self::flow_source_back_pressured_time_millis_per_sec_rolling_average,
+                )
+                .add_method(
+                    "flow_source_back_pressured_time_millis_per_sec_rolling_change_per_sec",
+                    Self::flow_source_back_pressured_time_millis_per_sec_rolling_change_per_sec,
+                )
+                .add_method(
+                    "flow_source_back_pressured_time_millis_per_sec_below_mark",
+                    Self::flow_source_back_pressured_time_millis_per_sec_below_mark,
+                )
+                .add_method(
+                    "flow_source_back_pressured_time_millis_per_sec_above_mark",
+                    Self::flow_source_back_pressured_time_millis_per_sec_above_mark,
+                )
+                .add_method(
+                    "flow_source_back_pressure_percentage_rolling_average",
+                    Self::flow_source_back_pressure_percentage_rolling_average,
+                )
+                .add_method(
+                    "flow_source_back_pressure_percentage_rolling_change_per_sec",
+                    Self::flow_source_back_pressure_percentage_rolling_change_per_sec,
+                )
+                .add_method(
+                    "flow_source_back_pressure_percentage_below_mark",
+                    Self::flow_source_back_pressure_percentage_below_mark,
+                )
+                .add_method(
+                    "flow_source_back_pressure_percentage_above_mark",
+                    Self::flow_source_back_pressure_percentage_above_mark,
+                )
+                .add_method(
                     "flow_source_records_lag_max_rolling_average",
                     Self::flow_source_records_lag_max_rolling_average,
                 )
@@ -648,6 +680,52 @@ impl AppDataWindow<MetricCatalog> {
         })
     }
 
+    pub fn flow_source_back_pressured_time_millis_per_sec_rolling_average(&self, looking_back_secs: u32) -> f64 {
+        let (sum, size) = self.sum_from_head(Duration::from_secs(looking_back_secs as u64), |m| {
+            m.flow.source_back_pressured_time_millis_per_sec
+        });
+
+        if size == 0 {
+            0.0
+        } else {
+            sum / size as f64
+        }
+    }
+
+    pub fn flow_source_back_pressured_time_millis_per_sec_rolling_change_per_sec(&self, looking_back_secs: u32) -> f64 {
+        let values = self
+            .extract_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+                (m.recv_timestamp, m.flow.source_back_pressured_time_millis_per_sec)
+            })
+            .into_iter()
+            .collect::<Vec<_>>();
+
+        // remember: head is the most recent, so we want to diff accordingly
+        values
+            .last()
+            .zip(values.first())
+            .and_then(|(first, last)| {
+                if first.0 == last.0 {
+                    None
+                } else {
+                    let duration_secs = (last.0 - first.0).as_secs_f64();
+                    Some((last.1 - first.1) / duration_secs)
+                }
+            })
+            .unwrap_or(0.0)
+    }
+
+    pub fn flow_source_back_pressured_time_millis_per_sec_below_mark(&self, looking_back_secs: u32, max_value: f64) -> bool {
+        self.for_duration_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+            m.flow.source_back_pressured_time_millis_per_sec <= max_value
+        })
+    }
+
+    pub fn flow_source_back_pressured_time_millis_per_sec_above_mark(&self, looking_back_secs: u32, min_value: f64) -> bool {
+        self.for_duration_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+            min_value <= m.flow.source_back_pressured_time_millis_per_sec
+        })
+    }
     pub fn flow_source_records_lag_max_rolling_average(&self, looking_back_secs: u32) -> f64 {
         let (sum, size) = self.sum_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
             m.flow.source_records_lag_max
@@ -685,6 +763,53 @@ impl AppDataWindow<MetricCatalog> {
                 }
             })
             .unwrap_or(0.0)
+    }
+
+    pub fn flow_source_back_pressure_percentage_rolling_average(&self, looking_back_secs: u32) -> f64 {
+        let (sum, size) = self.sum_from_head(Duration::from_secs(looking_back_secs as u64), |m| {
+            m.flow.source_back_pressure_percentage()
+        });
+
+        if size == 0 {
+            0.0
+        } else {
+            sum / size as f64
+        }
+    }
+
+    pub fn flow_source_back_pressure_percentage_rolling_change_per_sec(&self, looking_back_secs: u32) -> f64 {
+        let values = self
+            .extract_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+                (m.recv_timestamp, m.flow.source_back_pressure_percentage())
+            })
+            .into_iter()
+            .collect::<Vec<_>>();
+
+        // remember: head is the most recent, so we want to diff accordingly
+        values
+            .last()
+            .zip(values.first())
+            .and_then(|(first, last)| {
+                if first.0 == last.0 {
+                    None
+                } else {
+                    let duration_secs = (last.0 - first.0).as_secs_f64();
+                    Some((last.1 - first.1) / duration_secs)
+                }
+            })
+            .unwrap_or(0.0)
+    }
+
+    pub fn flow_source_back_pressure_percentage_below_mark(&self, looking_back_secs: u32, max_value: f64) -> bool {
+        self.for_duration_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+            m.flow.source_back_pressure_percentage() <= max_value
+        })
+    }
+
+    pub fn flow_source_back_pressure_percentage_above_mark(&self, looking_back_secs: u32, min_value: f64) -> bool {
+        self.for_duration_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+            min_value <= m.flow.source_back_pressure_percentage()
+        })
     }
 
     pub fn flow_source_records_lag_max_below_mark(&self, looking_back_secs: u32, max_value: i64) -> bool {
