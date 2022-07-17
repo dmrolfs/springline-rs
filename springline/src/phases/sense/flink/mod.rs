@@ -72,7 +72,12 @@ pub static STD_METRIC_ORDERS: Lazy<Vec<MetricOrder>> = Lazy::new(|| {
         },
         MetricOrder::Task {
             position: PlanPositionSpec::Source,
-            metric: MetricSpec::new("backPressuredTimeMsPerSecond", Avg, "flow.back_pressure_time_millis_per_sec", Float),
+            metric: MetricSpec::new(
+                "backPressuredTimeMsPerSecond",
+                Avg,
+                "flow.source_back_pressured_time_millis_per_sec",
+                Float,
+            ),
         },
         MetricOrder::TaskManager {
             metric: MetricSpec::new("Status.JVM.CPU.Load", Max, "cluster.task_cpu_load", Float),

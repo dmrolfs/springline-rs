@@ -17,7 +17,7 @@ data:
     pipelineVersionId: {{ .Values.global.pipeline.versionId }}
     pipelineTemplateId: {{ .Values.global.pipeline.templateId }}
     pipelineDeploymentId: {{ .Values.global.pipeline.jobId }}
-    
+
 
   config: |
     ---
@@ -53,7 +53,7 @@ data:
               telemetry_path: flow.source_records_consumed_rate
               telemetry_type: Float
           #todo: These are actually in JobManager Scope, which needs to be added to sensor
-          - Job: 
+          - Job:
               metric: Status.JVM.ClassLoader.ClassesLoaded
               agg: max
               telemetry_path: cluster.classes_loaded
@@ -62,6 +62,11 @@ data:
               metric: Status.JVM.ClassLoader.ClassesUnloaded
               agg: max
               telemetry_path: cluster.classes_loaded
+              telemetry_type: Integer
+          - Job:
+              metric: lastCheckpointDuration
+              agg: max
+              telemetry_path: health.last_checkpoint_duration
               telemetry_type: Integer
 
     eligibility:

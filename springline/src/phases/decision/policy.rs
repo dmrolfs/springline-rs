@@ -366,8 +366,8 @@ mod tests {
                 format!("{}_basis", DecisionPolicy::base_template_name()),
                 r###"
                 |{{> preamble}}
-                |scale_up(item, _context, _, reason) if {{max_records_in_per_sec}} < item.flow.records_in_per_sec and reason = "load_up";
-                |scale_down(item, _context, _, reason) if item.flow.records_in_per_sec < {{min_records_in_per_sec}} and reason = "load_down";
+                |scale_up(item, _context, reason) if {{max_records_in_per_sec}} < item.flow.records_in_per_sec and reason = "load_up";
+                |scale_down(item, _context, reason) if item.flow.records_in_per_sec < {{min_records_in_per_sec}} and reason = "load_down";
                 "###,
             )?,
         ];
@@ -395,16 +395,16 @@ mod tests {
         )?;
         // let actual = policy_filter::render_template_policy(name, settings.template_data.as_ref())?;
         let expected = r##"|
-        |scale(item, context, direction, reason) if scale_up(item, context, direction, reason) and direction = "up";
+        |scale(item, context, direction, reason) if scale_up(item, context, reason) and direction = "up";
         |
-        |scale(item, context, direction, reason) if scale_down(item, context, direction, reason) and direction = "down";
-        |scale_up(item, _context, _, reason) if 3 < item.flow.records_in_per_sec and reason = "load_up";
-        |scale_down(item, _context, _, reason) if item.flow.records_in_per_sec < 1 and reason = "load_down";
+        |scale(item, context, direction, reason) if scale_down(item, context, reason) and direction = "down";
+        |scale_up(item, _context, reason) if 3 < item.flow.records_in_per_sec and reason = "load_up";
+        |scale_down(item, _context, reason) if item.flow.records_in_per_sec < 1 and reason = "load_down";
         |
         |# no action rules to avoid policy errors if corresponding up/down rules not specified in basis.polar
-        |scale_up(_, _, _, _) if false;
-        |scale_down(_, _, _, _) if false;
-        "##
+        |scale_up(_, _, _) if false;
+        |scale_down(_, _, _) if false;
+        |"##
         .trim_margin_with("|")
         .unwrap();
         assert_eq!(actual, expected);

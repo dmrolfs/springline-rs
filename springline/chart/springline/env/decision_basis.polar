@@ -1,7 +1,13 @@
 {{> preamble}}
 
+scale_up(item, _, reason) if
+    item.cluster.nr_task_managers == 1
+    and item.flow_task_utilization_below_threshold(300, 0.02)
+    and reason = "nothing_happening_false_up_scale"
+    and cut;
+
 {{#if max_healthy_relative_lag_velocity}}
-scale_up(item, _context, _, reason) if
+scale_up(item, _, reason) if
     not item.flow.source_records_lag_max == nil
     and not item.flow.source_assigned_partitions == nil
     and evaluation_window(window)
@@ -11,9 +17,10 @@ scale_up(item, _context, _, reason) if
 {{/if}}
 
 {{#if min_task_utilization}}
-scale_down(item, _context, _, reason) if
+scale_down(item, _, reason) if
     not item.flow.source_records_lag_max == nil
     and not item.flow.source_assigned_partitions == nil
+    and 1 < item.cluster.nr_task_managers
     and evaluation_window(window)
     and utilization = item.flow_task_utilization_rolling_average(window)
     and utilization < {{min_task_utilization}}
@@ -22,9 +29,25 @@ scale_down(item, _context, _, reason) if
     and reason = "low_utilization_and_zero_lag";
 {{/if}}
 
+# force rescale when at minimum
+
+
+# force rescale when backpressure
+scale_up(item, _, reason) if
+    item.cluster.nr_task_managers < 16
+    and item.flow_source_back_pressured_time_millis_per_sec_rolling_average(300) == 1000.0
+    and reason = "rescale_up_to_relieve_back_pressured";
+
+# force rescale when backpressure
+scale_down(item, _, reason) if
+    16 <= item.cluster.nr_task_managers
+    and item.flow_source_back_pressured_time_millis_per_sec_rolling_average(300) == 1000.0
+    and reason = "back_pressured_at_max_cluster_size";
+
+
 # add source_backpressured_time_ms_per_sec order on source operator
 # {{#if min_task_utilization}}
-# scale_down(item, _context, _, reason) if
+# scale_down(item, _context, reason) if
 #     not item.flow.source_backpressured_time_ms_per_sec == nil
 #     and evaluation_window(window)
 #     and utilization = item.flow_task_utilization_rolling_average(window)
@@ -43,7 +66,7 @@ evaluation_window(window) if
 
 
 {{#if max_healthy_lag}}
-scale_up(item, _context, _, reason) if
+scale_up(item, _context, reason) if
     not item.flow.source_records_lag_max == nil
     and evaluation_window(window)
     and lag = item.flow_source_total_lag_rolling_average(window)
@@ -52,14 +75,14 @@ scale_up(item, _context, _, reason) if
 {{/if}}
 
 {{#if max_healthy_cpu_load}}
-scale_up(item, _context, _, reason) if
+scale_up(item, _context, reason) if
     evaluation_window(window)
     and item.cluster_task_cpu_load_above_mark(window, {{max_healthy_cpu_load}})
     and reason = "cpu_load";
 {{/if}}
 
 {{#if max_healthy_heap_memory_load}}
-scale_up(item, _context, _, reason) if
+scale_up(item, _context, reason) if
     evaluation_window(window)
     and load = item.cluster_task_heap_memory_load_rolling_average(window)
     and healthy_heap_memory_load}} < load
@@ -67,11 +90,11 @@ scale_up(item, _context, _, reason) if
 {{/if}}
 
 {{#if max_healthy_network_io_utilization}}
-scale_up(item, _context, _, reason) if
+scale_up(item, _context, reason) if
     {{max_healthy_network_io_utilization}} < item.cluster.task_network_input_utilization()
     and reason = "input_network_io";
 
-scale_up(item, _context, _, reason) if
+scale_up(item, _context, reason) if
     {{max_healthy_network_io_utilization}} < item.cluster.task_network_output_utilization()
     and reason = "output_network_io";
 {{/if}}
