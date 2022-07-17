@@ -250,8 +250,8 @@ async fn test_decision_carry_policy_result() -> anyhow::Result<()> {
         format!("{}_basis", DecisionPolicy::base_template_name()),
         r###"
             | {{> preamble}}
-            | scale_up(item, _context, _, reason) if {{max_records_in_per_sec}} < item.flow.records_in_per_sec and reason = "lagging_behind";
-            | scale_down(item, _context, _, reason) if item.flow.records_in_per_sec < {{min_records_in_per_sec}} and reason = "too_comfortable";
+            | scale_up(item, _context, reason) if {{max_records_in_per_sec}} < item.flow.records_in_per_sec and reason = "lagging_behind";
+            | scale_down(item, _context, reason) if item.flow.records_in_per_sec < {{min_records_in_per_sec}} and reason = "too_comfortable";
             "###,
     )?));
 
@@ -364,11 +364,11 @@ async fn test_decision_common() -> anyhow::Result<()> {
         format!("{}_basis", DecisionPolicy::base_template_name()),
         r###"
             | {{> preamble}}
-            | scale_up(item, _context, _, reason) if
+            | scale_up(item, _context, reason) if
             |   not item.flow.source_records_lag_max == nil
             |   and {{max_records_in_per_sec}} < item.flow.records_in_per_sec
             |   and reason = "lagging_behind";
-            | scale_down(item, _context, _, reason) if item.flow.records_in_per_sec < {{min_records_in_per_sec}} and reason = "too comfortable";
+            | scale_down(item, _context, reason) if item.flow.records_in_per_sec < {{min_records_in_per_sec}} and reason = "too comfortable";
             "###,
     )?));
 

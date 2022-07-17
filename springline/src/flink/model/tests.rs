@@ -20,6 +20,22 @@ use crate::flink::*;
 static ID_GENERATOR: Lazy<Mutex<ProctorIdGenerator<MetricCatalog>>> =
     Lazy::new(|| Mutex::new(ProctorIdGenerator::default()));
 
+pub trait ModuloSignedExt {
+    fn modulo(&self, n: Self) -> Self;
+}
+
+macro_rules! modulo_signed_ext_impl {
+    ($($t:ty)*) => ($(
+        impl ModuloSignedExt for $t {
+            #[inline]
+            fn modulo(&self, n: Self) -> Self {
+                (self % n + n) % n
+            }
+        }
+    )*)
+}
+modulo_signed_ext_impl! { i8 i16 i32 i64 u32 }
+
 mod catalog {
     use pretty_assertions::assert_eq;
     use pretty_snowflake::{Id, Label, Labeling};
@@ -495,6 +511,7 @@ mod catalog {
             health: JobHealthMetrics::default(),
             flow: FlowMetrics {
                 records_in_per_sec: f64::from(value),
+                idle_time_millis_per_sec: f64::from(value.modulo(1_000)),
                 ..FlowMetrics::default()
             },
             cluster: ClusterMetrics::default(),
@@ -506,6 +523,7 @@ mod catalog {
 mod window {
     use std::time::Duration;
 
+    use approx::assert_relative_eq;
     use frunk::{Monoid, Semigroup};
     use pretty_assertions::assert_eq;
     use proctor::elements::Timestamp;
@@ -795,6 +813,81 @@ mod window {
 
         tracing::info_span!("looking back for 2000 seconds").in_scope(|| {
             assert_eq!(window.for_duration_from_head(Duration::from_secs(2000), f), false);
+        });
+    }
+
+    #[test]
+    fn test_flow_task_utilization_rolling_average() {
+        once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
+        let main_span = tracing::info_span!("test_flow_task_utilization_rolling_average");
+        let _main_span_guard = main_span.enter();
+
+        let interval = Duration::from_secs(10);
+
+        let now = Timestamp::now();
+        // flow.records_in_per_sec *decline* over time
+        let m1 = make_test_catalog(now - Duration::from_secs(1 * 10), 100);
+        let m2 = make_test_catalog(now - Duration::from_secs(2 * 10), 200);
+        let m3 = make_test_catalog(now - Duration::from_secs(3 * 10), 300);
+        let m4 = make_test_catalog(now - Duration::from_secs(4 * 10), 400);
+        let m5 = make_test_catalog(now - Duration::from_secs(5 * 10), 500);
+        let m6 = make_test_catalog(now - Duration::from_secs(6 * 10), 600);
+        let m7 = make_test_catalog(now - Duration::from_secs(7 * 10), 700);
+        let ms = [
+            m1.clone(),
+            m2.clone(),
+            m3.clone(),
+            m4.clone(),
+            m5.clone(),
+            m6.clone(),
+            m7.clone(),
+        ];
+
+        let (window, remaining) = make_test_window(10, interval, &ms);
+        assert!(remaining.is_empty());
+
+        tracing::info_span!("looking back for 5 seconds").in_scope(|| {
+            assert_relative_eq!(window.flow_task_utilization_rolling_average(5), 0.9, epsilon = 1.0e-10);
+        });
+
+        tracing::info_span!("looking back for 11 seconds").in_scope(|| {
+            assert_relative_eq!(
+                window.flow_task_utilization_rolling_average(11),
+                0.85,
+                epsilon = 1.0e-10
+            );
+        });
+
+        tracing::info_span!("looking back for 21 seconds").in_scope(|| {
+            assert_relative_eq!(window.flow_task_utilization_rolling_average(21), 0.8, epsilon = 1.0e-10);
+        });
+
+        tracing::info_span!("looking back for 31 seconds").in_scope(|| {
+            assert_relative_eq!(
+                window.flow_task_utilization_rolling_average(31),
+                0.75,
+                epsilon = 1.0e-10
+            );
+        });
+
+        tracing::info_span!("looking back for 41 seconds").in_scope(|| {
+            assert_relative_eq!(window.flow_task_utilization_rolling_average(41), 0.7, epsilon = 1.0e-10);
+        });
+
+        tracing::info_span!("looking back for 51 seconds").in_scope(|| {
+            assert_relative_eq!(
+                window.flow_task_utilization_rolling_average(51),
+                0.65,
+                epsilon = 1.0e-10
+            );
+        });
+
+        tracing::info_span!("looking back for 61 seconds").in_scope(|| {
+            assert_relative_eq!(window.flow_task_utilization_rolling_average(61), 0.6, epsilon = 1.0e-10);
+        });
+
+        tracing::info_span!("looking back for 75 seconds").in_scope(|| {
+            assert_relative_eq!(window.flow_task_utilization_rolling_average(71), 0.6, epsilon = 1.0e-10);
         });
     }
 }

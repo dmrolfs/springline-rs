@@ -163,22 +163,64 @@ where
     }
 }
 
+// macro_rules! add_methods {
+//     ($polar_class:expr, $($name:ident)*) => {
+//         $polar_class
+//         $(
+//             .add_method(
+//                 stringify!(::paste::paste! { [<$name _rolling_average>] }),
+//                 ::paste::paste! { [<Self::$name _rolling_average>] },
+//             )
+//             .add_method(
+//                 stringify!(::paste::paste! { [<$name _rolling_change_per_sec>] }),
+//                 ::paste::paste! { [<Self::$name _rolling_change_per_sec>] },
+//             )
+//             .add_method(
+//                 stringify!(::paste::paste! { [<$name _below_threshold>] }),
+//                 ::paste::paste! { [<Self::$name _below_threshold>] },
+//             )
+//             .add_method(
+//                 stringify!(::paste::paste! { [<$name _above_threshold>] }),
+//                 ::paste::paste! { [<Self::$name _above_threshold>] },
+//             )
+//         )
+//         .build()
+//     }
+// }
+
 impl PolicyContributor for AppDataWindow<MetricCatalog> {
     #[tracing::instrument(level = "trace", skip(engine))]
     fn register_with_policy_engine(engine: &mut Oso) -> Result<(), PolicyError> {
         MetricCatalog::register_with_policy_engine(engine)?;
 
+        let builder = Self::get_polar_class_builder()
+            .add_attribute_getter("recv_timestamp", |p| p.recv_timestamp)
+            .add_attribute_getter("health", |p| p.health.clone())
+            .add_attribute_getter("flow", |p| p.flow.clone())
+            .add_attribute_getter("cluster", |p| p.cluster.clone())
+            .add_attribute_getter("custom", |p| p.custom.clone())
+            .add_method("has_quorum_looking_back_secs", Self::has_quorum_looking_back_secs);
+
+        // engine.register_class(
+        //     add_methods!(builder,
+        //         flow_idle_time_millis
+        //         // flow_task_utilization
+        //         // flow_source_back_pressured_time_millis_per_sec
+        //         // flow_source_back_pressure_percentage
+        //         // flow_source_records_lag_max
+        //         // flow_source_total_lag
+        //         // flow_source_records_consumed_rate
+        //         // flow_source_relative_lag
+        //         // flow_source_millis_behind_latest
+        //         // flow_records_out_per_sec
+        //         // cluster_task_cpu_load
+        //         // cluster_task_heap_memory_used
+        //         // cluster_task_heap_memory_load
+        //     )
+        // )?;
+
         engine.register_class(
-            Self::get_polar_class_builder()
-                .add_attribute_getter("recv_timestamp", |p| p.recv_timestamp)
-                .add_attribute_getter("health", |p| p.health.clone())
-                .add_attribute_getter("flow", |p| p.flow.clone())
-                .add_attribute_getter("cluster", |p| p.cluster.clone())
-                .add_attribute_getter("custom", |p| p.custom.clone())
-                .add_method(
-                    "has_sufficient_coverage_looking_back_secs",
-                    Self::has_quorum_looking_back_secs,
-                )
+            builder
                 .add_method(
                     "flow_idle_time_millis_per_sec_rolling_average",
                     Self::flow_idle_time_millis_per_sec_rolling_average,
@@ -188,12 +230,12 @@ impl PolicyContributor for AppDataWindow<MetricCatalog> {
                     Self::flow_idle_time_millis_per_sec_rolling_change_per_sec,
                 )
                 .add_method(
-                    "flow_idle_time_millis_per_sec_below_mark",
-                    Self::flow_idle_time_millis_per_sec_below_mark,
+                    "flow_idle_time_millis_per_sec_below_threshold",
+                    Self::flow_idle_time_millis_per_sec_below_threshold,
                 )
                 .add_method(
-                    "flow_idle_time_millis_per_sec_above_mark",
-                    Self::flow_idle_time_millis_per_sec_above_mark,
+                    "flow_idle_time_millis_per_sec_above_threshold",
+                    Self::flow_idle_time_millis_per_sec_above_threshold,
                 )
                 .add_method(
                     "flow_task_utilization_rolling_average",
@@ -204,12 +246,12 @@ impl PolicyContributor for AppDataWindow<MetricCatalog> {
                     Self::flow_task_utilization_rolling_change_per_sec,
                 )
                 .add_method(
-                    "flow_task_utilization_below_mark",
-                    Self::flow_task_utilization_below_mark,
+                    "flow_task_utilization_below_threshold",
+                    Self::flow_task_utilization_below_threshold,
                 )
                 .add_method(
-                    "flow_task_utilization_above_mark",
-                    Self::flow_task_utilization_above_mark,
+                    "flow_task_utilization_above_threshold",
+                    Self::flow_task_utilization_above_threshold,
                 )
                 .add_method(
                     "flow_source_back_pressured_time_millis_per_sec_rolling_average",
@@ -220,12 +262,12 @@ impl PolicyContributor for AppDataWindow<MetricCatalog> {
                     Self::flow_source_back_pressured_time_millis_per_sec_rolling_change_per_sec,
                 )
                 .add_method(
-                    "flow_source_back_pressured_time_millis_per_sec_below_mark",
-                    Self::flow_source_back_pressured_time_millis_per_sec_below_mark,
+                    "flow_source_back_pressured_time_millis_per_sec_below_threshold",
+                    Self::flow_source_back_pressured_time_millis_per_sec_below_threshold,
                 )
                 .add_method(
-                    "flow_source_back_pressured_time_millis_per_sec_above_mark",
-                    Self::flow_source_back_pressured_time_millis_per_sec_above_mark,
+                    "flow_source_back_pressured_time_millis_per_sec_above_threshold",
+                    Self::flow_source_back_pressured_time_millis_per_sec_above_threshold,
                 )
                 .add_method(
                     "flow_source_back_pressure_percentage_rolling_average",
@@ -236,12 +278,12 @@ impl PolicyContributor for AppDataWindow<MetricCatalog> {
                     Self::flow_source_back_pressure_percentage_rolling_change_per_sec,
                 )
                 .add_method(
-                    "flow_source_back_pressure_percentage_below_mark",
-                    Self::flow_source_back_pressure_percentage_below_mark,
+                    "flow_source_back_pressure_percentage_below_threshold",
+                    Self::flow_source_back_pressure_percentage_below_threshold,
                 )
                 .add_method(
-                    "flow_source_back_pressure_percentage_above_mark",
-                    Self::flow_source_back_pressure_percentage_above_mark,
+                    "flow_source_back_pressure_percentage_above_threshold",
+                    Self::flow_source_back_pressure_percentage_above_threshold,
                 )
                 .add_method(
                     "flow_source_records_lag_max_rolling_average",
@@ -252,12 +294,12 @@ impl PolicyContributor for AppDataWindow<MetricCatalog> {
                     Self::flow_source_records_lag_max_rolling_change_per_sec,
                 )
                 .add_method(
-                    "flow_source_records_lag_max_below_mark",
-                    Self::flow_source_records_lag_max_below_mark,
+                    "flow_source_records_lag_max_below_threshold",
+                    Self::flow_source_records_lag_max_below_threshold,
                 )
                 .add_method(
-                    "flow_source_records_lag_max_above_mark",
-                    Self::flow_source_records_lag_max_above_mark,
+                    "flow_source_records_lag_max_above_threshold",
+                    Self::flow_source_records_lag_max_above_threshold,
                 )
                 .add_method(
                     "flow_source_total_lag_rolling_average",
@@ -268,12 +310,12 @@ impl PolicyContributor for AppDataWindow<MetricCatalog> {
                     Self::flow_source_total_lag_rolling_change_per_sec,
                 )
                 .add_method(
-                    "flow_source_total_lag_below_mark",
-                    Self::flow_source_total_lag_below_mark,
+                    "flow_source_total_lag_below_threshold",
+                    Self::flow_source_total_lag_below_threshold,
                 )
                 .add_method(
-                    "flow_source_total_lag_above_mark",
-                    Self::flow_source_total_lag_above_mark,
+                    "flow_source_total_lag_above_threshold",
+                    Self::flow_source_total_lag_above_threshold,
                 )
                 .add_method(
                     "flow_source_records_consumed_rate_rolling_average",
@@ -284,12 +326,12 @@ impl PolicyContributor for AppDataWindow<MetricCatalog> {
                     Self::flow_source_records_consumed_rate_rolling_change_per_sec,
                 )
                 .add_method(
-                    "flow_source_records_consumed_rate_below_mark",
-                    Self::flow_source_records_consumed_rate_below_mark,
+                    "flow_source_records_consumed_rate_below_threshold",
+                    Self::flow_source_records_consumed_rate_below_threshold,
                 )
                 .add_method(
-                    "flow_source_records_consumed_rate_above_mark",
-                    Self::flow_source_records_consumed_rate_above_mark,
+                    "flow_source_records_consumed_rate_above_threshold",
+                    Self::flow_source_records_consumed_rate_above_threshold,
                 )
                 .add_method(
                     "flow_source_relative_lag_change_rate",
@@ -304,12 +346,12 @@ impl PolicyContributor for AppDataWindow<MetricCatalog> {
                     Self::flow_source_millis_behind_latest_rolling_change_per_sec,
                 )
                 .add_method(
-                    "flow_source_millis_behind_latest_below_mark",
-                    Self::flow_source_millis_behind_latest_below_mark,
+                    "flow_source_millis_behind_latest_below_threshold",
+                    Self::flow_source_millis_behind_latest_below_threshold,
                 )
                 .add_method(
-                    "flow_source_millis_behind_latest_above_mark",
-                    Self::flow_source_millis_behind_latest_above_mark,
+                    "flow_source_millis_behind_latest_above_threshold",
+                    Self::flow_source_millis_behind_latest_above_threshold,
                 )
                 .add_method(
                     "flow_records_out_per_sec_rolling_average",
@@ -328,12 +370,12 @@ impl PolicyContributor for AppDataWindow<MetricCatalog> {
                     Self::cluster_task_cpu_load_rolling_change_per_sec,
                 )
                 .add_method(
-                    "cluster_task_cpu_load_below_mark",
-                    Self::cluster_task_cpu_load_below_mark,
+                    "cluster_task_cpu_load_below_threshold",
+                    Self::cluster_task_cpu_load_below_threshold,
                 )
                 .add_method(
-                    "cluster_task_cpu_load_above_mark",
-                    Self::cluster_task_cpu_load_above_mark,
+                    "cluster_task_cpu_load_above_threshold",
+                    Self::cluster_task_cpu_load_above_threshold,
                 )
                 .add_method(
                     "cluster_task_heap_memory_used_rolling_average",
@@ -344,12 +386,12 @@ impl PolicyContributor for AppDataWindow<MetricCatalog> {
                     Self::cluster_task_heap_memory_used_rolling_change_per_sec,
                 )
                 .add_method(
-                    "cluster_task_heap_memory_used_below_mark",
-                    Self::cluster_task_heap_memory_used_below_mark,
+                    "cluster_task_heap_memory_used_below_threshold",
+                    Self::cluster_task_heap_memory_used_below_threshold,
                 )
                 .add_method(
-                    "cluster_task_heap_memory_used_above_mark",
-                    Self::cluster_task_heap_memory_used_above_mark,
+                    "cluster_task_heap_memory_used_above_threshold",
+                    Self::cluster_task_heap_memory_used_above_threshold,
                 )
                 .add_method(
                     "cluster_task_heap_memory_load_rolling_average",
@@ -360,12 +402,12 @@ impl PolicyContributor for AppDataWindow<MetricCatalog> {
                     Self::cluster_task_heap_memory_load_rolling_change_per_sec,
                 )
                 .add_method(
-                    "cluster_task_heap_memory_load_below_mark",
-                    Self::cluster_task_heap_memory_load_below_mark,
+                    "cluster_task_heap_memory_load_below_threshold",
+                    Self::cluster_task_heap_memory_load_below_threshold,
                 )
                 .add_method(
-                    "cluster_task_heap_memory_load_above_mark",
-                    Self::cluster_task_heap_memory_load_above_mark,
+                    "cluster_task_heap_memory_load_above_threshold",
+                    Self::cluster_task_heap_memory_load_above_threshold,
                 )
                 .build(),
         )?;
@@ -572,439 +614,577 @@ where
     }
 }
 
+macro_rules! window_opt_integer_ops_for {
+    ($($name:ident = $property:expr)*) => {
+        $(
+            ::paste::paste! {
+                pub fn [<$name _rolling_average>](&self, looking_back_secs: u32) -> f64 {
+                    let (sum, size) = self.sum_from_head(
+                        Duration::from_secs(looking_back_secs as u64),
+                        $property
+                    );
+                    if size == 0 {
+                        0.0
+                    } else {
+                        sum.and_then(|value| {
+                            i32::try_from(value).ok().map(|val| f64::from(val) / size as f64)
+                        })
+                            .unwrap_or(0.0)
+                    }
+                }
+
+                pub fn [<$name _rolling_change_per_sec>](&self, looking_back_secs: u32) -> f64 {
+                    let values = self.extract_from_head(
+                        Duration::from_secs(u64::from(looking_back_secs)),
+                        |m: &MetricCatalog| { $property(m).map(|val| (m.recv_timestamp, val)) }
+                    )
+                        .into_iter()
+                        .flatten()
+                        .collect::<Vec<_>>();
+
+                    values
+                        .last()
+                        .zip(values.first())
+                        .and_then(|(first, last)| {
+                            if first.0 == last.0 {
+                                None
+                            } else {
+                                let duration_secs = (last.0 - first.0).as_secs_f64();
+                                i32::try_from(last.1 - first.1)
+                                    .ok()
+                                    .map(|diff| f64::from(diff) / duration_secs)
+                            }
+                        })
+                        .unwrap_or(0.0)
+                }
+
+                pub fn [<$name _below_threshold>](&self, looking_back_secs: u32, threshold: i64) -> bool {
+                    self.for_duration_from_head(
+                        Duration::from_secs(u64::from(looking_back_secs)),
+                        |m: &MetricCatalog| {
+                            $property(m)
+                                .map(|value| value < threshold)
+                                .unwrap_or(false)
+                        }
+                    )
+                }
+
+                pub fn [<$name _above_threshold>](&self, looking_back_secs: u32, threshold: i64) -> bool {
+                    self.for_duration_from_head(
+                        Duration::from_secs(u64::from(looking_back_secs)),
+                        |m: &MetricCatalog| {
+                            $property(m)
+                                .map(|value| threshold < value)
+                                .unwrap_or(false)
+                        }
+                    )
+                }
+            }
+        )*
+    }
+}
+
+macro_rules! window_opt_float_ops_for {
+    ($($name:ident = $property:expr)*) => {
+        $(
+            ::paste::paste! {
+                pub fn [<$name _rolling_average>](&self, looking_back_secs: u32) -> f64 {
+                    let (sum, size) = self.sum_from_head(
+                        Duration::from_secs(looking_back_secs as u64),
+                        $property
+                    );
+                    tracing::debug!("DMR: rolling average[{size}]: {sum:?}");
+                    if size == 0 { 0.0 } else { sum.map(|value| { value / size as f64 }).unwrap_or(0.0) }
+                }
+
+                pub fn [<$name _rolling_change_per_sec>](&self, looking_back_secs: u32) -> f64 {
+                    let values = self.extract_from_head(
+                        Duration::from_secs(u64::from(looking_back_secs)),
+                        |m: &MetricCatalog| { $property(m).map(|val| (m.recv_timestamp, val)) }
+                    )
+                        .into_iter()
+                        .flatten()
+                        .collect::<Vec<_>>();
+
+                    values
+                        .last()
+                        .zip(values.first())
+                        .and_then(|(first, last)| {
+                            if first.0 == last.0 {
+                                None
+                            } else {
+                                let duration_secs = (last.0 - first.0).as_secs_f64();
+                                Some((last.1 - first.1) / duration_secs)
+                            }
+                        })
+                        .unwrap_or(0.0)
+                }
+
+                pub fn [<$name _below_threshold>](&self, looking_back_secs: u32, threshold: f64) -> bool {
+                    self.for_duration_from_head(
+                        Duration::from_secs(u64::from(looking_back_secs)),
+                        |m: &MetricCatalog| {
+                            $property(m)
+                                .map(|value| value < threshold)
+                                .unwrap_or(false)
+                        }
+                    )
+                }
+
+                pub fn [<$name _above_threshold>](&self, looking_back_secs: u32, threshold: f64) -> bool {
+                    self.for_duration_from_head(
+                        Duration::from_secs(u64::from(looking_back_secs)),
+                        |m: &MetricCatalog| {
+                            $property(m)
+                                .map(|value| threshold < value)
+                                .unwrap_or(false)
+                        }
+                    )
+                }
+            }
+        )*
+    }
+}
+
 impl AppDataWindow<MetricCatalog> {
-    pub fn flow_idle_time_millis_per_sec_rolling_average(&self, looking_back_secs: u32) -> f64 {
-        let (sum, size) = self.sum_from_head(Duration::from_secs(looking_back_secs as u64), |m| {
-            m.flow.idle_time_millis_per_sec
-        });
+    window_opt_float_ops_for!(
+        flow_idle_time_millis_per_sec = |m: &MetricCatalog| Some(m.flow.idle_time_millis_per_sec)
+        flow_task_utilization = |m: &MetricCatalog| Some(m.flow.task_utilization())
+        flow_source_back_pressured_time_millis_per_sec = |m: &MetricCatalog| Some(m.flow.source_back_pressured_time_millis_per_sec)
+        flow_source_back_pressure_percentage = |m: &MetricCatalog| Some(m.flow.source_back_pressure_percentage())
+        flow_source_records_consumed_rate = |m: &MetricCatalog| m.flow.source_records_consumed_rate
+        flow_records_out_per_sec = |m: &MetricCatalog| Some(m.flow.records_out_per_sec)
+        cluster_task_cpu_load = |m: &MetricCatalog| Some(m.cluster.task_cpu_load)
+        cluster_task_heap_memory_used = |m: &MetricCatalog| Some(m.cluster.task_heap_memory_used)
+        cluster_task_heap_memory_load = |m: &MetricCatalog| Some(m.cluster.task_heap_memory_load())
+    );
 
-        if size == 0 {
-            0.0
-        } else {
-            sum / size as f64
-        }
-    }
+    window_opt_integer_ops_for!(
+        flow_source_records_lag_max = |m: &MetricCatalog| m.flow.source_records_lag_max
+        flow_source_total_lag = |m: &MetricCatalog| m.flow.source_total_lag
+        flow_source_millis_behind_latest = |m: &MetricCatalog| m.flow.source_millis_behind_latest
+    );
 
-    pub fn flow_idle_time_millis_per_sec_rolling_change_per_sec(&self, looking_back_secs: u32) -> f64 {
-        let values = self
-            .extract_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
-                (m.recv_timestamp, m.flow.idle_time_millis_per_sec)
-            })
-            .into_iter()
-            .collect::<Vec<_>>();
+    // pub fn flow_idle_time_millis_per_sec_rolling_average(&self, looking_back_secs: u32) -> f64 {
+    //     let (sum, size) = self.sum_from_head(Duration::from_secs(looking_back_secs as u64), |m| {
+    //         m.flow.idle_time_millis_per_sec
+    //     });
+    //
+    //     if size == 0 {
+    //         0.0
+    //     } else {
+    //         sum / size as f64
+    //     }
+    // }
+    //
+    // pub fn flow_idle_time_millis_per_sec_rolling_change_per_sec(&self, looking_back_secs: u32) -> f64 {
+    //     let values = self
+    //         .extract_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+    //             (m.recv_timestamp, m.flow.idle_time_millis_per_sec)
+    //         })
+    //         .into_iter()
+    //         .collect::<Vec<_>>();
+    //
+    //     // remember: head is the most recent, so we want to diff accordingly
+    //     values
+    //         .last()
+    //         .zip(values.first())
+    //         .and_then(|(first, last)| {
+    //             if first.0 == last.0 {
+    //                 None
+    //             } else {
+    //                 let duration_secs = (last.0 - first.0).as_secs_f64();
+    //                 Some((last.1 - first.1) / duration_secs)
+    //             }
+    //         })
+    //         .unwrap_or(0.0)
+    // }
+    //
+    // pub fn flow_idle_time_millis_per_sec_below_threshold(&self, looking_back_secs: u32, threshold: f64) -> bool {
+    //     self.for_duration_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+    //         m.flow.idle_time_millis_per_sec < threshold
+    //     })
+    // }
+    //
+    // pub fn flow_idle_time_millis_per_sec_above_threshold(&self, looking_back_secs: u32, threshold: f64) -> bool {
+    //     self.for_duration_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+    //         threshold < m.flow.idle_time_millis_per_sec
+    //     })
+    // }
 
-        // remember: head is the most recent, so we want to diff accordingly
-        values
-            .last()
-            .zip(values.first())
-            .and_then(|(first, last)| {
-                if first.0 == last.0 {
-                    None
-                } else {
-                    let duration_secs = (last.0 - first.0).as_secs_f64();
-                    Some((last.1 - first.1) / duration_secs)
-                }
-            })
-            .unwrap_or(0.0)
-    }
+    // pub fn flow_task_utilization_rolling_average(&self, looking_back_secs: u32) -> f64 {
+    //     let (sum, size) = self.sum_from_head(Duration::from_secs(looking_back_secs as u64), |m| {
+    //         m.flow.task_utilization()
+    //     });
+    //
+    //     if size == 0 {
+    //         0.0
+    //     } else {
+    //         sum / size as f64
+    //     }
+    // }
+    //
+    // pub fn flow_task_utilization_rolling_change_per_sec(&self, looking_back_secs: u32) -> f64 {
+    //     let values = self
+    //         .extract_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+    //             (m.recv_timestamp, m.flow.task_utilization())
+    //         })
+    //         .into_iter()
+    //         .collect::<Vec<_>>();
+    //
+    //     // remember: head is the most recent, so we want to diff accordingly
+    //     values
+    //         .last()
+    //         .zip(values.first())
+    //         .and_then(|(first, last)| {
+    //             if first.0 == last.0 {
+    //                 None
+    //             } else {
+    //                 let duration_secs = (last.0 - first.0).as_secs_f64();
+    //                 Some((last.1 - first.1) / duration_secs)
+    //             }
+    //         })
+    //         .unwrap_or(0.0)
+    // }
+    //
+    // pub fn flow_task_utilization_below_threshold(&self, looking_back_secs: u32, threshold: f64) -> bool {
+    //     self.for_duration_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+    //         m.flow.task_utilization() < threshold
+    //     })
+    // }
+    //
+    // pub fn flow_task_utilization_above_threshold(&self, looking_back_secs: u32, threshold: f64) -> bool {
+    //     self.for_duration_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+    //         threshold < m.flow.task_utilization()
+    //     })
+    // }
 
-    pub fn flow_idle_time_millis_per_sec_below_mark(&self, looking_back_secs: u32, max_value: f64) -> bool {
-        self.for_duration_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
-            m.flow.idle_time_millis_per_sec <= max_value
-        })
-    }
+    // pub fn flow_source_back_pressured_time_millis_per_sec_rolling_average(&self, looking_back_secs: u32) -> f64 {
+    //     let (sum, size) = self.sum_from_head(Duration::from_secs(looking_back_secs as u64), |m| {
+    //         m.flow.source_back_pressured_time_millis_per_sec
+    //     });
+    //
+    //     if size == 0 {
+    //         0.0
+    //     } else {
+    //         sum / size as f64
+    //     }
+    // }
+    //
+    // pub fn flow_source_back_pressured_time_millis_per_sec_rolling_change_per_sec(&self, looking_back_secs: u32) -> f64 {
+    //     let values = self
+    //         .extract_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+    //             (m.recv_timestamp, m.flow.source_back_pressured_time_millis_per_sec)
+    //         })
+    //         .into_iter()
+    //         .collect::<Vec<_>>();
+    //
+    //     // remember: head is the most recent, so we want to diff accordingly
+    //     values
+    //         .last()
+    //         .zip(values.first())
+    //         .and_then(|(first, last)| {
+    //             if first.0 == last.0 {
+    //                 None
+    //             } else {
+    //                 let duration_secs = (last.0 - first.0).as_secs_f64();
+    //                 Some((last.1 - first.1) / duration_secs)
+    //             }
+    //         })
+    //         .unwrap_or(0.0)
+    // }
+    //
+    // pub fn flow_source_back_pressured_time_millis_per_sec_below_threshold(&self, looking_back_secs: u32, threshold: f64) -> bool {
+    //     self.for_duration_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+    //         m.flow.source_back_pressured_time_millis_per_sec < threshold
+    //     })
+    // }
+    //
+    // pub fn flow_source_back_pressured_time_millis_per_sec_above_threshold(&self, looking_back_secs: u32, threshold: f64) -> bool {
+    //     self.for_duration_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+    //         threshold < m.flow.source_back_pressured_time_millis_per_sec
+    //     })
+    // }
 
-    pub fn flow_idle_time_millis_per_sec_above_mark(&self, looking_back_secs: u32, min_value: f64) -> bool {
-        self.for_duration_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
-            min_value <= m.flow.idle_time_millis_per_sec
-        })
-    }
+    // pub fn flow_source_back_pressure_percentage_rolling_average(&self, looking_back_secs: u32) -> f64 {
+    //     let (sum, size) = self.sum_from_head(Duration::from_secs(looking_back_secs as u64), |m| {
+    //         m.flow.source_back_pressure_percentage()
+    //     });
+    //
+    //     if size == 0 {
+    //         0.0
+    //     } else {
+    //         sum / size as f64
+    //     }
+    // }
+    //
+    // pub fn flow_source_back_pressure_percentage_rolling_change_per_sec(&self, looking_back_secs: u32) -> f64 {
+    //     let values = self
+    //         .extract_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+    //             (m.recv_timestamp, m.flow.source_back_pressure_percentage())
+    //         })
+    //         .into_iter()
+    //         .collect::<Vec<_>>();
+    //
+    //     // remember: head is the most recent, so we want to diff accordingly
+    //     values
+    //         .last()
+    //         .zip(values.first())
+    //         .and_then(|(first, last)| {
+    //             if first.0 == last.0 {
+    //                 None
+    //             } else {
+    //                 let duration_secs = (last.0 - first.0).as_secs_f64();
+    //                 Some((last.1 - first.1) / duration_secs)
+    //             }
+    //         })
+    //         .unwrap_or(0.0)
+    // }
+    //
+    // pub fn flow_source_back_pressure_percentage_below_threshold(&self, looking_back_secs: u32, threshold: f64) -> bool {
+    //     self.for_duration_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+    //         m.flow.source_back_pressure_percentage() < threshold
+    //     })
+    // }
+    //
+    // pub fn flow_source_back_pressure_percentage_above_threshold(&self, looking_back_secs: u32, threshold: f64) -> bool {
+    //     self.for_duration_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+    //         threshold < m.flow.source_back_pressure_percentage()
+    //     })
+    // }
 
-    /// If a task is idle due to a lack of incoming records, then the job is over-provisioned for
-    /// the current load. Utilization is the average portion of time the job tasks spend in a
-    /// non-idle state. To be useful, it is important to exclude source operators from the
-    /// calculation of this metric (e.g., via a non_source position specifier in the Operator metric
-    /// order).
-    ///
-    /// Utilization is calculated based on the idle_time_millis_per_sec metric:
-    ///     1 - average(idle_time_millis_per_sec) / 1_000
-    ///
-    /// This metric should be used for downscaling decisions only. If utilization is low and
-    /// total_lag is 0, the job is able to process more records than the incoming rate.
-    ///
-    /// (For upscaling, it may trigger a scale up before a lag metric.)
-    pub fn flow_task_utilization_rolling_average(&self, looking_back_secs: u32) -> f64 {
-        let (sum, size) = self.sum_from_head(Duration::from_secs(looking_back_secs as u64), |m| {
-            m.flow.task_utilization()
-        });
+    // pub fn flow_source_records_lag_max_rolling_average(&self, looking_back_secs: u32) -> f64 {
+    //     let (sum, size) = self.sum_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+    //         m.flow.source_records_lag_max
+    //     });
+    //
+    //     if size == 0 {
+    //         0.0
+    //     } else {
+    //         sum.and_then(|lag| i32::try_from(lag).ok().map(|l| f64::from(l) / size as f64))
+    //             .unwrap_or(0.0)
+    //     }
+    // }
+    //
+    // pub fn flow_source_records_lag_max_rolling_change_per_sec(&self, looking_back_secs: u32) -> f64 {
+    //     let values: Vec<(Timestamp, i64)> = self
+    //         .extract_from_head(Duration::from_secs(u64::from(looking_back_secs)), |metric| {
+    //             (metric.recv_timestamp, metric.flow.source_records_lag_max)
+    //         })
+    //         .into_iter()
+    //         .flat_map(|(ts, lag)| lag.map(|l| (ts, l)))
+    //         .collect();
+    //
+    //     // remember: head is the most recent, so we want to diff accordingly
+    //     values
+    //         .last()
+    //         .zip(values.first())
+    //         .and_then(|(first, last)| {
+    //             if first.0 == last.0 {
+    //                 None
+    //             } else {
+    //                 let duration_secs = (last.0 - first.0).as_secs_f64();
+    //                 i32::try_from(last.1 - first.1)
+    //                     .ok()
+    //                     .map(|diff| f64::from(diff) / duration_secs)
+    //             }
+    //         })
+    //         .unwrap_or(0.0)
+    // }
+    //
+    // pub fn flow_source_records_lag_max_below_threshold(&self, looking_back_secs: u32, threshold: i64) -> bool {
+    //     self.for_duration_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+    //         m.flow
+    //             .source_records_lag_max
+    //             .map(|lag| {
+    //                 tracing::debug!(
+    //                     "eval lag in catalog[{}]: {lag} < {threshold} = {}",
+    //                     m.recv_timestamp,
+    //                     lag < threshold
+    //                 );
+    //                 lag < threshold
+    //             })
+    //             .unwrap_or(false)
+    //     })
+    // }
+    //
+    // pub fn flow_source_records_lag_max_above_threshold(&self, looking_back_secs: u32, threshold: i64) -> bool {
+    //     self.for_duration_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+    //         m.flow
+    //             .source_records_lag_max
+    //             .map(|lag| {
+    //                 tracing::debug!(
+    //                     "eval lag in catalog[{}]: {threshold} < {lag} = {}",
+    //                     m.recv_timestamp,
+    //                     threshold < lag
+    //                 );
+    //                 threshold < lag
+    //             })
+    //             .unwrap_or(false)
+    //     })
+    // }
 
-        if size == 0 {
-            0.0
-        } else {
-            sum / size as f64
-        }
-    }
-
-    pub fn flow_task_utilization_rolling_change_per_sec(&self, looking_back_secs: u32) -> f64 {
-        let values = self
-            .extract_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
-                (m.recv_timestamp, m.flow.task_utilization())
-            })
-            .into_iter()
-            .collect::<Vec<_>>();
-
-        // remember: head is the most recent, so we want to diff accordingly
-        values
-            .last()
-            .zip(values.first())
-            .and_then(|(first, last)| {
-                if first.0 == last.0 {
-                    None
-                } else {
-                    let duration_secs = (last.0 - first.0).as_secs_f64();
-                    Some((last.1 - first.1) / duration_secs)
-                }
-            })
-            .unwrap_or(0.0)
-    }
-
-    pub fn flow_task_utilization_below_mark(&self, looking_back_secs: u32, max_value: f64) -> bool {
-        self.for_duration_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
-            m.flow.task_utilization() <= max_value
-        })
-    }
-
-    pub fn flow_task_utilization_above_mark(&self, looking_back_secs: u32, min_value: f64) -> bool {
-        self.for_duration_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
-            min_value <= m.flow.task_utilization()
-        })
-    }
-
-    pub fn flow_source_back_pressured_time_millis_per_sec_rolling_average(&self, looking_back_secs: u32) -> f64 {
-        let (sum, size) = self.sum_from_head(Duration::from_secs(looking_back_secs as u64), |m| {
-            m.flow.source_back_pressured_time_millis_per_sec
-        });
-
-        if size == 0 {
-            0.0
-        } else {
-            sum / size as f64
-        }
-    }
-
-    pub fn flow_source_back_pressured_time_millis_per_sec_rolling_change_per_sec(&self, looking_back_secs: u32) -> f64 {
-        let values = self
-            .extract_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
-                (m.recv_timestamp, m.flow.source_back_pressured_time_millis_per_sec)
-            })
-            .into_iter()
-            .collect::<Vec<_>>();
-
-        // remember: head is the most recent, so we want to diff accordingly
-        values
-            .last()
-            .zip(values.first())
-            .and_then(|(first, last)| {
-                if first.0 == last.0 {
-                    None
-                } else {
-                    let duration_secs = (last.0 - first.0).as_secs_f64();
-                    Some((last.1 - first.1) / duration_secs)
-                }
-            })
-            .unwrap_or(0.0)
-    }
-
-    pub fn flow_source_back_pressured_time_millis_per_sec_below_mark(&self, looking_back_secs: u32, max_value: f64) -> bool {
-        self.for_duration_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
-            m.flow.source_back_pressured_time_millis_per_sec <= max_value
-        })
-    }
-
-    pub fn flow_source_back_pressured_time_millis_per_sec_above_mark(&self, looking_back_secs: u32, min_value: f64) -> bool {
-        self.for_duration_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
-            min_value <= m.flow.source_back_pressured_time_millis_per_sec
-        })
-    }
-    pub fn flow_source_records_lag_max_rolling_average(&self, looking_back_secs: u32) -> f64 {
-        let (sum, size) = self.sum_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
-            m.flow.source_records_lag_max
-        });
-
-        if size == 0 {
-            0.0
-        } else {
-            sum.and_then(|lag| i32::try_from(lag).ok().map(|l| f64::from(l) / size as f64))
-                .unwrap_or(0.0)
-        }
-    }
-
-    pub fn flow_source_records_lag_max_rolling_change_per_sec(&self, looking_back_secs: u32) -> f64 {
-        let values: Vec<(Timestamp, i64)> = self
-            .extract_from_head(Duration::from_secs(u64::from(looking_back_secs)), |metric| {
-                (metric.recv_timestamp, metric.flow.source_records_lag_max)
-            })
-            .into_iter()
-            .flat_map(|(ts, lag)| lag.map(|l| (ts, l)))
-            .collect();
-
-        // remember: head is the most recent, so we want to diff accordingly
-        values
-            .last()
-            .zip(values.first())
-            .and_then(|(first, last)| {
-                if first.0 == last.0 {
-                    None
-                } else {
-                    let duration_secs = (last.0 - first.0).as_secs_f64();
-                    i32::try_from(last.1 - first.1)
-                        .ok()
-                        .map(|diff| f64::from(diff) / duration_secs)
-                }
-            })
-            .unwrap_or(0.0)
-    }
-
-    pub fn flow_source_back_pressure_percentage_rolling_average(&self, looking_back_secs: u32) -> f64 {
-        let (sum, size) = self.sum_from_head(Duration::from_secs(looking_back_secs as u64), |m| {
-            m.flow.source_back_pressure_percentage()
-        });
-
-        if size == 0 {
-            0.0
-        } else {
-            sum / size as f64
-        }
-    }
-
-    pub fn flow_source_back_pressure_percentage_rolling_change_per_sec(&self, looking_back_secs: u32) -> f64 {
-        let values = self
-            .extract_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
-                (m.recv_timestamp, m.flow.source_back_pressure_percentage())
-            })
-            .into_iter()
-            .collect::<Vec<_>>();
-
-        // remember: head is the most recent, so we want to diff accordingly
-        values
-            .last()
-            .zip(values.first())
-            .and_then(|(first, last)| {
-                if first.0 == last.0 {
-                    None
-                } else {
-                    let duration_secs = (last.0 - first.0).as_secs_f64();
-                    Some((last.1 - first.1) / duration_secs)
-                }
-            })
-            .unwrap_or(0.0)
-    }
-
-    pub fn flow_source_back_pressure_percentage_below_mark(&self, looking_back_secs: u32, max_value: f64) -> bool {
-        self.for_duration_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
-            m.flow.source_back_pressure_percentage() <= max_value
-        })
-    }
-
-    pub fn flow_source_back_pressure_percentage_above_mark(&self, looking_back_secs: u32, min_value: f64) -> bool {
-        self.for_duration_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
-            min_value <= m.flow.source_back_pressure_percentage()
-        })
-    }
-
-    pub fn flow_source_records_lag_max_below_mark(&self, looking_back_secs: u32, max_value: i64) -> bool {
-        self.for_duration_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
-            m.flow
-                .source_records_lag_max
-                .map(|lag| {
-                    tracing::debug!(
-                        "eval lag in catalog[{}]: {lag} <= {max_value} = {}",
-                        m.recv_timestamp,
-                        lag <= max_value
-                    );
-                    lag <= max_value
-                })
-                .unwrap_or(false)
-        })
-    }
-
-    pub fn flow_source_records_lag_max_above_mark(&self, looking_back_secs: u32, min_value: i64) -> bool {
-        self.for_duration_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
-            m.flow
-                .source_records_lag_max
-                .map(|lag| {
-                    tracing::debug!(
-                        "eval lag in catalog[{}]: {min_value} <= {lag} = {}",
-                        m.recv_timestamp,
-                        min_value <= lag
-                    );
-                    min_value <= lag
-                })
-                .unwrap_or(false)
-        })
-    }
-
-    pub fn flow_source_total_lag_rolling_average(&self, looking_back_secs: u32) -> f64 {
-        let (sum, size) = self.sum_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
-            m.flow.source_total_lag
-        });
-
-        if size == 0 {
-            0.0
-        } else {
-            sum.and_then(|lag| i32::try_from(lag).ok().map(|l| f64::from(l) / size as f64))
-                .unwrap_or(0.0)
-        }
-    }
-
-    #[tracing::instrument(level = "trace")]
-    pub fn flow_source_total_lag_rolling_change_per_sec(&self, looking_back_secs: u32) -> f64 {
-        let values = self
-            .extract_from_head(Duration::from_secs(u64::from(looking_back_secs)), |metric| {
-                (metric.recv_timestamp, metric.flow.source_total_lag)
-            })
-            .into_iter()
-            .flat_map(|(ts, lag)| lag.map(|l| (ts, l)))
-            .collect::<Vec<_>>();
-
-        tracing::trace!(
-            nr_total_lag_values=%values.len(),
-            first_ts=?values.first().map(|f| f.0.to_string()), last_ts=?values.last().map(|l| l.0.to_string()),
-            first_val=?values.first().map(|f| f.1), last_val=?values.last().map(|l| l.1),
-            "total_lag values = {:?}", values
-        );
-
-        // remember: head is the most recent, so we want to diff accordingly
-        values
-            .last()
-            .zip(values.first())
-            .and_then(|(first, last)| {
-                let result = if first.0 == last.0 {
-                    tracing::trace!("first and last timestamps are the same!");
-                    None
-                } else {
-                    let duration_secs = (last.0 - first.0).as_secs_f64();
-                    tracing::trace!("duration_secs = {duration_secs}");
-                    i32::try_from(last.1 - first.1)
-                        .ok()
-                        .map(|diff| f64::from(diff) / duration_secs)
-                };
-                tracing::trace!(
-                    "total_lag_rolling_change_per_sec: last[{}] - first[{}] / secs[{:?}] = {result:?}",
-                    last.1,
-                    first.1,
-                    last.0 - first.0,
-                );
-                result
-            })
-            .unwrap_or(0.0)
-    }
-
-    pub fn flow_source_total_lag_below_mark(&self, looking_back_secs: u32, max_value: i64) -> bool {
-        self.for_duration_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
-            m.flow
-                .source_total_lag
-                .map(|lag| {
-                    tracing::debug!(
-                        "eval total lag in catalog[{}]: {lag} <= {max_value} = {}",
-                        m.recv_timestamp,
-                        lag <= max_value
-                    );
-                    lag <= max_value
-                })
-                .unwrap_or(false)
-        })
-    }
-
-    pub fn flow_source_total_lag_above_mark(&self, looking_back_secs: u32, min_value: i64) -> bool {
-        self.for_duration_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
-            m.flow
-                .source_total_lag
-                .map(|lag| {
-                    tracing::debug!(
-                        "eval total lag in catalog[{}]: {min_value} <= {lag} = {}",
-                        m.recv_timestamp,
-                        min_value <= lag
-                    );
-                    min_value <= lag
-                })
-                .unwrap_or(false)
-        })
-    }
+    // pub fn flow_source_total_lag_rolling_average(&self, looking_back_secs: u32) -> f64 {
+    //     let (sum, size) = self.sum_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+    //         m.flow.source_total_lag
+    //     });
+    //
+    //     if size == 0 {
+    //         0.0
+    //     } else {
+    //         sum.and_then(|lag| i32::try_from(lag).ok().map(|l| f64::from(l) / size as f64))
+    //             .unwrap_or(0.0)
+    //     }
+    // }
+    //
+    // #[tracing::instrument(level = "trace")]
+    // pub fn flow_source_total_lag_rolling_change_per_sec(&self, looking_back_secs: u32) -> f64 {
+    //     let values = self
+    //         .extract_from_head(Duration::from_secs(u64::from(looking_back_secs)), |metric| {
+    //             (metric.recv_timestamp, metric.flow.source_total_lag)
+    //         })
+    //         .into_iter()
+    //         .flat_map(|(ts, lag)| lag.map(|l| (ts, l)))
+    //         .collect::<Vec<_>>();
+    //
+    //     tracing::trace!(
+    //         nr_total_lag_values=%values.len(),
+    //         first_ts=?values.first().map(|f| f.0.to_string()), last_ts=?values.last().map(|l| l.0.to_string()),
+    //         first_val=?values.first().map(|f| f.1), last_val=?values.last().map(|l| l.1),
+    //         "total_lag values = {:?}", values
+    //     );
+    //
+    //     // remember: head is the most recent, so we want to diff accordingly
+    //     values
+    //         .last()
+    //         .zip(values.first())
+    //         .and_then(|(first, last)| {
+    //             let result = if first.0 == last.0 {
+    //                 tracing::trace!("first and last timestamps are the same!");
+    //                 None
+    //             } else {
+    //                 let duration_secs = (last.0 - first.0).as_secs_f64();
+    //                 tracing::trace!("duration_secs = {duration_secs}");
+    //                 i32::try_from(last.1 - first.1)
+    //                     .ok()
+    //                     .map(|diff| f64::from(diff) / duration_secs)
+    //             };
+    //             tracing::trace!(
+    //                 "total_lag_rolling_change_per_sec: last[{}] - first[{}] / secs[{:?}] = {result:?}",
+    //                 last.1,
+    //                 first.1,
+    //                 last.0 - first.0,
+    //             );
+    //             result
+    //         })
+    //         .unwrap_or(0.0)
+    // }
+    //
+    // pub fn flow_source_total_lag_below_threshold(&self, looking_back_secs: u32, threshold: i64) -> bool {
+    //     self.for_duration_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+    //         m.flow
+    //             .source_total_lag
+    //             .map(|lag| {
+    //                 tracing::debug!(
+    //                     "eval total lag in catalog[{}]: {lag} < {threshold} = {}",
+    //                     m.recv_timestamp,
+    //                     lag < threshold
+    //                 );
+    //                 lag < threshold
+    //             })
+    //             .unwrap_or(false)
+    //     })
+    // }
+    //
+    // pub fn flow_source_total_lag_above_threshold(&self, looking_back_secs: u32, threshold: i64) -> bool {
+    //     self.for_duration_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+    //         m.flow
+    //             .source_total_lag
+    //             .map(|lag| {
+    //                 tracing::debug!(
+    //                     "eval total lag in catalog[{}]: {threshold} < {lag} = {}",
+    //                     m.recv_timestamp,
+    //                     threshold < lag
+    //                 );
+    //                 threshold < lag
+    //             })
+    //             .unwrap_or(false)
+    //     })
+    // }
 
     /// Rolling average of the source `records_consumed_rate` kafka metric on the source operator.
     /// This metric is used with `total_lag` to calculate the `relative_lag_change_rate`.
-    #[tracing::instrument(level = "trace")]
-    pub fn flow_source_records_consumed_rate_rolling_average(&self, looking_back_secs: u32) -> f64 {
-        let (sum, size) = self.sum_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
-            m.flow.source_records_consumed_rate
-        });
-
-        let result = if size == 0 {
-            0.0
-        } else {
-            sum.map(|rate| rate / size as f64).unwrap_or(0.0)
-        };
-
-        tracing::debug!("source_records_consumed_rate_rolling_average: {sum:?} / {size} = {result}");
-        result
-    }
-
-    pub fn flow_source_records_consumed_rate_rolling_change_per_sec(&self, looking_back_secs: u32) -> f64 {
-        let values = self
-            .extract_from_head(Duration::from_secs(u64::from(looking_back_secs)), |metric| {
-                (metric.recv_timestamp, metric.flow.source_records_consumed_rate)
-            })
-            .into_iter()
-            .flat_map(|(ts, rate)| rate.map(|r| (ts, r)))
-            .collect::<Vec<_>>();
-
-        // remember: head is the most recent, so we want to diff accordingly
-        values
-            .last()
-            .zip(values.first())
-            .and_then(|(first, last)| {
-                if first.0 == last.0 {
-                    None
-                } else {
-                    let duration_secs = (last.0 - first.0).as_secs_f64();
-                    Some((last.1 - first.1) / duration_secs)
-                }
-            })
-            .unwrap_or(0.0)
-    }
-
-    pub fn flow_source_records_consumed_rate_below_mark(&self, looking_back_secs: u32, max_value: f64) -> bool {
-        self.for_duration_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
-            m.flow
-                .source_records_consumed_rate
-                .map(|rate| {
-                    tracing::debug!(
-                        "eval source consumed rate in catalog[{}]: {rate} <= {max_value} = {}",
-                        m.recv_timestamp,
-                        rate <= max_value
-                    );
-                    rate <= max_value
-                })
-                .unwrap_or(false)
-        })
-    }
-
-    pub fn flow_source_records_consumed_rate_above_mark(&self, looking_back_secs: u32, min_value: f64) -> bool {
-        self.for_duration_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
-            m.flow
-                .source_records_consumed_rate
-                .map(|rate| {
-                    tracing::debug!(
-                        "eval source consumed rate in catalog[{}]: {min_value} <= {rate} = {}",
-                        m.recv_timestamp,
-                        min_value <= rate
-                    );
-                    min_value <= rate
-                })
-                .unwrap_or(false)
-        })
-    }
+    // #[tracing::instrument(level = "trace")]
+    // pub fn flow_source_records_consumed_rate_rolling_average(&self, looking_back_secs: u32) -> f64 {
+    //     let (sum, size) = self.sum_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+    //         m.flow.source_records_consumed_rate
+    //     });
+    //
+    //     let result = if size == 0 {
+    //         0.0
+    //     } else {
+    //         sum.map(|rate| rate / size as f64).unwrap_or(0.0)
+    //     };
+    //
+    //     tracing::debug!("source_records_consumed_rate_rolling_average: {sum:?} / {size} = {result}");
+    //     result
+    // }
+    //
+    // pub fn flow_source_records_consumed_rate_rolling_change_per_sec(&self, looking_back_secs: u32) -> f64 {
+    //     let values = self
+    //         .extract_from_head(Duration::from_secs(u64::from(looking_back_secs)), |metric| {
+    //             (metric.recv_timestamp, metric.flow.source_records_consumed_rate)
+    //         })
+    //         .into_iter()
+    //         .flat_map(|(ts, rate)| rate.map(|r| (ts, r)))
+    //         .collect::<Vec<_>>();
+    //
+    //     // remember: head is the most recent, so we want to diff accordingly
+    //     values
+    //         .last()
+    //         .zip(values.first())
+    //         .and_then(|(first, last)| {
+    //             if first.0 == last.0 {
+    //                 None
+    //             } else {
+    //                 let duration_secs = (last.0 - first.0).as_secs_f64();
+    //                 Some((last.1 - first.1) / duration_secs)
+    //             }
+    //         })
+    //         .unwrap_or(0.0)
+    // }
+    //
+    // pub fn flow_source_records_consumed_rate_below_threshold(&self, looking_back_secs: u32, threshold: f64) -> bool {
+    //     self.for_duration_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+    //         m.flow
+    //             .source_records_consumed_rate
+    //             .map(|rate| {
+    //                 tracing::debug!(
+    //                     "eval source consumed rate in catalog[{}]: {rate} < {threshold} = {}",
+    //                     m.recv_timestamp,
+    //                     rate < threshold
+    //                 );
+    //                 rate < threshold
+    //             })
+    //             .unwrap_or(false)
+    //     })
+    // }
+    //
+    // pub fn flow_source_records_consumed_rate_above_threshold(&self, looking_back_secs: u32, threshold: f64) -> bool {
+    //     self.for_duration_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+    //         m.flow
+    //             .source_records_consumed_rate
+    //             .map(|rate| {
+    //                 tracing::debug!(
+    //                     "eval source consumed rate in catalog[{}]: {threshold} < {rate} = {}",
+    //                     m.recv_timestamp,
+    //                     threshold < rate
+    //                 );
+    //                 threshold < rate
+    //             })
+    //             .unwrap_or(false)
+    //     })
+    // }
 
     /// Metric that compares the rate of change of total lag with the rate at which the job
     /// processes records (in records/second). In order to smooth the effect of temporary spikes, a
@@ -1033,288 +1213,288 @@ impl AppDataWindow<MetricCatalog> {
         result
     }
 
-    pub fn flow_source_millis_behind_latest_rolling_average(&self, looking_back_secs: u32) -> f64 {
-        let (sum, size) = self.sum_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
-            m.flow.source_millis_behind_latest
-        });
+    // pub fn flow_source_millis_behind_latest_rolling_average(&self, looking_back_secs: u32) -> f64 {
+    //     let (sum, size) = self.sum_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+    //         m.flow.source_millis_behind_latest
+    //     });
+    //
+    //     if size == 0 {
+    //         0.0
+    //     } else {
+    //         sum.and_then(|lag| i32::try_from(lag).ok().map(|l| f64::from(l) / size as f64))
+    //             .unwrap_or(0.0)
+    //     }
+    // }
+    //
+    // pub fn flow_source_millis_behind_latest_rolling_change_per_sec(&self, looking_back_secs: u32) -> f64 {
+    //     let values = self
+    //         .extract_from_head(Duration::from_secs(u64::from(looking_back_secs)), |metric| {
+    //             (metric.recv_timestamp, metric.flow.source_millis_behind_latest)
+    //         })
+    //         .into_iter()
+    //         .flat_map(|(ts, lag)| lag.map(|l| (ts, l)))
+    //         .collect::<Vec<_>>();
+    //
+    //     // remember: head is the most recent, so we want to diff accordingly
+    //     values
+    //         .last()
+    //         .zip(values.first())
+    //         .and_then(|(first, last)| {
+    //             if first.0 == last.0 {
+    //                 None
+    //             } else {
+    //                 let duration_secs = (last.0 - first.0).as_secs_f64();
+    //                 i32::try_from(last.1 - first.1)
+    //                     .ok()
+    //                     .map(|diff| f64::from(diff) / duration_secs)
+    //             }
+    //         })
+    //         .unwrap_or(0.0)
+    // }
+    //
+    // pub fn flow_source_millis_behind_latest_below_threshold(&self, looking_back_secs: u32, threshold: i64) -> bool {
+    //     self.for_duration_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+    //         m.flow
+    //             .source_millis_behind_latest
+    //             .map(|millis_behind_latest| {
+    //                 tracing::debug!(
+    //                     "eval millis_behind_latest in catalog[{}]: {millis_behind_latest} < {threshold} = {}",
+    //                     m.recv_timestamp,
+    //                     millis_behind_latest < threshold
+    //                 );
+    //                 millis_behind_latest < threshold
+    //             })
+    //             .unwrap_or(false)
+    //     })
+    // }
+    //
+    // pub fn flow_source_millis_behind_latest_above_threshold(&self, looking_back_secs: u32, threshold: i64) -> bool {
+    //     self.for_duration_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+    //         m.flow
+    //             .source_millis_behind_latest
+    //             .map(|millis_behind_latest| {
+    //                 tracing::debug!(
+    //                     "eval millis_behind_latest in catalog[{}]: {threshold} < {millis_behind_latest} = {}",
+    //                     m.recv_timestamp,
+    //                     threshold < millis_behind_latest
+    //                 );
+    //                 threshold < millis_behind_latest
+    //             })
+    //             .unwrap_or(false)
+    //     })
+    // }
 
-        if size == 0 {
-            0.0
-        } else {
-            sum.and_then(|lag| i32::try_from(lag).ok().map(|l| f64::from(l) / size as f64))
-                .unwrap_or(0.0)
-        }
-    }
+    // pub fn flow_records_out_per_sec_rolling_average(&self, looking_back_secs: u32) -> f64 {
+    //     let (sum, size) = self.sum_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+    //         m.flow.records_out_per_sec
+    //     });
+    //
+    //     if size == 0 {
+    //         0.0
+    //     } else {
+    //         sum / size as f64
+    //     }
+    // }
+    //
+    // pub fn flow_records_out_per_sec_rolling_change_per_sec(&self, looking_back_secs: u32) -> f64 {
+    //     let values = self
+    //         .extract_from_head(Duration::from_secs(u64::from(looking_back_secs)), |metric| {
+    //             (metric.recv_timestamp, metric.flow.records_out_per_sec)
+    //         })
+    //         .into_iter()
+    //         .collect::<Vec<_>>();
+    //
+    //     // remember: head is the most recent, so we want to diff accordingly
+    //     values
+    //         .last()
+    //         .zip(values.first())
+    //         .and_then(|(first, last)| {
+    //             if first.0 == last.0 {
+    //                 None
+    //             } else {
+    //                 let duration_secs = (last.0 - first.0).as_secs_f64();
+    //                 Some((last.1 - first.1) / duration_secs)
+    //             }
+    //         })
+    //         .unwrap_or(0.0)
+    // }
 
-    pub fn flow_source_millis_behind_latest_rolling_change_per_sec(&self, looking_back_secs: u32) -> f64 {
-        let values = self
-            .extract_from_head(Duration::from_secs(u64::from(looking_back_secs)), |metric| {
-                (metric.recv_timestamp, metric.flow.source_millis_behind_latest)
-            })
-            .into_iter()
-            .flat_map(|(ts, lag)| lag.map(|l| (ts, l)))
-            .collect::<Vec<_>>();
+    // pub fn cluster_task_cpu_load_rolling_average(&self, looking_back_secs: u32) -> f64 {
+    //     let (sum, size) = self.sum_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+    //         m.cluster.task_cpu_load
+    //     });
+    //
+    //     if size == 0 {
+    //         0.0
+    //     } else {
+    //         sum / size as f64
+    //     }
+    // }
+    //
+    // pub fn cluster_task_cpu_load_rolling_change_per_sec(&self, looking_back_secs: u32) -> f64 {
+    //     let values = self
+    //         .extract_from_head(Duration::from_secs(u64::from(looking_back_secs)), |metric| {
+    //             (metric.recv_timestamp, metric.cluster.task_cpu_load)
+    //         })
+    //         .into_iter()
+    //         .collect::<Vec<_>>();
+    //
+    //     // remember: head is the most recent, so we want to diff accordingly
+    //     values
+    //         .last()
+    //         .zip(values.first())
+    //         .and_then(|(first, last)| {
+    //             if first.0 == last.0 {
+    //                 None
+    //             } else {
+    //                 let duration_secs = (last.0 - first.0).as_secs_f64();
+    //                 Some((last.1 - first.1) / duration_secs)
+    //             }
+    //         })
+    //         .unwrap_or(0.0)
+    // }
+    //
+    // pub fn cluster_task_cpu_load_below_threshold(&self, looking_back_secs: u32, threshold: f64) -> bool {
+    //     self.for_duration_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+    //         tracing::debug!(
+    //             "eval task_cpu_load in catalog[{}]: {} < {threshold} = {}",
+    //             m.recv_timestamp,
+    //             m.cluster.task_cpu_load,
+    //             m.cluster.task_cpu_load < threshold
+    //         );
+    //         m.cluster.task_cpu_load < threshold
+    //     })
+    // }
+    //
+    // pub fn cluster_task_cpu_load_above_threshold(&self, looking_back_secs: u32, threshold: f64) -> bool {
+    //     self.for_duration_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+    //         tracing::debug!(
+    //             "eval task_cpu_load in catalog[{}]: {threshold} < {} = {}",
+    //             m.recv_timestamp,
+    //             m.cluster.task_cpu_load,
+    //             threshold < m.cluster.task_cpu_load
+    //         );
+    //         threshold < m.cluster.task_cpu_load
+    //     })
+    // }
 
-        // remember: head is the most recent, so we want to diff accordingly
-        values
-            .last()
-            .zip(values.first())
-            .and_then(|(first, last)| {
-                if first.0 == last.0 {
-                    None
-                } else {
-                    let duration_secs = (last.0 - first.0).as_secs_f64();
-                    i32::try_from(last.1 - first.1)
-                        .ok()
-                        .map(|diff| f64::from(diff) / duration_secs)
-                }
-            })
-            .unwrap_or(0.0)
-    }
+    // pub fn cluster_task_heap_memory_used_rolling_average(&self, looking_back_secs: u32) -> f64 {
+    //     let (sum, size) = self.sum_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+    //         m.cluster.task_heap_memory_used
+    //     });
+    //
+    //     if size == 0 {
+    //         0.0
+    //     } else {
+    //         sum / size as f64
+    //     }
+    // }
+    //
+    // pub fn cluster_task_heap_memory_used_rolling_change_per_sec(&self, looking_back_secs: u32) -> f64 {
+    //     let values = self
+    //         .extract_from_head(Duration::from_secs(u64::from(looking_back_secs)), |metric| {
+    //             (metric.recv_timestamp, metric.cluster.task_heap_memory_used)
+    //         })
+    //         .into_iter()
+    //         .collect::<Vec<_>>();
+    //
+    //     // remember: head is the most recent, so we want to diff accordingly
+    //     values
+    //         .last()
+    //         .zip(values.first())
+    //         .and_then(|(first, last)| {
+    //             if first.0 == last.0 {
+    //                 None
+    //             } else {
+    //                 let duration_secs = (last.0 - first.0).as_secs_f64();
+    //                 Some((last.1 - first.1) / duration_secs)
+    //             }
+    //         })
+    //         .unwrap_or(0.0)
+    // }
+    //
+    // pub fn cluster_task_heap_memory_used_below_threshold(&self, looking_back_secs: u32, threshold: f64) -> bool {
+    //     self.for_duration_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+    //         tracing::debug!(
+    //             "eval task_heap_memory_used in catalog[{}]: {} < {threshold} = {}",
+    //             m.recv_timestamp,
+    //             m.cluster.task_heap_memory_used,
+    //             m.cluster.task_heap_memory_used < threshold
+    //         );
+    //         m.cluster.task_heap_memory_used < threshold
+    //     })
+    // }
+    //
+    // pub fn cluster_task_heap_memory_used_above_threshold(&self, looking_back_secs: u32, threshold: f64) -> bool {
+    //     self.for_duration_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+    //         tracing::debug!(
+    //             "eval task_heap_memory_used in catalog[{}]: {threshold} < {} = {}",
+    //             m.recv_timestamp,
+    //             m.cluster.task_heap_memory_used,
+    //             threshold < m.cluster.task_heap_memory_used
+    //         );
+    //         threshold < m.cluster.task_heap_memory_used
+    //     })
+    // }
 
-    pub fn flow_source_millis_behind_latest_below_mark(&self, looking_back_secs: u32, max_value: i64) -> bool {
-        self.for_duration_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
-            m.flow
-                .source_millis_behind_latest
-                .map(|millis_behind_latest| {
-                    tracing::debug!(
-                        "eval millis_behind_latest in catalog[{}]: {millis_behind_latest} <= {max_value} = {}",
-                        m.recv_timestamp,
-                        millis_behind_latest <= max_value
-                    );
-                    millis_behind_latest <= max_value
-                })
-                .unwrap_or(false)
-        })
-    }
-
-    pub fn flow_source_millis_behind_latest_above_mark(&self, looking_back_secs: u32, min_value: i64) -> bool {
-        self.for_duration_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
-            m.flow
-                .source_millis_behind_latest
-                .map(|millis_behind_latest| {
-                    tracing::debug!(
-                        "eval millis_behind_latest in catalog[{}]: {min_value} <= {millis_behind_latest} = {}",
-                        m.recv_timestamp,
-                        min_value <= millis_behind_latest
-                    );
-                    min_value <= millis_behind_latest
-                })
-                .unwrap_or(false)
-        })
-    }
-
-    pub fn flow_records_out_per_sec_rolling_average(&self, looking_back_secs: u32) -> f64 {
-        let (sum, size) = self.sum_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
-            m.flow.records_out_per_sec
-        });
-
-        if size == 0 {
-            0.0
-        } else {
-            sum / size as f64
-        }
-    }
-
-    pub fn flow_records_out_per_sec_rolling_change_per_sec(&self, looking_back_secs: u32) -> f64 {
-        let values = self
-            .extract_from_head(Duration::from_secs(u64::from(looking_back_secs)), |metric| {
-                (metric.recv_timestamp, metric.flow.records_out_per_sec)
-            })
-            .into_iter()
-            .collect::<Vec<_>>();
-
-        // remember: head is the most recent, so we want to diff accordingly
-        values
-            .last()
-            .zip(values.first())
-            .and_then(|(first, last)| {
-                if first.0 == last.0 {
-                    None
-                } else {
-                    let duration_secs = (last.0 - first.0).as_secs_f64();
-                    Some((last.1 - first.1) / duration_secs)
-                }
-            })
-            .unwrap_or(0.0)
-    }
-
-    pub fn cluster_task_cpu_load_rolling_average(&self, looking_back_secs: u32) -> f64 {
-        let (sum, size) = self.sum_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
-            m.cluster.task_cpu_load
-        });
-
-        if size == 0 {
-            0.0
-        } else {
-            sum / size as f64
-        }
-    }
-
-    pub fn cluster_task_cpu_load_rolling_change_per_sec(&self, looking_back_secs: u32) -> f64 {
-        let values = self
-            .extract_from_head(Duration::from_secs(u64::from(looking_back_secs)), |metric| {
-                (metric.recv_timestamp, metric.cluster.task_cpu_load)
-            })
-            .into_iter()
-            .collect::<Vec<_>>();
-
-        // remember: head is the most recent, so we want to diff accordingly
-        values
-            .last()
-            .zip(values.first())
-            .and_then(|(first, last)| {
-                if first.0 == last.0 {
-                    None
-                } else {
-                    let duration_secs = (last.0 - first.0).as_secs_f64();
-                    Some((last.1 - first.1) / duration_secs)
-                }
-            })
-            .unwrap_or(0.0)
-    }
-
-    pub fn cluster_task_cpu_load_below_mark(&self, looking_back_secs: u32, max_value: f64) -> bool {
-        self.for_duration_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
-            tracing::debug!(
-                "eval task_cpu_load in catalog[{}]: {} <= {max_value} = {}",
-                m.recv_timestamp,
-                m.cluster.task_cpu_load,
-                m.cluster.task_cpu_load <= max_value
-            );
-            m.cluster.task_cpu_load <= max_value
-        })
-    }
-
-    pub fn cluster_task_cpu_load_above_mark(&self, looking_back_secs: u32, min_value: f64) -> bool {
-        self.for_duration_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
-            tracing::debug!(
-                "eval task_cpu_load in catalog[{}]: {min_value} <= {} = {}",
-                m.recv_timestamp,
-                m.cluster.task_cpu_load,
-                min_value <= m.cluster.task_cpu_load
-            );
-            min_value <= m.cluster.task_cpu_load
-        })
-    }
-
-    pub fn cluster_task_heap_memory_used_rolling_average(&self, looking_back_secs: u32) -> f64 {
-        let (sum, size) = self.sum_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
-            m.cluster.task_heap_memory_used
-        });
-
-        if size == 0 {
-            0.0
-        } else {
-            sum / size as f64
-        }
-    }
-
-    pub fn cluster_task_heap_memory_used_rolling_change_per_sec(&self, looking_back_secs: u32) -> f64 {
-        let values = self
-            .extract_from_head(Duration::from_secs(u64::from(looking_back_secs)), |metric| {
-                (metric.recv_timestamp, metric.cluster.task_heap_memory_used)
-            })
-            .into_iter()
-            .collect::<Vec<_>>();
-
-        // remember: head is the most recent, so we want to diff accordingly
-        values
-            .last()
-            .zip(values.first())
-            .and_then(|(first, last)| {
-                if first.0 == last.0 {
-                    None
-                } else {
-                    let duration_secs = (last.0 - first.0).as_secs_f64();
-                    Some((last.1 - first.1) / duration_secs)
-                }
-            })
-            .unwrap_or(0.0)
-    }
-
-    pub fn cluster_task_heap_memory_used_below_mark(&self, looking_back_secs: u32, max_value: f64) -> bool {
-        self.for_duration_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
-            tracing::debug!(
-                "eval task_heap_memory_used in catalog[{}]: {} <= {max_value} = {}",
-                m.recv_timestamp,
-                m.cluster.task_heap_memory_used,
-                m.cluster.task_heap_memory_used <= max_value
-            );
-            m.cluster.task_heap_memory_used <= max_value
-        })
-    }
-
-    pub fn cluster_task_heap_memory_used_above_mark(&self, looking_back_secs: u32, min_value: f64) -> bool {
-        self.for_duration_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
-            tracing::debug!(
-                "eval task_heap_memory_used in catalog[{}]: {min_value} <= {} = {}",
-                m.recv_timestamp,
-                m.cluster.task_heap_memory_used,
-                min_value <= m.cluster.task_heap_memory_used
-            );
-            min_value <= m.cluster.task_heap_memory_used
-        })
-    }
-
-    pub fn cluster_task_heap_memory_load_rolling_average(&self, looking_back_secs: u32) -> f64 {
-        let (sum, size) = self.sum_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
-            m.cluster.task_heap_memory_load()
-        });
-
-        if size == 0 {
-            0.0
-        } else {
-            sum / size as f64
-        }
-    }
-
-    pub fn cluster_task_heap_memory_load_rolling_change_per_sec(&self, looking_back_secs: u32) -> f64 {
-        let values = self
-            .extract_from_head(Duration::from_secs(u64::from(looking_back_secs)), |metric| {
-                (metric.recv_timestamp, metric.cluster.task_heap_memory_load())
-            })
-            .into_iter()
-            .collect::<Vec<_>>();
-
-        // remember: head is the most recent, so we want to diff accordingly
-        values
-            .last()
-            .zip(values.first())
-            .and_then(|(first, last)| {
-                if first.0 == last.0 {
-                    None
-                } else {
-                    let duration_secs = (last.0 - first.0).as_secs_f64();
-                    Some((last.1 - first.1) / duration_secs)
-                }
-            })
-            .unwrap_or(0.0)
-    }
-
-    pub fn cluster_task_heap_memory_load_below_mark(&self, looking_back_secs: u32, max_value: f64) -> bool {
-        self.for_duration_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
-            tracing::debug!(
-                "eval task_heap_memory_load in catalog[{}]: {} <= {max_value} = {}",
-                m.recv_timestamp,
-                m.cluster.task_heap_memory_load(),
-                m.cluster.task_heap_memory_load() <= max_value
-            );
-            m.cluster.task_heap_memory_load() <= max_value
-        })
-    }
-
-    pub fn cluster_task_heap_memory_load_above_mark(&self, looking_back_secs: u32, min_value: f64) -> bool {
-        self.for_duration_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
-            tracing::debug!(
-                "eval task_heap_memory_load in catalog[{}]: {min_value} <= {} = {}",
-                m.recv_timestamp,
-                m.cluster.task_heap_memory_load(),
-                min_value <= m.cluster.task_heap_memory_load()
-            );
-            min_value <= m.cluster.task_heap_memory_load()
-        })
-    }
+    //     pub fn cluster_task_heap_memory_load_rolling_average(&self, looking_back_secs: u32) -> f64 {
+    //         let (sum, size) = self.sum_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+    //             m.cluster.task_heap_memory_load()
+    //         });
+    //
+    //         if size == 0 {
+    //             0.0
+    //         } else {
+    //             sum / size as f64
+    //         }
+    //     }
+    //
+    //     pub fn cluster_task_heap_memory_load_rolling_change_per_sec(&self, looking_back_secs: u32) -> f64 {
+    //         let values = self
+    //             .extract_from_head(Duration::from_secs(u64::from(looking_back_secs)), |metric| {
+    //                 (metric.recv_timestamp, metric.cluster.task_heap_memory_load())
+    //             })
+    //             .into_iter()
+    //             .collect::<Vec<_>>();
+    //
+    //         // remember: head is the most recent, so we want to diff accordingly
+    //         values
+    //             .last()
+    //             .zip(values.first())
+    //             .and_then(|(first, last)| {
+    //                 if first.0 == last.0 {
+    //                     None
+    //                 } else {
+    //                     let duration_secs = (last.0 - first.0).as_secs_f64();
+    //                     Some((last.1 - first.1) / duration_secs)
+    //                 }
+    //             })
+    //             .unwrap_or(0.0)
+    //     }
+    //
+    //     pub fn cluster_task_heap_memory_load_below_threshold(&self, looking_back_secs: u32, threshold: f64) -> bool {
+    //         self.for_duration_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+    //             tracing::debug!(
+    //                 "eval task_heap_memory_load in catalog[{}]: {} < {threshold} = {}",
+    //                 m.recv_timestamp,
+    //                 m.cluster.task_heap_memory_load(),
+    //                 m.cluster.task_heap_memory_load() < threshold
+    //             );
+    //             m.cluster.task_heap_memory_load() < threshold
+    //         })
+    //     }
+    //
+    //     pub fn cluster_task_heap_memory_load_above_threshold(&self, looking_back_secs: u32, threshold: f64) -> bool {
+    //         self.for_duration_from_head(Duration::from_secs(u64::from(looking_back_secs)), |m| {
+    //             tracing::debug!(
+    //                 "eval task_heap_memory_load in catalog[{}]: {threshold} < {} = {}",
+    //                 m.recv_timestamp,
+    //                 m.cluster.task_heap_memory_load(),
+    //                 threshold < m.cluster.task_heap_memory_load()
+    //             );
+    //             threshold < m.cluster.task_heap_memory_load()
+    //         })
+    //     }
 }
 
 impl<T> Window for AppDataWindow<T>
@@ -1366,9 +1546,11 @@ where
 
 impl UpdateWindowMetrics for AppDataWindow<MetricCatalog> {
     fn update_metrics(&self) {
-        METRIC_CATALOG_FLOW_TASK_UTILIZATION_1_MIN_ROLLING_AVG.set(self.flow_task_utilization_rolling_average(60));
-        METRIC_CATALOG_FLOW_SOURCE_RELATIVE_LAG_CHANGE_RATE_1_MIN_ROLLING_AVG
-            .set(self.flow_source_relative_lag_change_rate(60));
+        let utilization_1_min = self.flow_task_utilization_rolling_average(60);
+        let relative_lag_rate_1_min = self.flow_source_relative_lag_change_rate(60);
+        METRIC_CATALOG_FLOW_TASK_UTILIZATION_1_MIN_ROLLING_AVG.set(utilization_1_min);
+        METRIC_CATALOG_FLOW_SOURCE_RELATIVE_LAG_CHANGE_RATE_1_MIN_ROLLING_AVG.set(relative_lag_rate_1_min);
+        tracing::warn!(%utilization_1_min, %relative_lag_rate_1_min, "DMR: updated metric catalog window metrics.");
     }
 }
 

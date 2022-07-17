@@ -140,7 +140,9 @@ where
                             }
 
                             let out = window.as_ref().cloned().unwrap();
-                            out.update_metrics();
+                            tracing::warn_span!("DMR: update window metrics").in_scope(|| {
+                                out.update_metrics();
+                            });
 
                             tracing::debug!(
                                 "pushing metric catalog window looking back {:?}",

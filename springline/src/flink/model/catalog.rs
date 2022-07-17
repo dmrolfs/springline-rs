@@ -208,10 +208,7 @@ pub struct FlowMetrics {
 
     /// The average time (in milliseconds) this source tasks are back pressured per second.
     #[polar(attribute)]
-    #[serde(
-    default,
-    rename = "flow.source_back_pressured_time_millis_per_sec",
-    )]
+    #[serde(default, rename = "flow.source_back_pressured_time_millis_per_sec")]
     pub source_back_pressured_time_millis_per_sec: f64,
 
     /// Timestamp (in fractional secs) for the forecasted_records_in_per_sec value.
@@ -255,7 +252,8 @@ pub struct FlowMetrics {
     pub source_total_lag: Option<i64>,
 
     /// The rate at which the job processes records, which is calculated by summing the
-    /// `records_consumed_rate` for each operator instance of the Kafka Source.
+    /// `records_consumed_rate` for each operator instance of the Kafka Source. This metric is used
+    /// with `total_lag` to calculate `AppDataWindow<MetricCatalog>::relative_lag_change_rate`.
     #[polar(attribute)]
     #[serde(rename = "flow.source_records_consumed_rate")]
     pub source_records_consumed_rate: Option<f64>,
@@ -277,7 +275,10 @@ impl fmt::Debug for FlowMetrics {
         out.field("records_out_per_sec", &self.records_out_per_sec);
         out.field("records_in_per_sec", &self.records_in_per_sec);
         out.field("idle_time_millis_per_sec", &self.idle_time_millis_per_sec);
-        out.field("source_back_pressured_time_millis_per_sec", &self.source_back_pressured_time_millis_per_sec);
+        out.field(
+            "source_back_pressured_time_millis_per_sec",
+            &self.source_back_pressured_time_millis_per_sec,
+        );
         out.field("task_utilization", &self.task_utilization());
 
         if let Some((ts, recs_in_rate)) = self.forecasted_timestamp.zip(self.forecasted_records_in_per_sec) {
@@ -310,6 +311,19 @@ impl fmt::Debug for FlowMetrics {
 }
 
 impl FlowMetrics {
+    /// If a task is idle due to a lack of incoming records, then the job is over-provisioned for
+    /// the current load. Utilization is the average portion of time the job tasks spend in a
+    /// non-idle state. To be useful, it is important to exclude source operators from the
+    /// calculation of this metric (e.g., via a non_source position specifier in the Operator metric
+    /// order).
+    ///
+    /// Utilization is calculated based on the idle_time_millis_per_sec metric:
+    ///     1 - average(idle_time_millis_per_sec) / 1_000
+    ///
+    /// This metric should be used for downscaling decisions only. If utilization is low and
+    /// total_lag is 0, the job is able to process more records than the incoming rate.
+    ///
+    /// (For upscaling, it may trigger a scale up before a lag metric.)
     pub fn task_utilization(&self) -> f64 {
         let idle = self.idle_time_millis_per_sec.max(0.0).min(1_000.0);
         1.0 - idle / 1_000.0
@@ -540,7 +554,7 @@ impl SubscriptionRequirements for MetricCatalog {
         };
 
         if let Some(supplemental) = SUPPLEMENTAL_TELEMETRY.get().cloned() {
-            tracing::debug!(
+            tracing::info!(
                 ?supplemental,
                 "adding supplemental telemetry to MetricCatalog optional fields subscription."
             );
@@ -567,7 +581,8 @@ impl UpdateMetrics for MetricCatalog {
                 METRIC_CATALOG_FLOW_RECORDS_IN_PER_SEC.set(catalog.flow.records_in_per_sec);
                 METRIC_CATALOG_FLOW_RECORDS_OUT_PER_SEC.set(catalog.flow.records_out_per_sec);
                 METRIC_CATALOG_FLOW_IDLE_TIME_MILLIS_PER_SEC.set(catalog.flow.idle_time_millis_per_sec);
-                METRIC_CATALOG_FLOW_SOURCE_BACK_PRESSURE_TIME_MILLIS_PER_SEC.set(catalog.flow.source_back_pressured_time_millis_per_sec);
+                METRIC_CATALOG_FLOW_SOURCE_BACK_PRESSURE_TIME_MILLIS_PER_SEC
+                    .set(catalog.flow.source_back_pressured_time_millis_per_sec);
                 METRIC_CATALOG_FLOW_TASK_UTILIZATION.set(catalog.flow.task_utilization());
 
                 if let Some(lag) = catalog.flow.source_records_lag_max {
@@ -698,9 +713,9 @@ pub static METRIC_CATALOG_FLOW_IDLE_TIME_MILLIS_PER_SEC: Lazy<Gauge> = Lazy::new
             "metric_catalog_flow_idle_time_millis_per_sec",
             "Current average idle time in millis per second",
         )
-            .const_labels(proctor::metrics::CONST_LABELS.clone()),
+        .const_labels(proctor::metrics::CONST_LABELS.clone()),
     )
-        .expect("failed creating metric_catalog_flow_idle_time_millis_per_sec metric")
+    .expect("failed creating metric_catalog_flow_idle_time_millis_per_sec metric")
 });
 
 pub static METRIC_CATALOG_FLOW_SOURCE_BACK_PRESSURE_TIME_MILLIS_PER_SEC: Lazy<Gauge> = Lazy::new(|| {

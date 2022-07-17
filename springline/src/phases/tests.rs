@@ -92,7 +92,7 @@ mod window {
                 true,  // 4s - coverage: 0.6 [5,4,3,2]
                 true,  // 5s - coverage: 0.6 [6,5,4,3]
                 true,  // 6s - coverage: 0.6 [7,6,5,4]
-                true,  // 7s - coverage: 0.6 [8,7,6,5]
+                false, // 7s - coverage: 0.6 [8,7,6,5]
                 false, // 8s - coverage: 0.6 [x9x,8,7,6]
                 false, // 9s - coverage: 0.6 [x10x,x9x,8,7]
                 false, // 10s - coverage: 0.6 [x10x,x10x,x9x,8]
@@ -100,7 +100,7 @@ mod window {
                 false, // 12s - coverage: 0.6 [8,x9x,x10x,x10x]
                 false, // 13s - coverage: 0.6 [7,8,x9x,x10x]
                 false, // 14s - coverage: 0.6 [6,7,8,x9x]
-                true,  // 15s - coverage: 0.6 [5,6,7,8]
+                false, // 15s - coverage: 0.6 [5,6,7,8]
                 true,  // 16s - coverage: 0.6 [4,5,6,7]
                 true,  // 17s - coverage: 0.6 [3,4,5,6]
                 true,  // 18s - coverage: 0.6 [2,3,4,5]
@@ -112,7 +112,7 @@ mod window {
                     assert_ok!(tx_in.send(data[i].clone()).await);
                     let actual = assert_some!(rx_out.recv().await);
                     assert_eq!(
-                        (i, actual.flow_source_records_lag_max_below_mark(5, 8)),
+                        (i, actual.flow_source_records_lag_max_below_threshold(5, 8)),
                         (i, expected[i])
                     );
                 }
@@ -405,8 +405,8 @@ mod window {
             policies: vec![assert_ok!(PolicySource::from_complete_string(
                 "test_policy",
                 r##"|healthy(item, c) if above_low_water(item, c) and below_high_water(item, c);
-                    |below_high_water(item, _) if item.flow_source_records_lag_max_below_mark(5, 8);
-                    |above_low_water(item, _) if item.flow_source_records_lag_max_above_mark(5, 3);
+                    |below_high_water(item, _) if item.flow_source_records_lag_max_below_threshold(5, 9);
+                    |above_low_water(item, _) if item.flow_source_records_lag_max_above_threshold(5, 2);
                     |"##
             ))],
         };
