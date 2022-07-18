@@ -308,6 +308,12 @@ where
             .iter()
             .filter(|(o, _)| o.matches_plan_position(&vertex_position_candidate))
             .collect();
+        let vertex_derivative_orders: Vec<MetricOrder> = self
+            .derivative_orders
+            .iter()
+            .filter(|o| o.matches_plan_position(&vertex_position_candidate))
+            .cloned()
+            .collect();
 
         tracing::debug!(
             ?picklist,
@@ -357,7 +363,7 @@ where
                         &PlanPositionCandidate::ByName(&vertex.name),
                         metric_response,
                         &vertex_orders,
-                        &self.derivative_orders,
+                        vertex_derivative_orders.as_slice(),
                     )
                     .map_err(|err| err.into())
                 })
@@ -645,7 +651,7 @@ mod tests {
     #[test]
     fn test_vertex_sensor_agg_span() {
         once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
-        let main_span = tracing::info_span!("test_query_vertex_telemetry");
+        let main_span = tracing::info_span!("test_vertex_sensor_agg_span");
         let _ = main_span.enter();
 
         block_on(async {
@@ -714,7 +720,7 @@ mod tests {
                     "sum": 3.14159_f64,
                 },
                 { "id": "numRecordsInPerSecond", "max": 0_f64 },
-                { "id": "numRecordsOutPerSecond", "max": 20_f64 },
+                { "id": "numRecordsOutPerSecond", "sum": 20_f64 },
                 { "id": "idleTimeMsPerSecond", "avg": 321.7_f64 },
                 { "id": "buffers.inputQueueLength", "max": 0_f64 },
                 { "id": "buffers.inPoolUsage", "max": 0_f64 },

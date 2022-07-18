@@ -546,11 +546,11 @@ impl SubscriptionRequirements for MetricCatalog {
             // FlowMetrics
             "flow.forecasted_timestamp".into(),
             "flow.forecasted_records_in_per_sec".into(),
-            "flow.source_records_lag_max".into(),
-            "flow.source_assigned_partitions".into(),
-            "flow.source_total_lag".into(),
-            "flow.source_records_consumed_rate".into(),
-            "flow.source_millis_behind_latest".into(),
+            // "flow.source_records_lag_max".into(),
+            // "flow.source_assigned_partitions".into(),
+            // "flow.source_total_lag".into(),
+            // "flow.source_records_consumed_rate".into(),
+            // "flow.source_millis_behind_latest".into(),
         };
 
         if let Some(supplemental) = SUPPLEMENTAL_TELEMETRY.get().cloned() {

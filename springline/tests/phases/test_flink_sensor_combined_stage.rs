@@ -171,7 +171,7 @@ async fn test_flink_sensor_merge_combine_stage() -> anyhow::Result<()> {
         match actual.get(key) {
             Some(TelemetryValue::Float(actual)) => {
                 let ev: f64 = assert_ok!(expected_v.try_into());
-                if !approx::relative_eq!(*actual, ev) {
+                if !approx::relative_eq!(*actual, ev, epsilon = 1.0e-10) {
                     assert_eq!(*actual, ev, "metric: {}", key);
                 }
             },
@@ -229,13 +229,16 @@ fn make_expected_telemetry(
         expected.insert(MC_FLOW__RECORDS_IN_PER_SEC.to_string(), expected_value.into());
     }
 
-    let expected_max_records_out_per_sec = expected_vertex_metrics
+    let expected_max_records_out_per_sec: RecordsPerSecond = expected_vertex_metrics
         .iter()
         .map(|m| m.nr_records_out_per_second)
-        .max_by(|lhs, rhs| assert_some!(lhs.partial_cmp(&rhs)));
-    if let Some(expected_value) = expected_max_records_out_per_sec {
-        expected.insert("flow.records_out_per_sec".to_string(), expected_value.into());
-    }
+        .sum();
+    // .max_by(|lhs, rhs| assert_some!(lhs.partial_cmp(&rhs)));
+
+    // if let Some(expected_value) = expected_max_records_out_per_sec {
+    //     expected.insert("flow.records_out_per_sec".to_string(), expected_value.into());
+    // }
+    expected.insert("flow.records_out_per_sec".to_string(), expected_max_records_out_per_sec.into());
 
     let expected_max_input_queue_len =
         expected_vertex_metrics
@@ -695,7 +698,7 @@ impl MockFlinkJobDetail {
 
         let summary = json!({
             "id": id,
-            "name": Faker.fake::<String>(),
+            "name": format!("Source: {}", Faker.fake::<String>()),
             "maxParallelism": max_parallelism,
             "parallelism": parallelism,
             "status": task_state,
@@ -847,7 +850,7 @@ impl MockFlinkVertexMetrics {
 
         let body = json!([
             { "id": "numRecordsInPerSecond", "max": nr_records_in_per_second },
-            { "id": "numRecordsOutPerSecond", "max": nr_records_out_per_second },
+            { "id": "numRecordsOutPerSecond", "sum": nr_records_out_per_second },
             { "id": "buffers.inputQueueLength", "max": input_buffer_queue_len },
             { "id": "buffers.inPoolUsage", "max": in_buffer_pool_usage },
             { "id": "buffers.outputQueueLength", "max": output_buffer_queue_len },

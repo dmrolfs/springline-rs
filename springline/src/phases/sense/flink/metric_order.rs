@@ -71,10 +71,10 @@ impl PlanPositionSpec {
             (_, PlanPositionCandidate::Any) => true,
             (Self::Source, PlanPositionCandidate::ByName(name)) => name.starts_with(FLINK_SOURCE_PREFIX),
             (Self::NotSource, PlanPositionCandidate::ByName(name)) => !name.starts_with(FLINK_SOURCE_PREFIX),
-            (Self::Sink, PlanPositionCandidate::ByName(name)) => name.starts_with(FLINK_SINK_PREFIX),
-            (Self::NotSink, PlanPositionCandidate::ByName(name)) => !name.starts_with(FLINK_SINK_PREFIX),
+            (Self::Sink, PlanPositionCandidate::ByName(name)) => name.contains(FLINK_SINK_PREFIX),
+            (Self::NotSink, PlanPositionCandidate::ByName(name)) => !name.contains(FLINK_SINK_PREFIX),
             (Self::Through, PlanPositionCandidate::ByName(name)) => {
-                !name.starts_with(FLINK_SOURCE_PREFIX) && !name.starts_with(FLINK_SINK_PREFIX)
+                !name.starts_with(FLINK_SOURCE_PREFIX) && !name.contains(FLINK_SINK_PREFIX)
             },
         }
     }

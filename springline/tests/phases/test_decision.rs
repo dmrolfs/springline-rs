@@ -352,13 +352,18 @@ async fn test_decision_common() -> anyhow::Result<()> {
     let main_span = tracing::info_span!("test_decision_common");
     let _ = main_span.enter();
 
+    let mut optional_fields = <MetricCatalog as SubscriptionRequirements>::optional_fields();
+    let lag_fields = maplit::hashset! {
+            "flow.source_records_lag_max".into(),
+            "flow.source_assigned_partitions".into(),
+            "flow.source_total_lag".into(),
+            "flow.source_records_consumed_rate".into(),
+    };
+    optional_fields.extend(lag_fields);
+
     let telemetry_subscription = TelemetrySubscription::new("measurements")
         .with_required_fields(<MetricCatalog as SubscriptionRequirements>::required_fields())
-        .with_optional_fields(<MetricCatalog as SubscriptionRequirements>::optional_fields())
-        // .with_optional_fields(maplit::hashset! {
-        //     "all_sinks_healthy",
-        // });
-    ;
+        .with_optional_fields(optional_fields);
 
     let policy = DecisionPolicy::new(&POLICY_SETTINGS.clone().with_source(PolicySource::from_template_string(
         format!("{}_basis", DecisionPolicy::base_template_name()),

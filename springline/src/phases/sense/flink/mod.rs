@@ -9,7 +9,7 @@ use proctor::graph::stage::{self, SourceStage, ThroughStage};
 use proctor::graph::{Connect, Graph, SinkShape, SourceShape, UniformFanInShape, UniformFanOutShape};
 use prometheus::{HistogramOpts, HistogramTimer, HistogramVec};
 
-use crate::flink::{self, CorrelationGenerator, FlinkContext, MC_FLOW__RECORDS_IN_PER_SEC};
+use crate::flink::{self, CorrelationGenerator, FlinkContext};
 use crate::phases::sense::flink::job_taskmanager_sensor::JobTaskmanagerSensor;
 use crate::phases::sense::flink::taskmanager_admin_sensor::TaskmanagerAdminSensor;
 use crate::phases::sense::flink::vertex_sensor::VertexSensor;
@@ -20,135 +20,15 @@ mod job_taskmanager_sensor;
 mod metric_order;
 mod taskmanager_admin_sensor;
 mod vertex_sensor;
+mod standard_orders;
 
+pub use standard_orders::STD_METRIC_ORDERS;
 pub use metric_order::{
     Aggregation, DerivativeCombinator, FlinkScope, MetricOrder, MetricSpec, PlanPositionCandidate, PlanPositionSpec,
 };
 pub use vertex_sensor::{
     FLINK_VERTEX_SENSOR_AVAIL_TELEMETRY_TIME, FLINK_VERTEX_SENSOR_METRIC_PICKLIST_TIME, FLINK_VERTEX_SENSOR_TIME,
 };
-
-// note: `cluster.nr_task_managers` is a standard metric pulled from Flink's admin API. The order
-// mechanism may need to be expanded to consider further meta information outside of Flink Metrics
-// API.
-pub static STD_METRIC_ORDERS: Lazy<Vec<MetricOrder>> = Lazy::new(|| {
-    use self::Aggregation::*;
-    use proctor::elements::TelemetryType::*;
-
-    vec![
-        MetricOrder::Job {
-            metric: MetricSpec::new("uptime", Max, "health.job_uptime_millis", Integer),
-        },
-        MetricOrder::Job {
-            metric: MetricSpec::new("numRestarts", Max, "health.job_nr_restarts", Integer),
-        },
-        MetricOrder::Job {
-            metric: MetricSpec::new(
-                "numberOfCompletedCheckpoints",
-                Max,
-                "health.job_nr_completed_checkpoints",
-                Integer,
-            ),
-        },
-        MetricOrder::Job {
-            metric: MetricSpec::new(
-                "numberOfFailedCheckpoints",
-                Max,
-                "health.job_nr_failed_checkpoints",
-                Integer,
-            ),
-        },
-        MetricOrder::Task {
-            position: PlanPositionSpec::Any,
-            metric: MetricSpec::new("numRecordsInPerSecond", Max, MC_FLOW__RECORDS_IN_PER_SEC, Float),
-        },
-        MetricOrder::Task {
-            position: PlanPositionSpec::Any,
-            metric: MetricSpec::new("numRecordsOutPerSecond", Max, "flow.records_out_per_sec", Float),
-        },
-        MetricOrder::Task {
-            position: PlanPositionSpec::NotSource,
-            metric: MetricSpec::new("idleTimeMsPerSecond", Avg, "flow.idle_time_millis_per_sec", Float),
-        },
-        MetricOrder::Task {
-            position: PlanPositionSpec::Source,
-            metric: MetricSpec::new(
-                "backPressuredTimeMsPerSecond",
-                Avg,
-                "flow.source_back_pressured_time_millis_per_sec",
-                Float,
-            ),
-        },
-        MetricOrder::TaskManager {
-            metric: MetricSpec::new("Status.JVM.CPU.Load", Max, "cluster.task_cpu_load", Float),
-        },
-        MetricOrder::TaskManager {
-            metric: MetricSpec::new(
-                "Status.JVM.Memory.Heap.Used",
-                Max,
-                "cluster.task_heap_memory_used",
-                Float,
-            ),
-        },
-        MetricOrder::TaskManager {
-            metric: MetricSpec::new(
-                "Status.JVM.Memory.Heap.Committed",
-                Max,
-                "cluster.task_heap_memory_committed",
-                Float,
-            ),
-        },
-        MetricOrder::TaskManager {
-            metric: MetricSpec::new("Status.JVM.Threads.Count", Max, "cluster.task_nr_threads", Integer),
-        },
-        MetricOrder::Task {
-            position: PlanPositionSpec::Any,
-            metric: MetricSpec::new(
-                "buffers.inputQueueLength",
-                Max,
-                "cluster.task_network_input_queue_len",
-                Float,
-            ),
-        }, // Integer,
-        MetricOrder::Task {
-            position: PlanPositionSpec::Any,
-            metric: MetricSpec::new(
-                "buffers.inPoolUsage",
-                Max,
-                "cluster.task_network_input_pool_usage",
-                Float,
-            ),
-        }, // Integer,
-        MetricOrder::Task {
-            position: PlanPositionSpec::Any,
-            metric: MetricSpec::new(
-                "buffers.outputQueueLength",
-                Max,
-                "cluster.task_network_output_queue_len",
-                Float,
-            ),
-        }, // Integer,
-        MetricOrder::Task {
-            position: PlanPositionSpec::Any,
-            metric: MetricSpec::new(
-                "buffers.outPoolUsage",
-                Max,
-                "cluster.task_network_output_pool_usage",
-                Float,
-            ),
-        }, // Integer,
-        MetricOrder::Derivative {
-            scope: FlinkScope::Operator,
-            position: PlanPositionSpec::Source,
-            telemetry_path: "flow.source_total_lag".to_string(),
-            telemetry_type: Integer,
-            telemetry_lhs: "flow.source_records_lag_max".to_string(),
-            telemetry_rhs: "flow.source_assigned_partitions".to_string(),
-            combinator: DerivativeCombinator::Product,
-            agg: Sum,
-        },
-    ]
-});
 
 #[derive(Debug)]
 pub struct FlinkSensorSpecification<'a> {
@@ -307,10 +187,10 @@ fn consolidate_active_job_telemetry_for_order(
     Ok(telemetry)
 }
 
-#[tracing::instrument(level = "trace", skip(telemetry))]
-pub fn apply_derivative_orders(
-    mut telemetry: Telemetry, derivative_orders: &[MetricOrder],
-) -> (Telemetry, Vec<&MetricOrder>) {
+#[tracing::instrument(level = "trace", skip(telemetry,))]
+pub fn apply_derivative_orders<'o>(
+    mut telemetry: Telemetry, candidate: &PlanPositionCandidate<'_>, derivative_orders: &'o [MetricOrder],
+) -> (Telemetry, Vec<&'o MetricOrder>) {
     fn extract_terms<'t>(
         t: &'t Telemetry, lhs_path: &'t str, rhs_path: &'t str,
     ) -> Option<(&'t TelemetryValue, &'t TelemetryValue)> {
@@ -320,7 +200,7 @@ pub fn apply_derivative_orders(
     }
 
     let mut satisfied = Vec::new();
-    for order in derivative_orders {
+    for order in derivative_orders.iter().filter(|o| o.matches_plan_position(candidate)) {
         if let MetricOrder::Derivative {
             telemetry_path,
             telemetry_type,
@@ -330,9 +210,14 @@ pub fn apply_derivative_orders(
             ..
         } = order
         {
+            tracing::debug!(
+                position_matches=%order.matches_plan_position(candidate),
+                "applying derivative order: {order:?}."
+            );
+
             if let Some((lhs, rhs)) = extract_terms(&telemetry, telemetry_lhs, telemetry_rhs) {
                 satisfied.push(order);
-                tracing::trace!(lhs=?(telemetry_lhs, lhs), rhs=?(telemetry_rhs, rhs), "input terms for derivative order: {telemetry_path}");
+                tracing::debug!(lhs=?(telemetry_lhs, lhs), rhs=?(telemetry_rhs, rhs), "input terms for derivative order: {telemetry_path}");
                 let result = combinator.combine(lhs, rhs).and_then(|c| telemetry_type.cast_telemetry(c));
                 match result {
                     Ok(value) => {
@@ -411,7 +296,8 @@ mod tests {
         }
         .into();
 
-        let (actual, satisfied) = apply_derivative_orders(happy, &orders);
+        let candidate = PlanPositionCandidate::ByName("Source: Foo Data stream");
+        let (actual, satisfied) = apply_derivative_orders(happy, &candidate, &orders);
         let satisfied = order_names(satisfied);
         assert_eq!(satisfied, vec!["flow.source_total_lag"]);
         assert_eq!(
@@ -430,7 +316,7 @@ mod tests {
         }
         .into();
 
-        let (actual, satisfied) = apply_derivative_orders(f_i, &orders);
+        let (actual, satisfied) = apply_derivative_orders(f_i, &candidate, &orders);
         let satisfied = order_names(satisfied);
         assert_eq!(satisfied, vec!["flow.source_total_lag"]);
         assert_eq!(
@@ -449,7 +335,7 @@ mod tests {
         }
         .into();
 
-        let (actual, satisfied) = apply_derivative_orders(i_f, &orders);
+        let (actual, satisfied) = apply_derivative_orders(i_f, &candidate, &orders);
         let satisfied = order_names(satisfied);
         assert_eq!(satisfied, vec!["flow.source_total_lag"]);
         assert_eq!(

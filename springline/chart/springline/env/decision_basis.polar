@@ -1,9 +1,10 @@
 {{> preamble}}
 
+# force rescale when at minimum
 scale_up(item, _, reason) if
     item.cluster.nr_task_managers == 1
     and item.flow_task_utilization_below_threshold(300, 0.02)
-    and reason = "nothing_happening_false_up_scale"
+    and reason = "arbitrary_upscale__no_utilization_no_feed"
     and cut;
 
 {{#if max_healthy_relative_lag_velocity}}
@@ -29,8 +30,6 @@ scale_down(item, _, reason) if
     and reason = "low_utilization_and_zero_lag";
 {{/if}}
 
-# force rescale when at minimum
-
 
 # force rescale when backpressure
 scale_up(item, _, reason) if
@@ -42,7 +41,7 @@ scale_up(item, _, reason) if
 scale_down(item, _, reason) if
     16 <= item.cluster.nr_task_managers
     and item.flow_source_back_pressured_time_millis_per_sec_rolling_average(300) == 1000.0
-    and reason = "back_pressured_at_max_cluster_size";
+    and reason = "arbitrary_downscale_back_pressured_at_max_cluster_size";
 
 
 # add source_backpressured_time_ms_per_sec order on source operator

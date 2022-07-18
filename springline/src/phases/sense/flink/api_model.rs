@@ -59,7 +59,7 @@ impl FlinkMetric {
 #[tracing::instrument(level = "trace", skip(metrics, order_matchers))]
 pub fn build_telemetry<'c, M>(
     position_candidate: &PlanPositionCandidate<'c>, metrics: M,
-    order_matchers: &HashMap<&MetricOrder, &MetricOrderMatcher>, derivative_orders: &Vec<MetricOrder>,
+    order_matchers: &HashMap<&MetricOrder, &MetricOrderMatcher>, derivative_orders: &[MetricOrder],
 ) -> Result<Telemetry, TelemetryError>
 where
     M: IntoIterator<Item = FlinkMetric>,
@@ -96,7 +96,8 @@ where
         }
     }
 
-    let (telemetry, derivatives_satisfied) = sense_flink::apply_derivative_orders(telemetry, derivative_orders);
+    let (telemetry, derivatives_satisfied) =
+        sense_flink::apply_derivative_orders(telemetry, position_candidate, derivative_orders);
     if !derivatives_satisfied.is_empty() {
         tracing::info!(
             ?position_candidate,
@@ -105,7 +106,7 @@ where
     }
 
     let mut all: HashSet<&MetricOrder> = order_matchers.keys().copied().collect();
-    all.extend(derivative_orders.as_slice());
+    all.extend(derivative_orders);
 
     let unfulfilled: HashSet<_> = all.difference(&satisfied).collect();
     if !unfulfilled.is_empty() {
