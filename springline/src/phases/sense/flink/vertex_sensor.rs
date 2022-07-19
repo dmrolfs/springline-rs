@@ -19,7 +19,7 @@ use tracing::Instrument;
 use url::Url;
 
 use super::{api_model, metric_order, Aggregation, MetricOrder, Unpack};
-use crate::flink::{self, JobId, JobSummary, VertexDetail, MC_CLUSTER__NR_ACTIVE_JOBS};
+use crate::flink::{self, JobId, JobSummary, VertexDetail, MC_CLUSTER__NR_ACTIVE_JOBS, JobDetail, MC_HEALTH__JOB_MAX_PARALLELISM};
 use crate::phases::sense::flink::api_model::FlinkMetricResponse;
 use crate::phases::sense::flink::metric_order::MetricOrderMatcher;
 use crate::phases::sense::flink::{
@@ -212,8 +212,16 @@ where
     ) {
         match self.context.query_job_details(&job.id, correlation).await {
             Ok(detail) => {
+                let job_detail_telemetry = self.extract_job_detail_telemetry(&detail, correlation);
+                if !job_detail_telemetry.is_empty() {
+                    tracing::warn!(?job_detail_telemetry, "DMR: adding job_detail telemetry.");
+                    let mut groups = metric_telemetry.lock().await;
+                    super::merge_into_metric_groups(&mut *groups, job_detail_telemetry);
+                }
+
                 for vertex in detail.vertices.into_iter().filter(|v| v.status.is_active()) {
                     if let Ok(vertex_telemetry) = self.query_vertex_telemetry(&job.id, &vertex, correlation).await {
+                        tracing::warn!(job_id=?job.id, vertex_id=?vertex.id, ?vertex_telemetry, "DMR: adding vertex telemetry.");
                         let mut groups = metric_telemetry.lock().await;
                         super::merge_into_metric_groups(&mut *groups, vertex_telemetry);
                     }
@@ -223,6 +231,18 @@ where
                 tracing::warn!(error=?err, ?correlation, "failed to query Flink job details");
             },
         }
+    }
+
+    #[tracing::instrument(level = "trace", skip(self, job_detail))]
+    fn extract_job_detail_telemetry(&self, job_detail: &JobDetail, correlation: &CorrelationId) -> Telemetry {
+        let mut telemetry = Telemetry::new();
+
+        let max_parallelism = job_detail.plan.nodes.iter().map(|n| n.parallelism).max_by(u32::cmp);
+        if let Some(job_max_parallelism) = max_parallelism {
+            telemetry.insert(MC_HEALTH__JOB_MAX_PARALLELISM.to_string(), job_max_parallelism.into());
+        }
+
+        telemetry
     }
 
     #[tracing::instrument(level = "trace", skip(self))]

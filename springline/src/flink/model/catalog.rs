@@ -127,8 +127,21 @@ impl Semigroup for MetricCatalog {
     }
 }
 
+pub const MC_HEALTH__JOB_MAX_PARALLELISM: &str = "health.job_max_parallelism";
+
 #[derive(PolarClass, Debug, Default, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub struct JobHealthMetrics {
+    /// Max parallelism found in Job. If this is below the number of task managers, then an up
+    /// rescale plan may simply restart at an increased parallelism up to the number of task
+    /// managers.
+    #[polar(attribute)]
+    #[serde(
+        default,
+        rename = "health.job_max_parallelism",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub job_max_parallelism: Option<u32>,
+
     // todo per Flink doc's this metric does not work properly under Reactive mode. remove in favor of eligibility's
     // last_failure?
     /// The time that the job has been running without interruption.
@@ -163,6 +176,7 @@ pub struct JobHealthMetrics {
 impl Monoid for JobHealthMetrics {
     fn empty() -> Self {
         Self {
+            job_max_parallelism: None,
             job_uptime_millis: -1,
             job_nr_restarts: -1,
             job_nr_completed_checkpoints: -1,
@@ -516,6 +530,7 @@ impl SubscriptionRequirements for MetricCatalog {
     fn required_fields() -> HashSet<String> {
         maplit::hashset! {
             // JobHealthMetrics
+            MC_HEALTH__JOB_MAX_PARALLELISM.into(),
             "health.job_uptime_millis".into(),
             "health.job_nr_restarts".into(),
             "health.job_nr_completed_checkpoints".into(),

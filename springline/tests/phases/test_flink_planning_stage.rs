@@ -187,6 +187,7 @@ fn make_test_data(
         correlation_id: corr_id,
         recv_timestamp: timestamp,
         health: JobHealthMetrics {
+            job_max_parallelism: Some(16),
             job_uptime_millis: 1_234_567,
             job_nr_restarts: 3,
             job_nr_completed_checkpoints: 12_345,

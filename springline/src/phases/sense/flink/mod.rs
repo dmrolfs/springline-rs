@@ -9,7 +9,7 @@ use proctor::graph::stage::{self, SourceStage, ThroughStage};
 use proctor::graph::{Connect, Graph, SinkShape, SourceShape, UniformFanInShape, UniformFanOutShape};
 use prometheus::{HistogramOpts, HistogramTimer, HistogramVec};
 
-use crate::flink::{self, CorrelationGenerator, FlinkContext};
+use crate::flink::{self, CorrelationGenerator, FlinkContext, MC_HEALTH__JOB_MAX_PARALLELISM};
 use crate::phases::sense::flink::job_taskmanager_sensor::JobTaskmanagerSensor;
 use crate::phases::sense::flink::taskmanager_admin_sensor::TaskmanagerAdminSensor;
 use crate::phases::sense::flink::vertex_sensor::VertexSensor;
@@ -165,6 +165,20 @@ fn consolidate_active_job_telemetry_for_order(
     let telemetry: Telemetry = job_telemetry
         .into_iter()
         .map(|(metric, values)| {
+            //todo: this is messy
+            if metric == MC_HEALTH__JOB_MAX_PARALLELISM {
+                let max_parallelism = values.into_iter().max_by(|acc, val| {
+                    let lhs = u32::try_from(acc).ok();
+                    let rhs = u32::try_from(val).ok();
+                    lhs.cmp(&rhs)
+                });
+
+                if let Some(max_parallelism) = max_parallelism {
+                    Ok(Some((metric, max_parallelism)))
+                } else {
+                    Ok(None)
+                }
+            } else {
             let agg_combinator = telemetry_agg.get(metric.as_str()).map(|agg| (agg, agg.combinator()));
             match agg_combinator {
                 None => {
@@ -176,6 +190,7 @@ fn consolidate_active_job_telemetry_for_order(
                     tracing::debug!(?merger, ?values, %agg, "merging metric values per order aggregator");
                     merger
                 },
+            }
             }
         })
         .collect::<Result<Vec<_>, TelemetryError>>()?

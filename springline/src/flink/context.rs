@@ -354,6 +354,7 @@ mod jars_protocal {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
     use std::time::Duration;
 
     use claim::*;
@@ -372,7 +373,7 @@ mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     use super::*;
-    use crate::flink::model::JarEntry;
+    use crate::flink::model::{JarEntry, JobPlan, JobPlanItem, PlanItemInput};
     use crate::flink::{JarId, JobId, JobState, TaskState, VertexDetail, VertexId};
 
     fn context_for(mock_server: &MockServer) -> anyhow::Result<FlinkContext> {
@@ -767,8 +768,12 @@ mod tests {
             }
         });
 
+        let jid = JobId::new("a97b6344d775aafe03e55a8e812d2713");
+        let vid_1 = VertexId::new("cbc357ccb763df2852fee8c4fc7d55f2");
+        let vid_2 = VertexId::new("90bea66de1c231edf33913ecd54406c1");
+
         let expected = JobDetail {
-            jid: JobId::new("a97b6344d775aafe03e55a8e812d2713"),
+            jid: jid.clone(),
             name: "CarTopSpeedWindowingExample".to_string(),
             is_stoppable: false,
             state: JobState::Running,
@@ -792,7 +797,7 @@ mod tests {
             },
             vertices: vec![
                 VertexDetail {
-                    id: VertexId::new("cbc357ccb763df2852fee8c4fc7d55f2"),
+                    id: vid_1.clone(),
                     name: "Source: Custom Source -> Timestamps/Watermarks".to_string(),
                     max_parallelism: Some(128),
                     parallelism: 1,
@@ -824,7 +829,7 @@ mod tests {
                     },
                 },
                 VertexDetail {
-                    id: VertexId::new("90bea66de1c231edf33913ecd54406c1"),
+                    id: vid_2.clone(),
                     name: "Window(GlobalWindows(), DeltaTrigger, TimeEvictor, ComparableAggregator, \
                            PassThroughWindowFunction) -> Sink: Print to Std. Out"
                         .to_string(),
@@ -870,6 +875,35 @@ mod tests {
                 TaskState::Running => 2,
                 TaskState::Initializing => 0,
             },
+            plan: JobPlan {
+                jid,
+                name: "CarTopSpeedWindowingExample".to_string(),
+                nodes: vec![
+                    JobPlanItem {
+                        id: vid_2.clone(),
+                        parallelism: 1,
+                        operator: "".to_string(),
+                        operator_strategy: "".to_string(),
+                        description: "Window(GlobalWindows(), DeltaTrigger, TimeEvictor, ComparableAggregator, PassThroughWindowFunction) -&gt; Sink: Print to Std. Out".to_string(),
+                        inputs: vec![PlanItemInput {
+                            num: 0,
+                            id: vid_1.clone(),
+                            ship_strategy: "HASH".to_string(),
+                            exchange: "pipelined_bounded".to_string(),
+                        },],
+                        optimizer_properties: HashMap::default(),
+                    },
+                    JobPlanItem {
+                        id: vid_1.clone(),
+                        parallelism: 1,
+                        operator: "".to_string(),
+                        operator_strategy: "".to_string(),
+                        description: "Source: Custom Source -&gt; Timestamps/Watermarks".to_string(),
+                        inputs: Vec::default(),
+                        optimizer_properties: HashMap::default(),
+                    },
+                ],
+            }
         };
 
         (body, expected)

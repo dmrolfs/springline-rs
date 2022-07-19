@@ -15,7 +15,7 @@ use pretty_snowflake::Id;
 use proctor::elements::telemetry::{TableType, TableValue};
 use proctor::elements::{TelemetryType, TelemetryValue, Timestamp};
 use proctor::ProctorIdGenerator;
-use serde::{de, Deserialize, Deserializer, Serialize};
+use serde::{de, Deserialize, Serialize};
 use serde_with::serde_as;
 
 use super::FlinkError;
@@ -279,6 +279,8 @@ pub struct JobDetail {
 
     #[serde(default, alias = "status-counts")]
     pub status_counts: HashMap<TaskState, usize>,
+
+    pub plan: JobPlan,
 }
 
 impl Debug for JobDetail {
@@ -309,6 +311,7 @@ impl Debug for JobDetail {
             )
             .field("vertices", &self.vertices)
             .field("status_counts", &self.status_counts)
+            .field("plan", &self.plan)
             .finish()
     }
 }
@@ -380,9 +383,43 @@ pub struct VertexDetail {
     pub metrics: HashMap<String, TelemetryValue>,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PlanItemInput {
+    pub id: VertexId,
+    pub num: u32,
+    #[serde(default)]
+    pub ship_strategy: String, //todo: not used - may def enum - dig into
+    #[serde(default)]
+    pub exchange: String, //todo: not used - enum? - dig into
+}
+
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct JobPlanItem {
+    pub id: VertexId,
+    pub parallelism: u32,
+    #[serde(default)]
+    pub operator: String, //todo: not used - dig into?
+    #[serde(default)]
+    pub operator_strategy: String, //todo: not used - dig into?
+    pub description: String,
+    #[serde(default, skip_serializing_if="Vec::is_empty")]
+    pub inputs: Vec<PlanItemInput>, //todo: not used - dig into?
+    #[serde(default)]
+    pub optimizer_properties: HashMap<String, String>, //todo: not used - dig into?
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct JobPlan {
+    pub jid: JobId,
+    pub name: String,
+    #[serde(default, skip_serializing_if="Vec::is_empty")]
+    pub nodes: Vec<JobPlanItem>,
+}
+
 fn deserialize_timestamp_millis<'de, D>(deserializer: D) -> Result<Timestamp, D::Error>
 where
-    D: Deserializer<'de>,
+    D: de::Deserializer<'de>,
 {
     let millis = i64::deserialize(deserializer)?;
     Ok(Timestamp::from_milliseconds(millis))
@@ -390,7 +427,7 @@ where
 
 fn deserialize_opt_timestamp_millis<'de, D>(deserializer: D) -> Result<Option<Timestamp>, D::Error>
 where
-    D: Deserializer<'de>,
+    D: de::Deserializer<'de>,
 {
     let millis = i64::deserialize(deserializer)?;
     let result = if millis < 0 { None } else { Some(Timestamp::from_milliseconds(millis)) };
@@ -399,7 +436,7 @@ where
 
 fn deserialize_opt_duration_millis<'de, D>(deserializer: D) -> Result<Option<Duration>, D::Error>
 where
-    D: Deserializer<'de>,
+    D: de::Deserializer<'de>,
 {
     let millis = i64::deserialize(deserializer)?;
     let duration = if millis < 0 { None } else { Some(Duration::from_millis(millis as u64)) };
@@ -408,7 +445,7 @@ where
 
 fn deserialize_i64_as_opt_usize<'de, D>(deserializer: D) -> Result<Option<usize>, D::Error>
 where
-    D: Deserializer<'de>,
+    D: de::Deserializer<'de>,
 {
     let val = i64::deserialize(deserializer)?;
     let result = if val < 0 { None } else { Some(val as usize) };
@@ -417,7 +454,7 @@ where
 
 fn deserialize_key_timestamps<'de, D, S>(deserializer: D) -> Result<HashMap<S, Timestamp>, D::Error>
 where
-    D: Deserializer<'de>,
+    D: de::Deserializer<'de>,
     S: Eq + Hash + Deserialize<'de>,
 {
     struct KeyTimestampsVisitor<S0> {

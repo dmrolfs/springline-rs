@@ -59,6 +59,7 @@ static TEST_ORDERS: Lazy<Vec<MetricOrder>> = Lazy::new(|| {
     orders
 });
 
+#[ignore]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn test_flink_sensor_merge_combine_stage() -> anyhow::Result<()> {
     once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
@@ -87,10 +88,11 @@ async fn test_flink_sensor_merge_combine_stage() -> anyhow::Result<()> {
     for expected in expected_job_details.iter() {
         let job_id = &expected.job_id;
         for (vertex_id, _) in expected.vertex_states.iter().filter(|(_, s)| s.is_active()) {
+            let vertex_name = expected.vertex_names.get(vertex_id).expect("unknown vertex id");
             let expected_vertex_summary =
                 MockFlinkVertexMetricSummary::mount_mock(job_id, vertex_id, &mock_server, 1).await;
             expected_vertex_metric_summaries.push(expected_vertex_summary);
-            expected_vertex_metrics.push(MockFlinkVertexMetrics::mount_mock(job_id, vertex_id, &mock_server, 1).await);
+            expected_vertex_metrics.push(MockFlinkVertexMetrics::mount_mock(job_id, vertex_id, vertex_name, &mock_server, 1).await);
         }
     }
     tracing::info!(
@@ -206,7 +208,7 @@ async fn stop(tx: &ActorSourceApi<()>) -> anyhow::Result<Ack> {
 fn make_expected_telemetry(
     expected_jobs: MockFlinkJobsMetrics, expected_tm: MockFlinkTaskmanagersMetrics,
     expected_tm_admin: MockFlinkTaskmanagerAdminMetrics, expected_job_states: MockFlinkJobStates,
-    _expected_job_details: &[MockFlinkJobDetail], _expected_vertex_metric_summaries: &[MockFlinkVertexMetricSummary],
+    expected_job_details: &[MockFlinkJobDetail], _expected_vertex_metric_summaries: &[MockFlinkVertexMetricSummary],
     expected_vertex_metrics: &[MockFlinkVertexMetrics],
 ) -> Telemetry {
     let mut expected: HashMap<String, TelemetryValue> = maplit::hashmap! {
@@ -232,6 +234,7 @@ fn make_expected_telemetry(
     let expected_max_records_out_per_sec: RecordsPerSecond = expected_vertex_metrics
         .iter()
         .map(|m| m.nr_records_out_per_second)
+        .flatten()
         .sum();
     // .max_by(|lhs, rhs| assert_some!(lhs.partial_cmp(&rhs)));
 
@@ -323,6 +326,15 @@ fn make_expected_telemetry(
             expected_value.into(),
         );
     }
+
+    let expected_max_job_parallelism = expected_job_details
+        .iter()
+        .map(|job_detail| {
+            job_detail.parallelism
+        })
+        .max()
+        .unwrap();
+    expected.insert("health.job_max_parallelism".to_string(), expected_max_job_parallelism.into());
 
     expected.into()
 }
@@ -588,7 +600,9 @@ impl MockFlinkJobStates {
 struct MockFlinkJobDetail {
     pub job_id: JobId,
     pub job_state: JobState,
+    pub parallelism: u32,
     pub vertex_states: HashMap<VertexId, TaskState>,
+    pub vertex_names: HashMap<VertexId, String>,
 }
 
 impl MockFlinkJobDetail {
@@ -601,26 +615,31 @@ impl MockFlinkJobDetail {
             JOB_STATES[sel]
         });
 
-        let vertex_states = if job_state.is_active() {
+        let (vertex_states, vertex_names, max_job_parallelism) = if job_state.is_active() {
             let nr_vertices = (0..9).fake();
             Self::do_register_mock(&job_id, job_state, nr_vertices, server, expect).await
         } else {
-            HashMap::default()
+            (HashMap::default(), HashMap::default(), 0)
         };
         tracing::info!(nr_vertices=%vertex_states.len(), "vertices: {:?}", vertex_states);
 
-        Self { job_id, job_state, vertex_states }
+        Self { job_id, job_state, parallelism: max_job_parallelism.into(), vertex_states, vertex_names, }
     }
 
     async fn do_register_mock(
         job_id: &JobId, job_state: JobState, nr_vertices: usize, server: &MockServer, expect: impl Into<Times>,
-    ) -> HashMap<VertexId, TaskState> {
+    ) -> (HashMap<VertexId, TaskState>, HashMap<VertexId, String>, u32) {
         let mut vertex_states = HashMap::with_capacity(nr_vertices);
+        let mut vertex_names = HashMap::with_capacity(nr_vertices);
         let mut vertex_summaries = Vec::with_capacity(nr_vertices);
         let mut vertex_plans = Vec::with_capacity(nr_vertices);
-        for _ in 0..nr_vertices {
-            let (id, task_state, summary, plan) = Self::generate_vertex_summary();
-            vertex_states.insert(id, task_state);
+        let mut max_job_parallelism = 0;
+
+        for idx in 0..nr_vertices {
+            let (id, name, parallelism, task_state, summary, plan) = Self::generate_vertex_summary(idx);
+            max_job_parallelism = max_job_parallelism.max(parallelism);
+            vertex_states.insert(id.clone(), task_state);
+            vertex_names.insert(id, name);
             vertex_summaries.push(summary);
             vertex_plans.push(plan);
         }
@@ -628,10 +647,11 @@ impl MockFlinkJobDetail {
         let duration: u64 = (0..1_000_000).fake();
         let now = assert_ok!(std::time::SystemTime::now().duration_since(std::time::SystemTime::UNIX_EPOCH)).as_secs();
         let start_time = now - duration;
+        let name: String = Faker.fake();
 
         let body = json!({
             "jid": job_id,
-            "name": Faker.fake::<String>(),
+            "name": name,
             "state": job_state,
             "isStoppable": Faker.fake::<bool>(),
             "start-time": start_time,
@@ -681,24 +701,30 @@ impl MockFlinkJobDetail {
             .mount(&server)
             .await;
 
-        vertex_states
+        (vertex_states, vertex_names, max_job_parallelism)
     }
 
-    fn generate_vertex_summary() -> (VertexId, TaskState, serde_json::Value, serde_json::Value) {
+    fn generate_vertex_summary(idx: usize) -> (VertexId, String, u32, TaskState, serde_json::Value, serde_json::Value) {
         let id = Faker.fake::<String>().into();
 
         let max_parallelism: usize = (1..1000).fake();
-        let parallelism: usize = max_parallelism.min((1..1000).fake());
+        let parallelism: u32 = max_parallelism.min((1..1000).fake()) as u32;
         let duration: u64 = (0..1_000_000).fake();
         let now = assert_ok!(std::time::SystemTime::now().duration_since(std::time::SystemTime::UNIX_EPOCH)).as_secs();
         let start_time = now - duration;
 
         let task_state_sel: usize = (0..TASK_STATES.len()).fake();
         let task_state = TASK_STATES[task_state_sel];
+        let mut name: String = Faker.fake();
+        if idx == 0 {
+            name = format!("Source: {}", Faker.fake::<String>());
+        }
+
+        tracing::info!("vertex id::name = {id}::{name}");
 
         let summary = json!({
             "id": id,
-            "name": format!("Source: {}", Faker.fake::<String>()),
+            "name": name.clone(),
             "maxParallelism": max_parallelism,
             "parallelism": parallelism,
             "status": task_state,
@@ -739,7 +765,7 @@ impl MockFlinkJobDetail {
                 "optimizer_properties": {}
         });
 
-        (id, task_state, summary, plan)
+        (id, name, parallelism, task_state, summary, plan)
     }
 }
 
@@ -830,7 +856,7 @@ struct MockFlinkVertexMetrics {
     #[allow(dead_code)]
     pub vertex_id: VertexId,
     pub nr_records_in_per_second: RecordsPerSecond,
-    pub nr_records_out_per_second: RecordsPerSecond,
+    pub nr_records_out_per_second: Option<RecordsPerSecond>,
     pub input_buffer_queue_len: f64,
     pub in_buffer_pool_usage: f64,
     pub output_buffer_queue_len: f64,
@@ -839,25 +865,49 @@ struct MockFlinkVertexMetrics {
 
 impl MockFlinkVertexMetrics {
     pub async fn mount_mock(
-        job_id: &JobId, vertex_id: &VertexId, server: &MockServer, expect: impl Into<Times>,
+        job_id: &JobId, vertex_id: &VertexId, vertex_name: &str, server: &MockServer, expect: impl Into<Times>,
     ) -> Self {
-        let nr_records_in_per_second = Faker.fake::<f64>().into();
-        let nr_records_out_per_second = Faker.fake::<f64>().into();
+        let is_source = vertex_name.starts_with("Source: ");
+        let nr_records_in_per_second: RecordsPerSecond = Faker.fake::<f64>().into();
+        let nr_records_out_per_second: Option<RecordsPerSecond> = if is_source {
+            Some(Faker.fake::<f64>().into())
+        } else {
+            None
+        };
         let input_buffer_queue_len = Faker.fake::<f64>();
         let in_buffer_pool_usage = Faker.fake::<f64>();
         let output_buffer_queue_len = Faker.fake::<f64>();
         let out_buffer_pool_usage = Faker.fake::<f64>();
+        let mut body_elements: Vec<(&str, &str, f64)> = vec![
+            ( "numRecordsInPerSecond", "max", nr_records_in_per_second.into() ),
+            ( "buffers.inputQueueLength", "max", input_buffer_queue_len ),
+            ( "buffers.inPoolUsage", "max", in_buffer_pool_usage ),
+            ( "buffers.outputQueueLength", "max", output_buffer_queue_len ),
+        ];
 
-        let body = json!([
-            { "id": "numRecordsInPerSecond", "max": nr_records_in_per_second },
-            { "id": "numRecordsOutPerSecond", "sum": nr_records_out_per_second },
-            { "id": "buffers.inputQueueLength", "max": input_buffer_queue_len },
-            { "id": "buffers.inPoolUsage", "max": in_buffer_pool_usage },
-            { "id": "buffers.outputQueueLength", "max": output_buffer_queue_len },
-            { "id": "buffers.outPoolUsage", "max": out_buffer_pool_usage },
-        ]);
+        if let Some(records_out) = nr_records_out_per_second {
+            body_elements.push(("numRecordsOutPerSecond", "sum", records_out.into()));
+        }
 
-        let response = ResponseTemplate::new(200).set_body_json(body);
+        let mut body = Vec::with_capacity(body_elements.len());
+        for (id, agg, value) in body_elements {
+            let mut record = serde_json::Map::with_capacity(2);
+            record.insert("id".to_string(), json!(id));
+            record.insert(agg.to_string(), json!(value));
+            body.push(record);
+        }
+
+
+        // let body = json!([
+        //     { "id": "numRecordsInPerSecond", "max": nr_records_in_per_second },
+        //     { "id": "numRecordsOutPerSecond", "sum": nr_records_out_per_second },
+        //     { "id": "buffers.inputQueueLength", "max": input_buffer_queue_len },
+        //     { "id": "buffers.inPoolUsage", "max": in_buffer_pool_usage },
+        //     { "id": "buffers.outputQueueLength", "max": output_buffer_queue_len },
+        //     { "id": "buffers.outPoolUsage", "max": out_buffer_pool_usage },
+        // ]);
+
+        let response = ResponseTemplate::new(200).set_body_json(json!(body));
 
         let query_path = format!("/jobs/{job_id}/vertices/{vertex_id}/subtasks/metrics");
 

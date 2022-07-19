@@ -139,6 +139,7 @@ mod catalog {
                 "nanos".to_string() => TelemetryValue::Integer(57406000)
             }))),
         );
+        telemetry.insert("health.job_max_parallelism".to_string(), TelemetryValue::Integer(4));
         telemetry.insert("flow.records_in_per_sec".to_string(), TelemetryValue::Float(20.0));
         telemetry.insert(
             "health.job_nr_completed_checkpoints".to_string(),
@@ -197,6 +198,7 @@ mod catalog {
                 ),
                 recv_timestamp: Timestamp::new(1647307527, 57406000),
                 health: JobHealthMetrics {
+                    job_max_parallelism: Some(4),
                     job_uptime_millis: 201402,
                     job_nr_restarts: 0,
                     job_nr_completed_checkpoints: 0,
@@ -294,6 +296,7 @@ mod catalog {
             correlation_id: CORR_ID.clone(),
             recv_timestamp: ts,
             health: JobHealthMetrics {
+                job_max_parallelism: None,
                 job_uptime_millis: 1_234_567,
                 job_nr_restarts: 3,
                 job_nr_completed_checkpoints: 12_345,
@@ -421,6 +424,7 @@ mod catalog {
             correlation_id: corr_id.clone(),
             recv_timestamp: ts,
             health: JobHealthMetrics {
+                job_max_parallelism: Some(12),
                 job_uptime_millis: 1_234_567,
                 job_nr_restarts: 3,
                 job_nr_completed_checkpoints: 12_345,
@@ -465,6 +469,7 @@ mod catalog {
             TelemetryValue::Table(maplit::hashmap! {
                 SUBSCRIPTION_CORRELATION.to_string() => corr_id.to_telemetry(),
                 SUBSCRIPTION_TIMESTAMP.to_string() => TelemetryValue::Seq(vec![ts_secs.to_telemetry(), ts_nsecs.to_telemetry(),]),
+                "health.job_max_parallelism".to_string() => 12.to_telemetry(),
                 "health.job_uptime_millis".to_string() => (1_234_567).to_telemetry(),
                 "health.job_nr_restarts".to_string() => (3).to_telemetry(),
                 "health.job_nr_completed_checkpoints".to_string() => (12_345).to_telemetry(),
@@ -1017,6 +1022,7 @@ mod job_detail {
 
     use pretty_assertions::assert_eq;
     use proctor::elements::Timestamp;
+    use crate::flink::model::{JobPlan, JobPlanItem, PlanItemInput};
 
     use super::*;
 
@@ -1264,6 +1270,37 @@ mod job_detail {
                     TaskState::Created => 0,
                     TaskState::Running => 2,
                     TaskState::Initializing => 0,
+                },
+                plan: JobPlan {
+                    jid: JobId::new("0771e8332dc401d254a140a707169a48"),
+                    name: "CarTopSpeedWindowingExample".to_string(),
+                    nodes: vec![
+                        JobPlanItem {
+                            id: VertexId::new("90bea66de1c231edf33913ecd54406c1"),
+                            parallelism: 1,
+                            operator: "".to_string(),
+                            operator_strategy: "".to_string(),
+                            description: "Window(GlobalWindows(), DeltaTrigger, TimeEvictor, ComparableAggregator, PassThroughWindowFunction) -&gt; Sink: Print to Std. Out".to_string(),
+                            inputs: vec![
+                                PlanItemInput {
+                                    id: VertexId::new("cbc357ccb763df2852fee8c4fc7d55f2"),
+                                    num: 0,
+                                    ship_strategy: "HASH".to_string(),
+                                    exchange: "pipelined_bounded".to_string(),
+                                },
+                            ],
+                            optimizer_properties: HashMap::default(),
+                        },
+                        JobPlanItem {
+                            id: VertexId::new("cbc357ccb763df2852fee8c4fc7d55f2"),
+                            parallelism: 1,
+                            operator: "".to_string(),
+                            operator_strategy: "".to_string(),
+                            description: "Source: Custom Source -&gt; Timestamps/Watermarks".to_string(),
+                            inputs: Vec::default(),
+                            optimizer_properties: HashMap::default(),
+                        },
+                    ],
                 },
             }
         )

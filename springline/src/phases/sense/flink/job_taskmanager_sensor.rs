@@ -222,19 +222,22 @@ where
         let mut requested_metrics = HashSet::new();
         let mut available_orders = Vec::new();
         for (order, matches) in self.order_matchers.iter() {
+            tracing::info!(sensor_name=%self.name, scope=%self.scope, "DMR:considering order: {order:?}...");
             for metric in flink_scope_metrics.iter() {
                 let candidate = metric_order::MetricCandidate {
                     metric,
                     position: metric_order::PlanPositionCandidate::ByName(&self.name),
                 };
+                tracing::info!(metric_candidate=?candidate, "order matches candidate = {}", matches(&candidate));
                 if matches(&candidate) {
+                    tracing::info!(%metric, ?order, "distilled to include metric & order");
                     requested_metrics.insert(metric.clone());
                     available_orders.push(order);
                 }
             }
         }
 
-        tracing::debug!(?available_orders, ?requested_metrics, original=?self.orders, "distilled metric orders");
+        tracing::info!(?available_orders, ?requested_metrics, original=?self.orders, "distilled metric orders");
         Ok((requested_metrics.into_iter().collect(), available_orders))
     }
 
