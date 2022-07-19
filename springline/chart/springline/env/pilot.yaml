@@ -43,10 +43,10 @@ application:
 
 global:
   realm: "olp-here"
-  pipeline:
-    id: "7de2037f-4fe3-466d-b2d7-ab92954f966c"
-    versionId: "67ec885d-3172-4f2d-8d91-366de2267755"
-    templateId: "43937ba9-11da-4db5-9fad-e4ea299495b2"
+  pipeline: {}
+#    id: "7de2037f-4fe3-466d-b2d7-ab92954f966c"
+#    versionId: "0413b904-e4cb-45eb-bd8d-fc147d86d00c"
+#    templateId: "4e1bd730-d3e1-43ac-8319-773f80cdb929"
 #    jobId: "732218bb-c165-490b-b70b-b2513592caff"
-    customerBillingTag: "2460zDz92553"
-    billingClientAppId: "patappid"
+#    customerBillingTag: "2460zDz92553"
+#    billingClientAppId: "patappid"

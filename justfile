@@ -49,6 +49,11 @@ helm-install env image=image_default namespace=ns_default:
     --values ./springline/env/{{env}}.yaml \
     --set image.tag={{image}} \
     --set global.pipeline.jobId=$JOB_ID \
+    --set global.pipeline.versionId=$VERSION_ID \
+    --set global.pipeline.templateId=$TEMPLATE_ID \
+    --set global.pipeline.id=$PIPELINE_ID \
+    --set global.pipeline.customerBillingTag=$BILLING_TAG \
+    --set global.pipeline.billingCLientAppId=$CLIENT_APP_ID \
     --namespace {{namespace}}
 
 helm-uninstall namespace=ns_default:

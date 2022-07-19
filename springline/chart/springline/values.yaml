@@ -146,13 +146,15 @@ application:
 
 global:
   annotations: {}
+
   pipeline:
     id:
     versionId:
-#    templateId:
+    templateId:
     jobId:
     customerBillingTag:
     billingClientAppId:
+
   convention:
     jobPrefix: "job-"
     jobManagerSuffix: "-jm"
