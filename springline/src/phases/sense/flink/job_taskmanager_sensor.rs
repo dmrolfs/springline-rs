@@ -67,7 +67,7 @@ impl<Out> JobTaskmanagerSensor<Out> {
     fn new(
         scope: FlinkScope, orders: &[MetricOrder], context: FlinkContext, correlation_gen: CorrelationGenerator,
     ) -> Result<Self, SenseError> {
-        let name = format!("{scope}Sensor").to_snake_case();
+        let name = format!("Flink{scope}Sensor").to_snake_case();
         let trigger = Inlet::new(&name, "trigger");
         let outlet = Outlet::new(&name, "outlet");
 
@@ -223,17 +223,25 @@ where
         let mut available_orders = Vec::new();
         for (order, matches) in self.order_matchers.iter() {
             tracing::info!(sensor_name=%self.name, scope=%self.scope, "DMR:considering order: {order:?}...");
+            let mut order_metrics = vec![];
             for metric in flink_scope_metrics.iter() {
                 let candidate = metric_order::MetricCandidate {
                     metric,
                     position: metric_order::PlanPositionCandidate::ByName(&self.name),
                 };
-                tracing::info!(metric_candidate=?candidate, "order matches candidate = {}", matches(&candidate));
+
                 if matches(&candidate) {
+                    order_metrics.push(metric.as_str());
                     tracing::info!(%metric, ?order, "distilled to include metric & order");
                     requested_metrics.insert(metric.clone());
                     available_orders.push(order);
                 }
+            }
+
+            if order_metrics.is_empty() {
+                tracing::info!(sensor_name=%self.name, scope=%self.scope, "DMR:no metrics matched order: {order:?}");
+            } else {
+                tracing::info!(sensor_name=%self.name, scope=%self.scope, ?order, "DMR:including metrics matching order: {order_metrics:?}");
             }
         }
 

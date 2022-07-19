@@ -2,7 +2,7 @@
 
 # force rescale when at minimum
 scale_up(item, _, reason) if
-    item.cluster.nr_task_managers == 1
+    item.health.job_max_parallelism == 1
     and item.flow_task_utilization_below_threshold(300, 0.02)
     and reason = "arbitrary_upscale__no_utilization_no_feed"
     and cut;
@@ -21,7 +21,7 @@ scale_up(item, _, reason) if
 scale_down(item, _, reason) if
     not item.flow.source_records_lag_max == nil
     and not item.flow.source_assigned_partitions == nil
-    and 1 < item.cluster.nr_task_managers
+    and 1 < item.health.job_max_parallelism
     and evaluation_window(window)
     and utilization = item.flow_task_utilization_rolling_average(window)
     and utilization < {{min_task_utilization}}
@@ -39,7 +39,7 @@ scale_up(item, _, reason) if
 
 # force rescale when backpressure
 scale_down(item, _, reason) if
-    16 <= item.cluster.nr_task_managers
+    16 <= item.health.job_max_parallelism
     and item.flow_source_back_pressured_time_millis_per_sec_rolling_average(300) == 1000.0
     and reason = "arbitrary_downscale_back_pressured_at_max_cluster_size";
 

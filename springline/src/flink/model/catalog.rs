@@ -135,12 +135,8 @@ pub struct JobHealthMetrics {
     /// rescale plan may simply restart at an increased parallelism up to the number of task
     /// managers.
     #[polar(attribute)]
-    #[serde(
-        default,
-        rename = "health.job_max_parallelism",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub job_max_parallelism: Option<u32>,
+    #[serde(default, rename = "health.job_max_parallelism")]
+    pub job_max_parallelism: u32,
 
     // todo per Flink doc's this metric does not work properly under Reactive mode. remove in favor of eligibility's
     // last_failure?
@@ -176,7 +172,7 @@ pub struct JobHealthMetrics {
 impl Monoid for JobHealthMetrics {
     fn empty() -> Self {
         Self {
-            job_max_parallelism: None,
+            job_max_parallelism: 0,
             job_uptime_millis: -1,
             job_nr_restarts: -1,
             job_nr_completed_checkpoints: -1,

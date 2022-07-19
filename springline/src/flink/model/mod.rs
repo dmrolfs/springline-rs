@@ -393,7 +393,6 @@ pub struct PlanItemInput {
     pub exchange: String, //todo: not used - enum? - dig into
 }
 
-
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct JobPlanItem {
     pub id: VertexId,
@@ -403,7 +402,7 @@ pub struct JobPlanItem {
     #[serde(default)]
     pub operator_strategy: String, //todo: not used - dig into?
     pub description: String,
-    #[serde(default, skip_serializing_if="Vec::is_empty")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub inputs: Vec<PlanItemInput>, //todo: not used - dig into?
     #[serde(default)]
     pub optimizer_properties: HashMap<String, String>, //todo: not used - dig into?
@@ -413,7 +412,7 @@ pub struct JobPlanItem {
 pub struct JobPlan {
     pub jid: JobId,
     pub name: String,
-    #[serde(default, skip_serializing_if="Vec::is_empty")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub nodes: Vec<JobPlanItem>,
 }
 

@@ -1546,11 +1546,13 @@ where
 
 impl UpdateWindowMetrics for AppDataWindow<MetricCatalog> {
     fn update_metrics(&self) {
+        let total_lag_1_min = self.flow_source_total_lag_rolling_average(60);
         let utilization_1_min = self.flow_task_utilization_rolling_average(60);
         let relative_lag_rate_1_min = self.flow_source_relative_lag_change_rate(60);
         METRIC_CATALOG_FLOW_TASK_UTILIZATION_1_MIN_ROLLING_AVG.set(utilization_1_min);
+        METRIC_CATALOG_FLOW_SOURCE_TOTAL_LAG_1_MIN_ROLLING_AVG.set(total_lag_1_min);
         METRIC_CATALOG_FLOW_SOURCE_RELATIVE_LAG_CHANGE_RATE_1_MIN_ROLLING_AVG.set(relative_lag_rate_1_min);
-        tracing::warn!(%utilization_1_min, %relative_lag_rate_1_min, "DMR: updated metric catalog window metrics.");
+        tracing::warn!(%utilization_1_min, %total_lag_1_min, %relative_lag_rate_1_min, "DMR: updated metric catalog window metrics.");
     }
 }
 
@@ -1774,6 +1776,17 @@ pub static METRIC_CATALOG_FLOW_TASK_UTILIZATION_1_MIN_ROLLING_AVG: Lazy<Gauge> =
         .const_labels(proctor::metrics::CONST_LABELS.clone()),
     )
     .expect("failed creating metric_catalog_flow_task_utilization_1_min_rolling_avg")
+});
+
+pub static METRIC_CATALOG_FLOW_SOURCE_TOTAL_LAG_1_MIN_ROLLING_AVG: Lazy<Gauge> = Lazy::new(|| {
+    Gauge::with_opts(
+        Opts::new(
+            "metric_catalog_flow_source_total_lag_1_min_rolling_avg",
+            "1 min rolling average of source total lag",
+        )
+        .const_labels(proctor::metrics::CONST_LABELS.clone()),
+    )
+    .expect("failed creating metric_catalog_flow_source_total_lag_1_min_rolling_avg")
 });
 
 pub static METRIC_CATALOG_FLOW_SOURCE_RELATIVE_LAG_CHANGE_RATE_1_MIN_ROLLING_AVG: Lazy<Gauge> = Lazy::new(|| {

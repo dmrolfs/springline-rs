@@ -1,4 +1,4 @@
-FROM rust:1.61-bullseye AS builder
+FROM rust:1-bullseye AS builder
 WORKDIR /app
 
 COPY ["./springline", "."]

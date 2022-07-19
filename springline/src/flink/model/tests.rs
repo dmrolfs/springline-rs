@@ -198,7 +198,7 @@ mod catalog {
                 ),
                 recv_timestamp: Timestamp::new(1647307527, 57406000),
                 health: JobHealthMetrics {
-                    job_max_parallelism: Some(4),
+                    job_max_parallelism: 4,
                     job_uptime_millis: 201402,
                     job_nr_restarts: 0,
                     job_nr_completed_checkpoints: 0,
@@ -296,7 +296,7 @@ mod catalog {
             correlation_id: CORR_ID.clone(),
             recv_timestamp: ts,
             health: JobHealthMetrics {
-                job_max_parallelism: None,
+                job_max_parallelism: 0,
                 job_uptime_millis: 1_234_567,
                 job_nr_restarts: 3,
                 job_nr_completed_checkpoints: 12_345,
@@ -348,6 +348,8 @@ mod catalog {
                 Token::I64(ts_secs),
                 Token::U32(ts_nsecs),
                 Token::TupleStructEnd,
+                Token::Str("health.job_max_parallelism"),
+                Token::U32(0),
                 Token::Str("health.job_uptime_millis"),
                 Token::I64(1_234_567),
                 Token::Str("health.job_nr_restarts"),
@@ -424,7 +426,7 @@ mod catalog {
             correlation_id: corr_id.clone(),
             recv_timestamp: ts,
             health: JobHealthMetrics {
-                job_max_parallelism: Some(12),
+                job_max_parallelism: 12,
                 job_uptime_millis: 1_234_567,
                 job_nr_restarts: 3,
                 job_nr_completed_checkpoints: 12_345,
@@ -1020,9 +1022,9 @@ mod vertex {
 mod job_detail {
     use std::time::Duration;
 
+    use crate::flink::model::{JobPlan, JobPlanItem, PlanItemInput};
     use pretty_assertions::assert_eq;
     use proctor::elements::Timestamp;
-    use crate::flink::model::{JobPlan, JobPlanItem, PlanItemInput};
 
     use super::*;
 

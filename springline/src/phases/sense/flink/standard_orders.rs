@@ -1,7 +1,7 @@
-use once_cell::sync::Lazy;
 use crate::flink::MC_FLOW__RECORDS_IN_PER_SEC;
-use crate::phases::sense::flink::{DerivativeCombinator, FlinkScope, MetricOrder, MetricSpec, PlanPositionSpec};
 use crate::phases::sense::flink::Aggregation::*;
+use crate::phases::sense::flink::{DerivativeCombinator, FlinkScope, MetricOrder, MetricSpec, PlanPositionSpec};
+use once_cell::sync::Lazy;
 use proctor::elements::TelemetryType::*;
 
 // note: `cluster.nr_task_managers` is a standard metric pulled from Flink's admin API. The order

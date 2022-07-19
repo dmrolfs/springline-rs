@@ -18,14 +18,14 @@ use crate::settings::FlinkSensorSettings;
 mod api_model;
 mod job_taskmanager_sensor;
 mod metric_order;
+mod standard_orders;
 mod taskmanager_admin_sensor;
 mod vertex_sensor;
-mod standard_orders;
 
-pub use standard_orders::STD_METRIC_ORDERS;
 pub use metric_order::{
     Aggregation, DerivativeCombinator, FlinkScope, MetricOrder, MetricSpec, PlanPositionCandidate, PlanPositionSpec,
 };
+pub use standard_orders::STD_METRIC_ORDERS;
 pub use vertex_sensor::{
     FLINK_VERTEX_SENSOR_AVAIL_TELEMETRY_TIME, FLINK_VERTEX_SENSOR_METRIC_PICKLIST_TIME, FLINK_VERTEX_SENSOR_TIME,
 };
@@ -173,24 +173,20 @@ fn consolidate_active_job_telemetry_for_order(
                     lhs.cmp(&rhs)
                 });
 
-                if let Some(max_parallelism) = max_parallelism {
-                    Ok(Some((metric, max_parallelism)))
-                } else {
-                    Ok(None)
-                }
+                max_parallelism.map_or(Ok(None), |value| Ok(Some((metric, value))))
             } else {
-            let agg_combinator = telemetry_agg.get(metric.as_str()).map(|agg| (agg, agg.combinator()));
-            match agg_combinator {
-                None => {
-                    tracing::warn!("no aggregation combinator found for metric: {metric}");
-                    Ok(Some((metric, TelemetryValue::Seq(values))))
-                },
-                Some((agg, combo)) => {
-                    let merger = combo.combine(values.clone()).map(|combined| combined.map(|c| (metric, c)));
-                    tracing::debug!(?merger, ?values, %agg, "merging metric values per order aggregator");
-                    merger
-                },
-            }
+                let agg_combinator = telemetry_agg.get(metric.as_str()).map(|agg| (agg, agg.combinator()));
+                match agg_combinator {
+                    None => {
+                        tracing::warn!("no aggregation combinator found for metric: {metric}");
+                        Ok(Some((metric, TelemetryValue::Seq(values))))
+                    },
+                    Some((agg, combo)) => {
+                        let merger = combo.combine(values.clone()).map(|combined| combined.map(|c| (metric, c)));
+                        tracing::debug!(?merger, ?values, %agg, "merging metric values per order aggregator");
+                        merger
+                    },
+                }
             }
         })
         .collect::<Result<Vec<_>, TelemetryError>>()?

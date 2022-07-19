@@ -401,7 +401,7 @@ mod tests {
         |scale_up(item, _context, reason) if 3 < item.flow.records_in_per_sec and reason = "load_up";
         |scale_down(item, _context, reason) if item.flow.records_in_per_sec < 1 and reason = "load_down";
         |
-        |# no action rules to avoid policy errors if corresponding up/down rules not specified in basis.polar
+        |# no action rules to avoid policy issues if corresponding up/down rules not specified in basis.polar
         |scale_up(_, _, _) if false;
         |scale_down(_, _, _) if false;
         |"##

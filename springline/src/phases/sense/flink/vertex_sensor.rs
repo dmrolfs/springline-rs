@@ -19,7 +19,9 @@ use tracing::Instrument;
 use url::Url;
 
 use super::{api_model, metric_order, Aggregation, MetricOrder, Unpack};
-use crate::flink::{self, JobId, JobSummary, VertexDetail, MC_CLUSTER__NR_ACTIVE_JOBS, JobDetail, MC_HEALTH__JOB_MAX_PARALLELISM};
+use crate::flink::{
+    self, JobDetail, JobId, JobSummary, VertexDetail, MC_CLUSTER__NR_ACTIVE_JOBS, MC_HEALTH__JOB_MAX_PARALLELISM,
+};
 use crate::phases::sense::flink::api_model::FlinkMetricResponse;
 use crate::phases::sense::flink::metric_order::MetricOrderMatcher;
 use crate::phases::sense::flink::{
