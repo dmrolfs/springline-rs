@@ -92,7 +92,8 @@ async fn test_flink_sensor_merge_combine_stage() -> anyhow::Result<()> {
             let expected_vertex_summary =
                 MockFlinkVertexMetricSummary::mount_mock(job_id, vertex_id, &mock_server, 1).await;
             expected_vertex_metric_summaries.push(expected_vertex_summary);
-            expected_vertex_metrics.push(MockFlinkVertexMetrics::mount_mock(job_id, vertex_id, vertex_name, &mock_server, 1).await);
+            expected_vertex_metrics
+                .push(MockFlinkVertexMetrics::mount_mock(job_id, vertex_id, vertex_name, &mock_server, 1).await);
         }
     }
     tracing::info!(
@@ -241,7 +242,10 @@ fn make_expected_telemetry(
     // if let Some(expected_value) = expected_max_records_out_per_sec {
     //     expected.insert("flow.records_out_per_sec".to_string(), expected_value.into());
     // }
-    expected.insert("flow.records_out_per_sec".to_string(), expected_max_records_out_per_sec.into());
+    expected.insert(
+        "flow.records_out_per_sec".to_string(),
+        expected_max_records_out_per_sec.into(),
+    );
 
     let expected_max_input_queue_len =
         expected_vertex_metrics
@@ -329,12 +333,13 @@ fn make_expected_telemetry(
 
     let expected_max_job_parallelism = expected_job_details
         .iter()
-        .map(|job_detail| {
-            job_detail.parallelism
-        })
+        .map(|job_detail| job_detail.parallelism)
         .max()
         .unwrap();
-    expected.insert("health.job_max_parallelism".to_string(), expected_max_job_parallelism.into());
+    expected.insert(
+        "health.job_max_parallelism".to_string(),
+        expected_max_job_parallelism.into(),
+    );
 
     expected.into()
 }
@@ -623,7 +628,13 @@ impl MockFlinkJobDetail {
         };
         tracing::info!(nr_vertices=%vertex_states.len(), "vertices: {:?}", vertex_states);
 
-        Self { job_id, job_state, parallelism: max_job_parallelism.into(), vertex_states, vertex_names, }
+        Self {
+            job_id,
+            job_state,
+            parallelism: max_job_parallelism.into(),
+            vertex_states,
+            vertex_names,
+        }
     }
 
     async fn do_register_mock(
@@ -869,20 +880,17 @@ impl MockFlinkVertexMetrics {
     ) -> Self {
         let is_source = vertex_name.starts_with("Source: ");
         let nr_records_in_per_second: RecordsPerSecond = Faker.fake::<f64>().into();
-        let nr_records_out_per_second: Option<RecordsPerSecond> = if is_source {
-            Some(Faker.fake::<f64>().into())
-        } else {
-            None
-        };
+        let nr_records_out_per_second: Option<RecordsPerSecond> =
+            if is_source { Some(Faker.fake::<f64>().into()) } else { None };
         let input_buffer_queue_len = Faker.fake::<f64>();
         let in_buffer_pool_usage = Faker.fake::<f64>();
         let output_buffer_queue_len = Faker.fake::<f64>();
         let out_buffer_pool_usage = Faker.fake::<f64>();
         let mut body_elements: Vec<(&str, &str, f64)> = vec![
-            ( "numRecordsInPerSecond", "max", nr_records_in_per_second.into() ),
-            ( "buffers.inputQueueLength", "max", input_buffer_queue_len ),
-            ( "buffers.inPoolUsage", "max", in_buffer_pool_usage ),
-            ( "buffers.outputQueueLength", "max", output_buffer_queue_len ),
+            ("numRecordsInPerSecond", "max", nr_records_in_per_second.into()),
+            ("buffers.inputQueueLength", "max", input_buffer_queue_len),
+            ("buffers.inPoolUsage", "max", in_buffer_pool_usage),
+            ("buffers.outputQueueLength", "max", output_buffer_queue_len),
         ];
 
         if let Some(records_out) = nr_records_out_per_second {
@@ -896,7 +904,6 @@ impl MockFlinkVertexMetrics {
             record.insert(agg.to_string(), json!(value));
             body.push(record);
         }
-
 
         // let body = json!([
         //     { "id": "numRecordsInPerSecond", "max": nr_records_in_per_second },

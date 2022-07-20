@@ -11,6 +11,7 @@ pub static STD_METRIC_ORDERS: Lazy<Vec<MetricOrder>> = Lazy::new(|| {
     vec![
         // can't find this via normal metrics request -- need to scrape from job-vertex-
         // MetricOrder::Job {
+        //     skip_api: truedd,
         //     metric: MetricSpec::new("parallelism", Max, "health.job_max_parallelism", Integer),
         // },
         MetricOrder::Job {

@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use cast_trait_object::DynCastExt;
 use once_cell::sync::Lazy;
 use pretty_snowflake::{AlphabetCodec, IdPrettifier, MachineNode};
-use proctor::elements::telemetry::{self, Telemetry, TelemetryValue};
+use proctor::elements::telemetry::{Telemetry, TelemetryValue};
 use proctor::error::{SenseError, TelemetryError};
 use proctor::graph::stage::{self, SourceStage, ThroughStage};
 use proctor::graph::{Connect, Graph, SinkShape, SourceShape, UniformFanInShape, UniformFanOutShape};
@@ -156,46 +156,64 @@ fn consolidate_active_job_telemetry_for_order(
     job_telemetry: HashMap<String, Vec<TelemetryValue>>, orders: &[MetricOrder],
 ) -> Result<Telemetry, TelemetryError> {
     // to avoid repeated linear searches, reorg strategy data based on metrics
-    let mut telemetry_agg = HashMap::with_capacity(orders.len());
+    let mut metric_agg = HashMap::with_capacity(orders.len());
     for o in orders {
-        telemetry_agg.insert(o.telemetry().1, o.agg());
+        metric_agg.insert(o.telemetry().1, o.agg());
     }
 
-    // merge via order aggregation
-    let telemetry: Telemetry = job_telemetry
-        .into_iter()
-        .map(|(metric, values)| {
-            //todo: this is messy
-            if metric == MC_HEALTH__JOB_MAX_PARALLELISM {
-                let max_parallelism = values.into_iter().max_by(|acc, val| {
-                    let lhs = u32::try_from(acc).ok();
-                    let rhs = u32::try_from(val).ok();
-                    lhs.cmp(&rhs)
-                });
-
-                max_parallelism.map_or(Ok(None), |value| Ok(Some((metric, value))))
-            } else {
-                let agg_combinator = telemetry_agg.get(metric.as_str()).map(|agg| (agg, agg.combinator()));
-                match agg_combinator {
-                    None => {
-                        tracing::warn!("no aggregation combinator found for metric: {metric}");
-                        Ok(Some((metric, TelemetryValue::Seq(values))))
-                    },
-                    Some((agg, combo)) => {
-                        let merger = combo.combine(values.clone()).map(|combined| combined.map(|c| (metric, c)));
-                        tracing::debug!(?merger, ?values, %agg, "merging metric values per order aggregator");
-                        merger
+    let mut telemetry = Telemetry::new();
+    for (metric, values) in job_telemetry {
+        let aggregated_value = do_aggregate_as_special_metric(&metric, &values)
+            .or_else(|| {
+                match do_aggregate_metric_order(&metric, values, &metric_agg) {
+                    Ok(aggregated) => aggregated,
+                    Err(err) => {
+                        tracing::error!(%metric, error=?err, "Flink telemetry consolidation failed to aggregate metric -- skipping.");
+                        None
                     },
                 }
-            }
-        })
-        .collect::<Result<Vec<_>, TelemetryError>>()?
-        .into_iter()
-        .flatten()
-        .collect::<telemetry::TableType>()
-        .into();
+            });
+
+        if let Some(value) = aggregated_value {
+            telemetry.insert(metric, value);
+        }
+    }
 
     Ok(telemetry)
+}
+
+#[tracing::instrument(level = "trace", skip())]
+fn do_aggregate_as_special_metric(metric: &str, values: &[TelemetryValue]) -> Option<TelemetryValue> {
+    match metric {
+        MC_HEALTH__JOB_MAX_PARALLELISM => {
+            let max_parallelism = values.iter().max_by(|acc, val| {
+                let lhs = u32::try_from(*acc).ok();
+                let rhs = u32::try_from(*val).ok();
+                lhs.cmp(&rhs)
+            });
+
+            max_parallelism.cloned()
+        },
+        _ => None,
+    }
+}
+
+#[tracing::instrument(level = "trace", skip())]
+fn do_aggregate_metric_order<'m>(
+    metric: &'m str, values: Vec<TelemetryValue>, metric_agg: &HashMap<&'m str, Aggregation>,
+) -> Result<Option<TelemetryValue>, TelemetryError> {
+    let agg_combinator = metric_agg.get(metric).map(|agg| (agg, agg.combinator()));
+    match agg_combinator {
+        None => {
+            tracing::warn!("no aggregation combinator found for metric: {metric}");
+            Ok(Some(TelemetryValue::Seq(values)))
+        },
+        Some((agg, combo)) => {
+            let merger = combo.combine(values.clone()); //.map(|combined| combined.map(|c| (metric, c)));
+            tracing::debug!(?merger, ?values, %agg, "merging metric values per order aggregator");
+            merger
+        },
+    }
 }
 
 #[tracing::instrument(level = "trace", skip(telemetry,))]
