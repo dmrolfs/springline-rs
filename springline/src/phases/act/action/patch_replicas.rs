@@ -101,7 +101,7 @@ impl PatchReplicas {
 
         let mut action_satisfied = false;
         let start = Instant::now();
-        while Instant::now().duration_since(start) < api_constraints.api_timeout {
+        while start.elapsed() < api_constraints.api_timeout {
             let (statuses, is_satisfied) = Self::do_assess_patch_completion(plan, kube, start).await?;
             pods_by_status.replace(statuses);
             action_satisfied = is_satisfied;

@@ -5,6 +5,7 @@ use async_trait::async_trait;
 use futures_util::{FutureExt, TryFutureExt};
 use http::Method;
 use proctor::error::UrlError;
+use tokio::time::Instant;
 use tracing::Instrument;
 use url::Url;
 
@@ -213,6 +214,8 @@ impl CancelWithSavepoint {
         job: JobId, polling_interval: Duration, cancel_timeout: Duration, session: &ActionSession,
     ) -> Result<(), FlinkError> {
         let task = async {
+            let start = Instant::now();
+
             loop {
                 let job_detail = session.flink.query_job_details(&job, &session.correlation()).await;
                 match job_detail {
@@ -221,7 +224,12 @@ impl CancelWithSavepoint {
                         break;
                     },
                     Ok(details) => {
-                        tracing::info!(job_status=%details.state, "job {job} is active - checking again in {polling_interval:?}.");
+                        let elapsed = start.elapsed();
+                        tracing::info!(
+                            job_status=%details.state,
+                            "job {job} is active - checking again in {polling_interval:?} - budget remaining: {remaining:?}.",
+                            remaining = cancel_timeout - elapsed,
+                        );
                     },
                     Err(err) => {
                         tracing::warn!(
@@ -246,6 +254,8 @@ impl CancelWithSavepoint {
         session: &ActionSession,
     ) -> Result<SavepointStatus, FlinkError> {
         let task = async {
+            let start = Instant::now();
+
             loop {
                 match Self::check_savepoint(&job, &trigger, session).await {
                     Ok(savepoint) if savepoint.status == OperationStatus::Completed => {
@@ -253,9 +263,11 @@ impl CancelWithSavepoint {
                         break savepoint;
                     },
                     Ok(savepoint) => {
+                        let elapsed = start.elapsed();
                         tracing::info!(
                             ?savepoint,
-                            "savepoint in progress - checking again in {polling_interval:?}"
+                            "savepoint in progress - checking again in {polling_interval:?} - budget remaining: {remaining:?}.",
+                            remaining = savepoint_timeout - elapsed,
                         )
                     },
                     Err(err) => {
