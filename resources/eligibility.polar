@@ -1,10 +1,10 @@
 {{#*inline "preamble"}}
 # define eligibile rule in eligibility polar basis file.
 
-deploying(_, context) if context.cluster_status.is_deploying;
+deploying(_, context) if context.cluster.is_deploying;
 
 {{#if cooling_secs}}
-in_cooling_period(_, context) if context.cluster_status.last_deployment_within_seconds({{cooling_secs}});
+in_cooling_period(_, context) if context.cluster.last_deployment_within_seconds({{cooling_secs}});
 {{else}}
 in_cooling_period(_, _) if false;
 {{/if}}

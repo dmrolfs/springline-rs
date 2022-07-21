@@ -1,7 +1,7 @@
 use once_cell::sync::Lazy;
 use pretty_snowflake::Id;
 
-use crate::phases::eligibility::{ClusterStatus, EligibilityContext, TaskStatus};
+use crate::phases::eligibility::{ClusterStatus, EligibilityContext, JobStatus};
 
 mod context {
     use chrono::{DateTime, Utc};
@@ -24,8 +24,8 @@ mod context {
             correlation_id: Id::direct("EligibilityContext", 0, "A"),
             recv_timestamp: Timestamp::new(0, 0),
             all_sinks_healthy: true,
-            task_status: TaskStatus { last_failure: Some(DT_1.clone()) },
-            cluster_status: ClusterStatus {
+            job: JobStatus { last_failure: Some(DT_1.clone()) },
+            cluster: ClusterStatus {
                 is_deploying: false,
                 is_rescaling: false,
                 last_deployment: DT_2.clone(),
@@ -133,8 +133,8 @@ mod context {
             correlation_id: Id::direct("EligibilityContext", 0, "A"),
             recv_timestamp: Timestamp::new(0, 0),
             all_sinks_healthy: false,
-            task_status: TaskStatus { last_failure: Some(DT_1.clone()) },
-            cluster_status: ClusterStatus {
+            job: JobStatus { last_failure: Some(DT_1.clone()) },
+            cluster: ClusterStatus {
                 is_deploying: false,
                 is_rescaling: false,
                 last_deployment: DT_2.clone(),

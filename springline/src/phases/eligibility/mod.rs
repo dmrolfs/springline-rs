@@ -13,7 +13,7 @@ mod tests;
 mod context;
 mod policy;
 
-pub use context::{ClusterStatus, EligibilityContext, TaskStatus};
+pub use context::{ClusterStatus, EligibilityContext, JobStatus};
 pub use context::{CLUSTER__IS_RESCALING, CLUSTER__LAST_DEPLOYMENT};
 pub(crate) use context::{
     ELIGIBILITY_CTX_ALL_SINKS_HEALTHY, ELIGIBILITY_CTX_CLUSTER_IS_DEPLOYING, ELIGIBILITY_CTX_CLUSTER_LAST_DEPLOYMENT,

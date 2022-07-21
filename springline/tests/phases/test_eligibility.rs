@@ -12,7 +12,7 @@ use proctor::graph::{Connect, Graph, SinkShape, SourceShape};
 use proctor::phases::policy_phase::PolicyPhase;
 use proctor::ProctorIdGenerator;
 use springline::flink::{AppDataWindow, ClusterMetrics, FlowMetrics, JobHealthMetrics, MetricCatalog};
-use springline::phases::eligibility::{ClusterStatus, TaskStatus};
+use springline::phases::eligibility::{ClusterStatus, JobStatus};
 use springline::phases::eligibility::{EligibilityContext, EligibilityPolicy, EligibilityTemplateData};
 use springline::settings::EligibilitySettings;
 use tokio::sync::oneshot;
@@ -534,8 +534,8 @@ pub fn make_context(
         recv_timestamp: Timestamp::now(),
         correlation_id: gen.next_id().relabel(),
         all_sinks_healthy: true,
-        task_status: TaskStatus { last_failure },
-        cluster_status: ClusterStatus { is_deploying, is_rescaling, last_deployment },
+        job: JobStatus { last_failure },
+        cluster: ClusterStatus { is_deploying, is_rescaling, last_deployment },
         custom,
     }
 }

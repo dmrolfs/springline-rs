@@ -63,8 +63,8 @@ impl PopulateContext for EligibilityContext {
             correlation_id: id_gen.next_id(),
             recv_timestamp: now.into(),
             all_sinks_healthy,
-            task_status: TaskStatus { last_failure },
-            cluster_status: ClusterStatus { is_deploying, is_rescaling, last_deployment },
+            job: JobStatus { last_failure },
+            cluster: ClusterStatus { is_deploying, is_rescaling, last_deployment },
             custom,
         })
     }

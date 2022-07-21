@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use dialoguer::{Confirm, Input};
 use proctor::elements::ToTelemetry;
 use springline::flink::MetricCatalog;
-use springline::phases::eligibility::{ClusterStatus, EligibilityContext, TaskStatus};
+use springline::phases::eligibility::{ClusterStatus, EligibilityContext, JobStatus};
 use springline::settings::{EligibilitySettings, Settings};
 
 use crate::Result;

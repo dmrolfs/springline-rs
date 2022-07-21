@@ -24,11 +24,11 @@ pub struct EligibilityContext {
 
     #[polar(attribute)]
     #[serde(flatten)] // current subscription mechanism only supports flatten keys
-    pub task_status: TaskStatus,
+    pub job: JobStatus,
 
     #[polar(attribute)]
     #[serde(flatten)] // current subscription mechanism only supports flatten keys
-    pub cluster_status: ClusterStatus,
+    pub cluster: ClusterStatus,
 
     #[polar(attribute)]
     pub all_sinks_healthy: bool,
@@ -43,8 +43,8 @@ impl Debug for EligibilityContext {
         f.debug_struct("EligibilityContext")
             .field("correlation_id", &self.correlation_id)
             .field("recv_timestamp", &self.recv_timestamp.to_string())
-            .field("task_status", &self.task_status)
-            .field("cluster_status", &self.cluster_status)
+            .field("job", &self.job)
+            .field("cluster", &self.cluster)
             .field("all_sinks_healthy", &self.all_sinks_healthy)
             .field("custom", &self.custom)
             .finish()
@@ -63,8 +63,8 @@ impl Monoid for EligibilityContext {
         Self {
             correlation_id: Id::direct(<Self as Label>::labeler().label(), 0, "<undefined>"),
             recv_timestamp: Timestamp::ZERO,
-            task_status: TaskStatus::empty(),
-            cluster_status: ClusterStatus::empty(),
+            job: JobStatus::empty(),
+            cluster: ClusterStatus::empty(),
             all_sinks_healthy: true,
             custom: telemetry::TableType::new(),
         }
@@ -79,8 +79,8 @@ impl Semigroup for EligibilityContext {
         Self {
             correlation_id: other.correlation_id.clone(),
             recv_timestamp: other.recv_timestamp,
-            task_status: self.task_status.combine(&other.task_status),
-            cluster_status: self.cluster_status.combine(&other.cluster_status),
+            job: self.job.combine(&other.job),
+            cluster: self.cluster.combine(&other.cluster),
             all_sinks_healthy: other.all_sinks_healthy,
             custom,
         }
@@ -89,9 +89,7 @@ impl Semigroup for EligibilityContext {
 
 impl PartialEq for EligibilityContext {
     fn eq(&self, other: &Self) -> bool {
-        self.task_status == other.task_status
-            && self.cluster_status == other.cluster_status
-            && self.custom == other.custom
+        self.job == other.job && self.cluster == other.cluster && self.custom == other.custom
     }
 }
 
@@ -127,13 +125,13 @@ impl UpdateMetrics for EligibilityContext {
         let update_fn = move |subscription_name: &str, telemetry: &Telemetry| match telemetry.clone().try_into::<Self>()
         {
             Ok(ctx) => {
-                if let Some(last_failure_ts) = ctx.task_status.last_failure.map(|ts| ts.timestamp()) {
+                if let Some(last_failure_ts) = ctx.job.last_failure.map(|ts| ts.timestamp()) {
                     ELIGIBILITY_CTX_TASK_LAST_FAILURE.set(last_failure_ts);
                 }
 
                 ELIGIBILITY_CTX_ALL_SINKS_HEALTHY.set(ctx.all_sinks_healthy as i64);
-                ELIGIBILITY_CTX_CLUSTER_IS_DEPLOYING.set(ctx.cluster_status.is_deploying as i64);
-                ELIGIBILITY_CTX_CLUSTER_LAST_DEPLOYMENT.set(ctx.cluster_status.last_deployment.timestamp());
+                ELIGIBILITY_CTX_CLUSTER_IS_DEPLOYING.set(ctx.cluster.is_deploying as i64);
+                ELIGIBILITY_CTX_CLUSTER_LAST_DEPLOYMENT.set(ctx.cluster.last_deployment.timestamp());
             },
 
             Err(err) => {
@@ -150,7 +148,7 @@ impl UpdateMetrics for EligibilityContext {
 }
 
 #[derive(PolarClass, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct TaskStatus {
+pub struct JobStatus {
     // todo: I don't I can get this from Flink - maybe from deployment or k8s?
     // todo: remove struct in favor of metric_catalog's job health uptime -
     // probably not since that metric doesn't work properly under reactive mode.
@@ -163,7 +161,7 @@ pub struct TaskStatus {
     pub last_failure: Option<DateTime<Utc>>,
 }
 
-impl TaskStatus {
+impl JobStatus {
     pub fn last_failure_within_seconds(&self, seconds: i64) -> bool {
         self.last_failure.map_or(false, |last_failure| {
             let boundary = Utc::now() - chrono::Duration::seconds(seconds);
@@ -172,13 +170,13 @@ impl TaskStatus {
     }
 }
 
-impl Monoid for TaskStatus {
+impl Monoid for JobStatus {
     fn empty() -> Self {
         Self { last_failure: None }
     }
 }
 
-impl Semigroup for TaskStatus {
+impl Semigroup for JobStatus {
     fn combine(&self, other: &Self) -> Self {
         let last_failure = match (&self.last_failure, &other.last_failure) {
             (Some(a), Some(b)) => Some(a.max(b)),

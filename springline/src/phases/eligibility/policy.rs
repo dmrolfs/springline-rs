@@ -9,7 +9,7 @@ use proctor::ProctorContext;
 use prometheus::{IntCounterVec, Opts};
 use serde::{Deserialize, Serialize};
 
-use super::context::{ClusterStatus, EligibilityContext, TaskStatus};
+use super::context::{ClusterStatus, EligibilityContext, JobStatus};
 use crate::flink::AppDataWindow;
 use crate::metrics::UpdateMetrics;
 use crate::phases::eligibility::EligibilityData;
@@ -89,9 +89,9 @@ impl QueryPolicy for EligibilityPolicy {
                 .build(),
         )?;
         oso.register_class(
-            TaskStatus::get_polar_class_builder()
+            JobStatus::get_polar_class_builder()
                 .name("TaskStatus")
-                .add_method("last_failure_within_seconds", TaskStatus::last_failure_within_seconds)
+                .add_method("last_failure_within_seconds", JobStatus::last_failure_within_seconds)
                 .build(),
         )?;
         oso.register_class(
@@ -112,7 +112,7 @@ impl QueryPolicy for EligibilityPolicy {
     }
 
     fn query_policy(&self, engine: &Oso, args: Self::Args) -> Result<QueryResult, PolicyError> {
-        if args.1.cluster_status.is_rescaling {
+        if args.1.cluster.is_rescaling {
             tracing::info!(item=?args.0, context=?args.1, "Cluster is rescaling, skipping eligibility policy check");
             Ok(QueryResult {
                 passed: false,
