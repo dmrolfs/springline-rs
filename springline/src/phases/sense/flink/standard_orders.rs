@@ -9,11 +9,6 @@ use proctor::elements::TelemetryType::*;
 // API.
 pub static STD_METRIC_ORDERS: Lazy<Vec<MetricOrder>> = Lazy::new(|| {
     vec![
-        // can't find this via normal metrics request -- need to scrape from job-vertex-
-        // MetricOrder::Job {
-        //     skip_api: truedd,
-        //     metric: MetricSpec::new("parallelism", Max, "health.job_max_parallelism", Integer),
-        // },
         MetricOrder::Job {
             metric: MetricSpec::new("uptime", Max, "health.job_uptime_millis", Integer),
         },
@@ -40,10 +35,6 @@ pub static STD_METRIC_ORDERS: Lazy<Vec<MetricOrder>> = Lazy::new(|| {
             position: PlanPositionSpec::Any,
             metric: MetricSpec::new("numRecordsInPerSecond", Max, MC_FLOW__RECORDS_IN_PER_SEC, Float),
         },
-        // MetricOrder::Task {
-        //     position: PlanPositionSpec::Any,
-        //     metric: MetricSpec::new("numRecordsOutPerSecond", Max, "flow.records_out_per_sec", Float),
-        // },
         MetricOrder::Task {
             position: PlanPositionSpec::Source,
             metric: MetricSpec::new("numRecordsOutPerSecond", Sum, "flow.records_out_per_sec", Float),

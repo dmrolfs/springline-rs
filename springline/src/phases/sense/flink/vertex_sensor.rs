@@ -216,14 +216,14 @@ where
             Ok(detail) => {
                 let job_detail_telemetry = self.extract_job_detail_telemetry(&detail, correlation);
                 if !job_detail_telemetry.is_empty() {
-                    tracing::warn!(?job_detail_telemetry, "DMR: adding job_detail telemetry.");
+                    tracing::debug!(?job_detail_telemetry, "adding vertex sensor job_detail telemetry.");
                     let mut groups = metric_telemetry.lock().await;
                     super::merge_into_metric_groups(&mut *groups, job_detail_telemetry);
                 }
 
                 for vertex in detail.vertices.into_iter().filter(|v| v.status.is_active()) {
                     if let Ok(vertex_telemetry) = self.query_vertex_telemetry(&job.id, &vertex, correlation).await {
-                        tracing::warn!(job_id=?job.id, vertex_id=?vertex.id, ?vertex_telemetry, "DMR: adding vertex telemetry.");
+                        tracing::debug!(job_id=?job.id, vertex_id=?vertex.id, ?vertex_telemetry, "adding vertex sensor telemetry.");
                         let mut groups = metric_telemetry.lock().await;
                         super::merge_into_metric_groups(&mut *groups, vertex_telemetry);
                     }

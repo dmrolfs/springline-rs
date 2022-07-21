@@ -1552,7 +1552,7 @@ impl UpdateWindowMetrics for AppDataWindow<MetricCatalog> {
         METRIC_CATALOG_FLOW_TASK_UTILIZATION_1_MIN_ROLLING_AVG.set(utilization_1_min);
         METRIC_CATALOG_FLOW_SOURCE_TOTAL_LAG_1_MIN_ROLLING_AVG.set(total_lag_1_min);
         METRIC_CATALOG_FLOW_SOURCE_RELATIVE_LAG_CHANGE_RATE_1_MIN_ROLLING_AVG.set(relative_lag_rate_1_min);
-        tracing::warn!(%utilization_1_min, %total_lag_1_min, %relative_lag_rate_1_min, "DMR: updated metric catalog window metrics.");
+        tracing::debug!(%utilization_1_min, %total_lag_1_min, %relative_lag_rate_1_min, "updated metric catalog window metrics.");
     }
 }
 

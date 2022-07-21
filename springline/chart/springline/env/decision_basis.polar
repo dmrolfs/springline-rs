@@ -35,7 +35,7 @@ scale_down(item, _, reason) if
 scale_up(item, _, reason) if
     item.cluster.nr_task_managers < 16
     and item.flow_source_back_pressured_time_millis_per_sec_rolling_average(300) == 1000.0
-    and reason = "rescale_up_to_relieve_back_pressured";
+    and reason = "rescale_up_to_relieve_back_pressure";
 
 # force rescale when backpressure
 scale_down(item, _, reason) if
