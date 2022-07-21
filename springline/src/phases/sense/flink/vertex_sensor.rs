@@ -236,7 +236,7 @@ where
     }
 
     #[tracing::instrument(level = "trace", skip(self, job_detail))]
-    fn extract_job_detail_telemetry(&self, job_detail: &JobDetail, correlation: &CorrelationId) -> Telemetry {
+    fn extract_job_detail_telemetry(&self, job_detail: &JobDetail, _correlation: &CorrelationId) -> Telemetry {
         let mut telemetry = Telemetry::new();
 
         let max_parallelism = job_detail.plan.nodes.iter().map(|n| n.parallelism).max_by(u32::cmp);
