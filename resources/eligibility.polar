@@ -10,13 +10,13 @@ in_cooling_period(_, _) if false;
 {{/if}}
 
 {{#if stable_secs}}
-recent_failure(_, context) if context.task_status.last_failure_within_seconds({{stable_secs}});
+recent_failure(_, context) if context.job.last_failure_within_seconds({{stable_secs}});
 {{else}}
 recent_failure(_, _) if false;
 {{/if}}
 
 # Do not scale during multi region failure
-# Are there task failures
+# Are there job failures
 # Do not scale while there are current operations; e.g., Cancel, Upgrade, MultiRegion Failover.
 # license considerations; e.g., Do not autoscale freemium pipelines
 

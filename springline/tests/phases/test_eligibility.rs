@@ -548,7 +548,10 @@ pub fn make_test_item(custom: telemetry::TableType) -> Data {
         correlation_id: gen.next_id().relabel(),
         health: JobHealthMetrics::default(),
         flow: FlowMetrics::default(),
-        cluster: ClusterMetrics::default(),
+        cluster: ClusterMetrics {
+            nr_active_jobs: 1,
+            ..ClusterMetrics::default()
+        },
         custom,
     };
 
