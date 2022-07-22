@@ -9,6 +9,8 @@ use crate::Result;
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod policy_tests;
 
 mod context;
 mod policy;
