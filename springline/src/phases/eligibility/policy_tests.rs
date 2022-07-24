@@ -58,13 +58,9 @@ pub fn prepare_policy_engine<P: QueryPolicy>(policy: &P) -> Result<Oso, PolicyEr
     Ok(oso)
 }
 
-fn policy_template_data()  -> impl Strategy<Value = Option<EligibilityTemplateData>> {
-    (any::<bool>(), any::<Option<u32>>(), any::<Option<u32>>()).prop_map(|(is_some, cooling_secs, stable_secs)| {
-        if is_some {
-            Some(EligibilityTemplateData { cooling_secs, stable_secs, ..EligibilityTemplateData::default() })
-        } else {
-            None
-        }
+fn policy_template_data()  -> impl Strategy<Value = EligibilityTemplateData> {
+    (any::<Option<u32>>(), any::<Option<u32>>()).prop_map(|(cooling_secs, stable_secs)| {
+        EligibilityTemplateData { cooling_secs, stable_secs, ..EligibilityTemplateData::default() }
     })
 }
 
@@ -141,6 +137,7 @@ pub mod resources_policy {
     use claim::*;
     use proctor::elements::PolicySource;
     use pretty_snowflake::{Id, Label};
+    use proptest::{option as prop_option};
 
     #[tracing::instrument(level="info",)]
     pub fn doesnt_crash_test(
@@ -178,14 +175,14 @@ pub mod resources_policy {
     proptest! {
         #[test]
         fn doesnt_crash(
-            template_data in policy_template_data(),
+            template_data in prop_option::of(policy_template_data()),
             nr_active_jobs: u32,
             is_deploying: bool,
             is_rescaling: bool,
             last_deployment in date_time(),
-            // last_failure in OptionStrategy of date_time(),
+            last_failure in prop_option::of(date_time()),
         ) {
-            doesnt_crash_test(template_data, nr_active_jobs, is_deploying, is_rescaling, last_deployment, None)
+            doesnt_crash_test(template_data, nr_active_jobs, is_deploying, is_rescaling, last_deployment, last_failure)
         }
     }
 }
