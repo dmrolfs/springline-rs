@@ -36,7 +36,7 @@
             (
                 source: "string",
                 policy: (
-                    name: "eligibility_basis",
+                    name: "eligibility_ext",
                     polar: r#"
                         eligible(_, _context, length) if length = 13;
                         eligible(_item, context, c) if

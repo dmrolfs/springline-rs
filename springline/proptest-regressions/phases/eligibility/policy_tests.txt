@@ -4,5 +4,4 @@
 #
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
-cc bed5327a7073641725688e49ed9525dad816a25f49d531609c85c406453d3a43 # shrinks to template_data = None, nr_active_jobs = 0, is_deploying = false, is_rescaling = false, last_deployment = 0000-01-01T00:00:00Z
 cc a40e874bda14826f7d93c6c08ff7c49b53d24ce587b55691360e9c41174fbc7e # shrinks to template_data = None, nr_active_jobs = 0, is_deploying = false, is_rescaling = false, last_deployment = 0000-01-01T00:00:00Z

@@ -11,6 +11,8 @@ use crate::Result;
 mod tests;
 #[cfg(test)]
 mod policy_tests;
+#[cfg(test)]
+mod policy_regression_tests;
 
 mod context;
 mod policy;

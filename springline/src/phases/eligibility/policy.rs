@@ -16,10 +16,11 @@ use crate::phases::eligibility::EligibilityData;
 use crate::phases::REASON;
 use crate::settings::EligibilitySettings;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct EligibilityTemplateData {
-    pub basis: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub policy_extension: Option<String>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cooling_secs: Option<u32>,
@@ -29,17 +30,6 @@ pub struct EligibilityTemplateData {
 
     #[serde(flatten, skip_serializing_if = "HashMap::is_empty")]
     pub custom: HashMap<String, String>,
-}
-
-impl Default for EligibilityTemplateData {
-    fn default() -> Self {
-        Self {
-            basis: format!("{}_basis", EligibilityPolicy::base_template_name()),
-            cooling_secs: None,
-            stable_secs: None,
-            custom: HashMap::default(),
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -182,10 +172,10 @@ mod tests {
         let settings = EligibilitySettings {
             policies: vec![
                 assert_ok!(PolicySource::from_template_file("./resources/eligibility.polar")),
-                assert_ok!(PolicySource::from_template_file("./resources/eligibility_basis.polar")),
+                assert_ok!(PolicySource::from_template_file("./resources/eligibility_ext.polar")),
             ],
             template_data: Some(EligibilityTemplateData {
-                basis: "eligibility_basis".to_string(),
+                policy_extension: Some("eligibility_ext".to_string()),
                 cooling_secs: Some(900),
                 stable_secs: Some(900),
                 custom: maplit::hashmap! { "foo".to_string() => "bar".to_string(), },
@@ -211,13 +201,13 @@ mod tests {
             |    {
             |      "source": "file",
             |      "policy": {
-            |        "path": "./resources/eligibility_basis.polar",
+            |        "path": "./resources/eligibility_ext.polar",
             |        "is_template": true
             |      }
             |    }
             |  ],
             |  "template_data": {
-            |    "basis": "eligibility_basis",
+            |    "policy_extension": "eligibility_ext",
             |    "cooling_secs": 900,
             |    "stable_secs": 900,
             |    "foo": "bar"
@@ -246,13 +236,13 @@ mod tests {
             |    {
             |      "source": "file",
             |      "policy": {
-            |        "path": "./resources/eligibility_basis.polar",
+            |        "path": "./resources/eligibility_ext.polar",
             |        "is_template": true
             |      }
             |    }
             |  ],
             |  "template_data": {
-            |    "basis": "eligibility_basis",
+            |    "policy_extension": "eligibility_ext",
             |    "cooling_secs": 900,
             |    "stable_secs": 900,
             |    "foo": "bar"
@@ -267,10 +257,10 @@ mod tests {
             EligibilitySettings {
                 policies: vec![
                     assert_ok!(PolicySource::from_template_file("./resources/eligibility.polar")),
-                    assert_ok!(PolicySource::from_template_file("./resources/eligibility_basis.polar")),
+                    assert_ok!(PolicySource::from_template_file("./resources/eligibility_ext.polar")),
                 ],
                 template_data: Some(EligibilityTemplateData {
-                    basis: "eligibility_basis".to_string(),
+                    policy_extension: Some("eligibility_ext".to_string()),
                     cooling_secs: Some(900),
                     stable_secs: Some(900),
                     custom: maplit::hashmap! { "foo".to_string() => "bar".to_string(), },

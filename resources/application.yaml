@@ -141,10 +141,10 @@ eligibility:
         is_template: true
     - source: file
       policy:
-        path: "./resources/eligibility_basis.polar"
+        path: "./resources/eligibility_ext.polar"
         is_template: true
   template_data:
-    basis: eligibility_basis
+    policy_extension: eligibility_ext
     cooling_secs: 300
     stable_secs: 300
 

@@ -360,7 +360,7 @@ mod tests {
                 policies: vec![
                     assert_ok!(PolicySource::from_template_file("../resources/eligibility.polar")),
                     assert_ok!(PolicySource::from_template_string(
-                        "eligibility_basis",
+                        "eligibility_ext",
                         r##"|eligible(_, _context, length) if length = 13;
                         |eligible(_item, context, c) if
                         |  c = context.custom() and
@@ -541,10 +541,10 @@ mod tests {
                 "./resources/eligibility.polar"
             )))
             .with_source(assert_ok!(PolicySource::from_template_file(
-                "./resources/eligibility_basis.polar"
+                "./resources/eligibility_ext.polar"
             )))
             .with_template_data(EligibilityTemplateData {
-                basis: "eligibility_basis".to_string(),
+                policy_extension: Some("eligibility_ext".to_string()),
                 cooling_secs: Some(5 * 60),
                 stable_secs: Some(5 * 60),
                 custom: HashMap::default(),
