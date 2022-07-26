@@ -1549,10 +1549,15 @@ impl UpdateWindowMetrics for AppDataWindow<MetricCatalog> {
         let total_lag_1_min = self.flow_source_total_lag_rolling_average(60);
         let utilization_1_min = self.flow_task_utilization_rolling_average(60);
         let relative_lag_rate_1_min = self.flow_source_relative_lag_change_rate(60);
+        let source_back_pressured_rate_1_min = self.flow_source_back_pressured_time_millis_per_sec_rolling_average(60);
         METRIC_CATALOG_FLOW_TASK_UTILIZATION_1_MIN_ROLLING_AVG.set(utilization_1_min);
         METRIC_CATALOG_FLOW_SOURCE_TOTAL_LAG_1_MIN_ROLLING_AVG.set(total_lag_1_min);
         METRIC_CATALOG_FLOW_SOURCE_RELATIVE_LAG_CHANGE_RATE_1_MIN_ROLLING_AVG.set(relative_lag_rate_1_min);
-        tracing::debug!(%utilization_1_min, %total_lag_1_min, %relative_lag_rate_1_min, "updated metric catalog window metrics.");
+        METRIC_CATALOG_FLOW_SOURCE_BACK_PRESSURE_TIME_1_MIN_ROLLING_AVG.set(source_back_pressured_rate_1_min);
+        tracing::debug!(
+            %utilization_1_min, %total_lag_1_min, %relative_lag_rate_1_min, %source_back_pressured_rate_1_min,
+            "updated metric catalog window metrics."
+        );
     }
 }
 
@@ -1795,7 +1800,18 @@ pub static METRIC_CATALOG_FLOW_SOURCE_RELATIVE_LAG_CHANGE_RATE_1_MIN_ROLLING_AVG
             "metric_catalog_flow_source_relative_lag_change_rate_1_min_rolling_avg",
             "1 min rolling average of source relative lag change rate",
         )
+            .const_labels(proctor::metrics::CONST_LABELS.clone()),
+    )
+        .expect("failed creating metric_catalog_flow_source_relative_lag_change_rate_1_min_rolling_avg")
+});
+
+pub static METRIC_CATALOG_FLOW_SOURCE_BACK_PRESSURE_TIME_1_MIN_ROLLING_AVG: Lazy<Gauge> = Lazy::new(|| {
+    Gauge::with_opts(
+        Opts::new(
+            "metric_catalog_flow_source_back_pressure_time_1_min_rolling_avg",
+            "1 min rolling average of source back pressured rate",
+        )
         .const_labels(proctor::metrics::CONST_LABELS.clone()),
     )
-    .expect("failed creating metric_catalog_flow_source_relative_lag_change_rate_1_min_rolling_avg")
+    .expect("failed creating metric_catalog_flow_source_back_pressure_time_1_min_rolling_avg")
 });

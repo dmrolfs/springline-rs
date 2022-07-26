@@ -41,6 +41,9 @@ pub fn register_metrics(registry: &Registry) -> Result<()> {
     registry.register(Box::new(
         flink::METRIC_CATALOG_FLOW_SOURCE_RELATIVE_LAG_CHANGE_RATE_1_MIN_ROLLING_AVG.clone(),
     ))?;
+    registry.register(Box::new(
+        flink::METRIC_CATALOG_FLOW_SOURCE_BACK_PRESSURE_TIME_1_MIN_ROLLING_AVG.clone(),
+    ))?;
     registry.register(Box::new(flink::METRIC_CATALOG_CLUSTER_NR_ACTIVE_JOBS.clone()))?;
     registry.register(Box::new(flink::METRIC_CATALOG_CLUSTER_NR_TASK_MANAGERS.clone()))?;
     registry.register(Box::new(flink::METRIC_CATALOG_CLUSTER_TASK_CPU_LOAD.clone()))?;
