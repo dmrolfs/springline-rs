@@ -25,5 +25,5 @@ recent_failure(_, _) if false;
 # Do not scale while there are current operations; e.g., Cancel, Upgrade, MultiRegion Failover.
 # license considerations; e.g., Do not autoscale freemium pipelines
 
-{{>  (lookup this "policy_extension")}}
+{{>  (lookup this policy_extension)}}
 

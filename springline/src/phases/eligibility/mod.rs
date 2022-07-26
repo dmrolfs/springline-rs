@@ -8,11 +8,11 @@ use crate::settings::EligibilitySettings;
 use crate::Result;
 
 #[cfg(test)]
-mod tests;
+mod policy_regression_tests;
 #[cfg(test)]
 mod policy_tests;
 #[cfg(test)]
-mod policy_regression_tests;
+mod tests;
 
 mod context;
 mod policy;
