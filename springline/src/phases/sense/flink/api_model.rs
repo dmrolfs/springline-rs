@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use crate::phases::sense::flink::metric_order::{self, MetricOrderMatcher};
 use crate::phases::sense::flink::{self as sense_flink, PlanPositionCandidate};
 use once_cell::sync::Lazy;
-use proctor::elements::{Telemetry, TelemetryValue};
+use proctor::elements::{Telemetry, TelemetryType, TelemetryValue};
 use proctor::error::TelemetryError;
 use serde::{Deserialize, Serialize};
 
@@ -46,7 +46,13 @@ impl FlinkMetric {
                     Ok(value) => {
                         let _ = telemetry.insert(field.1.to_string(), value);
                     },
-                    Err(err) => tracing::error!(
+                    Err(TelemetryError::UnsupportedConversion { from: TelemetryType::Unit, .. }) => {
+                        tracing::info!(
+                            metric=%o.metric(), ?metric_value, order=?o,
+                            "cannot convert unit metric value to satisfy metric order -- skipping."
+                        );
+                    },
+                    Err(err) => tracing::warn!(
                         error=?err, metric=%o.metric(), ?metric_value, order=?o,
                         "Unable to read ordered type in flink metric response - skipping."
                     ),
