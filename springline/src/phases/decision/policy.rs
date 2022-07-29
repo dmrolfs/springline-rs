@@ -404,8 +404,8 @@ mod tests {
                 |scale_up(_, _, _) if false;
                 |scale_down(_, _, _) if false;
                 |"##
-        .trim_margin_with("|")
-        .unwrap();
+            .trim_margin_with("|")
+            .unwrap();
         assert_eq!(actual, expected);
         Ok(())
     }

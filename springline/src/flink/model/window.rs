@@ -1800,9 +1800,9 @@ pub static METRIC_CATALOG_FLOW_SOURCE_RELATIVE_LAG_CHANGE_RATE_1_MIN_ROLLING_AVG
             "metric_catalog_flow_source_relative_lag_change_rate_1_min_rolling_avg",
             "1 min rolling average of source relative lag change rate",
         )
-            .const_labels(proctor::metrics::CONST_LABELS.clone()),
+        .const_labels(proctor::metrics::CONST_LABELS.clone()),
     )
-        .expect("failed creating metric_catalog_flow_source_relative_lag_change_rate_1_min_rolling_avg")
+    .expect("failed creating metric_catalog_flow_source_relative_lag_change_rate_1_min_rolling_avg")
 });
 
 pub static METRIC_CATALOG_FLOW_SOURCE_BACK_PRESSURE_TIME_1_MIN_ROLLING_AVG: Lazy<Gauge> = Lazy::new(|| {

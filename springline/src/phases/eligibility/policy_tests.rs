@@ -10,9 +10,9 @@ use std::time::Duration;
 
 pub use super::{ClusterStatus, EligibilityContext, EligibilityPolicy, EligibilityTemplateData, JobStatus};
 pub use crate::flink::{AppDataWindow, AppDataWindowBuilder, MetricCatalog};
+pub use crate::phases::policy_test_fixtures::{arb_date_time, prepare_policy_engine};
 pub use crate::settings::EligibilitySettings;
 pub use proctor::elements::{PolicySource, QueryPolicy, Timestamp};
-pub use crate::phases::policy_test_fixtures::{prepare_policy_engine, arb_date_time};
 
 pub use crate::phases::REASON;
 pub const NO_ACTIVE_JOBS: &str = "no_active_jobs";
@@ -57,7 +57,9 @@ pub struct PolicyScenarioBuilder {
 
 #[allow(dead_code)]
 impl PolicyScenarioBuilder {
-    pub fn template_data(self, template_data: impl Strategy<Value = Option<EligibilityTemplateData>> + 'static) -> Self {
+    pub fn template_data(
+        self, template_data: impl Strategy<Value = Option<EligibilityTemplateData>> + 'static,
+    ) -> Self {
         let mut new = self;
         new.template_data = Some(template_data.boxed());
         new

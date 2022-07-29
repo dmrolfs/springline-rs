@@ -1,10 +1,10 @@
-use std::io::Read;
+use chrono::{DateTime, TimeZone, Utc};
+use claim::*;
 use oso::Oso;
 use proctor::elements::{PolicySource, QueryPolicy};
 use proctor::error::PolicyError;
-use claim::*;
 use proptest::prelude::*;
-use chrono::{DateTime, Utc, TimeZone};
+use std::io::Read;
 
 #[tracing::instrument(level = "info")]
 pub fn prepare_policy_engine<P: QueryPolicy>(policy: &P) -> Result<Oso, PolicyError> {

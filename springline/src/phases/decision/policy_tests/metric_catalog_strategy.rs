@@ -1,16 +1,14 @@
+use super::*;
+use crate::flink::{AppDataWindowBuilder, ClusterMetrics, CorrelationGenerator, FlowMetrics, JobHealthMetrics};
 use once_cell::sync::Lazy;
 use pretty_snowflake::{AlphabetCodec, IdPrettifier};
 use proctor::elements::telemetry;
 use std::sync::Mutex;
-use crate::flink::{AppDataWindowBuilder, ClusterMetrics, CorrelationGenerator, FlowMetrics, JobHealthMetrics};
-use super::*;
 
 pub fn arb_metric_catalog_window<M>(
-    start: impl Strategy<Value = Timestamp>,
-    delay: impl Strategy<Value = Duration> + 'static,
-    interval: impl Strategy<Value = Duration> + 'static,
-    window: impl Strategy<Value = Duration> + 'static,
-    make_metric_catalog: M
+    start: impl Strategy<Value = Timestamp>, delay: impl Strategy<Value = Duration> + 'static,
+    interval: impl Strategy<Value = Duration> + 'static, window: impl Strategy<Value = Duration> + 'static,
+    make_metric_catalog: M,
 ) -> impl Strategy<Value = AppDataWindow<MetricCatalog>>
 where
     M: Fn(Timestamp) -> BoxedStrategy<MetricCatalog> + 'static,
@@ -22,18 +20,14 @@ where
     start
         .prop_flat_map(move |start| arb_timestamp_window(start, delay.clone(), interval.clone(), window.clone()))
         .prop_flat_map(move |(timestamps, time_window)| {
-            let builder_strategy = timestamps
-                .into_iter()
-                .fold(
-                    Just(AppDataWindow::builder().with_time_window(time_window)).boxed(),
-                    |acc, ts| do_next_arb_metric_catalog(acc, make_metric_catalog(ts))
-                );
+            let builder_strategy = timestamps.into_iter().fold(
+                Just(AppDataWindow::builder().with_time_window(time_window)).boxed(),
+                |acc, ts| do_next_arb_metric_catalog(acc, make_metric_catalog(ts)),
+            );
 
-            builder_strategy.prop_map(|builder| builder.build().expect("failed to build valid metric catalog data window"))
+            builder_strategy
+                .prop_map(|builder| builder.build().expect("failed to build valid metric catalog data window"))
         })
-    // window
-    //todo -- DMR - WORK HERE
-    // Just(AppDataWindow::from_time_window(MetricCatalog::empty(), Duration::from_secs(120)))
 }
 
 fn do_next_arb_metric_catalog(
@@ -41,9 +35,7 @@ fn do_next_arb_metric_catalog(
     metric_catalog: impl Strategy<Value = MetricCatalog> + 'static,
 ) -> BoxedStrategy<AppDataWindowBuilder<MetricCatalog>> {
     (builder, metric_catalog)
-        .prop_map(|(builder, metric_catalog)| {
-            builder.with_item(metric_catalog)
-        })
+        .prop_map(|(builder, metric_catalog)| builder.with_item(metric_catalog))
         .boxed()
 }
 
@@ -57,7 +49,10 @@ pub struct MetricCatalogStrategyBuilder {
 }
 
 static CORRELATION_GEN: Lazy<Mutex<CorrelationGenerator>> = Lazy::new(|| {
-    Mutex::new(CorrelationGenerator::distributed(MachineNode::new(1,1).unwrap(), IdPrettifier::<AlphabetCodec>::default()))
+    Mutex::new(CorrelationGenerator::distributed(
+        MachineNode::new(1, 1).unwrap(),
+        IdPrettifier::<AlphabetCodec>::default(),
+    ))
 });
 
 #[allow(dead_code)]

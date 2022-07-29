@@ -38,15 +38,16 @@ impl DecisionTemplateDataStrategyBuilder {
     }
 
     pub fn max_healthy_relative_lag_velocity(
-        self,
-        max_healthy_relative_lag_velocity: impl Strategy<Value = Option<f64>> + 'static
+        self, max_healthy_relative_lag_velocity: impl Strategy<Value = Option<f64>> + 'static,
     ) -> Self {
         let mut new = self;
         new.max_healthy_relative_lag_velocity = Some(max_healthy_relative_lag_velocity.boxed());
         new
     }
 
-    pub fn just_max_healthy_relative_lag_velocity(self, max_healthy_relative_lag_velocity: impl Into<Option<f64>>) -> Self {
+    pub fn just_max_healthy_relative_lag_velocity(
+        self, max_healthy_relative_lag_velocity: impl Into<Option<f64>>,
+    ) -> Self {
         self.max_healthy_relative_lag_velocity(Just(max_healthy_relative_lag_velocity.into()))
     }
 
@@ -80,7 +81,9 @@ impl DecisionTemplateDataStrategyBuilder {
         self.max_healthy_cpu_load(Just(max_healthy_cpu_load.into()))
     }
 
-    pub fn max_healthy_heap_memory_load(self, max_healthy_heap_memory_load: impl Strategy<Value = Option<f64>> + 'static) -> Self {
+    pub fn max_healthy_heap_memory_load(
+        self, max_healthy_heap_memory_load: impl Strategy<Value = Option<f64>> + 'static,
+    ) -> Self {
         let mut new = self;
         new.max_healthy_heap_memory_load = Some(max_healthy_heap_memory_load.boxed());
         new
@@ -90,13 +93,17 @@ impl DecisionTemplateDataStrategyBuilder {
         self.max_healthy_heap_memory_load(Just(max_healthy_heap_memory_load.into()))
     }
 
-    pub fn max_healthy_network_io_utilization(self, max_healthy_network_io_utilization: impl Strategy<Value = Option<f64>> + 'static) -> Self {
+    pub fn max_healthy_network_io_utilization(
+        self, max_healthy_network_io_utilization: impl Strategy<Value = Option<f64>> + 'static,
+    ) -> Self {
         let mut new = self;
         new.max_healthy_network_io_utilization = Some(max_healthy_network_io_utilization.boxed());
         new
     }
 
-    pub fn just_max_healthy_network_io_utilization(self, max_healthy_network_io_utilization: impl Into<Option<f64>>) -> Self {
+    pub fn just_max_healthy_network_io_utilization(
+        self, max_healthy_network_io_utilization: impl Into<Option<f64>>,
+    ) -> Self {
         self.max_healthy_network_io_utilization(Just(max_healthy_network_io_utilization.into()))
     }
 
@@ -113,13 +120,21 @@ impl DecisionTemplateDataStrategyBuilder {
     pub fn finish(self) -> impl Strategy<Value = DecisionTemplateData> {
         tracing::info!(?self, "DMR: building DecisionTemplateData strategy");
         let basis = self.basis.clone();
-        let max_healthy_relative_lag_velocity = self.max_healthy_relative_lag_velocity.unwrap_or(prop::option::of(any::<f64>()).boxed());
+        let max_healthy_relative_lag_velocity = self
+            .max_healthy_relative_lag_velocity
+            .unwrap_or(prop::option::of(any::<f64>()).boxed());
         let max_healthy_lag = self.max_healthy_lag.unwrap_or(prop::option::of(any::<f64>()).boxed());
         let min_task_utilization = self.min_task_utilization.unwrap_or(prop::option::of(any::<f64>()).boxed());
         let max_healthy_cpu_load = self.max_healthy_cpu_load.unwrap_or(prop::option::of(any::<f64>()).boxed());
-        let max_healthy_heap_memory_load = self.max_healthy_heap_memory_load.unwrap_or(prop::option::of(any::<f64>()).boxed());
-        let max_healthy_network_io_utilization = self.max_healthy_network_io_utilization.unwrap_or(prop::option::of(any::<f64>()).boxed());
-        let evaluate_duration_secs = self.evaluate_duration_secs.unwrap_or(prop::option::of(any::<i64>()).boxed());
+        let max_healthy_heap_memory_load = self
+            .max_healthy_heap_memory_load
+            .unwrap_or(prop::option::of(any::<f64>()).boxed());
+        let max_healthy_network_io_utilization = self
+            .max_healthy_network_io_utilization
+            .unwrap_or(prop::option::of(any::<f64>()).boxed());
+        let evaluate_duration_secs = self
+            .evaluate_duration_secs
+            .unwrap_or(prop::option::of(any::<i64>()).boxed());
 
         (
             max_healthy_relative_lag_velocity,
@@ -130,28 +145,8 @@ impl DecisionTemplateDataStrategyBuilder {
             max_healthy_network_io_utilization,
             evaluate_duration_secs,
         )
-            .prop_map(move |(
-                                max_healthy_relative_lag_velocity,
-                                max_healthy_lag,
-                                min_task_utilization,
-                                max_healthy_cpu_load,
-                                max_healthy_heap_memory_load,
-                                max_healthy_network_io_utilization,
-                                evaluate_duration_secs,
-                            )| {
-                tracing::info!(
-                    ?max_healthy_relative_lag_velocity,
-                    ?max_healthy_lag,
-                    ?min_task_utilization,
-                    ?max_healthy_cpu_load,
-                    ?max_healthy_heap_memory_load,
-                    ?max_healthy_network_io_utilization,
-                    ?evaluate_duration_secs,
-                    "making DecisionTemplateData..."
-                );
-
-                DecisionTemplateData {
-                    basis: basis.clone(),
+            .prop_map(
+                move |(
                     max_healthy_relative_lag_velocity,
                     max_healthy_lag,
                     min_task_utilization,
@@ -159,8 +154,30 @@ impl DecisionTemplateDataStrategyBuilder {
                     max_healthy_heap_memory_load,
                     max_healthy_network_io_utilization,
                     evaluate_duration_secs,
-                    custom: Default::default(),
-                }
-            })
+                )| {
+                    tracing::info!(
+                        ?max_healthy_relative_lag_velocity,
+                        ?max_healthy_lag,
+                        ?min_task_utilization,
+                        ?max_healthy_cpu_load,
+                        ?max_healthy_heap_memory_load,
+                        ?max_healthy_network_io_utilization,
+                        ?evaluate_duration_secs,
+                        "making DecisionTemplateData..."
+                    );
+
+                    DecisionTemplateData {
+                        basis: basis.clone(),
+                        max_healthy_relative_lag_velocity,
+                        max_healthy_lag,
+                        min_task_utilization,
+                        max_healthy_cpu_load,
+                        max_healthy_heap_memory_load,
+                        max_healthy_network_io_utilization,
+                        evaluate_duration_secs,
+                        custom: Default::default(),
+                    }
+                },
+            )
     }
 }

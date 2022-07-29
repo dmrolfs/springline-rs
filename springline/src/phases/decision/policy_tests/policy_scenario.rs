@@ -24,7 +24,7 @@ pub struct PolicyScenarioBuilder {
 
 #[allow(dead_code)]
 impl PolicyScenarioBuilder {
-    #[tracing::instrument(level="info", skip(template_data))]
+    #[tracing::instrument(level = "info", skip(template_data))]
     pub fn template_data(self, template_data: impl Strategy<Value = Option<DecisionTemplateData>> + 'static) -> Self {
         let template_data = template_data.boxed();
         tracing::info!("DMR: template_data={template_data:?}");
@@ -38,7 +38,7 @@ impl PolicyScenarioBuilder {
         self.template_data(Just(template_data.into()))
     }
 
-    #[tracing::instrument(level="info", skip(items))]
+    #[tracing::instrument(level = "info", skip(items))]
     pub fn items(self, items: impl Strategy<Value = AppDataWindow<MetricCatalog>> + 'static) -> Self {
         let items = items.boxed();
         tracing::info!("DMR: items={items:?}");
@@ -52,11 +52,9 @@ impl PolicyScenarioBuilder {
         self.items(Just(items.into()))
     }
 
-    #[tracing::instrument(level="info", skip(item, window))]
+    #[tracing::instrument(level = "info", skip(item, window))]
     pub fn one_item(
-        self,
-        item: impl Strategy<Value = MetricCatalog> + 'static,
-        window: impl Strategy<Value = Duration> + 'static
+        self, item: impl Strategy<Value = MetricCatalog> + 'static, window: impl Strategy<Value = Duration> + 'static,
     ) -> Self {
         // let window = window.into();
         // let one_item = item.into();
@@ -87,8 +85,11 @@ impl PolicyScenarioBuilder {
             arb_range_duration(5..=15),
             arb_range_duration(5..=300),
             |recv_ts| {
-                MetricCatalogStrategyBuilder::new().just_recv_timestamp(recv_ts).finish().boxed()
-            }
+                MetricCatalogStrategyBuilder::new()
+                    .just_recv_timestamp(recv_ts)
+                    .finish()
+                    .boxed()
+            },
         );
         let item = self.item.unwrap_or(foo.boxed());
         (template_data, item).prop_map(|(template_data, item)| {

@@ -1,26 +1,23 @@
-
-mod policy_scenario;
 mod decision_template_data_strategy;
 mod metric_catalog_strategy;
+mod policy_scenario;
 
-use std::ops::RangeInclusive;
-pub use policy_scenario::*;
 pub use decision_template_data_strategy::*;
 pub use metric_catalog_strategy::*;
+pub use policy_scenario::*;
+use std::ops::RangeInclusive;
 
-pub use std::time::Duration;
+pub use super::policy::DecisionTemplateData;
+pub use super::{ScaleDirection, DECISION_DIRECTION};
+pub use crate::flink::{AppDataWindow, MetricCatalog};
 pub use pretty_snowflake::MachineNode;
 pub use proctor::elements::{telemetry, TelemetryValue, Timestamp};
 pub use proptest::prelude::*;
-pub use crate::flink::{AppDataWindow, MetricCatalog};
-pub use super::{DECISION_DIRECTION, ScaleDirection};
-pub use super::policy::DecisionTemplateData;
+pub use std::time::Duration;
 
 pub fn arb_timestamp_window(
-    start: Timestamp,
-    delay: impl Strategy<Value = Duration>,
-    interval: impl Strategy<Value = Duration> + 'static,
-    window: impl Strategy<Value = Duration>
+    start: Timestamp, delay: impl Strategy<Value = Duration>, interval: impl Strategy<Value = Duration> + 'static,
+    window: impl Strategy<Value = Duration>,
 ) -> impl Strategy<Value = (Vec<Timestamp>, Duration)> {
     let interval = interval.boxed();
 
@@ -46,29 +43,28 @@ pub fn arb_timestamp_window(
 }
 
 fn do_next_arb_window_timestamp(
-    acc: BoxedStrategy<(Vec<Timestamp>, Option<(Timestamp, Duration)>)>,
-    interval: BoxedStrategy<Duration>,
+    acc: BoxedStrategy<(Vec<Timestamp>, Option<(Timestamp, Duration)>)>, interval: BoxedStrategy<Duration>,
 ) -> BoxedStrategy<(Vec<Timestamp>, Option<(Timestamp, Duration)>)> {
     (acc, interval.clone())
         .prop_flat_map(
-            move |((mut acc_ts, next_remaining), next_interval)| {
-                match next_remaining {
-                    None => Just((acc_ts, None)).boxed(),
-                    Some((_, remaining)) if remaining < next_interval => Just((acc_ts, None)).boxed(),
-                    Some((next, remaining)) => {
-                        let next_ts = next + next_interval;
-                        let next_remaining = remaining - next_interval;
-                        acc_ts.push(next_ts);
-                        let next_acc: (Vec<Timestamp>, Option<(Timestamp, Duration)>) = (acc_ts, Some((next_ts, next_remaining)));
-                        do_next_arb_window_timestamp(Just(next_acc).boxed(), interval.clone())
-                    }
-                }
-            })
+            move |((mut acc_ts, next_remaining), next_interval)| match next_remaining {
+                None => Just((acc_ts, None)).boxed(),
+                Some((_, remaining)) if remaining < next_interval => Just((acc_ts, None)).boxed(),
+                Some((next, remaining)) => {
+                    let next_ts = next + next_interval;
+                    let next_remaining = remaining - next_interval;
+                    acc_ts.push(next_ts);
+                    let next_acc: (Vec<Timestamp>, Option<(Timestamp, Duration)>) =
+                        (acc_ts, Some((next_ts, next_remaining)));
+                    do_next_arb_window_timestamp(Just(next_acc).boxed(), interval.clone())
+                },
+            },
+        )
         .boxed()
 }
 
 pub fn arb_machine_node() -> impl Strategy<Value = MachineNode> {
-    (0_i32..=31, 0_i32..=31).prop_map(|(machine_id, node_id)| MachineNode { machine_id, node_id, })
+    (0_i32..=31, 0_i32..=31).prop_map(|(machine_id, node_id)| MachineNode { machine_id, node_id })
 }
 
 pub fn arb_range_duration(range_secs: RangeInclusive<u64>) -> impl Strategy<Value = Duration> {
@@ -87,17 +83,18 @@ pub fn arb_f64_range(min_inclusive: f64, max_exclusive: f64) -> impl Strategy<Va
 // }
 
 pub fn arb_timestamp() -> impl Strategy<Value = Timestamp> {
-    (any::<i64>(), any::<u32>())
-        .prop_filter_map("negative", |(secs, nanos)| {
-            if secs <= 0 {
-                None
-            } else {
-                Some(Timestamp::new(secs, nanos))
-            }
-        })
+    (any::<i64>(), any::<u32>()).prop_filter_map("negative", |(secs, nanos)| {
+        if secs <= 0 {
+            None
+        } else {
+            Some(Timestamp::new(secs, nanos))
+        }
+    })
 }
 
-pub fn arb_timestamp_after(ts: Timestamp, duration: impl Strategy<Value = Duration>) -> impl Strategy<Value = Timestamp> {
+pub fn arb_timestamp_after(
+    ts: Timestamp, duration: impl Strategy<Value = Duration>,
+) -> impl Strategy<Value = Timestamp> {
     duration.prop_map(move |dur| ts + dur)
 }
 
@@ -110,14 +107,18 @@ pub fn arb_telemetry_value() -> impl Strategy<Value = TelemetryValue> {
         Just(TelemetryValue::Unit),
     ];
     leaf.prop_recursive(
-        2, // 8 levels deep
+        2,  // 8 levels deep
         32, // Shoot for maximum size of 256 nodes
         10, // We put up to 10 items per collection
-        |inner| prop_oneof![
-        // Take the inner strategy and make the two recursive cases.
-        prop::collection::vec(inner.clone(), 0..10).prop_map(TelemetryValue::Seq),
-        arb_telemetry_table_type().prop_map(|table: telemetry::TableType| TelemetryValue::Table(table.into())),
-    ]).boxed()
+        |inner| {
+            prop_oneof![
+                // Take the inner strategy and make the two recursive cases.
+                prop::collection::vec(inner.clone(), 0..10).prop_map(TelemetryValue::Seq),
+                arb_telemetry_table_type().prop_map(|table: telemetry::TableType| TelemetryValue::Table(table.into())),
+            ]
+        },
+    )
+    .boxed()
 }
 
 pub fn arb_telemetry_table_type() -> impl Strategy<Value = telemetry::TableType> {
@@ -125,16 +126,14 @@ pub fn arb_telemetry_table_type() -> impl Strategy<Value = telemetry::TableType>
 }
 
 fn do_arb_timestamp_window() -> impl Strategy<Value = (Vec<Timestamp>, Duration)> {
-        arb_timestamp()
-        .prop_flat_map(|start| {
-
-            arb_timestamp_window(
-                start,
-                arb_range_duration(0..=10),
-                arb_range_duration(1..=15),
-                arb_range_duration(10..=300)
-            )
-        })
+    arb_timestamp().prop_flat_map(|start| {
+        arb_timestamp_window(
+            start,
+            arb_range_duration(0..=10),
+            arb_range_duration(1..=15),
+            arb_range_duration(10..=300),
+        )
+    })
 }
 
 proptest! {

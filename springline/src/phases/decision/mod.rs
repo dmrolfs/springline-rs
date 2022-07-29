@@ -9,6 +9,7 @@ use proctor::phases::sense::{ClearinghouseSubscriptionAgent, SubscriptionChannel
 use std::fmt::Display;
 
 #[cfg(test)]
+#[allow(dead_code)]
 mod policy_tests;
 
 mod context;
@@ -21,7 +22,6 @@ pub use policy::{DecisionPolicy, DecisionTemplateData};
 pub use result::DecisionResult;
 pub use result::DECISION_DIRECTION;
 pub use result::{get_direction_and_reason, make_decision_transform};
-
 
 pub type DecisionData = AppDataWindow<MetricCatalog>;
 pub type DecisionOutcome = DecisionResult<DecisionData>;
