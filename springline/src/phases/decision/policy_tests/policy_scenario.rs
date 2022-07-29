@@ -1,4 +1,7 @@
+use proctor::elements::QueryResult;
+use proctor::error::PolicyError;
 use super::*;
+
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct PolicyScenario {
@@ -13,6 +16,11 @@ impl PolicyScenario {
 
     pub fn builder() -> PolicyScenarioBuilder {
         PolicyScenarioBuilder::default()
+    }
+
+    #[tracing::instrument(level = "info")]
+    pub fn run(&self) -> Result<QueryResult, PolicyError> {
+        todo!()
     }
 }
 
@@ -56,10 +64,6 @@ impl PolicyScenarioBuilder {
     pub fn one_item(
         self, item: impl Strategy<Value = MetricCatalog> + 'static, window: impl Strategy<Value = Duration> + 'static,
     ) -> Self {
-        // let window = window.into();
-        // let one_item = item.into();
-        // tracing::info!("DMR: one_item={one_item:?}");
-
         let items = (item, window)
             .prop_map(|(item, window)| AppDataWindow::from_time_window(item, window))
             .boxed();
@@ -78,8 +82,8 @@ impl PolicyScenarioBuilder {
         let template_data = self
             .template_data
             .unwrap_or(prop::option::of(DecisionTemplateDataStrategyBuilder::strategy(decision_basis.into())).boxed());
-        //todo - DMR: WORK HERE on catalog inputs
-        let foo = arb_metric_catalog_window(
+
+        let data = arb_metric_catalog_window(
             Just(Timestamp::now()),
             arb_range_duration(0..=10),
             arb_range_duration(5..=15),
@@ -91,7 +95,7 @@ impl PolicyScenarioBuilder {
                     .boxed()
             },
         );
-        let item = self.item.unwrap_or(foo.boxed());
+        let item = self.item.unwrap_or(data.boxed());
         (template_data, item).prop_map(|(template_data, item)| {
             tracing::info!(?template_data, ?item, "DMR: making scenario...");
             PolicyScenario { template_data, item }

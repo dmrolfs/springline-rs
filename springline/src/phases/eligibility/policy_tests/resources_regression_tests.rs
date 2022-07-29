@@ -1,8 +1,9 @@
-use super::policy_tests::*;
 use super::*;
-use chrono::{TimeZone, Utc};
-use claim::*;
-use proctor::elements::QueryResult;
+// use super::policy_tests::*;
+// use super::*;
+// use chrono::{TimeZone, Utc};
+// use claim::*;
+// use proctor::elements::QueryResult;
 
 #[test]
 fn test_eligibility_policy_doesnt_crash_5691360e9c41174fbc7e() {
@@ -14,7 +15,7 @@ fn test_eligibility_policy_doesnt_crash_5691360e9c41174fbc7e() {
     // template_data = None, nr_active_jobs = 0, is_deploying = false, is_rescaling = false,
     // last_deployment = 0000-01-01T00:00:00Z
 
-    assert_ok!(resources_policy::run_policy_scenario(&PolicyScenario {
+    let scenario = PolicyScenario {
         template_data: Some(EligibilityTemplateData {
             cooling_secs: Some(300),
             stable_secs: Some(900),
@@ -25,20 +26,23 @@ fn test_eligibility_policy_doesnt_crash_5691360e9c41174fbc7e() {
         is_rescaling: false,
         last_deployment: Utc.ymd(0, 1, 1).and_hms_nano(0, 0, 0, 0),
         last_failure: None,
-    }));
+    };
+
+    assert_ok!(scenario.run());
 }
 
 #[test]
 fn test_eligibility_policy_nr_active_jobs_ae1d6126() {
-    let actual = assert_ok!(resources_policy::run_policy_scenario(&PolicyScenario {
+    let scenario = PolicyScenario {
         template_data: None,
         nr_active_jobs: 0,
         is_deploying: false,
         is_rescaling: false,
         last_deployment: Utc.ymd(0, 1, 1).and_hms_nano(0, 0, 0, 0),
         last_failure: None
-    }));
+    };
 
+    let actual = assert_ok!(scenario.run());
     assert_eq!(
         actual,
         QueryResult {

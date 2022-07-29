@@ -1,6 +1,7 @@
 mod decision_template_data_strategy;
 mod metric_catalog_strategy;
 mod policy_scenario;
+mod resources_policy_tests;
 
 pub use decision_template_data_strategy::*;
 pub use metric_catalog_strategy::*;
