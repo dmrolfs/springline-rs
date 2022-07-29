@@ -1,20 +1,18 @@
 use crate::flink::{ClusterMetrics, FlowMetrics, JobHealthMetrics};
-use chrono::{DateTime, TimeZone, Utc};
+use chrono::{DateTime, Utc};
 use claim::*;
 use fake::{Fake, Faker};
-use oso::Oso;
 use pretty_snowflake::{Id, Label, Labeling};
 use proctor::error::PolicyError;
-use proptest::option as prop_option;
 use proptest::prelude::*;
 use std::collections::HashMap;
-use std::io::Read;
 use std::time::Duration;
 
 pub use super::{ClusterStatus, EligibilityContext, EligibilityPolicy, EligibilityTemplateData, JobStatus};
 pub use crate::flink::{AppDataWindow, AppDataWindowBuilder, MetricCatalog};
 pub use crate::settings::EligibilitySettings;
 pub use proctor::elements::{PolicySource, QueryPolicy, Timestamp};
+pub use crate::phases::policy_test_fixtures::{prepare_policy_engine, arb_date_time};
 
 pub use crate::phases::REASON;
 pub const NO_ACTIVE_JOBS: &str = "no_active_jobs";
@@ -22,50 +20,6 @@ pub const RESCALING: &str = "rescaling";
 pub const DEPLOYING: &str = "deploying";
 pub const COOLING_PERIOD: &str = "cooling_period";
 pub const RECENT_FAILURE: &str = "recent_failure";
-
-#[tracing::instrument(level = "info")]
-pub fn prepare_policy_engine<P: QueryPolicy>(policy: &P) -> Result<Oso, PolicyError> {
-    for source in policy.sources() {
-        match source {
-            PolicySource::File { path, .. } => {
-                let f = std::fs::File::open(path);
-                match &f {
-                    Ok(f0) => tracing::info!(file=?f0, ?path, "opened policy source file."),
-                    Err(err) => tracing::error!(error=?err, ?path, "failed to open policy source file."),
-                };
-
-                let mut contents = String::new();
-                let size = assert_ok!(assert_ok!(f).read_to_string(&mut contents));
-                tracing::info!(%contents, %size, "reading policy FILE {path:?}.");
-            },
-            PolicySource::String { name, polar, .. } => {
-                tracing::info!(contents=%polar, %name, "reading policy STRING {name}.");
-            },
-        }
-    }
-
-    for rendered in assert_ok!(policy.render_policy_sources()) {
-        match rendered {
-            proctor::elements::policy_filter::PolicySourcePath::File(path) => {
-                let mut f = assert_ok!(std::fs::File::open(path.clone()));
-                let mut contents = String::new();
-                let size = assert_ok!(f.read_to_string(&mut contents));
-                tracing::info!(%contents, %size, "reading RENDERED policy FILE {path:?}.");
-            },
-            proctor::elements::policy_filter::PolicySourcePath::String(tf) => {
-                let mut f = assert_ok!(tf.reopen());
-                let mut contents = String::new();
-                let size = assert_ok!(f.read_to_string(&mut contents));
-                tracing::info!(%contents, %size, "reading RENDERED policy STRING {tf:?}.");
-            },
-        }
-    }
-
-    let mut oso = Oso::new();
-    policy.load_policy_engine(&mut oso)?;
-    policy.initialize_policy_engine(&mut oso)?;
-    Ok(oso)
-}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PolicyScenario {
@@ -103,82 +57,80 @@ pub struct PolicyScenarioBuilder {
 
 #[allow(dead_code)]
 impl PolicyScenarioBuilder {
-    pub fn template_data(self, template_data: impl Into<BoxedStrategy<Option<EligibilityTemplateData>>>) -> Self {
+    pub fn template_data(self, template_data: impl Strategy<Value = Option<EligibilityTemplateData>> + 'static) -> Self {
         let mut new = self;
-        new.template_data = Some(template_data.into());
+        new.template_data = Some(template_data.boxed());
         new
     }
 
     pub fn just_template_data(self, template_data: impl Into<Option<EligibilityTemplateData>>) -> Self {
-        self.template_data(Just(template_data.into()).boxed())
+        self.template_data(Just(template_data.into()))
     }
 
     #[tracing::instrument(level = "info", skip(nr_active_jobs))]
-    pub fn nr_active_jobs(self, nr_active_jobs: impl Into<BoxedStrategy<u32>>) -> Self {
+    pub fn nr_active_jobs(self, nr_active_jobs: impl Strategy<Value = u32> + 'static) -> Self {
         let mut new = self;
-        let nr_active_jobs = nr_active_jobs.into();
         tracing::info!(is_rescaling=?new.is_rescaling, "DMR: nr_active_jobs={nr_active_jobs:?}");
-        new.nr_active_jobs = Some(nr_active_jobs);
+        new.nr_active_jobs = Some(nr_active_jobs.boxed());
         new
     }
 
     pub fn just_nr_active_jobs(self, nr_active_jobs: impl Into<u32>) -> Self {
-        self.nr_active_jobs(Just(nr_active_jobs.into()).boxed())
+        self.nr_active_jobs(Just(nr_active_jobs.into()))
     }
 
-    pub fn is_deploying(self, is_deploying: impl Into<BoxedStrategy<bool>>) -> Self {
+    pub fn is_deploying(self, is_deploying: impl Strategy<Value = bool> + 'static) -> Self {
         let mut new = self;
-        new.is_deploying = Some(is_deploying.into());
+        new.is_deploying = Some(is_deploying.boxed());
         new
     }
 
     pub fn just_is_deploying(self, is_deploying: impl Into<bool>) -> Self {
-        self.is_deploying(Just(is_deploying.into()).boxed())
+        self.is_deploying(Just(is_deploying.into()))
     }
 
     #[tracing::instrument(level = "info", skip(is_rescaling))]
-    pub fn is_rescaling(self, is_rescaling: impl Into<BoxedStrategy<bool>>) -> Self {
+    pub fn is_rescaling(self, is_rescaling: impl Strategy<Value = bool> + 'static) -> Self {
         let mut new = self;
-        let is_rescaling = is_rescaling.into();
         tracing::info!(nr_active_jobs=?new.nr_active_jobs, "DMR: is_rescaling={is_rescaling:?}");
-        new.is_rescaling = Some(is_rescaling);
+        new.is_rescaling = Some(is_rescaling.boxed());
         new
     }
 
     pub fn just_is_rescaling(self, is_rescaling: impl Into<bool>) -> Self {
-        self.is_rescaling(Just(is_rescaling.into()).boxed())
+        self.is_rescaling(Just(is_rescaling.into()))
     }
 
-    pub fn last_deployment(self, last_deployment: impl Into<BoxedStrategy<DateTime<Utc>>>) -> Self {
+    pub fn last_deployment(self, last_deployment: impl Strategy<Value = DateTime<Utc>> + 'static) -> Self {
         let mut new = self;
-        new.last_deployment = Some(last_deployment.into());
+        new.last_deployment = Some(last_deployment.boxed());
         new
     }
 
     pub fn just_last_deployment(self, last_deployment: impl Into<DateTime<Utc>>) -> Self {
-        self.last_deployment(Just(last_deployment.into()).boxed())
+        self.last_deployment(Just(last_deployment.into()))
     }
 
-    pub fn last_failure(self, last_failure: impl Into<BoxedStrategy<Option<DateTime<Utc>>>>) -> Self {
+    pub fn last_failure(self, last_failure: impl Strategy<Value = Option<DateTime<Utc>>> + 'static) -> Self {
         let mut new = self;
-        new.last_failure = Some(last_failure.into());
+        new.last_failure = Some(last_failure.boxed());
         new
     }
 
     pub fn just_last_failure(self, last_failure: impl Into<Option<DateTime<Utc>>>) -> Self {
-        self.last_failure(Just(last_failure.into()).boxed())
+        self.last_failure(Just(last_failure.into()))
     }
 
     pub fn strategy(self) -> impl Strategy<Value = PolicyScenario> {
-        tracing::info!(?self, "DMR: building strategy");
+        tracing::info!(?self, "DMR: building eligibility policy strategy");
         let template_data = self
             .template_data
-            .unwrap_or(prop_option::of(policy_template_data()).boxed());
+            .unwrap_or(prop::option::of(arb_policy_template_data()).boxed());
         let nr_active_jobs = self.nr_active_jobs.unwrap_or(any::<u32>().boxed());
         let is_rescaling = self.is_rescaling.unwrap_or(any::<bool>().boxed());
         let is_deploying = self.is_deploying.unwrap_or(any::<bool>().boxed());
-        let last_deployment = self.last_deployment.unwrap_or(date_time().boxed());
-        let last_failure = self.last_failure.unwrap_or(prop_option::of(date_time()).boxed());
+        let last_deployment = self.last_deployment.unwrap_or(arb_date_time().boxed());
+        let last_failure = self.last_failure.unwrap_or(prop::option::of(arb_date_time()).boxed());
 
         (
             template_data,
@@ -204,53 +156,12 @@ impl PolicyScenarioBuilder {
     }
 }
 
-fn policy_template_data() -> impl Strategy<Value = EligibilityTemplateData> {
+fn arb_policy_template_data() -> impl Strategy<Value = EligibilityTemplateData> {
     (any::<Option<u32>>(), any::<Option<u32>>()).prop_map(|(cooling_secs, stable_secs)| EligibilityTemplateData {
         cooling_secs,
         stable_secs,
         ..EligibilityTemplateData::default()
     })
-}
-
-fn date_time() -> impl Strategy<Value = DateTime<Utc>> {
-    let min_year = i32::MIN >> 13;
-    let max_year = i32::MAX >> 13;
-
-    fn is_leap_year(year: i32) -> bool {
-        return year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
-    }
-
-    fn last_day_of_month(year: i32, month: u32) -> u32 {
-        match month {
-            1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
-            4 | 6 | 9 | 11 => 30,
-            2 => {
-                if is_leap_year(year) {
-                    29
-                } else {
-                    28
-                }
-            },
-            _ => panic!("invalid month: {}", month),
-        }
-    }
-
-    (
-        min_year..=max_year,
-        1_u32..=12,
-        0_u32..24,
-        0_u32..60,
-        0_u32..60,
-        0_u32..1_000_000_000,
-    )
-        .prop_flat_map(|(yr, mnth, h, m, s, n): (i32, u32, u32, u32, u32, u32)| {
-            let day = 1_u32..=last_day_of_month(yr, mnth);
-            (Just(yr), Just(mnth), day, Just(h), Just(m), Just(s), Just(n))
-        })
-        .prop_map(|(yr, mnth, day, h, m, s, n): (i32, u32, u32, u32, u32, u32, u32)| {
-            // tracing::info!("DMR: yr:{yr} mnth:{mnth} day:{day} h:{h} m:{m} s:{s} n:{n}");
-            Utc.ymd(yr, mnth, day).and_hms_nano(h, m, s, n)
-        })
 }
 
 fn make_metric_catalog(nr_active_jobs: u32) -> MetricCatalog {

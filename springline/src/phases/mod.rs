@@ -9,6 +9,9 @@ use crate::Result;
 #[cfg(test)]
 mod tests;
 
+#[cfg(test)]
+mod policy_test_fixtures;
+
 pub mod act;
 mod collect_window;
 pub mod decision;
