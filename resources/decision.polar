@@ -1,8 +1,6 @@
-{{#*inline "preamble"}}
 scale(item, context, direction, reason) if scale_up(item, context, reason) and direction = "up";
 
 scale(item, context, direction, reason) if scale_down(item, context, reason) and direction = "down";
-{{/inline}}
 
 {{>  (lookup this "basis")}}
 

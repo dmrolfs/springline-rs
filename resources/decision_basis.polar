@@ -1,5 +1,3 @@
-{{> preamble}}
-
 {{#if max_healthy_relative_lag_velocity}}
 scale_up(item, _context, reason) if
     not item.flow.source_records_lag_max == nil

@@ -364,10 +364,8 @@ mod tests {
             PolicySource::from_template_file("../resources/decision.polar")?,
             PolicySource::from_template_string(
                 format!("{}_basis", DecisionPolicy::base_template_name()),
-                r###"
-                |{{> preamble}}
-                |scale_up(item, _context, reason) if {{max_records_in_per_sec}} < item.flow.records_in_per_sec and reason = "load_up";
-                |scale_down(item, _context, reason) if item.flow.records_in_per_sec < {{min_records_in_per_sec}} and reason = "load_down";
+                r###"|scale_up(item, _context, reason) if {{max_records_in_per_sec}} < item.flow.records_in_per_sec and reason = "load_up";
+                     |scale_down(item, _context, reason) if item.flow.records_in_per_sec < {{min_records_in_per_sec}} and reason = "load_down";
                 "###,
             )?,
         ];
@@ -394,17 +392,18 @@ mod tests {
             settings.template_data.as_ref(),
         )?;
         // let actual = policy_filter::render_template_policy(name, settings.template_data.as_ref())?;
-        let expected = r##"|
-        |scale(item, context, direction, reason) if scale_up(item, context, reason) and direction = "up";
-        |
-        |scale(item, context, direction, reason) if scale_down(item, context, reason) and direction = "down";
-        |scale_up(item, _context, reason) if 3 < item.flow.records_in_per_sec and reason = "load_up";
-        |scale_down(item, _context, reason) if item.flow.records_in_per_sec < 1 and reason = "load_down";
-        |
-        |# no action rules to avoid policy issues if corresponding up/down rules not specified in basis.polar
-        |scale_up(_, _, _) if false;
-        |scale_down(_, _, _) if false;
-        |"##
+        let expected =
+            r##"|scale(item, context, direction, reason) if scale_up(item, context, reason) and direction = "up";
+                |
+                |scale(item, context, direction, reason) if scale_down(item, context, reason) and direction = "down";
+                |
+                |scale_up(item, _context, reason) if 3 < item.flow.records_in_per_sec and reason = "load_up";
+                |scale_down(item, _context, reason) if item.flow.records_in_per_sec < 1 and reason = "load_down";
+                |
+                |# no action rules to avoid policy issues if corresponding up/down rules not specified in basis.polar
+                |scale_up(_, _, _) if false;
+                |scale_down(_, _, _) if false;
+                |"##
         .trim_margin_with("|")
         .unwrap();
         assert_eq!(actual, expected);
