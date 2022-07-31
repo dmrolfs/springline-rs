@@ -1,7 +1,6 @@
+use super::*;
 use proctor::elements::QueryResult;
 use proctor::error::PolicyError;
-use super::*;
-
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct PolicyScenario {
@@ -15,6 +14,10 @@ impl PolicyScenario {
     }
 
     pub fn builder() -> PolicyScenarioBuilder {
+        once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
+        let main_span = tracing::info_span!("decision_policy_scenario_builder");
+        let _main_span_guard = main_span.enter();
+
         PolicyScenarioBuilder::default()
     }
 
@@ -77,6 +80,7 @@ impl PolicyScenarioBuilder {
         self.one_item(Just(item.into()), Just(window.into()))
     }
 
+    #[tracing::instrument(level = "info", skip(decision_basis))]
     pub fn strategy(self, decision_basis: impl Into<String>) -> impl Strategy<Value = PolicyScenario> {
         tracing::info!(?self, "DMR: building decision policy strategy");
         let template_data = self
@@ -84,10 +88,9 @@ impl PolicyScenarioBuilder {
             .unwrap_or(prop::option::of(DecisionTemplateDataStrategyBuilder::strategy(decision_basis.into())).boxed());
 
         let data = arb_metric_catalog_window(
-            Just(Timestamp::now()),
-            arb_range_duration(0..=10),
-            arb_range_duration(5..=15),
-            arb_range_duration(5..=300),
+            Timestamp::now(),
+            (10_u64..=600).prop_map(Duration::from_secs),
+            arb_perturbed_duration(Duration::from_secs(15), 0.2),
             |recv_ts| {
                 MetricCatalogStrategyBuilder::new()
                     .just_recv_timestamp(recv_ts)
@@ -95,6 +98,7 @@ impl PolicyScenarioBuilder {
                     .boxed()
             },
         );
+
         let item = self.item.unwrap_or(data.boxed());
         (template_data, item).prop_map(|(template_data, item)| {
             tracing::info!(?template_data, ?item, "DMR: making scenario...");

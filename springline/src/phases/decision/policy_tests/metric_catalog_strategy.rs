@@ -6,38 +6,202 @@ use proctor::elements::telemetry;
 use std::sync::Mutex;
 
 pub fn arb_metric_catalog_window<M>(
-    start: impl Strategy<Value = Timestamp>, delay: impl Strategy<Value = Duration> + 'static,
-    interval: impl Strategy<Value = Duration> + 'static, window: impl Strategy<Value = Duration> + 'static,
-    make_metric_catalog: M,
+    start: Timestamp, window: impl Strategy<Value = Duration>, interval: impl Strategy<Value = Duration> + 'static,
+    make_data_strategy: M,
 ) -> impl Strategy<Value = AppDataWindow<MetricCatalog>>
 where
-    M: Fn(Timestamp) -> BoxedStrategy<MetricCatalog> + 'static,
+    M: Fn(Timestamp) -> BoxedStrategy<MetricCatalog> + Clone + 'static,
 {
-    let delay = delay.boxed();
+    once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
+    let span = tracing::info_span!("arb_metric_catalog_window", ?start);
+    let _guard = span.enter();
+
     let interval = interval.boxed();
-    let window = window.boxed();
+    let interval = move || interval.clone();
 
-    start
-        .prop_flat_map(move |start| arb_timestamp_window(start, delay.clone(), interval.clone(), window.clone()))
-        .prop_flat_map(move |(timestamps, time_window)| {
-            let builder_strategy = timestamps.into_iter().fold(
-                Just(AppDataWindow::builder().with_time_window(time_window)).boxed(),
-                |acc, ts| do_next_arb_metric_catalog(acc, make_metric_catalog(ts)),
-            );
+    window.prop_flat_map(move |window| {
+        let span = tracing::info_span!("arb_metric_catalog_window_inner", ?window);
+        let _guard_inner = span.enter();
 
-            builder_strategy
-                .prop_map(|builder| builder.build().expect("failed to build valid metric catalog data window"))
-        })
+        let builder = AppDataWindowBuilder::default()
+            .with_quorum_percentage(0.6)
+            .with_time_window(window);
+        let acc_start = Just((builder, Some((start, window))));
+        do_arb_metric_catalog_window_loop(acc_start, interval.clone(), make_data_strategy.clone())
+            .prop_map(move |(data, _)| data.build().expect("failed to generate valid metric catalog data window"))
+    })
 }
 
-fn do_next_arb_metric_catalog(
-    builder: BoxedStrategy<AppDataWindowBuilder<MetricCatalog>>,
-    metric_catalog: impl Strategy<Value = MetricCatalog> + 'static,
-) -> BoxedStrategy<AppDataWindowBuilder<MetricCatalog>> {
-    (builder, metric_catalog)
-        .prop_map(|(builder, metric_catalog)| builder.with_item(metric_catalog))
+#[tracing::instrument(level = "info", skip(acc, make_interval_strategy, make_data_strategy))]
+fn do_arb_metric_catalog_window_loop<I, M>(
+    acc: impl Strategy<Value = (AppDataWindowBuilder<MetricCatalog>, Option<(Timestamp, Duration)>)>,
+    make_interval_strategy: I, make_data_strategy: M,
+) -> impl Strategy<Value = (AppDataWindowBuilder<MetricCatalog>, Option<(Timestamp, Duration)>)>
+where
+    I: Fn() -> BoxedStrategy<Duration> + Clone + 'static,
+    M: Fn(Timestamp) -> BoxedStrategy<MetricCatalog> + Clone + 'static,
+{
+    tracing::info!("111");
+    (acc, make_interval_strategy()).prop_flat_map(move |((acc_data, next_remaining), interval)| {
+        {
+            let span = tracing::info_span!("do_arb_metric_catalog_window_loop_inner", ?next_remaining, ?interval);
+            let _guard_inner = span.enter();
+
+            let foo = match next_remaining {
+                None => Just((acc_data, None)).boxed(),
+                Some((_, remaining)) if remaining < interval => Just((acc_data, None)).boxed(),
+                Some((last_ts, remaining)) => {
+                    let span = tracing::info_span!("do_arb_metric_catalog_window_loop_inner_2", ?remaining);
+                    let _guard_inner_2 = span.enter();
+
+                    let recv_ts = last_ts + interval;
+                    let make_interval_strategy_0 = make_interval_strategy.clone();
+                    let make_data_strategy_0 = make_data_strategy.clone();
+
+                    let bar = make_data_strategy(recv_ts)
+                        .prop_flat_map(move |data| {
+                            let span = tracing::info_span!("do_arb_metric_catalog_window_loop_inner_3", ?data);
+                            let _guard_inner_3 = span.enter();
+
+                            let mut acc_data_0 = acc_data.clone();
+                            tracing::info!(?recv_ts, ?data, "AAA");
+
+                            let next_remaining = remaining - interval;
+                            tracing::info!(?next_remaining, "BBB");
+
+                            acc_data_0.push(data);
+
+                            tracing::info!(?recv_ts, "CCC");
+                            let next_acc: (AppDataWindowBuilder<MetricCatalog>, Option<(Timestamp, Duration)>) =
+                                (acc_data_0, Some((recv_ts, next_remaining)));
+
+                            tracing::info!("DDD");
+                            let result = do_arb_metric_catalog_window_loop(
+                                Just(next_acc),
+                                make_interval_strategy_0.clone(),
+                                make_data_strategy_0.clone(),
+                            ).boxed();
+                            tracing::info!(?result, "EEE");
+                            result
+                        })
+                        .boxed();
+
+                    bar
+                },
+            };
+            tracing::info!(?foo, "FFF");
+            foo
+        }
         .boxed()
+    })
 }
+
+// pub fn arb_metric_catalog_window(
+//     start: Timestamp,
+//     make_metric_catalog: impl Fn(Timestamp) -> BoxedStrategy<MetricCatalog> + 'static,
+// ) -> impl Strategy<Value = AppDataWindow<MetricCatalog>> {
+//     once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
+//     let span = tracing::info_span!("arb_metric_catalog_window", ?start);
+//     let _guard = span.enter();
+//
+//     arb_timestamp_window(start)
+//         .prop_flat_map(move |(timestamps, window)| {
+//             let foo = timestamps.into_iter()
+//                 .fold(
+//                 Just(vec![]).boxed(),
+//                 |acc, ts| {
+//                     let mc = MetricCatalogStrategyBuilder::new().just_recv_timestamp(ts).finish();
+//                     (acc, mc).prop_map(|(mut mcs, item)| {
+//                         mcs.push(item);
+//                         mcs
+//                     })
+//                         .boxed()
+//                 }
+//             );
+//
+//             let bar = foo.prop_map(move |items| {
+//                 let builder = AppDataWindowBuilder::default()
+//                     .with_time_window(window)
+//                     .with_items(items)
+//                     .build()
+//                     .expect("failed to make valid metric catalog data window");
+//                 builder
+//             });
+//             bar
+//         })
+//         //     let builder = Just(AppDataWindow::builder().with_time_window(window)).boxed();
+//         //
+//         //     let strategy = timestamps
+//         //         .into_iter()
+//         //         .fold(
+//         //             builder,
+//         //             |acc, ts| {
+//         //                 let span = tracing::info_span!("make metric_catalog strategy", ?ts, ?acc);
+//         //                 let _span_guard = span.enter();
+//         //                 do_next_arb_metric_catalog(acc, make_metric_catalog(ts))
+//         //             }
+//         //         );
+//         //     tracing::warn!("AAAA");
+//         //     strategy.prop_map(|b| {
+//         //         let data = b.build().expect("failed to builder valid metric catalog window");
+//         //         tracing::warn!(?data, "BBB");
+//         //         data
+//         //     })
+//         // })
+//         // .boxed()
+// }
+
+// fn do_next_arb_metric_catalog(
+//     builder: BoxedStrategy<AppDataWindowBuilder<MetricCatalog>>,
+//     metric_catalog: impl Strategy<Value = MetricCatalog> + 'static,
+// ) -> BoxedStrategy<AppDataWindowBuilder<MetricCatalog>> {
+//     (builder, metric_catalog).prop_map(|(b, m)| b.with_item(m)).boxed()
+// }
+
+// fn do_next_arb_metric_catalog(
+//     builder: BoxedStrategy<AppDataWindowBuilder<MetricCatalog>>,
+//     metric_catalog: impl Strategy<Value = MetricCatalog> + 'static,
+// ) -> BoxedStrategy<AppDataWindowBuilder<MetricCatalog>> {
+//     (builder, metric_catalog).prop_map(|(b, m)| b.with_item(m)).boxed()
+// }
+
+// pub fn arb_metric_catalog_window<M>(
+//     start: impl Strategy<Value = Timestamp>, delay: impl Strategy<Value = Duration> + 'static,
+//     interval: impl Strategy<Value = Duration> + 'static, window: impl Strategy<Value = Duration> + 'static,
+//     make_metric_catalog: M,
+// ) -> impl Strategy<Value = AppDataWindow<MetricCatalog>>
+// where
+//     M: Fn(Timestamp) -> BoxedStrategy<MetricCatalog> + 'static,
+// {
+//     let delay = delay.boxed();
+//     let interval = interval.boxed();
+//     let window = window.boxed();
+//
+//     start
+//         .prop_flat_map(move |start| arb_timestamp_window(start, delay.clone(), interval.clone(), window.clone()))
+//         .prop_flat_map(move |(timestamps, time_window)| {
+//             let builder_strategy = timestamps.into_iter().fold(
+//                 Just(AppDataWindow::builder().with_time_window(time_window)).boxed(),
+//                 |acc, ts| {
+//                     let span = tracing::info_span!("make metric_catalog strategy", ?ts, ?acc);
+//                     let _span_guard = span.enter();
+//                     do_next_arb_metric_catalog(acc, make_metric_catalog(ts))
+//                 },
+//             );
+//
+//             builder_strategy
+//                 .prop_map(|builder| builder.build().expect("failed to build valid metric catalog data window"))
+//         })
+// }
+//
+// fn do_next_arb_metric_catalog(
+//     builder: BoxedStrategy<AppDataWindowBuilder<MetricCatalog>>,
+//     metric_catalog: impl Strategy<Value = MetricCatalog> + 'static,
+// ) -> BoxedStrategy<AppDataWindowBuilder<MetricCatalog>> {
+//     (builder, metric_catalog)
+//         .prop_map(|(builder, metric_catalog)| builder.with_item(metric_catalog))
+//         .boxed()
+// }
 
 #[derive(Debug, Default, Clone)]
 pub struct MetricCatalogStrategyBuilder {
@@ -115,8 +279,9 @@ impl MetricCatalogStrategyBuilder {
         self.custom(Just(custom.into()))
     }
 
+    // #[tracing::instrument(level="info")]
     pub fn finish(self) -> impl Strategy<Value = MetricCatalog> {
-        tracing::info!(?self, "DMR: building metric catalog strategy");
+        // tracing::info!(?self, "DMR: building metric catalog strategy");
         let recv_timestamp = self.recv_timestamp.unwrap_or(arb_timestamp().boxed());
         let health = self.health.unwrap_or(arb_job_health_metrics().boxed());
         let flow = self.flow.unwrap_or(arb_flow_metrics().boxed());

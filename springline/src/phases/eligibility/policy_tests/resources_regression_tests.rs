@@ -39,7 +39,7 @@ fn test_eligibility_policy_nr_active_jobs_ae1d6126() {
         is_deploying: false,
         is_rescaling: false,
         last_deployment: Utc.ymd(0, 1, 1).and_hms_nano(0, 0, 0, 0),
-        last_failure: None
+        last_failure: None,
     };
 
     let actual = assert_ok!(scenario.run());

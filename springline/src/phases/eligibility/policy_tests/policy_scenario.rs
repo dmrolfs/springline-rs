@@ -1,6 +1,5 @@
 use super::*;
 
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PolicyScenario {
     pub template_data: Option<EligibilityTemplateData>,
@@ -39,8 +38,7 @@ impl PolicyScenario {
             custom: HashMap::default(),
         };
 
-        let item =
-            AppDataWindow::from_time_window(make_metric_catalog(self.nr_active_jobs), Duration::from_secs(600));
+        let item = AppDataWindow::from_time_window(make_metric_catalog(self.nr_active_jobs), Duration::from_secs(600));
 
         let policy = EligibilityPolicy::new(&EligibilitySettings {
             policies: vec![

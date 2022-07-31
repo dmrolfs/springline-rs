@@ -5,7 +5,7 @@ mod resources_regression_tests;
 pub use policy_scenario::*;
 
 use crate::flink::{ClusterMetrics, FlowMetrics, JobHealthMetrics};
-pub use chrono::{DateTime, Utc, TimeZone};
+pub use chrono::{DateTime, TimeZone, Utc};
 pub use claim::*;
 use fake::{Fake, Faker};
 use pretty_snowflake::{Id, Label, Labeling};
@@ -18,8 +18,8 @@ pub use super::{ClusterStatus, EligibilityContext, EligibilityPolicy, Eligibilit
 pub use crate::flink::{AppDataWindow, AppDataWindowBuilder, MetricCatalog};
 pub use crate::phases::policy_test_fixtures::{arb_date_time, prepare_policy_engine};
 pub use crate::settings::EligibilitySettings;
-pub use proctor::elements::{PolicySource, QueryPolicy, QueryResult, Timestamp};
 pub use proctor::elements::telemetry::TelemetryValue;
+pub use proctor::elements::{PolicySource, QueryPolicy, QueryResult, Timestamp};
 
 pub use crate::phases::REASON;
 pub const NO_ACTIVE_JOBS: &str = "no_active_jobs";

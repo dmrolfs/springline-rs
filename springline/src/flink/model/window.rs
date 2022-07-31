@@ -1765,7 +1765,7 @@ where
         let result = AppDataWindow {
             data: window.into_iter().collect(),
             time_window: self.time_window.expect("must supply time window before final build"),
-            quorum_percentage: self.quorum_percentage.expect("must supply required time window coverage"),
+            quorum_percentage: self.quorum_percentage.unwrap_or(DEFAULT_QUORUM_PERCENTAGE),
         };
         result.validate()?;
         Ok(result)
