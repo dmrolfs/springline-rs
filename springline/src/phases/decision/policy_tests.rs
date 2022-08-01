@@ -2,6 +2,7 @@ mod decision_template_data_strategy;
 mod metric_catalog_strategy;
 mod policy_scenario;
 mod resources_policy_tests;
+mod resources_regression_tests;
 
 pub use decision_template_data_strategy::*;
 pub use metric_catalog_strategy::*;
@@ -16,34 +17,6 @@ pub use proctor::elements::{telemetry, TelemetryValue, Timestamp};
 pub use proptest::prelude::*;
 pub use std::time::Duration;
 
-// prop_compose! {
-//     pub fn arb_timestamp_window(
-//         start: Timestamp
-//     )(
-//         interval in arb_perturbed_duration(Duration::from_secs(15), 0.2),
-//         window in (10_u64..=600).prop_map(Duration::from_secs),
-//     ) -> (Vec<Timestamp>, Duration) {
-//         once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
-//         let span = tracing::info_span!("arb_timestamp_window", ?interval, ?window);
-//         let _guard = span.enter();
-//
-//         let mut timestamps = vec![start];
-//         let mut current = start;
-//         let mut current_window_duration = Duration::ZERO;
-//         if interval <= window {
-//             tracing::info!(?current_window_duration, "building timestamps vec...");
-//             while interval <= (window - current_window_duration) {
-//                 current = current + interval;
-//                 current_window_duration = current - start;
-//                 timestamps.push(current);
-//                 tracing::info!(?current_window_duration, "looking to next point");
-//             }
-//         }
-//
-//         (timestamps, current_window_duration)
-//     }
-// }
-//
 #[tracing::instrument(level = "info")]
 pub fn arb_perturbed_duration(center: Duration, perturb_factor: f64) -> impl Strategy<Value = Duration> {
     Just(center.as_secs_f64()).prop_perturb(move |center, mut rng| {
@@ -56,15 +29,9 @@ pub fn arb_perturbed_duration(center: Duration, perturb_factor: f64) -> impl Str
 pub fn arb_timestamp_window(
     start: Timestamp, window: impl Strategy<Value = Duration>, interval: impl Strategy<Value = Duration> + 'static,
 ) -> impl Strategy<Value = (Vec<Timestamp>, Duration)> {
-    once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
-    let span = tracing::info_span!("arb_timestamp_window", ?start);
-    let _guard = span.enter();
-
     let interval = interval.boxed();
     let interval = move || interval.clone();
     window.prop_flat_map(move |window| {
-        let span = tracing::info_span!("arb_timestamp_window_inner", ?window);
-        let _guard_inner = span.enter();
         let acc_start = Just((vec![start], Some((start, window))));
         do_arb_timestamp_window_loop(acc_start, interval.clone()).prop_map(move |(ts, _)| (ts, window))
     })
@@ -77,89 +44,24 @@ fn do_arb_timestamp_window_loop<I>(
 where
     I: Fn() -> BoxedStrategy<Duration> + Clone + 'static,
 {
-    tracing::info!("111");
-    // let interval_strategy = interval.clone();
-    tracing::info!("222");
     (acc, make_interval_strategy()).prop_flat_map(move |((mut acc_ts, next_remaining), next_interval)| {
         {
-            let span = tracing::info_span!("do_arb_timestamp_window_loop_inner", ?next_remaining, ?next_interval);
-            let _guard_inner = span.enter();
-
-            let foo = match next_remaining {
+            match next_remaining {
                 None => Just((acc_ts, None)).boxed(),
                 Some((_, remaining)) if remaining < next_interval => Just((acc_ts, None)).boxed(),
                 Some((last_ts, remaining)) => {
-                    let span = tracing::info_span!("do_arb_timestamp_window_loop_inner_inner", ?remaining);
-                    let _guard_inner_inner = span.enter();
-
                     let next_ts = last_ts + next_interval;
-                    tracing::info!(?next_ts, "AAA");
                     let next_remaining = remaining - next_interval;
-                    tracing::info!(?next_remaining, "BBB");
                     acc_ts.push(next_ts);
-                    tracing::info!(?acc_ts, "CCC");
                     let next_acc: (Vec<Timestamp>, Option<(Timestamp, Duration)>) =
                         (acc_ts, Some((next_ts, next_remaining)));
-                    tracing::info!(?next_acc, "DDD");
-                    let result = do_arb_timestamp_window_loop(Just(next_acc), make_interval_strategy.clone());
-                    tracing::info!("EEE");
-                    result.boxed()
+                    do_arb_timestamp_window_loop(Just(next_acc), make_interval_strategy.clone()).boxed()
                 },
-            };
-            tracing::info!("FFF");
-            foo
+            }
         }
         .boxed()
     })
 }
-
-// pub fn arb_timestamp_window(
-//     start: Timestamp, delay: impl Strategy<Value = Duration>, interval: impl Strategy<Value = Duration> + 'static,
-//     window: impl Strategy<Value = Duration>,
-// ) -> impl Strategy<Value = (Vec<Timestamp>, Duration)> {
-//     let interval = interval.boxed();
-//
-//     (delay, window)
-//         .prop_filter("delay exceeds window", |(delay, window)| delay < window)
-//         .prop_flat_map(move |(delay, window)| {
-//             let first_ts = start + delay;
-//             let remaining = window - delay;
-//             let acc = Just((vec![first_ts], Some((first_ts, remaining)))).boxed();
-//             let window_strategy = do_next_arb_window_timestamp(acc, interval.clone()).prop_map(|(acc_ts, extra)| {
-//                 if let Some((extra_next_ts, extra_remaining)) = extra {
-//                     tracing::error!(
-//                         %extra_next_ts, ?extra_remaining,
-//                         "unexpected extra values from end of timestamp window strategy."
-//                     );
-//                 }
-//
-//                 acc_ts
-//             });
-//
-//             window_strategy.prop_map(move |strategy| (strategy, window))
-//         })
-// }
-//
-// fn do_next_arb_window_timestamp(
-//     acc: BoxedStrategy<(Vec<Timestamp>, Option<(Timestamp, Duration)>)>, interval: BoxedStrategy<Duration>,
-// ) -> BoxedStrategy<(Vec<Timestamp>, Option<(Timestamp, Duration)>)> {
-//     (acc, interval.clone())
-//         .prop_flat_map(
-//             move |((mut acc_ts, next_remaining), next_interval)| match next_remaining {
-//                 None => Just((acc_ts, None)).boxed(),
-//                 Some((_, remaining)) if remaining < next_interval => Just((acc_ts, None)).boxed(),
-//                 Some((next, remaining)) => {
-//                     let next_ts = next + next_interval;
-//                     let next_remaining = remaining - next_interval;
-//                     acc_ts.push(next_ts);
-//                     let next_acc: (Vec<Timestamp>, Option<(Timestamp, Duration)>) =
-//                         (acc_ts, Some((next_ts, next_remaining)));
-//                     do_next_arb_window_timestamp(Just(next_acc).boxed(), interval.clone())
-//                 },
-//             },
-//         )
-//         .boxed()
-// }
 
 pub fn arb_machine_node() -> impl Strategy<Value = MachineNode> {
     (0_i32..=31, 0_i32..=31).prop_map(|(machine_id, node_id)| MachineNode { machine_id, node_id })
@@ -172,13 +74,6 @@ pub fn arb_range_duration(range_secs: RangeInclusive<u64>) -> impl Strategy<Valu
 pub fn arb_f64_range(min_inclusive: f64, max_exclusive: f64) -> impl Strategy<Value = f64> {
     any::<f64>().prop_filter("out of range", move |val| min_inclusive <= *val && *val < max_exclusive)
 }
-
-//todo - DMR - WORK HERE
-// pub fn arb_duration_range(secs_range: prop::collection::SizeRange) -> impl Strategy<Value = Duration> {
-//     secs_range.lift().prop_map(|(start, end)| {
-//
-//     })
-// }
 
 pub fn arb_timestamp() -> impl Strategy<Value = Timestamp> {
     (any::<i64>(), any::<u32>()).prop_filter_map("negative", |(secs, nanos)| {
@@ -201,7 +96,7 @@ pub fn arb_telemetry_value() -> impl Strategy<Value = TelemetryValue> {
         any::<i64>().prop_map(TelemetryValue::Integer),
         any::<f64>().prop_map(TelemetryValue::Float),
         any::<bool>().prop_map(TelemetryValue::Boolean),
-        ".*".prop_map(TelemetryValue::Text),
+        "\\PC*".prop_map(TelemetryValue::Text),
         Just(TelemetryValue::Unit),
     ];
     leaf.prop_recursive(
@@ -220,19 +115,8 @@ pub fn arb_telemetry_value() -> impl Strategy<Value = TelemetryValue> {
 }
 
 pub fn arb_telemetry_table_type() -> impl Strategy<Value = telemetry::TableType> {
-    prop::collection::hash_map(".*", arb_telemetry_value(), 0..5)
+    prop::collection::hash_map("\\PC*", arb_telemetry_value(), 0..3)
 }
-
-// fn do_arb_timestamp_window() -> impl Strategy<Value = (Vec<Timestamp>, Duration)> {
-//     arb_timestamp().prop_flat_map(|start| {
-//         arb_timestamp_window(
-//             start,
-//             arb_range_duration(0..=10),
-//             arb_range_duration(1..=15),
-//             arb_range_duration(10..=300),
-//         )
-//     })
-// }
 
 proptest! {
     #[test]

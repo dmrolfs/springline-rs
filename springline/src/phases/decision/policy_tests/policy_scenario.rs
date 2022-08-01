@@ -1,9 +1,17 @@
 use super::*;
-use proctor::elements::QueryResult;
+use crate::phases::decision::{DecisionContext, DecisionPolicy};
+use crate::phases::policy_test_fixtures::prepare_policy_engine;
+use crate::settings::DecisionSettings;
+use claim::*;
+use pretty_snowflake::{Id, Label, Labeling};
+use proctor::elements::{PolicySource, QueryPolicy, QueryResult};
 use proctor::error::PolicyError;
+use serde::{Deserialize, Serialize};
+use std::fmt;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct PolicyScenario {
+    #[serde(default)]
     pub template_data: Option<DecisionTemplateData>,
     pub item: AppDataWindow<MetricCatalog>,
 }
@@ -23,7 +31,36 @@ impl PolicyScenario {
 
     #[tracing::instrument(level = "info")]
     pub fn run(&self) -> Result<QueryResult, PolicyError> {
-        todo!()
+        let context = DecisionContext {
+            correlation_id: Id::direct(<DecisionContext as Label>::labeler().label(), 0, "test_doesnt_crash"),
+            recv_timestamp: Timestamp::now(),
+            custom: Default::default(),
+        };
+
+        let policy = DecisionPolicy::new(&DecisionSettings {
+            policies: vec![
+                PolicySource::File {
+                    path: "../resources/decision.polar".into(),
+                    is_template: true,
+                },
+                PolicySource::File {
+                    path: "../resources/decision_basis.polar".into(),
+                    is_template: true,
+                },
+            ],
+            template_data: self.template_data.clone(),
+            ..DecisionSettings::default()
+        });
+        let policy_engine = assert_ok!(prepare_policy_engine(&policy));
+        let args = policy.make_query_args(&self.item, &context);
+        policy.query_policy(&policy_engine, args)
+    }
+}
+
+impl fmt::Debug for PolicyScenario {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let json_rep = serde_json::to_string(self).expect("failed to create policy scenario json");
+        f.write_str(json_rep.as_str())
     }
 }
 
@@ -87,10 +124,12 @@ impl PolicyScenarioBuilder {
             .template_data
             .unwrap_or(prop::option::of(DecisionTemplateDataStrategyBuilder::strategy(decision_basis.into())).boxed());
 
-        let data = arb_metric_catalog_window(
-            Timestamp::now(),
-            (10_u64..=600).prop_map(Duration::from_secs),
-            arb_perturbed_duration(Duration::from_secs(15), 0.2),
+        let data = arb_metric_catalog_window_from_timestamp_window(
+            arb_timestamp_window(
+                Timestamp::now(),
+                (10_u64..=600).prop_map(Duration::from_secs),
+                arb_perturbed_duration(Duration::from_secs(15), 0.2),
+            ),
             |recv_ts| {
                 MetricCatalogStrategyBuilder::new()
                     .just_recv_timestamp(recv_ts)
