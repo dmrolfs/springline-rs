@@ -30,7 +30,10 @@ impl fmt::Debug for ScalePlan {
         f.debug_struct("ScalePlan")
             .field("correlation_id", &self.correlation_id)
             .field("recv_timestamp", &format!("{}", self.recv_timestamp))
-            .field("current_to_target__nr_task_managers", &format!("{}->{}", self.current_nr_task_managers, self.target_nr_task_managers))
+            .field(
+                "current_to_target__nr_task_managers",
+                &format!("{}->{}", self.current_nr_task_managers, self.target_nr_task_managers),
+            )
             .finish()
     }
 }
