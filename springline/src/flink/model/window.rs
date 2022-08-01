@@ -1,6 +1,8 @@
 use std::collections::VecDeque;
 use std::convert::TryFrom;
-use std::fmt::{self, Debug};
+use std::fmt;
+
+use std::marker::PhantomData;
 use std::ops::Deref;
 use std::time::Duration;
 
@@ -13,6 +15,9 @@ use proctor::elements::{Interval, PolicyContributor, Timestamp};
 use proctor::error::PolicyError;
 use proctor::{AppData, Correlation, ReceivedAt};
 use prometheus::{Gauge, Opts};
+use serde::de::{self, DeserializeOwned, MapAccess, Visitor};
+use serde::ser::SerializeStruct;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use validator::{Validate, ValidationError, ValidationErrors};
 
 use super::MetricCatalog;
@@ -73,7 +78,10 @@ where
     }
 }
 
-impl Debug for AppDataWindow<MetricCatalog> {
+impl<T> fmt::Debug for AppDataWindow<T>
+where
+    T: AppData + ReceivedAt,
+{
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("AppDataWindow")
             .field("interval", &self.window_interval())
@@ -82,10 +90,6 @@ impl Debug for AppDataWindow<MetricCatalog> {
             .field("quorum_percentage", &self.quorum_percentage)
             .field("window_size", &self.data.len())
             .field("head", &self.head().map(|c| c.recv_timestamp().to_string()))
-            .field(
-                "1_min_flow_source_relative_lag_change_rate",
-                &self.flow_source_relative_lag_change_rate(60),
-            )
             .finish()
     }
 }
@@ -1500,7 +1504,6 @@ impl AppDataWindow<MetricCatalog> {
 impl<T> Window for AppDataWindow<T>
 where
     T: AppData + ReceivedAt,
-    // AppDataWindow<T>: Debug,
 {
     type Item = T;
 
@@ -1684,6 +1687,137 @@ where
     }
 }
 
+impl<T> Serialize for AppDataWindow<T>
+where
+    T: Serialize + AppData + ReceivedAt,
+{
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut state = serializer.serialize_struct("AppDataWindow", 3)?;
+        state.serialize_field("time_window", &self.time_window)?;
+        state.serialize_field("quorum_percentage", &self.quorum_percentage)?;
+        state.serialize_field("data", &self.data)?;
+        state.end()
+    }
+}
+
+impl<'de, T> Deserialize<'de> for AppDataWindow<T>
+where
+    T: DeserializeOwned + AppData + ReceivedAt,
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        enum Field {
+            TimeWindow,
+            QuorumPercentage,
+            Data,
+        }
+
+        impl<'de> Deserialize<'de> for Field {
+            fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+            where
+                D: Deserializer<'de>,
+            {
+                struct FieldVisitor;
+
+                impl<'de> Visitor<'de> for FieldVisitor {
+                    type Value = Field;
+
+                    fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                        f.write_str("`time_window`, `quorum_percentage` or `data`")
+                    }
+
+                    fn visit_str<E>(self, value: &str) -> Result<Field, E>
+                    where
+                        E: de::Error,
+                    {
+                        match value {
+                            "time_window" => Ok(Field::TimeWindow),
+                            "quorum_percentage" => Ok(Field::QuorumPercentage),
+                            "data" => Ok(Field::Data),
+                            _ => Err(de::Error::unknown_field(value, FIELDS)),
+                        }
+                    }
+                }
+
+                deserializer.deserialize_identifier(FieldVisitor)
+            }
+        }
+
+        struct AppDataWindowVisitor<T0>(PhantomData<T0>);
+
+        impl<T0> AppDataWindowVisitor<T0>
+        where
+            T0: DeserializeOwned + AppData + ReceivedAt,
+        {
+            pub const fn new() -> Self {
+                Self(PhantomData)
+            }
+        }
+
+        impl<'de, T0> Visitor<'de> for AppDataWindowVisitor<T0>
+        where
+            T0: DeserializeOwned + AppData + ReceivedAt,
+        {
+            type Value = AppDataWindow<T0>;
+
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str("struct AppDataWindow<T>")
+            }
+
+            fn visit_map<V>(self, mut map: V) -> Result<Self::Value, V::Error>
+            where
+                V: MapAccess<'de>,
+            {
+                let mut time_window = None;
+                let mut quorum_percentage = None;
+                let mut data = None;
+                while let Some(key) = map.next_key()? {
+                    match key {
+                        Field::TimeWindow => {
+                            if time_window.is_some() {
+                                return Err(de::Error::duplicate_field("time_window"));
+                            }
+                            time_window = Some(map.next_value()?);
+                        },
+                        Field::QuorumPercentage => {
+                            if quorum_percentage.is_some() {
+                                return Err(de::Error::duplicate_field("quorum_percentage"));
+                            }
+                            quorum_percentage = Some(map.next_value()?);
+                        },
+                        Field::Data => {
+                            if data.is_some() {
+                                return Err(de::Error::duplicate_field("data"));
+                            }
+                            data = Some(map.next_value()?);
+                        },
+                    }
+                }
+
+                let time_window = time_window.ok_or_else(|| de::Error::missing_field("time_window"))?;
+                let quorum_percentage =
+                    quorum_percentage.ok_or_else(|| de::Error::missing_field("quorum_percentage"))?;
+                let data: Vec<T0> = data.ok_or_else(|| de::Error::missing_field("data"))?;
+
+                AppDataWindow::builder()
+                    .with_time_window(time_window)
+                    .with_quorum_percentage(quorum_percentage)
+                    .with_items(data)
+                    .build()
+                    .map_err(|err| de::Error::custom(format! {"failed to deserialize valid data window: {err:?}"}))
+            }
+        }
+
+        const FIELDS: &'static [&'static str] = &["time_window", "quorum_percentage", "data"];
+        deserializer.deserialize_struct("AppDataWindow", FIELDS, AppDataWindowVisitor::<T>::new())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Validate)]
 pub struct AppDataWindowBuilder<T>
 where
@@ -1815,3 +1949,72 @@ pub static METRIC_CATALOG_FLOW_SOURCE_BACK_PRESSURE_TIME_1_MIN_ROLLING_AVG: Lazy
     )
     .expect("failed creating metric_catalog_flow_source_back_pressure_time_1_min_rolling_avg")
 });
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use claim::*;
+    use pretty_assertions::assert_eq;
+    use serde_test::{assert_tokens, Token};
+
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    struct TestData(pub i64);
+
+    impl ReceivedAt for TestData {
+        fn recv_timestamp(&self) -> Timestamp {
+            Timestamp::from_secs(self.0)
+        }
+    }
+
+    #[test]
+    fn test_app_data_window_serde_tokens() {
+        let data_window = assert_ok!(AppDataWindow::builder()
+            .with_time_window(Duration::from_secs(10))
+            .with_quorum_percentage(0.67)
+            .with_items(vec![TestData(1), TestData(2), TestData(3), TestData(4), TestData(5)])
+            .build());
+
+        assert_tokens(
+            &data_window,
+            &vec![
+                Token::Struct { name: "AppDataWindow", len: 3 },
+                Token::Str("time_window"),
+                Token::Struct { name: "Duration", len: 2 },
+                Token::Str("secs"),
+                Token::U64(10),
+                Token::Str("nanos"),
+                Token::U32(0),
+                Token::StructEnd,
+                Token::Str("quorum_percentage"),
+                Token::F64(0.67),
+                Token::Str("data"),
+                Token::Seq { len: Some(5) },
+                Token::NewtypeStruct { name: "TestData" },
+                Token::I64(1),
+                Token::NewtypeStruct { name: "TestData" },
+                Token::I64(2),
+                Token::NewtypeStruct { name: "TestData" },
+                Token::I64(3),
+                Token::NewtypeStruct { name: "TestData" },
+                Token::I64(4),
+                Token::NewtypeStruct { name: "TestData" },
+                Token::I64(5),
+                Token::SeqEnd,
+                Token::StructEnd,
+            ],
+        )
+    }
+
+    #[test]
+    fn test_app_data_window_serde_json() {
+        let expected: AppDataWindow<TestData> = assert_ok!(AppDataWindow::builder()
+            .with_time_window(Duration::from_secs(10))
+            .with_quorum_percentage(0.67)
+            .with_items(vec![TestData(1), TestData(2), TestData(3), TestData(4), TestData(5)])
+            .build());
+
+        let actual_rep = assert_ok!(serde_json::to_string(&expected));
+        let actual: AppDataWindow<TestData> = assert_ok!(serde_json::from_str(&actual_rep));
+        assert_eq!(actual, expected);
+    }
+}
