@@ -41,7 +41,7 @@ scale_up(item, _context, reason) if
 {{#if max_healthy_cpu_load}}
 scale_up(item, _context, reason) if
     evaluation_window(window)
-    and item.cluster_task_cpu_load_above_mark(window, {{max_healthy_cpu_load}})
+    and item.cluster_task_cpu_load_above_threshold(window, {{max_healthy_cpu_load}})
     and reason = "cpu_load";
 {{/if}}
 
@@ -49,7 +49,7 @@ scale_up(item, _context, reason) if
 scale_up(item, _context, reason) if
     evaluation_window(window)
     and load = item.cluster_task_heap_memory_load_rolling_average(window)
-    and healthy_heap_memory_load}} < load
+    and {{max_healthy_heap_memory_load}} < load
     and reason = "heap_memory_load";
 {{/if}}
 
