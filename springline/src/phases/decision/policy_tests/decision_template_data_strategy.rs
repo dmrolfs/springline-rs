@@ -9,7 +9,7 @@ pub struct DecisionTemplateDataStrategyBuilder {
     pub max_healthy_cpu_load: Option<BoxedStrategy<Option<f64>>>,
     pub max_healthy_heap_memory_load: Option<BoxedStrategy<Option<f64>>>,
     pub max_healthy_network_io_utilization: Option<BoxedStrategy<Option<f64>>>,
-    pub evaluate_duration_secs: Option<BoxedStrategy<Option<i64>>>,
+    pub evaluate_duration_secs: Option<BoxedStrategy<Option<u32>>>,
 }
 
 impl Default for DecisionTemplateDataStrategyBuilder {
@@ -107,13 +107,13 @@ impl DecisionTemplateDataStrategyBuilder {
         self.max_healthy_network_io_utilization(Just(max_healthy_network_io_utilization.into()))
     }
 
-    pub fn evaluate_duration_secs(self, evaluate_duration_secs: impl Strategy<Value = Option<i64>> + 'static) -> Self {
+    pub fn evaluate_duration_secs(self, evaluate_duration_secs: impl Strategy<Value = Option<u32>> + 'static) -> Self {
         let mut new = self;
         new.evaluate_duration_secs = Some(evaluate_duration_secs.boxed());
         new
     }
 
-    pub fn just_evaluate_duration_secs(self, evaluate_duration_secs: impl Into<Option<i64>>) -> Self {
+    pub fn just_evaluate_duration_secs(self, evaluate_duration_secs: impl Into<Option<u32>>) -> Self {
         self.evaluate_duration_secs(Just(evaluate_duration_secs.into()))
     }
 
@@ -122,19 +122,23 @@ impl DecisionTemplateDataStrategyBuilder {
         let basis = self.basis.clone();
         let max_healthy_relative_lag_velocity = self
             .max_healthy_relative_lag_velocity
-            .unwrap_or(prop::option::of(any::<f64>()).boxed());
-        let max_healthy_lag = self.max_healthy_lag.unwrap_or(prop::option::of(any::<f64>()).boxed());
-        let min_task_utilization = self.min_task_utilization.unwrap_or(prop::option::of(any::<f64>()).boxed());
-        let max_healthy_cpu_load = self.max_healthy_cpu_load.unwrap_or(prop::option::of(any::<f64>()).boxed());
+            .unwrap_or(prop::option::of(-1e10_f64..=1e10).boxed());
+        let max_healthy_lag = self.max_healthy_lag.unwrap_or(prop::option::of(-1e10_f64..=1e10).boxed());
+        let min_task_utilization = self
+            .min_task_utilization
+            .unwrap_or(prop::option::of(-1e10_f64..=1e10).boxed());
+        let max_healthy_cpu_load = self
+            .max_healthy_cpu_load
+            .unwrap_or(prop::option::of(-1e10_f64..=1e10).boxed());
         let max_healthy_heap_memory_load = self
             .max_healthy_heap_memory_load
-            .unwrap_or(prop::option::of(any::<f64>()).boxed());
+            .unwrap_or(prop::option::of(-1e10..=1e10).boxed());
         let max_healthy_network_io_utilization = self
             .max_healthy_network_io_utilization
-            .unwrap_or(prop::option::of(any::<f64>()).boxed());
+            .unwrap_or(prop::option::of(-1e10..=1e10).boxed());
         let evaluate_duration_secs = self
             .evaluate_duration_secs
-            .unwrap_or(prop::option::of(any::<i64>()).boxed());
+            .unwrap_or(prop::option::of(any::<u32>()).boxed());
 
         (
             max_healthy_relative_lag_velocity,

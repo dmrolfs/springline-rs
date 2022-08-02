@@ -19,6 +19,7 @@ mod result;
 pub use context::DecisionContext;
 pub(crate) use policy::DECISION_SCALING_DECISION_COUNT_METRIC;
 pub use policy::{DecisionPolicy, DecisionTemplateData};
+pub use proctor::error::PolicyError;
 pub use result::DecisionResult;
 pub use result::DECISION_DIRECTION;
 pub use result::{get_direction_and_reason, make_decision_transform};
@@ -40,7 +41,7 @@ where
     A: ClearinghouseSubscriptionAgent,
 {
     let name = "decision";
-    let policy = DecisionPolicy::new(settings);
+    let policy = DecisionPolicy::new(settings)?;
     let subscription = policy.subscription(name, settings);
     let decision = Box::new(PolicyPhase::with_transform(name, policy, make_decision_transform(name)).await?);
     let channel = phases::subscribe_policy_phase(subscription, &decision, agent).await?;

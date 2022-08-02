@@ -21,13 +21,7 @@ scale_down(item, _context, reason) if
     and reason = "low_utilization";
 {{/if}}
 
-evaluation_window(window) if
-    window = {{#if evaluate_duration_secs}}
-	{{evaluate_duration_secs}}
-    {{else}}
-	60
-    {{/if}};
-
+evaluation_window(window) if window = {{#if evaluate_duration_secs}}{{evaluate_duration_secs}}{{else}}60{{/if}};
 
 {{#if max_healthy_lag}}
 scale_up(item, _context, reason) if

@@ -14,6 +14,7 @@ pub use super::{ScaleDirection, DECISION_DIRECTION};
 pub use crate::flink::{AppDataWindow, MetricCatalog};
 pub use pretty_snowflake::MachineNode;
 pub use proctor::elements::{telemetry, TelemetryValue, Timestamp};
+pub use proctor::error::PolicyError;
 pub use proptest::prelude::*;
 pub use std::time::Duration;
 

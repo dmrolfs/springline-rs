@@ -50,7 +50,7 @@ impl PolicyScenario {
             ],
             template_data: self.template_data.clone(),
             ..DecisionSettings::default()
-        });
+        })?;
         let policy_engine = assert_ok!(prepare_policy_engine(&policy));
         let args = policy.make_query_args(&self.item, &context);
         policy.query_policy(&policy_engine, args)

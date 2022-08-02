@@ -1,8 +1,0 @@
-# Seeds for failure cases proptest has generated in the past. It is
-# automatically read and these particular cases re-run before any
-# novel cases are generated.
-#
-# It is recommended to check this file in to source control so that
-# everyone who runs the test benefits from these saved cases.
-cc 5c8f73dcd24c84a7e75f3a3670922683c678e85471611e1f162f50ccae1d6126 # shrinks to scenario = PolicyScenario { template_data: None, nr_active_jobs: 0, is_deploying: false, is_rescaling: false, last_deployment: 0000-01-01T00:00:00Z, last_failure: None }
-cc 7214fec6e08e0ab7173f3855fc4c21571756058f5f2b8fd4aa2f89c6106fa667 # shrinks to scenario = PolicyScenario { template_data: None, nr_active_jobs: 0, is_deploying: false, is_rescaling: true, last_deployment: 0000-01-01T00:00:00Z, last_failure: None }

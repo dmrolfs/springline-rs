@@ -27,22 +27,22 @@ proctor = { git = "https://github.com/dmrolfs/proctor-rs", branch = "main" }
 settings_loader = { git = "https://github.com/dmrolfs/settings-loader-rs", features = ["http"] }
 #settings_loader = { path = "../../settings-loader-rs", features = ["http"] }
 
-anyhow = "1.0.58"
+anyhow = "1.0.59"
 chrono = "0.4.19"
-clap = { version = "3.2.15", features = ["derive"] }
+clap = { version = "3.2.16", features = ["derive"] }
 # until ron feature and builder fns in *published* config-rs
 config = "0.13.1"
 #config = { version = "^0.11", default_features = true, features = ["ron"] }
 #config = { version = "^0.11" }
 console = "0.15.1"
-dialoguer = { version = "0.10.1", features = ["fuzzy-select"] }
+dialoguer = { version = "0.10.2", features = ["fuzzy-select"] }
 once_cell = "1.13.0"
 oso = "0.26.1"
 pretty-snowflake = { git = "https://github.com/dmrolfs/pretty-snowflake-rs" }
 ron = "0.7.1"
-serde = "1.0.140"
+serde = "1.0.141"
 serde_json = "1.0.82"
 serde-transcode = "1.1.1"
 tailcall = "0.1.6"
-tracing = "0.1.35"
+tracing = "0.1.36"
 trim-margin = "0.1.0"

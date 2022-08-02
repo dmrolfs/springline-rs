@@ -1809,11 +1809,11 @@ where
                     .with_quorum_percentage(quorum_percentage)
                     .with_items(data)
                     .build()
-                    .map_err(|err| de::Error::custom(format! {"failed to deserialize valid data window: {err:?}"}))
+                    .map_err(|err| de::Error::custom(format!("failed to deserialize valid data window: {err:?}")))
             }
         }
 
-        const FIELDS: &'static [&'static str] = &["time_window", "quorum_percentage", "data"];
+        const FIELDS: &[&str] = &["time_window", "quorum_percentage", "data"];
         deserializer.deserialize_struct("AppDataWindow", FIELDS, AppDataWindowVisitor::<T>::new())
     }
 }

@@ -842,26 +842,25 @@ mod tests {
 
     #[test]
     fn test_metric_order_yaml_deser() {
-        let data = r##"|---
-        |- Job:
-        |    metric: lastCheckpointDuration
-        |    agg: max
-        |    telemetry_path: health.last_checkpoint_duration
-        |    telemetry_type: Float
-        |- Operator:
-        |    name: "Source: Data Stream"
-        |    metric: records-lag-max
-        |    agg: sum
-        |    telemetry_path: flow.source_records_lag_max
-        |    telemetry_type: Integer
-        |- Operator:
-        |    name: "Supplement Stream"
-        |    position: not_source
-        |    metric: records-lag-max
-        |    agg: sum
-        |    telemetry_path: supplement.source_records_lag_max
-        |    telemetry_type: Integer
-        |"##
+        let data = r##"|- !Job
+                |  metric: lastCheckpointDuration
+                |  agg: max
+                |  telemetry_path: health.last_checkpoint_duration
+                |  telemetry_type: Float
+                |- !Operator
+                |  name: "Source: Data Stream"
+                |  metric: records-lag-max
+                |  agg: sum
+                |  telemetry_path: flow.source_records_lag_max
+                |  telemetry_type: Integer
+                |- !Operator
+                |  name: "Supplement Stream"
+                |  position: not_source
+                |  metric: records-lag-max
+                |  agg: sum
+                |  telemetry_path: supplement.source_records_lag_max
+                |  telemetry_type: Integer
+                |"##
         .trim_margin_with("|")
         .unwrap();
 
@@ -936,26 +935,25 @@ mod tests {
 
         let actual = assert_ok!(serde_yaml::to_string(&data));
 
-        let expected = r##"|---
-        |- Job:
-        |    metric: lastCheckpointDuration
-        |    agg: max
-        |    telemetry_path: health.last_checkpoint_duration
-        |    telemetry_type: Float
-        |- Operator:
-        |    name: Data Stream
-        |    metric: records-lag-max
-        |    agg: sum
-        |    telemetry_path: flow.source_records_lag_max
-        |    telemetry_type: Integer
-        |- Operator:
-        |    name: Supplement Stream
-        |    position: not_source
-        |    metric: records-lag-max
-        |    agg: sum
-        |    telemetry_path: supplement.source_records_lag_max
-        |    telemetry_type: Integer
-        |"##
+        let expected = r##"|- !Job
+                |  metric: lastCheckpointDuration
+                |  agg: max
+                |  telemetry_path: health.last_checkpoint_duration
+                |  telemetry_type: Float
+                |- !Operator
+                |  name: Data Stream
+                |  metric: records-lag-max
+                |  agg: sum
+                |  telemetry_path: flow.source_records_lag_max
+                |  telemetry_type: Integer
+                |- !Operator
+                |  name: Supplement Stream
+                |  position: not_source
+                |  metric: records-lag-max
+                |  agg: sum
+                |  telemetry_path: supplement.source_records_lag_max
+                |  telemetry_type: Integer
+                |"##
         .trim_margin_with("|")
         .unwrap();
 

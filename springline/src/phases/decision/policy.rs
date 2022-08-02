@@ -10,6 +10,7 @@ use proctor::phases::sense::TelemetrySubscription;
 use proctor::{ProctorContext, ProctorIdGenerator};
 use prometheus::{IntCounterVec, Opts};
 use serde::{Deserialize, Serialize};
+use validator::Validate;
 
 use super::context::DecisionContext;
 use crate::flink::AppDataWindow;
@@ -19,7 +20,7 @@ use crate::phases::decision::DecisionData;
 use crate::phases::REASON;
 use crate::settings::DecisionSettings;
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Validate, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct DecisionTemplateData {
     pub basis: String,
@@ -39,6 +40,7 @@ pub struct DecisionTemplateData {
     /// define a cap to `total_lag` as a supplemental rule to the
     /// relative lag velocity.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate(range(min = 0.0))]
     pub max_healthy_lag: Option<f64>,
 
     /// Optional threshold on the target task utilization, which is
@@ -47,31 +49,37 @@ pub struct DecisionTemplateData {
     /// a check that the `total_lag` is 0 -- meaning the application
     /// is caught up on workload and underutilized.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate(range(min = 0.0))]
     pub min_task_utilization: Option<f64>,
 
     /// Optional threshold that may scale up the application if the CPU load
     /// is too high. High resource utilization (CPU, Memory, Network)) may suggest
     /// the application is destablizing, which scaling up may help.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate(range(min = 0.0))]
     pub max_healthy_cpu_load: Option<f64>,
 
     /// Optional threshold that may scale up the application if the heap memory load
     /// is too high. High resource utilization (CPU, Memory, Network) may suggest
     /// the application is destablizing, which scaling up may help.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate(range(min = 0.0))]
     pub max_healthy_heap_memory_load: Option<f64>,
 
     /// Optional threshold that may scale up the application if network IO
     /// is too high. High resource utilization (CPU, Memory, Network) may suggest
     /// the application is destablizing, which scaling up may help.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate(range(min = 0.0))]
     pub max_healthy_network_io_utilization: Option<f64>,
 
     /// Many of the rules look at the rolling average of the values to reduce the
-    /// affects of short-term spikes. This optional valueset the common evaluation
-    /// window for these range metric forms.
+    /// affects of short-term spikes. This optional value sets the common evaluation
+    /// window for these range metric forms. Duration may range from 0 (always single item) to 600
+    /// (10 minutes).
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub evaluate_duration_secs: Option<i64>,
+    #[validate(range(min = 0, max = 600))]
+    pub evaluate_duration_secs: Option<u32>,
 
     /// Custom template values are collected in the custom property.
     #[serde(flatten, skip_serializing_if = "HashMap::is_empty")]
@@ -103,13 +111,18 @@ pub struct DecisionPolicy {
 }
 
 impl DecisionPolicy {
-    pub fn new(settings: &DecisionSettings) -> Self {
-        Self {
+    pub fn new(settings: &DecisionSettings) -> Result<Self, PolicyError> {
+        let mut template_data = settings.template_data.clone();
+        if let Some(td) = &mut template_data {
+            td.validate()?;
+        }
+
+        Ok(Self {
             required_subscription_fields: settings.required_subscription_fields.clone(),
             optional_subscription_fields: settings.optional_subscription_fields.clone(),
             sources: settings.policies.clone(),
             template_data: settings.template_data.clone(),
-        }
+        })
     }
 }
 
@@ -384,7 +397,7 @@ mod tests {
             policies: sources,
             template_data,
         };
-        let policy = DecisionPolicy::new(&settings);
+        let policy = assert_ok!(DecisionPolicy::new(&settings));
 
         let actual = proctor::elements::policy_filter::render_template_policy(
             policy.sources(),

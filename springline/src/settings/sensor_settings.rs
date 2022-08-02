@@ -337,24 +337,23 @@ mod tests {
         let actual = assert_ok!(serde_yaml::to_string(&metric_orders));
         assert_eq!(
             actual,
-            r##"|---
-                |- Job:
-                |    metric: uptime
-                |    agg: max
-                |    telemetry_path: health.job_uptime_millis
-                |    telemetry_type: Integer
-                |- Operator:
-                |    name: "Input: The best data"
-                |    position: source
-                |    metric: records-lag-max
-                |    agg: value
-                |    telemetry_path: flow.source_records_lag_max
-                |    telemetry_type: Integer
-                |- TaskManager:
-                |    metric: Status.JVM.Memory.Heap.Committed
-                |    agg: sum
-                |    telemetry_path: cluster.task_heap_memory_committed
-                |    telemetry_type: Float
+            r##"|- !Job
+                |  metric: uptime
+                |  agg: max
+                |  telemetry_path: health.job_uptime_millis
+                |  telemetry_type: Integer
+                |- !Operator
+                |  name: 'Input: The best data'
+                |  position: source
+                |  metric: records-lag-max
+                |  agg: value
+                |  telemetry_path: flow.source_records_lag_max
+                |  telemetry_type: Integer
+                |- !TaskManager
+                |  metric: Status.JVM.Memory.Heap.Committed
+                |  agg: sum
+                |  telemetry_path: cluster.task_heap_memory_committed
+                |  telemetry_type: Float
                 |"##
             .trim_margin_with("|")
             .unwrap()

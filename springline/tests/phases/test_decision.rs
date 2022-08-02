@@ -253,7 +253,7 @@ async fn test_decision_carry_policy_result() -> anyhow::Result<()> {
             | scale_up(item, _context, reason) if {{max_records_in_per_sec}} < item.flow.records_in_per_sec and reason = "lagging_behind";
             | scale_down(item, _context, reason) if item.flow.records_in_per_sec < {{min_records_in_per_sec}} and reason = "too_comfortable";
             "###,
-    )?));
+    )?))?;
 
     let settings = DecisionSettings {
         required_subscription_fields: maplit::hashset! { "all_sinks_healthy".to_string(), },
@@ -375,7 +375,7 @@ async fn test_decision_common() -> anyhow::Result<()> {
             |   and reason = "lagging_behind";
             | scale_down(item, _context, reason) if item.flow.records_in_per_sec < {{min_records_in_per_sec}} and reason = "too comfortable";
             "###,
-    )?));
+    )?))?;
 
     let settings = DecisionSettings { ..PolicySettings::default() };
 
