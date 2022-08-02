@@ -159,15 +159,48 @@ decision:
         path: "./resources/decision_basis.polar"
         is_template: true
   template_data:
+    # policy template that is pulled into the base decision policy template, which forms the basis
+    #of the business criteria to scale job.
     basis: decision_basis
-    max_healthy_relative_lag_velocity: 3.0
-    min_task_utilization: 0.6
-    evaluate_duration_secs: 120
 
-#   max_healthy_lag: 133.1
-#   max_healthy_cpu_load: 0.0016
-#   max_healthy_heap_memory_load: 0.0012
-#   max_healthy_network_io_utilization: 0.6
+    # Optional threshold representing the maximum ratio the total_lag rate / consumed_records_rate
+    # that is healthy. This value represents how much the workload is increasing (positive) or
+    # decreasing (negative). This value is used for scale up decisions and not scale down decisions.
+    max_healthy_relative_lag_velocity: 3.0
+
+    # Optional threshold representing the maximum total_lag that is healthy. This factor does not
+    # consider the workload, so its usefulness may be limited compared to the
+    # `max_healthy_relative_lag_velocity`. This could be used to define a cap to `total_lag` as a
+    # supplemental rule to the relative lag velocity.
+    # max_healthy_lag:
+
+    # Optional threshold on the target task utilization, which is calculated based on the
+    # `idle_time_millis_per_sec`. This value is used for scale down decisions and is typically
+    # coupled with a check that the total_lag is 0 -- meaning the application is caught up on
+    #workload and underutilized.
+    min_task_utilization: 0.6
+
+    # Optional threshold that may scale up the application if the CPU load is too high. High
+    # resource utilization (CPU, Memory, Network)) may suggest the application is destabilizing,
+    #which scaling up may help.
+    # max_healthy_cpu_load:
+
+    # Optional threshold that may scale up the application if the heap memory load is too high.
+    # High resource utilization (CPU, Memory, Network) may suggest the application is destabilizing,
+    # which scaling up may help.
+    # max_healthy_heap_memory_load:
+
+    # Optional threshold that may scale up the application if network IO is too high.
+    # High resource utilization (CPU, Memory, Network) may suggest the application is destabilizing,
+    #which scaling up may help.
+    # max_healthy_network_io_utilization:
+
+
+    # Many of the rules look at the rolling average of the values to reduce the affects of
+    # short-term spikes. This optional value sets the common evaluation window for these range
+    # metric forms.
+    # Valid duration may range from 0 (always single item) to 600 secs (10 minutes).
+    evaluate_duration_secs: 120
 
 plan:
   performance_repository:
