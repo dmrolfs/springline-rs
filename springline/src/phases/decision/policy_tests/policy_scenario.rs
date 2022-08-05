@@ -18,7 +18,7 @@ pub struct PolicyScenario {
 
 impl PolicyScenario {
     pub fn strategy(decision_basis: impl Into<String>) -> impl Strategy<Value = Self> {
-        Self::builder().strategy(decision_basis)
+        Self::builder().basis(decision_basis).strategy()
     }
 
     pub fn builder() -> PolicyScenarioBuilder {
@@ -66,12 +66,19 @@ impl fmt::Debug for PolicyScenario {
 
 #[derive(Debug, Default, Clone)]
 pub struct PolicyScenarioBuilder {
-    pub template_data: Option<BoxedStrategy<Option<DecisionTemplateData>>>,
-    pub item: Option<BoxedStrategy<AppDataWindow<MetricCatalog>>>,
+    basis: Option<String>,
+    template_data: Option<BoxedStrategy<Option<DecisionTemplateData>>>,
+    item: Option<BoxedStrategy<AppDataWindow<MetricCatalog>>>,
 }
 
 #[allow(dead_code)]
 impl PolicyScenarioBuilder {
+    pub fn basis(self, basis: impl Into<String>) -> Self {
+        let mut new = self;
+        new.basis = Some(basis.into());
+        new
+    }
+
     #[tracing::instrument(level = "info", skip(template_data))]
     pub fn template_data(self, template_data: impl Strategy<Value = Option<DecisionTemplateData>> + 'static) -> Self {
         let template_data = template_data.boxed();
@@ -117,12 +124,18 @@ impl PolicyScenarioBuilder {
         self.one_item(Just(item.into()), Just(window.into()))
     }
 
-    #[tracing::instrument(level = "info", skip(decision_basis))]
-    pub fn strategy(self, decision_basis: impl Into<String>) -> impl Strategy<Value = PolicyScenario> {
+    #[tracing::instrument(level = "info")]
+    pub fn strategy(self) -> impl Strategy<Value = PolicyScenario> {
         tracing::info!(?self, "DMR: building decision policy strategy");
         let template_data = self
             .template_data
-            .unwrap_or(prop::option::of(DecisionTemplateDataStrategyBuilder::strategy(decision_basis.into())).boxed());
+            .unwrap_or_else(|| {
+                let mut builder = DecisionTemplateDataStrategyBuilder::default();
+                if let Some(basis) = self.basis {
+                    builder = builder.basis(basis);
+                }
+                prop::option::of(builder.finish()).boxed()
+            });
 
         let data = arb_metric_catalog_window_from_timestamp_window(
             arb_timestamp_window(

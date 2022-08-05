@@ -1,40 +1,27 @@
 use super::*;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct DecisionTemplateDataStrategyBuilder {
-    pub basis: String,
-    pub max_healthy_relative_lag_velocity: Option<BoxedStrategy<Option<f64>>>,
-    pub max_healthy_lag: Option<BoxedStrategy<Option<f64>>>,
-    pub min_task_utilization: Option<BoxedStrategy<Option<f64>>>,
-    pub max_healthy_cpu_load: Option<BoxedStrategy<Option<f64>>>,
-    pub max_healthy_heap_memory_load: Option<BoxedStrategy<Option<f64>>>,
-    pub max_healthy_network_io_utilization: Option<BoxedStrategy<Option<f64>>>,
-    pub evaluate_duration_secs: Option<BoxedStrategy<Option<u32>>>,
-}
-
-impl Default for DecisionTemplateDataStrategyBuilder {
-    fn default() -> Self {
-        Self {
-            basis: "decision_basis".to_string(),
-            max_healthy_relative_lag_velocity: None,
-            max_healthy_lag: None,
-            min_task_utilization: None,
-            max_healthy_cpu_load: None,
-            max_healthy_heap_memory_load: None,
-            max_healthy_network_io_utilization: None,
-            evaluate_duration_secs: None,
-        }
-    }
+    basis: Option<String>,
+    max_healthy_relative_lag_velocity: Option<BoxedStrategy<Option<f64>>>,
+    max_healthy_lag: Option<BoxedStrategy<Option<f64>>>,
+    min_task_utilization: Option<BoxedStrategy<Option<f64>>>,
+    max_healthy_cpu_load: Option<BoxedStrategy<Option<f64>>>,
+    max_healthy_heap_memory_load: Option<BoxedStrategy<Option<f64>>>,
+    max_healthy_network_io_utilization: Option<BoxedStrategy<Option<f64>>>,
+    evaluate_duration_secs: Option<BoxedStrategy<Option<u32>>>,
 }
 
 #[allow(dead_code)]
 impl DecisionTemplateDataStrategyBuilder {
-    pub fn strategy(basis: impl Into<String>) -> impl Strategy<Value = DecisionTemplateData> {
-        Self::new(basis).finish()
+    pub fn strategy() -> impl Strategy<Value = DecisionTemplateData> {
+        Self::default().finish()
     }
 
-    pub fn new(basis: impl Into<String>) -> Self {
-        Self { basis: basis.into(), ..Self::default() }
+    pub fn basis(self, basis: impl Into<String>) -> Self {
+        let mut new = self;
+        new.basis = Some(basis.into());
+        new
     }
 
     pub fn max_healthy_relative_lag_velocity(
@@ -119,7 +106,7 @@ impl DecisionTemplateDataStrategyBuilder {
 
     pub fn finish(self) -> impl Strategy<Value = DecisionTemplateData> {
         tracing::info!(?self, "DMR: building DecisionTemplateData strategy");
-        let basis = self.basis.clone();
+        let basis = Just(self.basis.unwrap_or("decision_basis".to_string()));
         let max_healthy_relative_lag_velocity = self
             .max_healthy_relative_lag_velocity
             .unwrap_or(prop::option::of(-1e10_f64..=1e10).boxed());
@@ -141,6 +128,7 @@ impl DecisionTemplateDataStrategyBuilder {
             .unwrap_or(prop::option::of(any::<u32>()).boxed());
 
         (
+            basis,
             max_healthy_relative_lag_velocity,
             max_healthy_lag,
             min_task_utilization,
@@ -151,6 +139,7 @@ impl DecisionTemplateDataStrategyBuilder {
         )
             .prop_map(
                 move |(
+                    basis,
                     max_healthy_relative_lag_velocity,
                     max_healthy_lag,
                     min_task_utilization,
@@ -160,6 +149,7 @@ impl DecisionTemplateDataStrategyBuilder {
                     evaluate_duration_secs,
                 )| {
                     tracing::info!(
+                        ?basis,
                         ?max_healthy_relative_lag_velocity,
                         ?max_healthy_lag,
                         ?min_task_utilization,
@@ -171,7 +161,7 @@ impl DecisionTemplateDataStrategyBuilder {
                     );
 
                     DecisionTemplateData {
-                        basis: basis.clone(),
+                        basis,
                         max_healthy_relative_lag_velocity,
                         max_healthy_lag,
                         min_task_utilization,
