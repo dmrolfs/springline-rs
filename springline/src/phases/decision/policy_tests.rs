@@ -17,6 +17,16 @@ pub use proctor::elements::{telemetry, TelemetryValue, Timestamp};
 pub use proctor::error::PolicyError;
 pub use proptest::prelude::*;
 pub use std::time::Duration;
+pub use claim::*;
+
+pub use crate::phases::REASON;
+pub const RELATIVE_LAG_VELOCITY: &str = "relative_lag_velocity";
+pub const LOW_UTILIZATION: &str = "low_utilization";
+pub const TOTAL_LAG: &str = "total_lag";
+pub const CPU_LOAD: &str = "cpu_load";
+pub const HEAP_MEMORY_LOAD: &str = "heap_memory_load";
+pub const INPUT_NETWORK_IO: &str = "input_network_io";
+pub const OUTPUT_NETWORK_IO: &str = "output_network_io";
 
 #[tracing::instrument(level = "info")]
 pub fn arb_perturbed_duration(center: Duration, perturb_factor: f64) -> impl Strategy<Value = Duration> {

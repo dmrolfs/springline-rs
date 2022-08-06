@@ -1,4 +1,5 @@
 use super::*;
+use validator::Validate;
 
 #[derive(Debug, Default, Clone)]
 pub struct DecisionTemplateDataStrategyBuilder {
@@ -110,19 +111,19 @@ impl DecisionTemplateDataStrategyBuilder {
         let max_healthy_relative_lag_velocity = self
             .max_healthy_relative_lag_velocity
             .unwrap_or(prop::option::of(-1e10_f64..=1e10).boxed());
-        let max_healthy_lag = self.max_healthy_lag.unwrap_or(prop::option::of(-1e10_f64..=1e10).boxed());
+        let max_healthy_lag = self.max_healthy_lag.unwrap_or(prop::option::of(-10_f64..=1e10).boxed());
         let min_task_utilization = self
             .min_task_utilization
-            .unwrap_or(prop::option::of(-1e10_f64..=1e10).boxed());
+            .unwrap_or(prop::option::of(-10_f64..=1e10).boxed());
         let max_healthy_cpu_load = self
             .max_healthy_cpu_load
             .unwrap_or(prop::option::of(-1e10_f64..=1e10).boxed());
         let max_healthy_heap_memory_load = self
             .max_healthy_heap_memory_load
-            .unwrap_or(prop::option::of(-1e10..=1e10).boxed());
+            .unwrap_or(prop::option::of(-10_f64..=1e10).boxed());
         let max_healthy_network_io_utilization = self
             .max_healthy_network_io_utilization
-            .unwrap_or(prop::option::of(-1e10..=1e10).boxed());
+            .unwrap_or(prop::option::of(-10_f64..=1e10).boxed());
         let evaluate_duration_secs = self
             .evaluate_duration_secs
             .unwrap_or(prop::option::of(any::<u32>()).boxed());
@@ -137,7 +138,8 @@ impl DecisionTemplateDataStrategyBuilder {
             max_healthy_network_io_utilization,
             evaluate_duration_secs,
         )
-            .prop_map(
+            .prop_filter_map(
+                "invalid DecisionTemplateData",
                 move |(
                     basis,
                     max_healthy_relative_lag_velocity,
@@ -160,7 +162,7 @@ impl DecisionTemplateDataStrategyBuilder {
                         "making DecisionTemplateData..."
                     );
 
-                    DecisionTemplateData {
+                    let mut template_data = DecisionTemplateData {
                         basis,
                         max_healthy_relative_lag_velocity,
                         max_healthy_lag,
@@ -170,7 +172,12 @@ impl DecisionTemplateDataStrategyBuilder {
                         max_healthy_network_io_utilization,
                         evaluate_duration_secs,
                         custom: Default::default(),
-                    }
+                    };
+
+                    template_data
+                        .validate()
+                        .ok()
+                        .map(|_| template_data)
                 },
             )
     }
