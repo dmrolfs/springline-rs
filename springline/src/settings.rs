@@ -615,10 +615,6 @@ mod tests {
         },
         context_stub: ContextStubSettings {
             all_sinks_healthy: true,
-            // cluster_is_deploying: false,
-            // cluster_last_deployment: assert_ok!(
-            //     Utc.datetime_from_str("2020-03-01T04:28:07Z", proctor::serde::date::FORMAT)
-            // ),
         },
     });
 
@@ -632,16 +628,6 @@ mod tests {
             settings_search_path: Some("../resources".into()),
             ..CliOptions::default()
         };
-        let before_env = Settings::load(&options);
-        tracing::info!("from Settings::load: {:?}", before_env);
-        let before_env = assert_ok!(before_env);
-        assert_eq!(
-            before_env.plan.performance_repository,
-            PerformanceRepositorySettings {
-                storage: PerformanceRepositoryType::Memory,
-                storage_path: None,
-            }
-        );
 
         with_env_vars(
             "test_settings_applications_load",

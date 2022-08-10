@@ -27,7 +27,7 @@ mod window {
     use crate::phases::CollectMetricWindow;
     use crate::settings::EngineSettings;
 
-    fn make_test_catalog(ts: Timestamp, value: i32) -> MetricCatalog {
+    fn make_test_catalog(ts: Timestamp, value: u32) -> MetricCatalog {
         MetricCatalog {
             correlation_id: Id::direct(
                 <MetricCatalog as Label>::labeler().label(),
@@ -37,7 +37,7 @@ mod window {
             recv_timestamp: ts,
             health: JobHealthMetrics::default(),
             flow: FlowMetrics {
-                source_records_lag_max: Some(i64::from(value)),
+                source_records_lag_max: Some(value),
                 records_in_per_sec: value as f64,
                 ..FlowMetrics::default()
             },
@@ -62,7 +62,7 @@ mod window {
 
         let data: Vec<MetricCatalog> = (0..20)
             .map(|i: u32| {
-                let value = if i < 10 { (i + 1) as i32 } else { (20 - i) as i32 };
+                let value = if i < 10 { i + 1 } else { 20 - i };
                 make_test_catalog(start + Duration::from_secs(i as u64), value)
             })
             .collect();
@@ -140,7 +140,7 @@ mod window {
 
         let data: Vec<MetricCatalog> = (0..20)
             .map(|i: u32| {
-                let value = if i < 10 { (i + 1) as i32 } else { (20 - i) as i32 };
+                let value = if i < 10 { i + 1 } else { 20 - i };
                 make_test_catalog(start + Duration::from_secs(i as u64), value)
             })
             .collect();
@@ -225,7 +225,7 @@ mod window {
 
         let data: Vec<MetricCatalog> = (0..20)
             .map(|i: u32| {
-                let value = if i < 10 { (i + 1) as i32 } else { (20 - i) as i32 };
+                let value = if i < 10 { i + 1 } else { 20 - i };
                 make_test_catalog(start + Duration::from_secs(i as u64), value)
             })
             .collect();
@@ -386,7 +386,7 @@ mod window {
 
         let data: Vec<MetricCatalog> = (0..20)
             .map(|i: u32| {
-                let value = if i < 10 { (i + 1) as i32 } else { (20 - i) as i32 };
+                let value = if i < 10 { i + 1 } else { 20 - i };
                 make_test_catalog(start + Duration::from_secs(i as u64), value)
             })
             .collect();

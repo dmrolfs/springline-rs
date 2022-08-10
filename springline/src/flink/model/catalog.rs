@@ -145,38 +145,38 @@ pub struct JobHealthMetrics {
     /// Returns -1 for completed jobs (in milliseconds).
     #[polar(attribute)]
     #[serde(rename = "health.job_uptime_millis")]
-    pub job_uptime_millis: i64,
+    pub job_uptime_millis: u32,
 
     /// The total number of restarts since this job was submitted, including full restarts and
     /// fine-grained restarts.
     /// Flink REST API: /jobs/metrics?get=numRestarts&agg=max
     #[polar(attribute)]
     #[serde(rename = "health.job_nr_restarts")]
-    pub job_nr_restarts: i64,
+    pub job_nr_restarts: u32,
 
     /// The number of successfully completed checkpoints.
     /// Note: this metrics does not work properly when Reactive Mode is enabled.
     /// Flink REST API: /jobs/metrics?get=numberOfCompletedCheckpoints&agg=max
     #[polar(attribute)]
     #[serde(rename = "health.job_nr_completed_checkpoints")]
-    pub job_nr_completed_checkpoints: i64,
+    pub job_nr_completed_checkpoints: u32,
 
     /// The number of failed checkpoints.
     /// Note: this metrics does not work properly when Reactive Mode is enabled.
     /// Flink REST API: /jobs/metrics?get=numberOfFailedCheckpoints&agg=max
     #[polar(attribute)]
     #[serde(rename = "health.job_nr_failed_checkpoints")]
-    pub job_nr_failed_checkpoints: i64,
+    pub job_nr_failed_checkpoints: u32,
 }
 
 impl Monoid for JobHealthMetrics {
     fn empty() -> Self {
         Self {
             job_max_parallelism: 0,
-            job_uptime_millis: -1,
-            job_nr_restarts: -1,
-            job_nr_completed_checkpoints: -1,
-            job_nr_failed_checkpoints: -1,
+            job_uptime_millis: 0,
+            job_nr_restarts: 0,
+            job_nr_completed_checkpoints: 0,
+            job_nr_failed_checkpoints: 0,
         }
     }
 }
@@ -247,7 +247,7 @@ pub struct FlowMetrics {
         rename = "flow.source_records_lag_max",
         skip_serializing_if = "Option::is_none"
     )]
-    pub source_records_lag_max: Option<i64>,
+    pub source_records_lag_max: Option<u32>,
 
     #[polar(attribute)]
     #[serde(
@@ -255,11 +255,11 @@ pub struct FlowMetrics {
         rename = "flow.source_assigned_partitions",
         skip_serializing_if = "Option::is_none"
     )]
-    pub source_assigned_partitions: Option<i64>,
+    pub source_assigned_partitions: Option<u32>,
 
     #[polar(attribute)]
     #[serde(default, rename = "flow.source_total_lag", skip_serializing_if = "Option::is_none")]
-    pub source_total_lag: Option<i64>,
+    pub source_total_lag: Option<u32>,
 
     /// The rate at which the job processes records, which is calculated by summing the
     /// `records_consumed_rate` for each operator instance of the Kafka Source. This metric is used
@@ -276,7 +276,7 @@ pub struct FlowMetrics {
         rename = "flow.millis_behind_latest",
         skip_serializing_if = "Option::is_none"
     )]
-    pub source_millis_behind_latest: Option<i64>,
+    pub source_millis_behind_latest: Option<u32>,
 }
 
 impl fmt::Debug for FlowMetrics {
@@ -406,7 +406,7 @@ pub struct ClusterMetrics {
     /// - Flink REST API /taskmanagers/metrics?get=Status.JVM.Threads.Count&agg=max
     #[polar(attribute)]
     #[serde(rename = "cluster.task_nr_threads")]
-    pub task_nr_threads: i64,
+    pub task_nr_threads: u32,
 
     /// The number of queued input buffers.
     #[polar(attribute)]
@@ -487,7 +487,7 @@ impl Monoid for ClusterMetrics {
             task_cpu_load: -1.0,
             task_heap_memory_used: -1.0,
             task_heap_memory_committed: -1.0,
-            task_nr_threads: -1,
+            task_nr_threads: 0,
             task_network_input_queue_len: -1.0,
             task_network_input_pool_usage: -1.0,
             task_network_output_queue_len: -1.0,
@@ -584,10 +584,10 @@ impl UpdateMetrics for MetricCatalog {
             Ok(catalog) => {
                 METRIC_CATALOG_TIMESTAMP.set(catalog.recv_timestamp.as_secs());
 
-                METRIC_CATALOG_JOB_HEALTH_UPTIME.set(catalog.health.job_uptime_millis);
-                METRIC_CATALOG_JOB_HEALTH_NR_RESTARTS.set(catalog.health.job_nr_restarts);
-                METRIC_CATALOG_JOB_HEALTH_NR_COMPLETED_CHECKPOINTS.set(catalog.health.job_nr_completed_checkpoints);
-                METRIC_CATALOG_JOB_HEALTH_NR_FAILED_CHECKPOINTS.set(catalog.health.job_nr_failed_checkpoints);
+                METRIC_CATALOG_JOB_HEALTH_UPTIME.set(catalog.health.job_uptime_millis.into());
+                METRIC_CATALOG_JOB_HEALTH_NR_RESTARTS.set(catalog.health.job_nr_restarts.into());
+                METRIC_CATALOG_JOB_HEALTH_NR_COMPLETED_CHECKPOINTS.set(catalog.health.job_nr_completed_checkpoints.into());
+                METRIC_CATALOG_JOB_HEALTH_NR_FAILED_CHECKPOINTS.set(catalog.health.job_nr_failed_checkpoints.into());
 
                 METRIC_CATALOG_FLOW_RECORDS_IN_PER_SEC.set(catalog.flow.records_in_per_sec);
                 METRIC_CATALOG_FLOW_RECORDS_OUT_PER_SEC.set(catalog.flow.records_out_per_sec);
@@ -597,15 +597,15 @@ impl UpdateMetrics for MetricCatalog {
                 METRIC_CATALOG_FLOW_TASK_UTILIZATION.set(catalog.flow.task_utilization());
 
                 if let Some(lag) = catalog.flow.source_records_lag_max {
-                    METRIC_CATALOG_FLOW_SOURCE_RECORDS_LAG_MAX.set(lag);
+                    METRIC_CATALOG_FLOW_SOURCE_RECORDS_LAG_MAX.set(lag.into());
                 }
 
                 if let Some(partitions) = catalog.flow.source_assigned_partitions {
-                    METRIC_CATALOG_FLOW_SOURCE_ASSIGNED_PARTITIONS.set(partitions);
+                    METRIC_CATALOG_FLOW_SOURCE_ASSIGNED_PARTITIONS.set(partitions.into());
                 }
 
                 if let Some(total_lag) = catalog.flow.source_total_lag {
-                    METRIC_CATALOG_FLOW_SOURCE_TOTAL_LAG.set(total_lag);
+                    METRIC_CATALOG_FLOW_SOURCE_TOTAL_LAG.set(total_lag.into());
                 }
 
                 if let Some(total_rate) = catalog.flow.source_records_consumed_rate {
@@ -613,15 +613,15 @@ impl UpdateMetrics for MetricCatalog {
                 }
 
                 if let Some(lag) = catalog.flow.source_millis_behind_latest {
-                    METRIC_CATALOG_FLOW_SOURCE_MILLIS_BEHIND_LATEST.set(lag);
+                    METRIC_CATALOG_FLOW_SOURCE_MILLIS_BEHIND_LATEST.set(lag.into());
                 }
 
-                METRIC_CATALOG_CLUSTER_NR_ACTIVE_JOBS.set(catalog.cluster.nr_active_jobs as i64);
-                METRIC_CATALOG_CLUSTER_NR_TASK_MANAGERS.set(catalog.cluster.nr_task_managers as i64);
+                METRIC_CATALOG_CLUSTER_NR_ACTIVE_JOBS.set(catalog.cluster.nr_active_jobs.into());
+                METRIC_CATALOG_CLUSTER_NR_TASK_MANAGERS.set(catalog.cluster.nr_task_managers.into());
                 METRIC_CATALOG_CLUSTER_TASK_CPU_LOAD.set(catalog.cluster.task_cpu_load);
                 METRIC_CATALOG_CLUSTER_TASK_HEAP_MEMORY_USED.set(catalog.cluster.task_heap_memory_used);
                 METRIC_CATALOG_CLUSTER_TASK_HEAP_MEMORY_COMMITTED.set(catalog.cluster.task_heap_memory_committed);
-                METRIC_CATALOG_CLUSTER_TASK_NR_THREADS.set(catalog.cluster.task_nr_threads);
+                METRIC_CATALOG_CLUSTER_TASK_NR_THREADS.set(catalog.cluster.task_nr_threads.into());
                 METRIC_CATALOG_CLUSTER_TASK_NETWORK_INPUT_QUEUE_LEN.set(catalog.cluster.task_network_input_queue_len);
                 METRIC_CATALOG_CLUSTER_TASK_NETWORK_INPUT_POOL_USAGE.set(catalog.cluster.task_network_input_pool_usage);
                 METRIC_CATALOG_CLUSTER_TASK_NETWORK_OUTPUT_QUEUE_LEN.set(catalog.cluster.task_network_output_queue_len);

@@ -178,7 +178,7 @@ const STEP: i64 = 15;
 
 #[tracing::instrument(level = "info")]
 fn make_test_data(
-    start: Timestamp, tick: i64, nr_task_managers: u32, source_records_lag_max: i64, records_per_sec: f64,
+    start: Timestamp, tick: i64, nr_task_managers: u32, source_records_lag_max: u32, records_per_sec: f64,
 ) -> MetricCatalog {
     let timestamp = Utc.timestamp(start.as_secs() + tick * STEP, 0).into();
     let corr_id = CORRELATION_ID.clone();
@@ -201,9 +201,9 @@ fn make_test_data(
             forecasted_timestamp: Some(forecasted_timestamp),
             forecasted_records_in_per_sec: Some(records_per_sec),
             source_records_lag_max: Some(source_records_lag_max),
-            source_assigned_partitions: Some(nr_task_managers as i64),
-            source_total_lag: Some(source_records_lag_max * nr_task_managers as i64),
-            source_records_consumed_rate: Some((source_records_lag_max * nr_task_managers as i64 * 2) as f64),
+            source_assigned_partitions: Some(nr_task_managers),
+            source_total_lag: Some(source_records_lag_max * nr_task_managers),
+            source_records_consumed_rate: Some((source_records_lag_max * nr_task_managers * 2) as f64),
             source_millis_behind_latest: None,
         },
         cluster: ClusterMetrics {
@@ -223,7 +223,7 @@ fn make_test_data(
 }
 
 fn make_test_data_series(
-    start: Timestamp, nr_task_managers: u32, source_records_lag_max: i64, mut gen: impl FnMut(i64) -> f64,
+    start: Timestamp, nr_task_managers: u32, source_records_lag_max: u32, mut gen: impl FnMut(i64) -> f64,
 ) -> Vec<MetricCatalog> {
     let total = 30;
     (0..total)
@@ -242,7 +242,7 @@ enum DecisionType {
 
 #[tracing::instrument(level = "info")]
 fn make_decision(
-    decision: DecisionType, start: Timestamp, tick: i64, nr_task_managers: u32, source_records_lag_max: i64,
+    decision: DecisionType, start: Timestamp, tick: i64, nr_task_managers: u32, source_records_lag_max: u32,
     records_per_sec: f64,
 ) -> InDecision {
     let data = make_test_data(start, tick, nr_task_managers, source_records_lag_max, records_per_sec);

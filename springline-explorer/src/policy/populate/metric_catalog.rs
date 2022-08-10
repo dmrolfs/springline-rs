@@ -252,10 +252,10 @@ impl Lens for JobHealthLens {
 
     fn set(&self, telemetry: &mut Self::T, value_rep: impl AsRef<str>) -> anyhow::Result<()> {
         match self {
-            Self::UptimeMillis => telemetry.job_uptime_millis = i64::from_str(value_rep.as_ref())?,
-            Self::NrRestarts => telemetry.job_nr_restarts = i64::from_str(value_rep.as_ref())?,
-            Self::NrCompletedCheckpoints => telemetry.job_nr_completed_checkpoints = i64::from_str(value_rep.as_ref())?,
-            Self::NrFailedCheckpoints => telemetry.job_nr_failed_checkpoints = i64::from_str(value_rep.as_ref())?,
+            Self::UptimeMillis => telemetry.job_uptime_millis = u32::from_str(value_rep.as_ref())?,
+            Self::NrRestarts => telemetry.job_nr_restarts = u32::from_str(value_rep.as_ref())?,
+            Self::NrCompletedCheckpoints => telemetry.job_nr_completed_checkpoints = u32::from_str(value_rep.as_ref())?,
+            Self::NrFailedCheckpoints => telemetry.job_nr_failed_checkpoints = u32::from_str(value_rep.as_ref())?,
         }
 
         Ok(())
@@ -295,14 +295,14 @@ impl Lens for FlowLens {
                 telemetry.source_records_lag_max = if value_rep.as_ref().is_empty() {
                     None
                 } else {
-                    Some(i64::from_str(value_rep.as_ref())?)
+                    Some(u32::from_str(value_rep.as_ref())?)
                 };
             },
             Self::SourceMillisBehindLatest => {
                 telemetry.source_millis_behind_latest = if value_rep.as_ref().is_empty() {
                     None
                 } else {
-                    Some(i64::from_str(value_rep.as_ref())?)
+                    Some(u32::from_str(value_rep.as_ref())?)
                 };
             },
         }
@@ -349,7 +349,7 @@ impl Lens for ClusterLens {
             Self::TaskCpuLoad => telemetry.task_cpu_load = f64::from_str(value_rep.as_ref())?,
             Self::TaskHeapMemoryUsed => telemetry.task_heap_memory_used = f64::from_str(value_rep.as_ref())?,
             Self::TaskHeapMemoryCommitted => telemetry.task_heap_memory_committed = f64::from_str(value_rep.as_ref())?,
-            Self::TaskNrThreads => telemetry.task_nr_threads = i64::from_str(value_rep.as_ref())?,
+            Self::TaskNrThreads => telemetry.task_nr_threads = u32::from_str(value_rep.as_ref())?,
             Self::TaskNetworkInputQueueLen => {
                 telemetry.task_network_input_queue_len = f64::from_str(value_rep.as_ref())?
             },
