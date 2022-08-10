@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::collections::VecDeque;
 use std::convert::TryFrom;
 use std::fmt;
@@ -34,6 +35,177 @@ pub trait Window: Sized {
 pub trait UpdateWindowMetrics: Window {
     fn update_metrics(&self);
 }
+
+#[derive(Debug, )]
+pub struct Saturating<T>(pub T);
+
+impl<T: Clone> Clone for Saturating<T> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
+
+impl<T: Copy + Clone> Copy for Saturating<T> {}
+
+impl<T: PartialEq> PartialEq for Saturating<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+
+impl<T: Eq + PartialEq> Eq for Saturating<T> {}
+
+impl<T: PartialOrd> PartialOrd for Saturating<T> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        self.0.partial_cmp(&other.0)
+    }
+}
+
+impl<T: Ord + PartialOrd> Ord for Saturating<T> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.0.cmp(&other.0)
+    }
+}
+
+macro_rules! int_monoid_saturating_imps {
+    ($($tr:ty), *) => {
+        $(
+            impl Semigroup for Saturating<$tr> {
+                fn combine(&self, other: &Self) -> Self {
+                    let sum = self.0.saturating_add(other.0);
+                    Self(sum)
+                }
+            }
+
+            impl Semigroup for Saturating<Option<$tr>> {
+                fn combine(&self, other: &Self) -> Self {
+                    let result = match (self.0.map(Saturating), other.0.map(Saturating)) {
+                        (Some(x), Some(y)) => Some(x.combine(&y)),
+                        (Some(x), None) => Some(x),
+                        (None, Some(y)) => Some(y),
+                        (None, None) => None,
+                    };
+                    Self(result.map(|r| r.0))
+                }
+            }
+
+            impl Monoid for Saturating<$tr> {
+                fn empty() -> Self {
+                    Self(<$tr as Monoid>::empty())
+                }
+            }
+
+            impl Monoid for Saturating<Option<$tr>> {
+                fn empty() -> Self {
+                    Self(None)
+                }
+            }
+        )*
+    }
+}
+
+int_monoid_saturating_imps!(i8, i16, i32, i64, u8, u16, u32, u64, isize, usize);
+
+// impl<T: SaturatingAdd> Semigroup for Saturating<T> {
+//     fn combine(&self, other: &Self) -> Self {
+//         let sum = self.0.saturating_add(&other.0);
+//         Saturating(sum)
+//     }
+// }
+
+impl Semigroup for Saturating<f32> {
+    fn combine(&self, other: &Self) -> Self {
+        let sum = self.0 + other.0;
+        Saturating(sum)
+    }
+}
+
+impl Semigroup for Saturating<Option<f32>> {
+    fn combine(&self, other: &Self) -> Self {
+        let result = match (self.0.map(Saturating), other.0.map(Saturating)) {
+            (Some(x), Some(y)) => Some(x.combine(&y)),
+            (Some(x), None) => Some(x),
+            (None, Some(y)) => Some(y),
+            (None, None) => None,
+        };
+        Self(result.map(|r| r.0))
+    }
+}
+
+impl Monoid for Saturating<f32> {
+    fn empty() -> Self {
+        Self(<f32 as Monoid>::empty())
+    }
+}
+
+impl Monoid for Saturating<Option<f32>> {
+    fn empty() -> Self {
+        Self(None)
+    }
+}
+
+impl Semigroup for Saturating<f64> {
+    fn combine(&self, other: &Self) -> Self {
+        let sum = self.0 + other.0;
+        Saturating(sum)
+    }
+}
+
+impl Semigroup for Saturating<Option<f64>> {
+    fn combine(&self, other: &Self) -> Self {
+        let result = match (self.0.map(Saturating), other.0.map(Saturating)) {
+            (Some(x), Some(y)) => Some(x.combine(&y)),
+            (Some(x), None) => Some(x),
+            (None, Some(y)) => Some(y),
+            (None, None) => None,
+        };
+        Self(result.map(|r| r.0))
+    }
+}
+
+impl Monoid for Saturating<f64> {
+    fn empty() -> Self {
+        Self(<f64 as Monoid>::empty())
+    }
+}
+
+impl Monoid for Saturating<Option<f64>> {
+    fn empty() -> Self {
+        Self(None)
+    }
+}
+
+// pub trait SaturatingAdd {
+//     fn saturating_combine(&self, rhs: &Self) -> Self;
+// }
+//
+// macro_rules! numeric_saturating_add_imps {
+//     ($($tr:ty), *) => {
+//         $(
+//             impl SaturatingAdd for $tr {
+//                 fn saturating_combine(&self, rhs: &Self) -> Self {
+//                     let x = *self;
+//                     let y = *rhs;
+//                     <$tr>::saturating_add(x, y)
+//                 }
+//             }
+//         )*
+//     }
+// }
+//
+// numeric_saturating_add_imps!(i8, i16, i32, i64, u8, u16, u32, u64, isize, usize);
+
+// impl SaturatingAdd for f32 {
+//     fn saturating_combine(&self, rhs: &Self) -> Self {
+//         self.combine(rhs)
+//     }
+// }
+//
+// impl SaturatingAdd for f64 {
+//     fn saturating_combine(&self, rhs: &Self) -> Self {
+//         self.combine(rhs)
+//     }
+// }
 
 /// Window of data objects used for range queries; e.g., has CPU utilization exceeded a threshold
 /// for 5 minutes.
@@ -533,37 +705,56 @@ where
             .into_iter()
     }
 
-    #[tracing::instrument(level = "trace", skip(self, f))]
-    pub fn fold_duration_from_head<F, R>(&self, looking_back: Duration, f: F) -> R
+    #[tracing::instrument(level = "info", skip(self, f))]
+    fn fold_duration_from_head<F, R>(&self, init: R, looking_back: Duration, f: F) -> R
     where
         F: FnMut(R, &T) -> R,
-        R: Monoid,
+        R: Copy + fmt::Debug,
     {
-        self.head().map_or_else(
-            || R::empty(),
-            |h| {
+        let result = self
+            .head()
+            .map(|h| {
                 let head_ts = h.recv_timestamp();
                 let interval = Interval::new(head_ts - looking_back, head_ts).unwrap();
                 let (quorum_percentage, range_iter) = self.assess_coverage_of(interval);
-                tracing::debug!(
-                    ?looking_back, ?interval, %quorum_percentage, quorum_duration=?(looking_back.mul_f64(quorum_percentage)),
-                    "folding looking back from head"
+
+                let my_span = tracing::info_span!("fold_duration_map", ?head_ts, ?interval, %quorum_percentage);
+                let _my_guard = my_span.enter();
+
+                let result = range_iter.fold(init, f);
+
+                tracing::info!(
+                    ?result, ?looking_back, ?interval, %quorum_percentage, quorum_duration=?(looking_back.mul_f64(quorum_percentage)),
+                    "DMR: folding looking back from head"
                 );
-                range_iter.fold(R::empty(), f)
-            },
-        )
+                result
+            });
+        tracing::info!(?result, "DMR: fold_duration result");
+        result.unwrap_or(init)
     }
 
     #[tracing::instrument(level = "trace", skip(self, f))]
-    pub fn sum_from_head<F, R>(&self, looking_back: Duration, mut f: F) -> (R, usize)
+    fn sum_from_head<F, R>(&self, looking_back: Duration, mut f: F) -> (R, usize)
     where
         F: FnMut(&T) -> R,
-        R: Monoid,
+        Saturating<R>: Semigroup,
+        R: Copy + Monoid + fmt::Debug,
     {
-        self.fold_duration_from_head(looking_back, |(acc_sum, acc_size): (R, usize), item| {
-            let rhs = f(item);
-            (acc_sum.combine(&rhs), acc_size + 1)
-        })
+        let result = self.fold_duration_from_head(
+            (R::empty(), 0),
+            looking_back,
+            |acc: (R, usize), item| {
+                let (acc_sum, acc_size) = acc;
+                let acc_sat = Saturating(acc_sum);
+                let rhs = Saturating(f(item));
+                let new_acc = acc_sat.combine(&rhs);
+                let result = (new_acc.0, acc_size + 1);
+                tracing::info!(fold_result=?result, "DMR: fold result");
+                result
+            });
+
+        tracing::info!(?result, "DMR: sum calculated");
+        result
     }
 
     #[tracing::instrument(level = "trace", skip(self, f))]
@@ -623,10 +814,23 @@ macro_rules! window_opt_integer_ops_for {
         $(
             ::paste::paste! {
                 pub fn [<$name _rolling_average>](&self, looking_back_secs: u32) -> f64 {
-                    let (sum, size) = self.sum_from_head(
+                    let sum_size: (_, usize) = self.sum_from_head(
                         Duration::from_secs(looking_back_secs as u64),
                         $property
                     );
+                    let (sum, size) = sum_size;
+                    // let (sum, size) = match sum_size {
+                    //     Ok(Some((sum, sz))) => (sum, sz),
+                    //     Ok(None) => {
+                    //         tracing::warn!("empty {} rolling average: no items in data window {looking_back_secs}", $name);
+                    //         (0.0, 0)
+                    //     },
+                    //     Err(err) => {
+                    //         tracing::warn!(error=?err, "failed calculating {} rolling average", $name);
+                    //         (0.0, 0)
+                    //     },
+                    // };
+
                     if size == 0 {
                         0.0
                     } else {
@@ -638,13 +842,15 @@ macro_rules! window_opt_integer_ops_for {
                 }
 
                 pub fn [<$name _rolling_change_per_sec>](&self, looking_back_secs: u32) -> f64 {
-                    let values = self.extract_from_head(
+                    let values: Vec<(Timestamp, _)> = self.extract_from_head(
                         Duration::from_secs(u64::from(looking_back_secs)),
                         |m: &MetricCatalog| { $property(m).map(|val| (m.recv_timestamp, val)) }
                     )
                         .into_iter()
                         .flatten()
-                        .collect::<Vec<_>>();
+                        .collect();
+
+                    tracing::info!("DMR: values = {values:?}");
 
                     values
                         .last()
@@ -654,7 +860,10 @@ macro_rules! window_opt_integer_ops_for {
                                 None
                             } else {
                                 let duration_secs = (last.0 - first.0).as_secs_f64();
-                                i32::try_from(last.1 - first.1)
+                                let last_val: i64 = last.1.into();
+                                let first_val: i64 = first.1.into();
+                                tracing::info!("DMR: last_val[{last_val}] - first_val[{first_val}]");
+                                i32::try_from(last_val - first_val)
                                     .ok()
                                     .map(|diff| f64::from(diff) / duration_secs)
                             }
@@ -667,7 +876,7 @@ macro_rules! window_opt_integer_ops_for {
                         Duration::from_secs(u64::from(looking_back_secs)),
                         |m: &MetricCatalog| {
                             $property(m)
-                                .map(|value| value < threshold)
+                                .map(|value| i64::from(value) < threshold)
                                 .unwrap_or(false)
                         }
                     )
@@ -678,7 +887,7 @@ macro_rules! window_opt_integer_ops_for {
                         Duration::from_secs(u64::from(looking_back_secs)),
                         |m: &MetricCatalog| {
                             $property(m)
-                                .map(|value| threshold < value)
+                                .map(|value| threshold < i64::from(value))
                                 .unwrap_or(false)
                         }
                     )
@@ -693,22 +902,31 @@ macro_rules! window_opt_float_ops_for {
         $(
             ::paste::paste! {
                 pub fn [<$name _rolling_average>](&self, looking_back_secs: u32) -> f64 {
-                    let (sum, size) = self.sum_from_head(
+                    let sum_size: (_, usize) = self.sum_from_head(
                         Duration::from_secs(looking_back_secs as u64),
                         $property
                     );
+                    let (sum, size) = sum_size;
+                    // let (sum, size) = match sum_size {
+                    //     Ok((sum, sz)) => (sum, sz),
+                    //     Err(err) => {
+                    //         tracing::warn!(error=?err, "failed calculating {} rolling average", $name);
+                    //         (0.0, 0)
+                    //     },
+                    // };
+
                     tracing::debug!("DMR: rolling average[{size}]: {sum:?}");
                     if size == 0 { 0.0 } else { sum.map(|value| { value / size as f64 }).unwrap_or(0.0) }
                 }
 
                 pub fn [<$name _rolling_change_per_sec>](&self, looking_back_secs: u32) -> f64 {
-                    let values = self.extract_from_head(
+                    let values: Vec<(Timestamp, _)> = self.extract_from_head(
                         Duration::from_secs(u64::from(looking_back_secs)),
                         |m: &MetricCatalog| { $property(m).map(|val| (m.recv_timestamp, val)) }
                     )
                         .into_iter()
                         .flatten()
-                        .collect::<Vec<_>>();
+                        .collect();
 
                     values
                         .last()
@@ -718,7 +936,10 @@ macro_rules! window_opt_float_ops_for {
                                 None
                             } else {
                                 let duration_secs = (last.0 - first.0).as_secs_f64();
-                                Some((last.1 - first.1) / duration_secs)
+                                let last_val: f64 = last.1.into();
+                                let first_val: f64 = first.1.into();
+                                tracing::info!("DMR: last_val[{last_val}] - first_val[{first_val}]");
+                                Some((last_val - first_val) / duration_secs)
                             }
                         })
                         .unwrap_or(0.0)
@@ -2017,4 +2238,77 @@ mod tests {
         let actual: AppDataWindow<TestData> = assert_ok!(serde_json::from_str(&actual_rep));
         assert_eq!(actual, expected);
     }
+
+    // #[test]
+    // fn test_numeric_saturating_add() {
+    //     assert_eq!(<i8 as SaturatingAdd>::saturating_add(&1, &1), 2);
+    //     assert_eq!(<i8 as SaturatingAdd>::saturating_add(&i8::MAX, &1), i8::MAX);
+    //
+    //     assert_eq!(<i16 as SaturatingAdd>::saturating_add(&1, &1), 2);
+    //     assert_eq!(<i16 as SaturatingAdd>::saturating_add(&i16::MAX, &1), i16::MAX);
+    //
+    //     assert_eq!(<i32 as SaturatingAdd>::saturating_add(&1, &1), 2);
+    //     assert_eq!(<i32 as SaturatingAdd>::saturating_add(&i32::MAX, &1), i32::MAX);
+    //
+    //     assert_eq!(<i64 as SaturatingAdd>::saturating_add(&1, &1), 2);
+    //     assert_eq!(<i64 as SaturatingAdd>::saturating_add(&i64::MAX, &1), i64::MAX);
+    //
+    //     assert_eq!(<u8 as SaturatingAdd>::saturating_add(&1, &1), 2);
+    //     assert_eq!(<u8 as SaturatingAdd>::saturating_add(&u8::MAX, &1), u8::MAX);
+    //
+    //     assert_eq!(<u16 as SaturatingAdd>::saturating_add(&1, &1), 2);
+    //     assert_eq!(<u16 as SaturatingAdd>::saturating_add(&u16::MAX, &1), u16::MAX);
+    //
+    //     assert_eq!(<u32 as SaturatingAdd>::saturating_add(&1, &1), 2);
+    //     assert_eq!(<u32 as SaturatingAdd>::saturating_add(&u32::MAX, &1), u32::MAX);
+    //
+    //     assert_eq!(<u64 as SaturatingAdd>::saturating_add(&1, &1), 2);
+    //     assert_eq!(<u64 as SaturatingAdd>::saturating_add(&u64::MAX, &1), u64::MAX);
+    //
+    //     assert_eq!(<isize as SaturatingAdd>::saturating_add(&1, &1), 2);
+    //     assert_eq!(<isize as SaturatingAdd>::saturating_add(&isize::MAX, &1), isize::MAX);
+    //
+    //     assert_eq!(<usize as SaturatingAdd>::saturating_add(&1, &1), 2);
+    //     assert_eq!(<usize as SaturatingAdd>::saturating_add(&usize::MAX, &1), usize::MAX);
+    // }
+
+    #[test]
+    fn test_numeric_saturating_combine() {
+        assert_eq!(Saturating(1_i8).combine(&Saturating(1_i8)).0, 2);
+        assert_eq!(Saturating(i8::MAX).combine(&Saturating(1_i8)).0, i8::MAX);
+
+        assert_eq!(Saturating(1_i16).combine(&Saturating(1_i16)).0, 2);
+        assert_eq!(Saturating(i16::MAX).combine(&Saturating(1_i16)).0, i16::MAX);
+
+        assert_eq!(Saturating(1_i32).combine(&Saturating(1_i32)).0, 2);
+        assert_eq!(Saturating(i32::MAX).combine(&Saturating(1_i32)).0, i32::MAX);
+
+        assert_eq!(Saturating(1_i64).combine(&Saturating(1_i64)).0, 2);
+        assert_eq!(Saturating(i64::MAX).combine(&Saturating(1_i64)).0, i64::MAX);
+
+        assert_eq!(Saturating(1_u8).combine(&Saturating(1_u8)).0, 2);
+        assert_eq!(Saturating(u8::MAX).combine(&Saturating(1_u8)).0, u8::MAX);
+
+        assert_eq!(Saturating(1_u16).combine(&Saturating(1_u16)).0, 2);
+        assert_eq!(Saturating(u16::MAX).combine(&Saturating(1_u16)).0, u16::MAX);
+
+        assert_eq!(Saturating(1_u32).combine(&Saturating(1_u32)).0, 2);
+        assert_eq!(Saturating(u32::MAX).combine(&Saturating(1_u32)).0, u32::MAX);
+
+        assert_eq!(Saturating(1_u64).combine(&Saturating(1_u64)).0, 2);
+        assert_eq!(Saturating(u64::MAX).combine(&Saturating(1_u64)).0, u64::MAX);
+
+        assert_eq!(Saturating(1_isize).combine(&Saturating(1_isize)).0, 2);
+        assert_eq!(Saturating(isize::MAX).combine(&Saturating(1_isize)).0, isize::MAX);
+
+        assert_eq!(Saturating(1_usize).combine(&Saturating(1_usize)).0, 2);
+        assert_eq!(Saturating(usize::MAX).combine(&Saturating(1_usize)).0, usize::MAX);
+
+        assert_eq!(Saturating(1_f32).combine(&Saturating(1_f32)).0, 2_f32);
+        assert_eq!(Saturating(f32::MAX).combine(&Saturating(1_f32)).0, f32::MAX);
+
+        assert_eq!(Saturating(1_f64).combine(&Saturating(1_f64)).0, 2_f64);
+        assert_eq!(Saturating(f64::MAX).combine(&Saturating(1_f64)).0, f64::MAX);
+    }
 }
+// numeric_saturating_add_imps!(i8, i16, i32, i64, u8, u16, u32, u64, isize, usize);

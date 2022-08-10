@@ -162,7 +162,7 @@ impl DecisionTemplateDataStrategyBuilder {
                         "making DecisionTemplateData..."
                     );
 
-                    let mut template_data = DecisionTemplateData {
+                    let template_data = DecisionTemplateData {
                         basis,
                         max_healthy_relative_lag_velocity,
                         max_healthy_lag,

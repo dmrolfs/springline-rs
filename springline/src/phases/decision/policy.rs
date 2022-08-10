@@ -31,6 +31,7 @@ pub struct DecisionTemplateData {
     /// or decreasing (negative). This value is used for scale up decisions
     /// and not scale down decisions.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate(range(min = 0.0))]
     pub max_healthy_relative_lag_velocity: Option<f64>,
 
     /// Optional threshold representing the maximum `total_lag`

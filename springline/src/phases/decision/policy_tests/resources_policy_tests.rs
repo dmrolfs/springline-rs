@@ -10,14 +10,28 @@ proptest! {
             result => prop_assert!(result.is_ok()),
         }
     }
-    
+
     #[test]
     fn test_scale_up_relative_lag_velocity(
         scenario in PolicyScenario::builder()
-        .template_data(
-            prop::option::of(
-                DecisionTemplateDataStrategyBuilder::default()
-                .finish()
+        .template_data(prop::option::of(DecisionTemplateDataStrategyBuilder::default().finish()))
+        .items(
+            arb_metric_catalog_window(
+                Timestamp::now(),
+                arb_range_duration(30..=600),
+                arb_perturbed_duration(Duration::from_secs(15), 0.2),
+                |recv_ts| {
+                    MetricCatalogStrategyBuilder::new()
+                        .just_recv_timestamp(recv_ts)
+                        // .flow(
+                        //     FlowMetricsStrategyBuilder::new()
+                                // .just_source_total_lag(Some(2))
+                                // .just_source_records_consumed_rate(Some(1.0))
+                                // .finish()
+                        // )
+                        .finish()
+                        .boxed()
+                }
             )
         )
         .strategy()
@@ -48,7 +62,7 @@ proptest! {
                     prop_assert!(result.passed);
                     prop_assert!(result.bindings.contains_key(REASON));
                     let reasons = assert_some!(result.bindings.get(REASON));
-                    prop_assert!(!reasons.into_iter().contains(&TelemetryValue::from(RELATIVE_LAG_VELOCITY)));
+                    prop_assert!(reasons.into_iter().contains(&TelemetryValue::from(RELATIVE_LAG_VELOCITY)));
                 },
                 Some(_) if result.bindings.contains_key(REASON) => {
                     let reasons = assert_some!(result.bindings.get(REASON));
