@@ -613,9 +613,7 @@ mod tests {
                 ..FlinkActionSettings::default()
             },
         },
-        context_stub: ContextStubSettings {
-            all_sinks_healthy: true,
-        },
+        context_stub: ContextStubSettings { all_sinks_healthy: true },
     });
 
     #[test]

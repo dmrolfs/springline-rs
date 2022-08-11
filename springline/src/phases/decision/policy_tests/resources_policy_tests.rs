@@ -14,7 +14,11 @@ proptest! {
     #[test]
     fn test_scale_up_relative_lag_velocity(
         scenario in PolicyScenario::builder()
-        .template_data(prop::option::of(DecisionTemplateDataStrategyBuilder::default().finish()))
+        .template_data(prop::option::of(
+            DecisionTemplateDataStrategyBuilder::default()
+            .just_max_healthy_relative_lag_velocity(Some(0.5))
+            .finish()
+        ))
         .items(
             arb_metric_catalog_window(
                 Timestamp::now(),
@@ -23,12 +27,13 @@ proptest! {
                 |recv_ts| {
                     MetricCatalogStrategyBuilder::new()
                         .just_recv_timestamp(recv_ts)
-                        // .flow(
-                        //     FlowMetricsStrategyBuilder::new()
-                                // .just_source_total_lag(Some(2))
-                                // .just_source_records_consumed_rate(Some(1.0))
-                                // .finish()
-                        // )
+                        .flow(
+                            FlowMetricsStrategyBuilder::new()
+                                .just_source_records_lag_max(Some(recv_ts.as_secs() as u32))
+                                .just_source_assigned_partitions(Some(2))
+                                .just_source_records_consumed_rate(Some(1.0))
+                                .finish()
+                        )
                         .finish()
                         .boxed()
                 }
@@ -50,26 +55,43 @@ proptest! {
             let eval_secs = scenario.template_data.as_ref().and_then(|td| td.evaluate_duration_secs).unwrap_or(60);
 
             match scenario.template_data.and_then(|template| template.max_healthy_relative_lag_velocity) {
-                _ if !result.passed => {
+                max_relative_lag if !result.passed => {
+                    tracing::error!(
+                        ?max_relative_lag,
+                        actual=?scenario.item.flow_source_relative_lag_change_rate(eval_secs),
+                        %eval_secs,
+                        total_lag=?scenario.item.flow.source_total_lag,
+                        rec_lag_max=?scenario.item.flow.source_records_lag_max,
+                        assigned_partitions=?scenario.item.flow.source_assigned_partitions,
+                        "DMR - CCC - decision:no"
+                    );
                     prop_assert!(result.bindings.is_empty());
                 },
                 None => {
+                    tracing::error!("DMR - BBB - no template data");
                     prop_assert!(result.bindings.contains_key(REASON));
                     let reasons = assert_some!(result.bindings.get(REASON));
                     prop_assert!(!reasons.into_iter().contains(&TelemetryValue::from(RELATIVE_LAG_VELOCITY)));
                 },
                 Some(max_relative_lag) if max_relative_lag < scenario.item.flow_source_relative_lag_change_rate(eval_secs) => {
+                    tracing::error!(
+                        ?max_relative_lag,
+                        actual_rel_lag=?scenario.item.flow_source_relative_lag_change_rate(eval_secs),
+                        %eval_secs,
+                        "DMR - AAA decision:yes:  unhealthy rel lag"
+                    );
                     prop_assert!(result.passed);
                     prop_assert!(result.bindings.contains_key(REASON));
                     let reasons = assert_some!(result.bindings.get(REASON));
                     prop_assert!(reasons.into_iter().contains(&TelemetryValue::from(RELATIVE_LAG_VELOCITY)));
                 },
                 Some(_) if result.bindings.contains_key(REASON) => {
+                    tracing::error!("DMR - DDD - decision:yes rel lag healthy");
                     let reasons = assert_some!(result.bindings.get(REASON));
                     prop_assert!(!reasons.into_iter().contains(&TelemetryValue::from(RELATIVE_LAG_VELOCITY)));
                 },
 
-                Some(_) => {}
+                Some(_) => { tracing::error!("DMR - EEE unknown!!!"); }
             }
         }
     }

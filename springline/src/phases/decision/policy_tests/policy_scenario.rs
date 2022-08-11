@@ -23,13 +23,13 @@ impl PolicyScenario {
 
     pub fn builder() -> PolicyScenarioBuilder {
         once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
-        let main_span = tracing::info_span!("decision_policy_scenario_builder");
+        let main_span = tracing::debug_span!("decision_policy_scenario_builder");
         let _main_span_guard = main_span.enter();
 
         PolicyScenarioBuilder::default()
     }
 
-    #[tracing::instrument(level = "info")]
+    #[tracing::instrument(level = "debug")]
     pub fn run(&self) -> Result<QueryResult, PolicyError> {
         let context = DecisionContext {
             correlation_id: Id::direct(<DecisionContext as Label>::labeler().label(), 0, "test_doesnt_crash"),
@@ -79,10 +79,10 @@ impl PolicyScenarioBuilder {
         new
     }
 
-    #[tracing::instrument(level = "info", skip(template_data))]
+    #[tracing::instrument(level = "debug", skip(template_data))]
     pub fn template_data(self, template_data: impl Strategy<Value = Option<DecisionTemplateData>> + 'static) -> Self {
         let template_data = template_data.boxed();
-        tracing::info!("DMR: template_data={template_data:?}");
+        tracing::info!("template_data={template_data:?}");
 
         let mut new = self;
         new.template_data = Some(template_data);
@@ -93,10 +93,10 @@ impl PolicyScenarioBuilder {
         self.template_data(Just(template_data.into()))
     }
 
-    #[tracing::instrument(level = "info", skip(items))]
+    #[tracing::instrument(level = "debug", skip(items))]
     pub fn items(self, items: impl Strategy<Value = AppDataWindow<MetricCatalog>> + 'static) -> Self {
         let items = items.boxed();
-        tracing::info!("DMR: items={items:?}");
+        tracing::info!("items={items:?}");
 
         let mut new = self;
         new.item = Some(items);
@@ -107,7 +107,7 @@ impl PolicyScenarioBuilder {
         self.items(Just(items.into()))
     }
 
-    #[tracing::instrument(level = "info", skip(item, window))]
+    #[tracing::instrument(level = "debug", skip(item, window))]
     pub fn one_item(
         self, item: impl Strategy<Value = MetricCatalog> + 'static, window: impl Strategy<Value = Duration> + 'static,
     ) -> Self {
@@ -124,18 +124,16 @@ impl PolicyScenarioBuilder {
         self.one_item(Just(item.into()), Just(window.into()))
     }
 
-    #[tracing::instrument(level = "info")]
+    #[tracing::instrument(level = "debug")]
     pub fn strategy(self) -> impl Strategy<Value = PolicyScenario> {
-        tracing::info!(?self, "DMR: building decision policy strategy");
-        let template_data = self
-            .template_data
-            .unwrap_or_else(|| {
-                let mut builder = DecisionTemplateDataStrategyBuilder::default();
-                if let Some(basis) = self.basis {
-                    builder = builder.basis(basis);
-                }
-                prop::option::of(builder.finish()).boxed()
-            });
+        tracing::info!(?self, "building decision policy strategy");
+        let template_data = self.template_data.unwrap_or_else(|| {
+            let mut builder = DecisionTemplateDataStrategyBuilder::default();
+            if let Some(basis) = self.basis {
+                builder = builder.basis(basis);
+            }
+            prop::option::of(builder.finish()).boxed()
+        });
 
         let data = arb_metric_catalog_window_from_timestamp_window(
             arb_timestamp_window(
@@ -153,7 +151,7 @@ impl PolicyScenarioBuilder {
 
         let item = self.item.unwrap_or(data.boxed());
         (template_data, item).prop_map(|(template_data, item)| {
-            tracing::info!(?template_data, ?item, "DMR: making scenario...");
+            tracing::info!(?template_data, ?item, "making scenario...");
             PolicyScenario { template_data, item }
         })
     }

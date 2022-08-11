@@ -174,10 +174,7 @@ impl DecisionTemplateDataStrategyBuilder {
                         custom: Default::default(),
                     };
 
-                    template_data
-                        .validate()
-                        .ok()
-                        .map(|_| template_data)
+                    template_data.validate().ok().map(|_| template_data)
                 },
             )
     }

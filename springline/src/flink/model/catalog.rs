@@ -586,7 +586,8 @@ impl UpdateMetrics for MetricCatalog {
 
                 METRIC_CATALOG_JOB_HEALTH_UPTIME.set(catalog.health.job_uptime_millis.into());
                 METRIC_CATALOG_JOB_HEALTH_NR_RESTARTS.set(catalog.health.job_nr_restarts.into());
-                METRIC_CATALOG_JOB_HEALTH_NR_COMPLETED_CHECKPOINTS.set(catalog.health.job_nr_completed_checkpoints.into());
+                METRIC_CATALOG_JOB_HEALTH_NR_COMPLETED_CHECKPOINTS
+                    .set(catalog.health.job_nr_completed_checkpoints.into());
                 METRIC_CATALOG_JOB_HEALTH_NR_FAILED_CHECKPOINTS.set(catalog.health.job_nr_failed_checkpoints.into());
 
                 METRIC_CATALOG_FLOW_RECORDS_IN_PER_SEC.set(catalog.flow.records_in_per_sec);
