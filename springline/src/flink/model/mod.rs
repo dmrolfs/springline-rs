@@ -386,7 +386,7 @@ pub struct VertexDetail {
     pub metrics: HashMap<String, TelemetryValue>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PlanItemInput {
     pub id: VertexId,
     pub num: u32,
@@ -396,7 +396,7 @@ pub struct PlanItemInput {
     pub exchange: String, //todo: not used - enum? - dig into
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct JobPlanItem {
     pub id: VertexId,
     pub parallelism: u32,
@@ -411,7 +411,7 @@ pub struct JobPlanItem {
     pub optimizer_properties: HashMap<String, String>, //todo: not used - dig into?
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct JobPlan {
     pub jid: JobId,
     pub name: String,

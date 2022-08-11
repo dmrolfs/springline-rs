@@ -16,7 +16,7 @@ proptest! {
         scenario in PolicyScenario::builder()
         .template_data(prop::option::of(
             DecisionTemplateDataStrategyBuilder::default()
-            .just_max_healthy_relative_lag_velocity(Some(0.5))
+            // .just_max_healthy_relative_lag_velocity(Some(0.5))
             .finish()
         ))
         .items(
@@ -29,9 +29,9 @@ proptest! {
                         .just_recv_timestamp(recv_ts)
                         .flow(
                             FlowMetricsStrategyBuilder::new()
-                                .just_source_records_lag_max(Some(recv_ts.as_secs() as u32))
-                                .just_source_assigned_partitions(Some(2))
-                                .just_source_records_consumed_rate(Some(1.0))
+                                // .just_source_records_lag_max(Some(recv_ts.as_secs() as u32))
+                                // .just_source_assigned_partitions(Some(2))
+                                // .just_source_records_consumed_rate(Some(1.0))
                                 .finish()
                         )
                         .finish()

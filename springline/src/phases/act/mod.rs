@@ -118,7 +118,7 @@ mod protocol {
 
     pub type ActMonitor<P> = broadcast::Receiver<Arc<ActEvent<P>>>;
 
-    #[derive(Debug, Clone, PartialEq)]
+    #[derive(Debug, Clone, PartialEq, Eq)]
     pub enum ActEvent<P> {
         PlanActionStarted(P),
         PlanExecuted {

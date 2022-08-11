@@ -18,7 +18,7 @@ scale_down(item, _context, reason) if
     and utilization < {{min_task_utilization}}
     and total_lag = item.flow_source_total_lag_rolling_average(window)
     and total_lag == 0.0
-    and reason = "low_utilization";
+    and reason = "low_utilization_and_zero_lag";
 {{/if}}
 
 evaluation_window(window) if window = {{#if evaluate_duration_secs}}{{evaluate_duration_secs}}{{else}}60{{/if}};
@@ -56,3 +56,9 @@ scale_up(item, _context, reason) if
     {{max_healthy_network_io_utilization}} < item.cluster.task_network_output_utilization()
     and reason = "output_network_io";
 {{/if}}
+
+# scale up to avoid source backpressure
+scale_up(item, _, reason) if
+    evaluation_window(window)
+    and item.flow_source_back_pressured_time_millis_per_sec_rolling_average(window) == 1000.0
+    and reason = "source_backpressure";

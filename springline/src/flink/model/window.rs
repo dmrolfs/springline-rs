@@ -716,12 +716,11 @@ where
         F: FnMut(R, &T) -> R,
         R: Copy + fmt::Debug,
     {
-        self
-            .head()
+        self.head()
             .map(|h| {
                 let head_ts = h.recv_timestamp();
                 let interval = Interval::new(head_ts - looking_back, head_ts).unwrap();
-                let (quorum_percentage, range_iter) = self.assess_coverage_of(interval);
+                let (_quorum_percentage, range_iter) = self.assess_coverage_of(interval);
                 range_iter.fold(init, f)
             })
             .unwrap_or(init)
@@ -995,7 +994,8 @@ where
         let start = self.data.front().map(|m| m.recv_timestamp());
         let end = self.data.back().map(|m| m.recv_timestamp());
         start.zip(end).map(|i| {
-            i.try_into().expect("window represents invalid interval (end before start): {i:?}")
+            i.try_into()
+                .expect("window represents invalid interval (end before start): {i:?}")
         })
     }
 

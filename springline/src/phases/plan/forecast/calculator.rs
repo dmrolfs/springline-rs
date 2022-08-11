@@ -44,7 +44,7 @@ impl ForecastInputs {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ForecastCalculator<F: Forecaster> {
     forecaster: F,
     pub inputs: ForecastInputs,

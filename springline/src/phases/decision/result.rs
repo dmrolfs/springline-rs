@@ -220,33 +220,51 @@ fn do_tally_binding_voted(ballots: Vec<String>) -> Vec<(String, usize)> {
 const T_ITEM: &str = "item";
 const T_SCALE_DECISION: &str = "scale_decision";
 
-#[derive(Clone, PartialEq)]
-pub enum DecisionResult<T>
-where
-    T: Clone + PartialEq,
-{
+pub enum DecisionResult<T> {
     ScaleUp(T),
     ScaleDown(T),
     NoAction(T),
 }
 
-impl<T: Debug> fmt::Debug for DecisionResult<T>
-where
-    T: Correlation + Clone + PartialEq,
-{
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl<T: Clone> Clone for DecisionResult<T> {
+    fn clone(&self) -> Self {
         match self {
-            DecisionResult::ScaleUp(_) => write!(f, "ScaleUp({:?})", self.correlation()),
-            DecisionResult::ScaleDown(_) => write!(f, "ScaleDown({:?})", self.correlation()),
-            DecisionResult::NoAction(_) => write!(f, "NoAction({:?})", self.correlation()),
+            Self::ScaleUp(val) => Self::ScaleUp(val.clone()),
+            Self::ScaleDown(val) => Self::ScaleDown(val.clone()),
+            Self::NoAction(val) => Self::NoAction(val.clone()),
         }
     }
 }
 
-impl<T> fmt::Display for DecisionResult<T>
+impl<T: Copy> Copy for DecisionResult<T> {}
+
+impl<T: PartialEq> PartialEq for DecisionResult<T> {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::ScaleUp(lhs), Self::ScaleUp(rhs)) => lhs == rhs,
+            (Self::ScaleDown(lhs), Self::ScaleDown(rhs)) => lhs == rhs,
+            (Self::NoAction(lhs), Self::NoAction(rhs)) => lhs == rhs,
+            _ => false,
+        }
+    }
+}
+
+impl<T: Eq + PartialEq> Eq for DecisionResult<T> {}
+
+impl<T: Debug> fmt::Debug for DecisionResult<T>
 where
-    T: Clone + PartialEq,
+    T: Correlation,
 {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::ScaleUp(_) => write!(f, "ScaleUp({:?})", self.correlation()),
+            Self::ScaleDown(_) => write!(f, "ScaleDown({:?})", self.correlation()),
+            Self::NoAction(_) => write!(f, "NoAction({:?})", self.correlation()),
+        }
+    }
+}
+
+impl<T> fmt::Display for DecisionResult<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let label = match self {
             Self::ScaleUp(_) => "scale_up",
@@ -258,10 +276,7 @@ where
     }
 }
 
-impl<T> DecisionResult<T>
-where
-    T: Clone + PartialEq,
-{
+impl<T> DecisionResult<T> {
     pub fn new(item: T, decision_rep: &str) -> Self {
         match decision_rep {
             SCALE_UP => Self::ScaleUp(item),
@@ -281,10 +296,7 @@ where
     }
 }
 
-impl<T> Correlation for DecisionResult<T>
-where
-    T: Correlation + Clone + PartialEq,
-{
+impl<T: Correlation> Correlation for DecisionResult<T> {
     type Correlated = <T as Correlation>::Correlated;
 
     fn correlation(&self) -> &Id<Self::Correlated> {
@@ -298,7 +310,7 @@ where
 
 impl<T> From<DecisionResult<T>> for TelemetryValue
 where
-    T: Into<Self> + Clone + PartialEq,
+    T: Into<Self>,
 {
     fn from(result: DecisionResult<T>) -> Self {
         match result {
@@ -329,7 +341,7 @@ where
 
 impl<T> TryFrom<TelemetryValue> for DecisionResult<T>
 where
-    T: TryFrom<TelemetryValue> + Debug + Clone + PartialEq,
+    T: TryFrom<TelemetryValue>,
     <T as TryFrom<TelemetryValue>>::Error: Into<TelemetryError>,
 {
     type Error = DecisionError;
