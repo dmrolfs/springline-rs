@@ -69,7 +69,8 @@ impl<F: Forecaster> FlinkPlanning<F> {
         let forecast_calculator = ForecastCalculator::new(forecaster, inputs)?;
 
         let name = planning_name.to_string();
-        let performance_history = performance_repository.load(name.as_str()).await?.unwrap_or_default();
+        let performance_history =
+            performance_repository.load(name.as_str()).await?.unwrap_or_default();
 
         // todo: this needs to be worked into Plan stage...  Need to determine best design
         // todo: let (tx_api, rx_api) = mpsc::unbounded_channel();
@@ -125,7 +126,9 @@ impl<F: Forecaster> FlinkPlanning<F> {
     }
 
     #[tracing::instrument(level = "trace", skip(self, _metrics))]
-    fn handle_do_not_scale_decision(&mut self, _metrics: &MetricCatalog) -> Result<Option<ScalePlan>, PlanError> {
+    fn handle_do_not_scale_decision(
+        &mut self, _metrics: &MetricCatalog,
+    ) -> Result<Option<ScalePlan>, PlanError> {
         tracing::debug!("Decision made not scale cluster up or down.");
         Ok(None)
     }
@@ -150,7 +153,9 @@ impl<F: Forecaster> FlinkPlanning<F> {
 
             let required_nr_task_managers = history.cluster_size_for_workload(forecasted_workload);
 
-            if let Some(plan) = ScalePlan::new(decision, required_nr_task_managers, self.min_scaling_step) {
+            if let Some(plan) =
+                ScalePlan::new(decision, required_nr_task_managers, self.min_scaling_step)
+            {
                 if let Some(ref mut outlet) = self.outlet {
                     tracing::info!(?plan, "pushing scale plan.");
                     outlet.send(plan.clone()).await?;
@@ -187,7 +192,10 @@ impl<F: Forecaster> FlinkPlanning<F> {
     #[allow(clippy::missing_const_for_fn)]
     fn buffered_lag_score(item: &MetricCatalog) -> f64 {
         // todo: how to support other options?
-        match (item.flow.source_records_lag_max, item.flow.source_millis_behind_latest) {
+        match (
+            item.flow.source_records_lag_max,
+            item.flow.source_millis_behind_latest,
+        ) {
             (Some(lag), _) => lag as f64,
             (None, Some(lag)) => lag as f64,
             (None, None) => 0_f64,
@@ -240,14 +248,18 @@ impl<F: Forecaster> Planning for FlinkPlanning<F> {
     }
 
     #[tracing::instrument(level = "trace", skip(self))]
-    async fn patch_context(&mut self, context: Self::Context) -> Result<Option<PlanEvent<Self>>, PlanError> {
+    async fn patch_context(
+        &mut self, context: Self::Context,
+    ) -> Result<Option<PlanEvent<Self>>, PlanError> {
         context.patch_inputs(&mut self.forecast_calculator.inputs);
         tracing::info!(?context, forecast_inputs=?self.forecast_calculator.inputs, "patched planning context inputs.");
         Ok(Some(PlanEvent::<Self>::ContextChanged(context)))
     }
 
     #[tracing::instrument(level = "trace", skip(self))]
-    async fn handle_decision(&mut self, decision: Self::Decision) -> Result<Option<ScalePlan>, PlanError> {
+    async fn handle_decision(
+        &mut self, decision: Self::Decision,
+    ) -> Result<Option<ScalePlan>, PlanError> {
         self.update_performance_history(&decision).await?;
 
         let plan = if let DecisionResult::NoAction(ref catalog) = decision {
@@ -300,7 +312,8 @@ mod tests {
     const STEP: i64 = 15;
     const NOW: i64 = 1624061766 + (30 * STEP);
 
-    static CORRELATION: Lazy<Id<MetricCatalog>> = Lazy::new(|| Id::direct("MetricCatalog", 13, "ABC"));
+    static CORRELATION: Lazy<Id<MetricCatalog>> =
+        Lazy::new(|| Id::direct("MetricCatalog", 13, "ABC"));
     static METRICS: Lazy<MetricCatalog> = Lazy::new(|| MetricCatalog {
         correlation_id: CORRELATION.clone(),
         recv_timestamp: Utc.timestamp(NOW, 0).into(),
@@ -317,8 +330,10 @@ mod tests {
         },
         custom: telemetry::TableType::default(),
     });
-    static SCALE_UP: Lazy<DecisionResult<MetricCatalog>> = Lazy::new(|| DecisionResult::ScaleUp(METRICS.clone()));
-    static SCALE_DOWN: Lazy<DecisionResult<MetricCatalog>> = Lazy::new(|| DecisionResult::ScaleDown(METRICS.clone()));
+    static SCALE_UP: Lazy<DecisionResult<MetricCatalog>> =
+        Lazy::new(|| DecisionResult::ScaleUp(METRICS.clone()));
+    static SCALE_DOWN: Lazy<DecisionResult<MetricCatalog>> =
+        Lazy::new(|| DecisionResult::ScaleDown(METRICS.clone()));
 
     enum SignalType {
         Sine,
@@ -329,7 +344,10 @@ mod tests {
         planning_name: &str, outlet: Outlet<ScalePlan>, signal_type: SignalType,
     ) -> anyhow::Result<TestPlanning> {
         let mut calc = ForecastCalculator::new(
-            LeastSquaresWorkloadForecaster::new(20, SpikeSettings { influence: 0.25, ..SpikeSettings::default() }),
+            LeastSquaresWorkloadForecaster::new(
+                20,
+                SpikeSettings { influence: 0.25, ..SpikeSettings::default() },
+            ),
             ForecastInputs {
                 restart: Duration::from_secs(2 * 60),       // restart
                 max_catch_up: Duration::from_secs(13 * 60), // max_catch_up
@@ -462,7 +480,8 @@ mod tests {
                 .await
             );
 
-            planning.lock().await.min_scaling_step = METRICS.cluster.nr_task_managers as usize + 1_000;
+            planning.lock().await.min_scaling_step =
+                METRICS.cluster.nr_task_managers as usize + 1_000;
 
             assert_ok!(
                 assert_scale_decision_scenario(
@@ -540,8 +559,14 @@ mod tests {
     #[test]
     fn test_patch_forecast_inputs_from_context() {
         block_on(async {
-            let mut planning =
-                assert_ok!(setup_planning("patch", Outlet::new("patch", graph::PORT_DATA), SignalType::Sine).await);
+            let mut planning = assert_ok!(
+                setup_planning(
+                    "patch",
+                    Outlet::new("patch", graph::PORT_DATA),
+                    SignalType::Sine
+                )
+                .await
+            );
 
             let expected = ForecastInputs {
                 restart: Duration::from_secs(2 * 60),

@@ -117,7 +117,9 @@ impl SubscriptionRequirements for PlanningContext {
 impl UpdateMetrics for PlanningContext {
     fn update_metrics_for(phase_name: &str) -> UpdateMetricsFn {
         let phase_name = phase_name.to_string();
-        let update_fn = move |subscription_name: &str, telemetry: &Telemetry| match telemetry.clone().try_into::<Self>()
+        let update_fn = move |subscription_name: &str, telemetry: &Telemetry| match telemetry
+            .clone()
+            .try_into::<Self>()
         {
             Ok(ctx) => {
                 if let Some(min_scaling_step) = ctx.min_scaling_step {
@@ -133,7 +135,8 @@ impl UpdateMetrics for PlanningContext {
                 }
 
                 if let Some(recovery_valid) = ctx.recovery_valid {
-                    PLANNING_CTX_FORECASTING_RECOVERY_VALID_SECS.set(recovery_valid.as_secs() as i64);
+                    PLANNING_CTX_FORECASTING_RECOVERY_VALID_SECS
+                        .set(recovery_valid.as_secs() as i64);
                 }
             },
 

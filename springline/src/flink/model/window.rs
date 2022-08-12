@@ -26,7 +26,9 @@ use super::MetricCatalog;
 pub trait Window: Sized {
     type Item: AppData;
     //todo: this needs to be rethought as builder would be appropriate; however this trait on the whole is a bit contrived.
-    fn from_item(item: Self::Item, time_window: Duration, quorum_percentage: f64) -> Result<Self, ValidationErrors>;
+    fn from_item(
+        item: Self::Item, time_window: Duration, quorum_percentage: f64,
+    ) -> Result<Self, ValidationErrors>;
     fn time_window(&self) -> Duration;
     fn window_interval(&self) -> Option<Interval>;
     fn push(&mut self, item: Self::Item);
@@ -226,7 +228,8 @@ where
 {
     fn validate(&self) -> Result<(), ValidationErrors> {
         let checks = vec![
-            Self::check_quorum_percentage(self.quorum_percentage).map_err(|err| ("insufficient quorum", err)),
+            Self::check_quorum_percentage(self.quorum_percentage)
+                .map_err(|err| ("insufficient quorum", err)),
             Self::check_nonempty(&self.data).map_err(|err| ("empty window", err)),
         ];
 
@@ -257,7 +260,10 @@ where
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("AppDataWindow")
             .field("interval", &self.window_interval())
-            .field("interval_duration", &self.window_interval().map(|w| w.duration()))
+            .field(
+                "interval_duration",
+                &self.window_interval().map(|w| w.duration()),
+            )
             .field("time_window", &self.time_window)
             .field("quorum_percentage", &self.quorum_percentage)
             .field("window_size", &self.data.len())
@@ -375,7 +381,10 @@ impl PolicyContributor for AppDataWindow<MetricCatalog> {
             .add_attribute_getter("flow", |p| p.flow.clone())
             .add_attribute_getter("cluster", |p| p.cluster.clone())
             .add_attribute_getter("custom", |p| p.custom.clone())
-            .add_method("has_quorum_looking_back_secs", Self::has_quorum_looking_back_secs);
+            .add_method(
+                "has_quorum_looking_back_secs",
+                Self::has_quorum_looking_back_secs,
+            );
 
         // engine.register_class(
         //     add_methods!(builder,
@@ -691,15 +700,20 @@ where
     {
         self.head().map_or_else(Vec::new, |h| {
             let head_ts = h.recv_timestamp();
-            self.extract_in_interval(Interval::new(head_ts - looking_back, head_ts).unwrap(), extractor)
-                .collect()
+            self.extract_in_interval(
+                Interval::new(head_ts - looking_back, head_ts).unwrap(),
+                extractor,
+            )
+            .collect()
         })
     }
 
     /// Extracts metric properties from the end of the interval (i.e., the youngest catalog
     /// contained in the interval) toward the past.
     #[tracing::instrument(level = "trace", skip(self, extractor))]
-    pub fn extract_in_interval<F, D>(&self, interval: Interval, extractor: F) -> impl Iterator<Item = D>
+    pub fn extract_in_interval<F, D>(
+        &self, interval: Interval, extractor: F,
+    ) -> impl Iterator<Item = D>
     where
         F: FnMut(&T) -> D,
     {
@@ -739,7 +753,7 @@ where
             let rhs = Saturating(f(item));
             let new_acc = acc_sat.combine(&rhs);
             let result = (new_acc.0, acc_size + 1);
-            tracing::info!(fold_result=?result, "DMR: fold result");
+            tracing::debug!(fold_result=?result, "fold result");
             result
         })
     }
@@ -751,7 +765,10 @@ where
     {
         self.head().map_or(false, |h| {
             let head_ts = h.recv_timestamp();
-            self.for_coverage_in_interval(Interval::new(head_ts - looking_back, head_ts).unwrap(), f)
+            self.for_coverage_in_interval(
+                Interval::new(head_ts - looking_back, head_ts).unwrap(),
+                f,
+            )
         })
     }
 
@@ -1020,7 +1037,9 @@ where
         }
     }
 
-    fn from_item(item: Self::Item, time_window: Duration, quorum_percentage: f64) -> Result<Self, ValidationErrors> {
+    fn from_item(
+        item: Self::Item, time_window: Duration, quorum_percentage: f64,
+    ) -> Result<Self, ValidationErrors> {
         Self::builder()
             .with_item(item)
             .with_time_window(time_window)
@@ -1034,11 +1053,14 @@ impl UpdateWindowMetrics for AppDataWindow<MetricCatalog> {
         let total_lag_1_min = self.flow_source_total_lag_rolling_average(60);
         let utilization_1_min = self.flow_task_utilization_rolling_average(60);
         let relative_lag_rate_1_min = self.flow_source_relative_lag_change_rate(60);
-        let source_back_pressured_rate_1_min = self.flow_source_back_pressured_time_millis_per_sec_rolling_average(60);
+        let source_back_pressured_rate_1_min =
+            self.flow_source_back_pressured_time_millis_per_sec_rolling_average(60);
         METRIC_CATALOG_FLOW_TASK_UTILIZATION_1_MIN_ROLLING_AVG.set(utilization_1_min);
         METRIC_CATALOG_FLOW_SOURCE_TOTAL_LAG_1_MIN_ROLLING_AVG.set(total_lag_1_min);
-        METRIC_CATALOG_FLOW_SOURCE_RELATIVE_LAG_CHANGE_RATE_1_MIN_ROLLING_AVG.set(relative_lag_rate_1_min);
-        METRIC_CATALOG_FLOW_SOURCE_BACK_PRESSURE_TIME_1_MIN_ROLLING_AVG.set(source_back_pressured_rate_1_min);
+        METRIC_CATALOG_FLOW_SOURCE_RELATIVE_LAG_CHANGE_RATE_1_MIN_ROLLING_AVG
+            .set(relative_lag_rate_1_min);
+        METRIC_CATALOG_FLOW_SOURCE_BACK_PRESSURE_TIME_1_MIN_ROLLING_AVG
+            .set(source_back_pressured_rate_1_min);
         tracing::debug!(
             %utilization_1_min, %total_lag_1_min, %relative_lag_rate_1_min, %source_back_pressured_rate_1_min,
             "updated metric catalog window metrics."
@@ -1100,7 +1122,9 @@ where
     T: AppData + ReceivedAt,
 {
     #[tracing::instrument(level = "trace", skip(older, younger))]
-    fn block_combine(time_window: Duration, older: &VecDeque<T>, younger: &VecDeque<T>) -> VecDeque<T> {
+    fn block_combine(
+        time_window: Duration, older: &VecDeque<T>, younger: &VecDeque<T>,
+    ) -> VecDeque<T> {
         younger.back().map_or_else(
             || older.clone(), // if younger has no back, then it must be empty.
             |youngest| {
@@ -1128,12 +1152,13 @@ where
 
     #[tracing::instrument(level = "trace", skip(lhs_window, rhs_window))]
     fn do_ordered_combine(lhs_window: &Self, rhs_window: &Self) -> VecDeque<T> {
-        let (lhs_interval, rhs_interval) = match (lhs_window.window_interval(), rhs_window.window_interval()) {
-            (None, None) => return VecDeque::new(),
-            (Some(_), None) => return lhs_window.data.clone(),
-            (None, Some(_)) => return rhs_window.data.clone(),
-            (Some(lhs), Some(rhs)) => (lhs, rhs),
-        };
+        let (lhs_interval, rhs_interval) =
+            match (lhs_window.window_interval(), rhs_window.window_interval()) {
+                (None, None) => return VecDeque::new(),
+                (Some(_), None) => return lhs_window.data.clone(),
+                (None, Some(_)) => return rhs_window.data.clone(),
+                (Some(lhs), Some(rhs)) => (lhs, rhs),
+            };
 
         let time_window = lhs_window.time_window;
         if lhs_interval.is_before(rhs_interval) {
@@ -1281,9 +1306,10 @@ where
                     }
                 }
 
-                let time_window = time_window.ok_or_else(|| de::Error::missing_field("time_window"))?;
-                let quorum_percentage =
-                    quorum_percentage.ok_or_else(|| de::Error::missing_field("quorum_percentage"))?;
+                let time_window =
+                    time_window.ok_or_else(|| de::Error::missing_field("time_window"))?;
+                let quorum_percentage = quorum_percentage
+                    .ok_or_else(|| de::Error::missing_field("quorum_percentage"))?;
                 let data: Vec<T0> = data.ok_or_else(|| de::Error::missing_field("data"))?;
 
                 AppDataWindow::builder()
@@ -1291,7 +1317,11 @@ where
                     .with_quorum_percentage(quorum_percentage)
                     .with_items(data)
                     .build()
-                    .map_err(|err| de::Error::custom(format!("failed to deserialize valid data window: {err:?}")))
+                    .map_err(|err| {
+                        de::Error::custom(format!(
+                            "failed to deserialize valid data window: {err:?}"
+                        ))
+                    })
             }
         }
 
@@ -1410,27 +1440,31 @@ pub static METRIC_CATALOG_FLOW_SOURCE_TOTAL_LAG_1_MIN_ROLLING_AVG: Lazy<Gauge> =
     .expect("failed creating metric_catalog_flow_source_total_lag_1_min_rolling_avg")
 });
 
-pub static METRIC_CATALOG_FLOW_SOURCE_RELATIVE_LAG_CHANGE_RATE_1_MIN_ROLLING_AVG: Lazy<Gauge> = Lazy::new(|| {
-    Gauge::with_opts(
-        Opts::new(
-            "metric_catalog_flow_source_relative_lag_change_rate_1_min_rolling_avg",
-            "1 min rolling average of source relative lag change rate",
+pub static METRIC_CATALOG_FLOW_SOURCE_RELATIVE_LAG_CHANGE_RATE_1_MIN_ROLLING_AVG: Lazy<Gauge> =
+    Lazy::new(|| {
+        Gauge::with_opts(
+            Opts::new(
+                "metric_catalog_flow_source_relative_lag_change_rate_1_min_rolling_avg",
+                "1 min rolling average of source relative lag change rate",
+            )
+            .const_labels(proctor::metrics::CONST_LABELS.clone()),
         )
-        .const_labels(proctor::metrics::CONST_LABELS.clone()),
-    )
-    .expect("failed creating metric_catalog_flow_source_relative_lag_change_rate_1_min_rolling_avg")
-});
+        .expect(
+            "failed creating metric_catalog_flow_source_relative_lag_change_rate_1_min_rolling_avg",
+        )
+    });
 
-pub static METRIC_CATALOG_FLOW_SOURCE_BACK_PRESSURE_TIME_1_MIN_ROLLING_AVG: Lazy<Gauge> = Lazy::new(|| {
-    Gauge::with_opts(
-        Opts::new(
-            "metric_catalog_flow_source_back_pressure_time_1_min_rolling_avg",
-            "1 min rolling average of source back pressured rate",
+pub static METRIC_CATALOG_FLOW_SOURCE_BACK_PRESSURE_TIME_1_MIN_ROLLING_AVG: Lazy<Gauge> =
+    Lazy::new(|| {
+        Gauge::with_opts(
+            Opts::new(
+                "metric_catalog_flow_source_back_pressure_time_1_min_rolling_avg",
+                "1 min rolling average of source back pressured rate",
+            )
+            .const_labels(proctor::metrics::CONST_LABELS.clone()),
         )
-        .const_labels(proctor::metrics::CONST_LABELS.clone()),
-    )
-    .expect("failed creating metric_catalog_flow_source_back_pressure_time_1_min_rolling_avg")
-});
+        .expect("failed creating metric_catalog_flow_source_back_pressure_time_1_min_rolling_avg")
+    });
 
 #[cfg(test)]
 mod tests {
@@ -1453,7 +1487,13 @@ mod tests {
         let data_window = assert_ok!(AppDataWindow::builder()
             .with_time_window(Duration::from_secs(10))
             .with_quorum_percentage(0.67)
-            .with_items(vec![TestData(1), TestData(2), TestData(3), TestData(4), TestData(5)])
+            .with_items(vec![
+                TestData(1),
+                TestData(2),
+                TestData(3),
+                TestData(4),
+                TestData(5)
+            ])
             .build());
 
         assert_tokens(
@@ -1492,7 +1532,13 @@ mod tests {
         let expected: AppDataWindow<TestData> = assert_ok!(AppDataWindow::builder()
             .with_time_window(Duration::from_secs(10))
             .with_quorum_percentage(0.67)
-            .with_items(vec![TestData(1), TestData(2), TestData(3), TestData(4), TestData(5)])
+            .with_items(vec![
+                TestData(1),
+                TestData(2),
+                TestData(3),
+                TestData(4),
+                TestData(5)
+            ])
             .build());
 
         let actual_rep = assert_ok!(serde_json::to_string(&expected));
@@ -1527,10 +1573,16 @@ mod tests {
         assert_eq!(Saturating(u64::MAX).combine(&Saturating(1_u64)).0, u64::MAX);
 
         assert_eq!(Saturating(1_isize).combine(&Saturating(1_isize)).0, 2);
-        assert_eq!(Saturating(isize::MAX).combine(&Saturating(1_isize)).0, isize::MAX);
+        assert_eq!(
+            Saturating(isize::MAX).combine(&Saturating(1_isize)).0,
+            isize::MAX
+        );
 
         assert_eq!(Saturating(1_usize).combine(&Saturating(1_usize)).0, 2);
-        assert_eq!(Saturating(usize::MAX).combine(&Saturating(1_usize)).0, usize::MAX);
+        assert_eq!(
+            Saturating(usize::MAX).combine(&Saturating(1_usize)).0,
+            usize::MAX
+        );
 
         assert_eq!(Saturating(1_f32).combine(&Saturating(1_f32)).0, 2_f32);
         assert_eq!(Saturating(f32::MAX).combine(&Saturating(1_f32)).0, f32::MAX);

@@ -18,10 +18,14 @@ mod kubernetes_settings;
 mod plan_settings;
 mod sensor_settings;
 
-pub use action_settings::{ActionSettings, FlinkActionSettings, FlinkRestartSettings, TaskmanagerContext};
+pub use action_settings::{
+    ActionSettings, FlinkActionSettings, FlinkRestartSettings, TaskmanagerContext,
+};
 pub use engine_settings::EngineSettings;
 pub use flink_settings::FlinkSettings;
-pub use governance_settings::{GovernancePolicySettings, GovernanceRuleSettings, GovernanceSettings};
+pub use governance_settings::{
+    GovernancePolicySettings, GovernanceRuleSettings, GovernanceSettings,
+};
 pub use kubernetes_settings::{KubernetesSettings, LoadKubeConfig};
 pub use plan_settings::PlanSettings;
 pub use sensor_settings::{FlinkSensorSettings, SensorSettings};
@@ -163,7 +167,9 @@ impl LoadingOptions for CliOptions {
         self.secrets.clone()
     }
 
-    fn load_overrides(&self, config: ConfigBuilder<DefaultState>) -> Result<ConfigBuilder<DefaultState>, Self::Error> {
+    fn load_overrides(
+        &self, config: ConfigBuilder<DefaultState>,
+    ) -> Result<ConfigBuilder<DefaultState>, Self::Error> {
         let config = match self.jobmanager_scheme.as_ref() {
             None => config,
             Some(scheme) => config.set_override("flink.job_manager_uri_scheme", scheme.clone())?,
@@ -217,7 +223,9 @@ mod tests {
     use super::*;
     use crate::flink::RestoreMode;
     use crate::kubernetes::{KubernetesApiConstraints, KubernetesDeployResource};
-    use crate::phases::plan::{PerformanceRepositorySettings, PerformanceRepositoryType, SpikeSettings};
+    use crate::phases::plan::{
+        PerformanceRepositorySettings, PerformanceRepositoryType, SpikeSettings,
+    };
     use crate::phases::sense::flink::Aggregation::Sum;
     use crate::phases::sense::flink::{
         Aggregation, DerivativeCombinator, FlinkScope, MetricOrder, MetricSpec, PlanPositionSpec,
@@ -323,12 +331,22 @@ mod tests {
                             ),
                         },
                         MetricOrder::Job {
-                            metric: MetricSpec::new("uptime", Min, "health.job_uptime_millis", Integer),
+                            metric: MetricSpec::new(
+                                "uptime",
+                                Min,
+                                "health.job_uptime_millis",
+                                Integer,
+                            ),
                         },
                         MetricOrder::Operator {
                             name: "Source: Data Stream".to_string(),
                             position: PlanPositionSpec::Source,
-                            metric: MetricSpec::new("records-lag-max", Sum, "flow.source_records_lag_max", Integer),
+                            metric: MetricSpec::new(
+                                "records-lag-max",
+                                Sum,
+                                "flow.source_records_lag_max",
+                                Integer,
+                            ),
                         },
                         MetricOrder::Operator {
                             name: "Data Stream".to_string(),
@@ -358,7 +376,9 @@ mod tests {
             },
             eligibility: EligibilitySettings {
                 policies: vec![
-                    assert_ok!(PolicySource::from_template_file("../resources/eligibility.polar")),
+                    assert_ok!(PolicySource::from_template_file(
+                        "../resources/eligibility.polar"
+                    )),
                     assert_ok!(PolicySource::from_template_string(
                         "eligibility_ext",
                         r##"|eligible(_, _context, length) if length = 13;
@@ -373,8 +393,12 @@ mod tests {
             },
             decision: DecisionSettings {
                 policies: vec![
-                    assert_ok!(PolicySource::from_complete_file("../resources/decision.polar")),
-                    assert_ok!(PolicySource::from_complete_file("../resources/decision_basis.polar")),
+                    assert_ok!(PolicySource::from_complete_file(
+                        "../resources/decision.polar"
+                    )),
+                    assert_ok!(PolicySource::from_complete_file(
+                        "../resources/decision_basis.polar"
+                    )),
                 ],
                 template_data: Some(DecisionTemplateData {
                     basis: "decision_basis".to_string(),
@@ -420,7 +444,9 @@ mod tests {
                 action_timeout: Duration::from_secs(600),
                 taskmanager: TaskmanagerContext {
                     label_selector: "app=flink,component=taskmanager".to_string(),
-                    deploy_resource: KubernetesDeployResource::StatefulSet { name: "dr-springline-tm".to_string() },
+                    deploy_resource: KubernetesDeployResource::StatefulSet {
+                        name: "dr-springline-tm".to_string(),
+                    },
                     kubernetes_api: KubernetesApiConstraints {
                         api_timeout: Duration::from_secs(290),
                         polling_interval: Duration::from_secs(10),
@@ -485,8 +511,9 @@ mod tests {
         tracing::info!(?config, "eligibility config loaded.");
 
         let actual: EligibilitySettings = assert_ok!(config.try_deserialize());
-        let expected = EligibilitySettings::default()
-            .with_source(PolicySource::from_complete_file("./resources/eligibility.polar")?);
+        let expected = EligibilitySettings::default().with_source(
+            PolicySource::from_complete_file("./resources/eligibility.polar")?,
+        );
         assert_eq!(actual, expected);
         Ok(())
     }
@@ -529,7 +556,12 @@ mod tests {
                 metric_orders: vec![MetricOrder::Operator {
                     name: "Source: my data".to_string(),
                     position: PlanPositionSpec::NotSource,
-                    metric: MetricSpec::new("records-lag-max", Value, "flow.source_records_lag_max", Integer),
+                    metric: MetricSpec::new(
+                        "records-lag-max",
+                        Value,
+                        "flow.source_records_lag_max",
+                        Integer,
+                    ),
                 }],
             },
             sensors: maplit::hashmap! {
@@ -580,9 +612,9 @@ mod tests {
             },
         },
         governance: GovernanceSettings {
-            policy: GovernancePolicySettings::default().with_source(assert_ok!(PolicySource::from_complete_file(
-                "./resources/governance.polar"
-            ))),
+            policy: GovernancePolicySettings::default().with_source(assert_ok!(
+                PolicySource::from_complete_file("./resources/governance.polar")
+            )),
             rules: GovernanceRuleSettings {
                 min_cluster_size: 0,
                 max_cluster_size: 20,
@@ -595,7 +627,9 @@ mod tests {
             action_timeout: Duration::from_secs(600),
             taskmanager: TaskmanagerContext {
                 label_selector: "component=taskmanager,release=dr-springline".to_string(),
-                deploy_resource: KubernetesDeployResource::StatefulSet { name: "dr-springline-tm".to_string() },
+                deploy_resource: KubernetesDeployResource::StatefulSet {
+                    name: "dr-springline-tm".to_string(),
+                },
                 kubernetes_api: KubernetesApiConstraints {
                     api_timeout: Duration::from_secs(295),
                     polling_interval: Duration::from_secs(5),
@@ -751,94 +785,98 @@ mod tests {
             }
         );
 
-        with_env_vars("test_local_load", vec![("APP_ENVIRONMENT", Some("local"))], || {
-            let actual: Settings = assert_ok!(Settings::load(&options));
-            assert_eq!(
-                actual.engine,
-                EngineSettings {
-                    machine_id: 1,
-                    node_id: 1,
-                    ..EngineSettings::default()
-                }
-            );
+        with_env_vars(
+            "test_local_load",
+            vec![("APP_ENVIRONMENT", Some("local"))],
+            || {
+                let actual: Settings = assert_ok!(Settings::load(&options));
+                assert_eq!(
+                    actual.engine,
+                    EngineSettings {
+                        machine_id: 1,
+                        node_id: 1,
+                        ..EngineSettings::default()
+                    }
+                );
 
-            let expected = Settings {
-                http: HttpServerSettings {
-                    host: "localhost".to_string(),
-                    ..SETTINGS.http.clone()
-                },
-                flink: FlinkSettings {
-                    job_manager_uri_scheme: "http".to_string(),
-                    job_manager_host: "localhost".to_string(),
-                    headers: Vec::default(),
-                    max_retries: 0,
-                    pool_idle_timeout: Some(Duration::from_secs(60)),
-                    pool_max_idle_per_host: Some(5),
-                    ..SETTINGS.flink.clone()
-                },
-                engine: EngineSettings {
-                    machine_id: 1,
-                    node_id: 1,
-                    ..EngineSettings::default()
-                },
-                sensor: SensorSettings {
-                    flink: FlinkSensorSettings {
-                        metrics_initial_delay: Duration::from_secs(10),
-                        metric_orders: vec![MetricOrder::Job {
-                            metric: MetricSpec::new(
-                                "lastCheckpointDuration",
-                                Max,
-                                "health.last_checkpoint_duration",
-                                Integer,
-                            ),
-                        }],
-                        ..SETTINGS.sensor.flink.clone()
+                let expected = Settings {
+                    http: HttpServerSettings {
+                        host: "localhost".to_string(),
+                        ..SETTINGS.http.clone()
                     },
-                    sensors: HashMap::default(),
-                    ..SETTINGS.sensor.clone()
-                },
-                eligibility: EligibilitySettings {
-                    template_data: Some(EligibilityTemplateData {
-                        cooling_secs: Some(60),
-                        ..SETTINGS.eligibility.template_data.clone().unwrap()
-                    }),
-                    ..SETTINGS.eligibility.clone()
-                },
-                decision: DecisionSettings {
-                    template_data: Some(DecisionTemplateData {
-                        max_healthy_relative_lag_velocity: Some(3.3),
-                        max_healthy_lag: Some(133_f64),
-                        max_healthy_cpu_load: Some(0.0006),
-                        // max_healthy_heap_memory_load: Some(0.5),
-                        ..SETTINGS.decision.template_data.clone().unwrap()
-                    }),
-                    ..SETTINGS.decision.clone()
-                },
-                action: ActionSettings {
-                    action_timeout: Duration::from_secs(60),
-                    taskmanager: TaskmanagerContext {
-                        kubernetes_api: KubernetesApiConstraints {
-                            api_timeout: Duration::from_secs(290),
-                            polling_interval: Duration::from_secs(5),
-                            ..SETTINGS.action.taskmanager.kubernetes_api.clone()
+                    flink: FlinkSettings {
+                        job_manager_uri_scheme: "http".to_string(),
+                        job_manager_host: "localhost".to_string(),
+                        headers: Vec::default(),
+                        max_retries: 0,
+                        pool_idle_timeout: Some(Duration::from_secs(60)),
+                        pool_max_idle_per_host: Some(5),
+                        ..SETTINGS.flink.clone()
+                    },
+                    engine: EngineSettings {
+                        machine_id: 1,
+                        node_id: 1,
+                        ..EngineSettings::default()
+                    },
+                    sensor: SensorSettings {
+                        flink: FlinkSensorSettings {
+                            metrics_initial_delay: Duration::from_secs(10),
+                            metric_orders: vec![MetricOrder::Job {
+                                metric: MetricSpec::new(
+                                    "lastCheckpointDuration",
+                                    Max,
+                                    "health.last_checkpoint_duration",
+                                    Integer,
+                                ),
+                            }],
+                            ..SETTINGS.sensor.flink.clone()
                         },
-                        ..SETTINGS.action.taskmanager.clone()
+                        sensors: HashMap::default(),
+                        ..SETTINGS.sensor.clone()
                     },
-                    flink: FlinkActionSettings {
-                        polling_interval: Duration::from_secs(3),
-                        savepoint: SavepointSettings {
-                            directory: Some("s3a://my/flink/savepoints".into()),
-                            ..SETTINGS.action.flink.savepoint.clone()
+                    eligibility: EligibilitySettings {
+                        template_data: Some(EligibilityTemplateData {
+                            cooling_secs: Some(60),
+                            ..SETTINGS.eligibility.template_data.clone().unwrap()
+                        }),
+                        ..SETTINGS.eligibility.clone()
+                    },
+                    decision: DecisionSettings {
+                        template_data: Some(DecisionTemplateData {
+                            max_healthy_relative_lag_velocity: Some(3.3),
+                            max_healthy_lag: Some(133_f64),
+                            max_healthy_cpu_load: Some(0.0006),
+                            // max_healthy_heap_memory_load: Some(0.5),
+                            ..SETTINGS.decision.template_data.clone().unwrap()
+                        }),
+                        ..SETTINGS.decision.clone()
+                    },
+                    action: ActionSettings {
+                        action_timeout: Duration::from_secs(60),
+                        taskmanager: TaskmanagerContext {
+                            kubernetes_api: KubernetesApiConstraints {
+                                api_timeout: Duration::from_secs(290),
+                                polling_interval: Duration::from_secs(5),
+                                ..SETTINGS.action.taskmanager.kubernetes_api.clone()
+                            },
+                            ..SETTINGS.action.taskmanager.clone()
                         },
-                        ..SETTINGS.action.flink.clone()
+                        flink: FlinkActionSettings {
+                            polling_interval: Duration::from_secs(3),
+                            savepoint: SavepointSettings {
+                                directory: Some("s3a://my/flink/savepoints".into()),
+                                ..SETTINGS.action.flink.savepoint.clone()
+                            },
+                            ..SETTINGS.action.flink.clone()
+                        },
+                        ..SETTINGS.action.clone()
                     },
-                    ..SETTINGS.action.clone()
-                },
-                ..SETTINGS.clone()
-            };
+                    ..SETTINGS.clone()
+                };
 
-            assert_eq!(actual, expected);
-        });
+                assert_eq!(actual, expected);
+            },
+        );
 
         Ok(())
     }

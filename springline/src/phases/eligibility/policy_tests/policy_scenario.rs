@@ -26,7 +26,11 @@ impl PolicyScenario {
     #[tracing::instrument(level = "info")]
     pub fn run(&self) -> Result<QueryResult, PolicyError> {
         let context = EligibilityContext {
-            correlation_id: Id::direct(<EligibilityContext as Label>::labeler().label(), 0, "test_doesnt_crash"),
+            correlation_id: Id::direct(
+                <EligibilityContext as Label>::labeler().label(),
+                0,
+                "test_doesnt_crash",
+            ),
             recv_timestamp: Timestamp::now(),
             job: JobStatus { last_failure: self.last_failure },
             cluster: ClusterStatus {
@@ -38,7 +42,10 @@ impl PolicyScenario {
             custom: HashMap::default(),
         };
 
-        let item = AppDataWindow::from_time_window(make_metric_catalog(self.nr_active_jobs), Duration::from_secs(600));
+        let item = AppDataWindow::from_time_window(
+            make_metric_catalog(self.nr_active_jobs),
+            Duration::from_secs(600),
+        );
 
         let policy = EligibilityPolicy::new(&EligibilitySettings {
             policies: vec![
@@ -80,7 +87,9 @@ impl PolicyScenarioBuilder {
         new
     }
 
-    pub fn just_template_data(self, template_data: impl Into<Option<EligibilityTemplateData>>) -> Self {
+    pub fn just_template_data(
+        self, template_data: impl Into<Option<EligibilityTemplateData>>,
+    ) -> Self {
         self.template_data(Just(template_data.into()))
     }
 
@@ -118,7 +127,9 @@ impl PolicyScenarioBuilder {
         self.is_rescaling(Just(is_rescaling.into()))
     }
 
-    pub fn last_deployment(self, last_deployment: impl Strategy<Value = DateTime<Utc>> + 'static) -> Self {
+    pub fn last_deployment(
+        self, last_deployment: impl Strategy<Value = DateTime<Utc>> + 'static,
+    ) -> Self {
         let mut new = self;
         new.last_deployment = Some(last_deployment.boxed());
         new
@@ -128,7 +139,9 @@ impl PolicyScenarioBuilder {
         self.last_deployment(Just(last_deployment.into()))
     }
 
-    pub fn last_failure(self, last_failure: impl Strategy<Value = Option<DateTime<Utc>>> + 'static) -> Self {
+    pub fn last_failure(
+        self, last_failure: impl Strategy<Value = Option<DateTime<Utc>>> + 'static,
+    ) -> Self {
         let mut new = self;
         new.last_failure = Some(last_failure.boxed());
         new
@@ -158,7 +171,14 @@ impl PolicyScenarioBuilder {
             last_failure,
         )
             .prop_map(
-                |(template_data, nr_active_jobs, is_deploying, is_rescaling, last_deployment, last_failure)| {
+                |(
+                    template_data,
+                    nr_active_jobs,
+                    is_deploying,
+                    is_rescaling,
+                    last_deployment,
+                    last_failure,
+                )| {
                     tracing::info!(?is_rescaling, ?nr_active_jobs, "DMR: making scenario..");
                     PolicyScenario {
                         template_data,

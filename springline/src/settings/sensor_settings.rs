@@ -78,7 +78,12 @@ mod tests {
                     MetricOrder::Operator {
                         name: "Source: Baz input".to_string(),
                         position: PlanPositionSpec::Source,
-                        metric: MetricSpec::new("records-lag-max", Value, "flow.source_records_lag_max", Integer),
+                        metric: MetricSpec::new(
+                            "records-lag-max",
+                            Value,
+                            "flow.source_records_lag_max",
+                            Integer,
+                        ),
                     },
                     MetricOrder::TaskManager {
                         metric: MetricSpec::new(
@@ -322,7 +327,12 @@ mod tests {
             MetricOrder::Operator {
                 name: "Input: The best data".to_string(),
                 position: PlanPositionSpec::Source,
-                metric: MetricSpec::new("records-lag-max", Value, "flow.source_records_lag_max", Integer),
+                metric: MetricSpec::new(
+                    "records-lag-max",
+                    Value,
+                    "flow.source_records_lag_max",
+                    Integer,
+                ),
             },
             MetricOrder::TaskManager {
                 metric: MetricSpec::new(

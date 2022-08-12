@@ -22,7 +22,9 @@ pub struct FlinkContext {
 }
 
 impl FlinkContext {
-    pub fn new(label: impl Into<String>, client: ClientWithMiddleware, base_url: Url) -> Result<Self, FlinkError> {
+    pub fn new(
+        label: impl Into<String>, client: ClientWithMiddleware, base_url: Url,
+    ) -> Result<Self, FlinkError> {
         let mut jobs_endpoint = base_url.clone();
         jobs_endpoint
             .path_segments_mut()
@@ -92,7 +94,9 @@ impl FlinkContext {
     }
 
     #[tracing::instrument(level = "trace", skip(self))]
-    pub async fn query_active_jobs(&self, correlation: &CorrelationId) -> Result<Vec<JobSummary>, FlinkError> {
+    pub async fn query_active_jobs(
+        &self, correlation: &CorrelationId,
+    ) -> Result<Vec<JobSummary>, FlinkError> {
         self.inner.query_active_jobs(correlation).await
     }
 
@@ -104,12 +108,16 @@ impl FlinkContext {
     }
 
     #[tracing::instrument(level = "trace", skip(self))]
-    pub async fn query_uploaded_jars(&self, correlation: &CorrelationId) -> Result<Vec<JarSummary>, FlinkError> {
+    pub async fn query_uploaded_jars(
+        &self, correlation: &CorrelationId,
+    ) -> Result<Vec<JarSummary>, FlinkError> {
         self.inner.query_uploaded_jars(correlation).await
     }
 
     #[tracing::instrument(level = "trace", skip(self))]
-    pub async fn query_nr_taskmanagers(&self, correlation: &CorrelationId) -> Result<usize, FlinkError> {
+    pub async fn query_nr_taskmanagers(
+        &self, correlation: &CorrelationId,
+    ) -> Result<usize, FlinkError> {
         self.inner.query_nr_taskmanagers(correlation).await
     }
 }
@@ -179,7 +187,9 @@ impl FlinkContextRef {
         }
     }
 
-    pub async fn query_uploaded_jars(&self, correlation: &CorrelationId) -> Result<Vec<JarSummary>, FlinkError> {
+    pub async fn query_uploaded_jars(
+        &self, correlation: &CorrelationId,
+    ) -> Result<Vec<JarSummary>, FlinkError> {
         let _timer = flink::start_flink_uploaded_jars_timer(self.cluster_label.as_str());
 
         let result: Result<Vec<JarSummary>, FlinkError> = self
@@ -216,7 +226,9 @@ impl FlinkContextRef {
         )
     }
 
-    pub async fn query_active_jobs(&self, correlation: &CorrelationId) -> Result<Vec<JobSummary>, FlinkError> {
+    pub async fn query_active_jobs(
+        &self, correlation: &CorrelationId,
+    ) -> Result<Vec<JobSummary>, FlinkError> {
         let _timer = flink::start_flink_active_jobs_timer(self.cluster_label.as_str());
 
         let result: Result<Vec<JobSummary>, FlinkError> = self
@@ -261,7 +273,12 @@ impl FlinkContextRef {
                     .collect()
             });
 
-        flink::track_result("active_jobs", result, "failed to query Flink active jobs", correlation)
+        flink::track_result(
+            "active_jobs",
+            result,
+            "failed to query Flink active jobs",
+            correlation,
+        )
     }
 
     pub async fn query_job_details(
@@ -295,10 +312,17 @@ impl FlinkContextRef {
             .instrument(tracing::info_span!("query FLink REST API - job detail"))
             .await;
 
-        flink::track_result("job_detail", result, "failed to query Flink job detail", correlation)
+        flink::track_result(
+            "job_detail",
+            result,
+            "failed to query Flink job detail",
+            correlation,
+        )
     }
 
-    pub async fn query_nr_taskmanagers(&self, correlation: &CorrelationId) -> Result<usize, FlinkError> {
+    pub async fn query_nr_taskmanagers(
+        &self, correlation: &CorrelationId,
+    ) -> Result<usize, FlinkError> {
         let _timer = flink::start_flink_query_taskmanager_admin_timer(self.cluster_label.as_str());
 
         let result: Result<usize, FlinkError> = self
@@ -450,12 +474,15 @@ mod tests {
                     name: "TopSpeedWindowing.jar".to_string(),
                     uploaded_at: Timestamp::from_secs(1646632951534),
                     entry: vec![JarEntry {
-                        name: "org.apache.flink.streaming.examples.windowing.TopSpeedWindowing".to_string(),
+                        name: "org.apache.flink.streaming.examples.windowing.TopSpeedWindowing"
+                            .to_string(),
                         description: None,
                     }],
                 },
                 JarSummary {
-                    id: JarId::new("61fad403-bdc9-4d73-8375-15ee714cc692_flink-tutorials-0.0.1-SNAPSHOT.jar"),
+                    id: JarId::new(
+                        "61fad403-bdc9-4d73-8375-15ee714cc692_flink-tutorials-0.0.1-SNAPSHOT.jar",
+                    ),
                     name: "flink-tutorials-0.0.1-SNAPSHOT.jar".to_string(),
                     uploaded_at: Timestamp::from_secs(1646632920247),
                     entry: vec![JarEntry {
@@ -495,7 +522,9 @@ mod tests {
                 Token::Struct { name: "JarSummary", len: 4 },
                 Token::Str("id"),
                 Token::NewtypeStruct { name: "JarId" },
-                Token::Str("61fad403-bdc9-4d73-8375-15ee714cc692_flink-tutorials-0.0.1-SNAPSHOT.jar"),
+                Token::Str(
+                    "61fad403-bdc9-4d73-8375-15ee714cc692_flink-tutorials-0.0.1-SNAPSHOT.jar",
+                ),
                 Token::Str("name"),
                 Token::Str("flink-tutorials-0.0.1-SNAPSHOT.jar"),
                 Token::Str("uploaded"),
@@ -526,12 +555,15 @@ mod tests {
                     name: "TopSpeedWindowing.jar".to_string(),
                     uploaded_at: Timestamp::from_secs(1646632951534),
                     entry: vec![JarEntry {
-                        name: "org.apache.flink.streaming.examples.windowing.TopSpeedWindowing".to_string(),
+                        name: "org.apache.flink.streaming.examples.windowing.TopSpeedWindowing"
+                            .to_string(),
                         description: None,
                     }],
                 },
                 JarSummary {
-                    id: JarId::new("61fad403-bdc9-4d73-8375-15ee714cc692_flink-tutorials-0.0.1-SNAPSHOT.jar"),
+                    id: JarId::new(
+                        "61fad403-bdc9-4d73-8375-15ee714cc692_flink-tutorials-0.0.1-SNAPSHOT.jar",
+                    ),
                     name: "flink-tutorials-0.0.1-SNAPSHOT.jar".to_string(),
                     uploaded_at: Timestamp::from_secs(1646632920247),
                     entry: vec![JarEntry {
@@ -615,12 +647,15 @@ mod tests {
                     name: "TopSpeedWindowing.jar".to_string(),
                     uploaded_at: Timestamp::from_secs(1646632951534),
                     entry: vec![JarEntry {
-                        name: "org.apache.flink.streaming.examples.windowing.TopSpeedWindowing".to_string(),
+                        name: "org.apache.flink.streaming.examples.windowing.TopSpeedWindowing"
+                            .to_string(),
                         description: None,
                     }],
                 },
                 JarSummary {
-                    id: JarId::new("61fad403-bdc9-4d73-8375-15ee714cc692_flink-tutorials-0.0.1-SNAPSHOT.jar"),
+                    id: JarId::new(
+                        "61fad403-bdc9-4d73-8375-15ee714cc692_flink-tutorials-0.0.1-SNAPSHOT.jar",
+                    ),
                     name: "flink-tutorials-0.0.1-SNAPSHOT.jar".to_string(),
                     uploaded_at: Timestamp::from_secs(1646632920247),
                     entry: vec![JarEntry {

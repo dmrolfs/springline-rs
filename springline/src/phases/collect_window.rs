@@ -193,6 +193,7 @@ where
     Out: Window<Item = In>,
 {
     fn make_window(&self, data: In) -> ProctorResult<Out> {
-        Out::from_item(data, self.time_window, self.quorum_percentage).map_err(|err| ProctorError::Phase(err.into()))
+        Out::from_item(data, self.time_window, self.quorum_percentage)
+            .map_err(|err| ProctorError::Phase(err.into()))
     }
 }

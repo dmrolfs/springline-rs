@@ -89,7 +89,8 @@ where
                 (style("return").dim(), None),
             ];
 
-            let selections: Vec<StyledObject<&str>> = menu_actions.iter().map(|s| s.0.clone()).collect();
+            let selections: Vec<StyledObject<&str>> =
+                menu_actions.iter().map(|s| s.0.clone()).collect();
 
             let default_pos = match (policy_state.context.as_ref(), policy_state.data.as_ref()) {
                 (None, Some(_)) => 0,
@@ -116,7 +117,9 @@ where
                     break;
                 },
                 None => {
-                    eprintln!("I don't know how you got here, but your selection is not understood.");
+                    eprintln!(
+                        "I don't know how you got here, but your selection is not understood."
+                    );
                     break;
                 },
             }
@@ -144,7 +147,10 @@ where
     fn query_policy(state: &mut State<P>) -> Result<()> {
         let data_context = state.data.clone().zip(state.context.clone());
         if data_context.is_none() {
-            eprintln!("\n{}", style("Set data and context before policy query.").red());
+            eprintln!(
+                "\n{}",
+                style("Set data and context before policy query.").red()
+            );
             return Ok(());
         }
         let (data, context) = data_context.unwrap();

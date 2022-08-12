@@ -48,7 +48,10 @@ pub fn run_http_server<'s>(
         .route("/health/live", routing::get(liveness))
         .route("/clearinghouse", routing::get(get_clearinghouse_snapshot))
         .route("/settings", routing::get(get_settings))
-        .route("/performance_history", routing::get(get_performance_history))
+        .route(
+            "/performance_history",
+            routing::get(get_performance_history),
+        )
         .route("/engine/restart", routing::post(restart))
         .route("/engine/error", routing::post(induce_failure))
         .layer(middleware_stack);
@@ -72,7 +75,10 @@ pub fn run_http_server<'s>(
             rx_shutdown.await.ok();
         });
         graceful.await?;
-        tracing::info!("{:?} autoscale engine API shutting down", std::env::current_exe());
+        tracing::info!(
+            "{:?} autoscale engine API shutting down",
+            std::env::current_exe()
+        );
         Ok(())
     });
 
@@ -105,7 +111,10 @@ async fn health(Extension(engine): Extension<Arc<State>>) -> impl IntoResponse {
                 Json(json!({ "status": STATUS_NOT_READY, "phases": phases })),
             )
         },
-        Ok(HealthReport::Down) => (StatusCode::SERVICE_UNAVAILABLE, Json(json!({ "status": STATUS_DOWN }))),
+        Ok(HealthReport::Down) => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({ "status": STATUS_DOWN })),
+        ),
         Err(err) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(json!({ "status": STATUS_ERROR, "error": err.to_string() })),
@@ -169,7 +178,9 @@ async fn get_clearinghouse_snapshot(
 }
 
 #[tracing::instrument(level = "trace", skip(engine))]
-async fn get_settings(Extension(engine): Extension<Arc<State>>) -> Result<Json<Settings>, EngineApiError> {
+async fn get_settings(
+    Extension(engine): Extension<Arc<State>>,
+) -> Result<Json<Settings>, EngineApiError> {
     EngineCmd::get_settings(&engine.tx_api)
         .await
         .map(|s| s.as_ref().clone())
@@ -195,14 +206,21 @@ async fn handle_engine_error(method: Method, uri: Uri, error: BoxError) -> (Stat
 }
 
 #[tracing::instrument(level = "info", skip(engine))]
-async fn restart(Extension(engine): Extension<Arc<State>>) -> Result<(StatusCode, String), EngineApiError> {
-    EngineCmd::restart(&engine.tx_api)
-        .await
-        .map(|_| (StatusCode::ACCEPTED, "restarting autoscale engine".to_string()))
+async fn restart(
+    Extension(engine): Extension<Arc<State>>,
+) -> Result<(StatusCode, String), EngineApiError> {
+    EngineCmd::restart(&engine.tx_api).await.map(|_| {
+        (
+            StatusCode::ACCEPTED,
+            "restarting autoscale engine".to_string(),
+        )
+    })
 }
 
 #[tracing::instrument(level = "error", skip(engine))]
-async fn induce_failure(Extension(engine): Extension<Arc<State>>) -> Result<(StatusCode, String), EngineApiError> {
+async fn induce_failure(
+    Extension(engine): Extension<Arc<State>>,
+) -> Result<(StatusCode, String), EngineApiError> {
     EngineCmd::induce_failure(&engine.tx_api).await.map(|_| {
         (
             StatusCode::ACCEPTED,

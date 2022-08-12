@@ -8,7 +8,8 @@ use super::*;
 #[test]
 fn test_eligibility_policy_doesnt_crash_5691360e9c41174fbc7e() {
     once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
-    let main_span = tracing::info_span!("test_eligibility_policy_doesnt_crash_5691360e9c41174fbc7e");
+    let main_span =
+        tracing::info_span!("test_eligibility_policy_doesnt_crash_5691360e9c41174fbc7e");
     let _main_span_guard = main_span.enter();
 
     // cc a40e874bda14826f7d93c6c08ff7c49b53d24ce587b55691360e9c41174fbc7e # shrinks to

@@ -64,13 +64,18 @@ impl ProctorContext for DecisionContext {
 impl UpdateMetrics for DecisionContext {
     fn update_metrics_for(phase_name: &str) -> UpdateMetricsFn {
         let phase_name = phase_name.to_string();
-        let update_fn = move |subscription_name: &str, telemetry: &Telemetry| match telemetry.clone().try_into::<Self>()
+        let update_fn = move |subscription_name: &str, telemetry: &Telemetry| match telemetry
+            .clone()
+            .try_into::<Self>()
         {
             Ok(_ctx) => (),
 
             Err(err) => {
                 tracing::warn!(error=?err, %phase_name, "failed to update decision context metrics on subscription: {}", subscription_name);
-                proctor::track_errors(&phase_name, &proctor::error::ProctorError::DecisionPhase(err.into()));
+                proctor::track_errors(
+                    &phase_name,
+                    &proctor::error::ProctorError::DecisionPhase(err.into()),
+                );
             },
         };
 

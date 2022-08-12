@@ -1,5 +1,7 @@
 use super::*;
-use crate::flink::{AppDataWindowBuilder, ClusterMetrics, CorrelationGenerator, FlowMetrics, JobHealthMetrics};
+use crate::flink::{
+    AppDataWindowBuilder, ClusterMetrics, CorrelationGenerator, FlowMetrics, JobHealthMetrics,
+};
 use once_cell::sync::Lazy;
 use pretty_snowflake::{AlphabetCodec, IdPrettifier};
 use proctor::elements::telemetry;
@@ -16,11 +18,14 @@ where
             let acc = AppDataWindowBuilder::default().with_time_window(window);
             data_loop(timestamps, Just(acc), make_data_strategy.clone())
         })
-        .prop_map(|builder| builder.build().expect("failed to build valid metric catalog data window"))
+        .prop_map(|builder| {
+            builder.build().expect("failed to build valid metric catalog data window")
+        })
 }
 
 fn data_loop<M>(
-    timestamps: Vec<Timestamp>, acc: impl Strategy<Value = AppDataWindowBuilder<MetricCatalog>> + 'static,
+    timestamps: Vec<Timestamp>,
+    acc: impl Strategy<Value = AppDataWindowBuilder<MetricCatalog>> + 'static,
     mut make_data_strategy: M,
 ) -> impl Strategy<Value = AppDataWindowBuilder<MetricCatalog>>
 where
@@ -44,8 +49,8 @@ where
 }
 
 pub fn arb_metric_catalog_window<M>(
-    start: Timestamp, window: impl Strategy<Value = Duration>, interval: impl Strategy<Value = Duration> + 'static,
-    make_data_strategy: M,
+    start: Timestamp, window: impl Strategy<Value = Duration>,
+    interval: impl Strategy<Value = Duration> + 'static, make_data_strategy: M,
 ) -> impl Strategy<Value = AppDataWindow<MetricCatalog>>
 where
     M: Fn(Timestamp) -> BoxedStrategy<MetricCatalog> + Clone + 'static,
@@ -59,15 +64,27 @@ where
             .with_time_window(window);
         let acc_start = Just((builder, Some((start, window))));
         do_arb_metric_catalog_window_loop(acc_start, interval.clone(), make_data_strategy.clone())
-            .prop_map(move |(data, _)| data.build().expect("failed to generate valid metric catalog data window"))
+            .prop_map(move |(data, _)| {
+                data.build().expect("failed to generate valid metric catalog data window")
+            })
     })
 }
 
 #[tracing::instrument(level = "debug", skip(acc, make_interval_strategy, make_data_strategy))]
 fn do_arb_metric_catalog_window_loop<I, M>(
-    acc: impl Strategy<Value = (AppDataWindowBuilder<MetricCatalog>, Option<(Timestamp, Duration)>)>,
+    acc: impl Strategy<
+        Value = (
+            AppDataWindowBuilder<MetricCatalog>,
+            Option<(Timestamp, Duration)>,
+        ),
+    >,
     make_interval_strategy: I, make_data_strategy: M,
-) -> impl Strategy<Value = (AppDataWindowBuilder<MetricCatalog>, Option<(Timestamp, Duration)>)>
+) -> impl Strategy<
+    Value = (
+        AppDataWindowBuilder<MetricCatalog>,
+        Option<(Timestamp, Duration)>,
+    ),
+>
 where
     I: Fn() -> BoxedStrategy<Duration> + Clone + 'static,
     M: Fn(Timestamp) -> BoxedStrategy<MetricCatalog> + Clone + 'static,
@@ -89,8 +106,10 @@ where
 
                         acc_data_0.push(data);
 
-                        let next_acc: (AppDataWindowBuilder<MetricCatalog>, Option<(Timestamp, Duration)>) =
-                            (acc_data_0, Some((recv_ts, next_remaining)));
+                        let next_acc: (
+                            AppDataWindowBuilder<MetricCatalog>,
+                            Option<(Timestamp, Duration)>,
+                        ) = (acc_data_0, Some((recv_ts, next_remaining)));
 
                         do_arb_metric_catalog_window_loop(
                             Just(next_acc),
@@ -222,7 +241,9 @@ impl JobHealthMetricsStrategyBuilder {
         Self::default()
     }
 
-    pub fn job_max_parallelism(self, job_max_parallelism: impl Strategy<Value = u32> + 'static) -> Self {
+    pub fn job_max_parallelism(
+        self, job_max_parallelism: impl Strategy<Value = u32> + 'static,
+    ) -> Self {
         let mut new = self;
         new.job_max_parallelism = Some(job_max_parallelism.boxed());
         new
@@ -232,7 +253,9 @@ impl JobHealthMetricsStrategyBuilder {
         self.job_max_parallelism(Just(job_max_parallelism.into()))
     }
 
-    pub fn job_uptime_millis(self, job_uptime_millis: impl Strategy<Value = u32> + 'static) -> Self {
+    pub fn job_uptime_millis(
+        self, job_uptime_millis: impl Strategy<Value = u32> + 'static,
+    ) -> Self {
         let mut new = self;
         new.job_uptime_millis = Some(job_uptime_millis.boxed());
         new
@@ -260,11 +283,15 @@ impl JobHealthMetricsStrategyBuilder {
         new
     }
 
-    pub fn just_job_nr_completed_checkpoints(self, job_nr_completed_checkpoints: impl Into<u32>) -> Self {
+    pub fn just_job_nr_completed_checkpoints(
+        self, job_nr_completed_checkpoints: impl Into<u32>,
+    ) -> Self {
         self.job_nr_completed_checkpoints(Just(job_nr_completed_checkpoints.into()))
     }
 
-    pub fn job_nr_failed_checkpoints(self, job_nr_failed_checkpoints: impl Strategy<Value = u32> + 'static) -> Self {
+    pub fn job_nr_failed_checkpoints(
+        self, job_nr_failed_checkpoints: impl Strategy<Value = u32> + 'static,
+    ) -> Self {
         let mut new = self;
         new.job_nr_failed_checkpoints = Some(job_nr_failed_checkpoints.boxed());
         new
@@ -278,8 +305,10 @@ impl JobHealthMetricsStrategyBuilder {
         let job_max_parallelism = self.job_max_parallelism.unwrap_or(any::<u32>().boxed());
         let job_uptime_millis = self.job_uptime_millis.unwrap_or(any::<u32>().boxed());
         let job_nr_restarts = self.job_nr_restarts.unwrap_or(any::<u32>().boxed());
-        let job_nr_completed_checkpoints = self.job_nr_completed_checkpoints.unwrap_or(any::<u32>().boxed());
-        let job_nr_failed_checkpoints = self.job_nr_failed_checkpoints.unwrap_or(any::<u32>().boxed());
+        let job_nr_completed_checkpoints =
+            self.job_nr_completed_checkpoints.unwrap_or(any::<u32>().boxed());
+        let job_nr_failed_checkpoints =
+            self.job_nr_failed_checkpoints.unwrap_or(any::<u32>().boxed());
 
         (
             job_max_parallelism,
@@ -336,7 +365,9 @@ impl FlowMetricsStrategyBuilder {
         Self::default()
     }
 
-    pub fn records_in_per_sec(self, records_in_per_sec: impl Strategy<Value = f64> + 'static) -> Self {
+    pub fn records_in_per_sec(
+        self, records_in_per_sec: impl Strategy<Value = f64> + 'static,
+    ) -> Self {
         let mut new = self;
         new.records_in_per_sec = Some(records_in_per_sec.boxed());
         new
@@ -346,7 +377,9 @@ impl FlowMetricsStrategyBuilder {
         self.records_in_per_sec(Just(records_in_per_sec.into()))
     }
 
-    pub fn records_out_per_sec(self, records_out_per_sec: impl Strategy<Value = f64> + 'static) -> Self {
+    pub fn records_out_per_sec(
+        self, records_out_per_sec: impl Strategy<Value = f64> + 'static,
+    ) -> Self {
         let mut new = self;
         new.records_out_per_sec = Some(records_out_per_sec.boxed());
         new
@@ -356,7 +389,9 @@ impl FlowMetricsStrategyBuilder {
         self.records_out_per_sec(Just(records_out_per_sec.into()))
     }
 
-    pub fn idle_time_millis_per_sec(self, idle_time_millis_per_sec: impl Strategy<Value = f64> + 'static) -> Self {
+    pub fn idle_time_millis_per_sec(
+        self, idle_time_millis_per_sec: impl Strategy<Value = f64> + 'static,
+    ) -> Self {
         let mut new = self;
         new.idle_time_millis_per_sec = Some(idle_time_millis_per_sec.boxed());
         new
@@ -370,14 +405,17 @@ impl FlowMetricsStrategyBuilder {
         self, source_back_pressured_time_millie_per_sec: impl Strategy<Value = f64> + 'static,
     ) -> Self {
         let mut new = self;
-        new.source_back_pressured_time_millis_per_sec = Some(source_back_pressured_time_millie_per_sec.boxed());
+        new.source_back_pressured_time_millis_per_sec =
+            Some(source_back_pressured_time_millie_per_sec.boxed());
         new
     }
 
     pub fn just_source_back_pressured_time_millie_per_sec(
         self, source_back_pressured_time_millie_per_sec: impl Into<f64>,
     ) -> Self {
-        self.source_back_pressured_time_millie_per_sec(Just(source_back_pressured_time_millie_per_sec.into()))
+        self.source_back_pressured_time_millie_per_sec(Just(
+            source_back_pressured_time_millie_per_sec.into(),
+        ))
     }
 
     pub fn forecasted_timestamp(
@@ -388,7 +426,9 @@ impl FlowMetricsStrategyBuilder {
         new
     }
 
-    pub fn just_forecasted_timestamp(self, forecasted_timestamp: impl Into<Option<Timestamp>>) -> Self {
+    pub fn just_forecasted_timestamp(
+        self, forecasted_timestamp: impl Into<Option<Timestamp>>,
+    ) -> Self {
         self.forecasted_timestamp(Just(forecasted_timestamp.into()))
     }
 
@@ -400,17 +440,23 @@ impl FlowMetricsStrategyBuilder {
         new
     }
 
-    pub fn just_forecasted_records_in_per_sec(self, forecasted_records_in_per_sec: impl Into<Option<f64>>) -> Self {
+    pub fn just_forecasted_records_in_per_sec(
+        self, forecasted_records_in_per_sec: impl Into<Option<f64>>,
+    ) -> Self {
         self.forecasted_records_in_per_sec(Just(forecasted_records_in_per_sec.into()))
     }
 
-    pub fn source_records_lag_max(self, source_records_lag_max: impl Strategy<Value = Option<u32>> + 'static) -> Self {
+    pub fn source_records_lag_max(
+        self, source_records_lag_max: impl Strategy<Value = Option<u32>> + 'static,
+    ) -> Self {
         let mut new = self;
         new.source_records_lag_max = Some(source_records_lag_max.boxed());
         new
     }
 
-    pub fn just_source_records_lag_max(self, source_records_lag_max: impl Into<Option<u32>>) -> Self {
+    pub fn just_source_records_lag_max(
+        self, source_records_lag_max: impl Into<Option<u32>>,
+    ) -> Self {
         self.source_records_lag_max(Just(source_records_lag_max.into()))
     }
 
@@ -422,7 +468,9 @@ impl FlowMetricsStrategyBuilder {
         new
     }
 
-    pub fn just_source_assigned_partitions(self, source_assigned_partitions: impl Into<Option<u32>>) -> Self {
+    pub fn just_source_assigned_partitions(
+        self, source_assigned_partitions: impl Into<Option<u32>>,
+    ) -> Self {
         self.source_assigned_partitions(Just(source_assigned_partitions.into()))
     }
 
@@ -434,7 +482,9 @@ impl FlowMetricsStrategyBuilder {
         new
     }
 
-    pub fn just_source_records_consumed_rate(self, source_records_consumed_rate: impl Into<Option<f64>>) -> Self {
+    pub fn just_source_records_consumed_rate(
+        self, source_records_consumed_rate: impl Into<Option<f64>>,
+    ) -> Self {
         self.source_records_consumed_rate(Just(source_records_consumed_rate.into()))
     }
 
@@ -446,20 +496,27 @@ impl FlowMetricsStrategyBuilder {
         new
     }
 
-    pub fn just_source_millis_behind_latest(self, source_millis_behind_latest: impl Into<Option<u32>>) -> Self {
+    pub fn just_source_millis_behind_latest(
+        self, source_millis_behind_latest: impl Into<Option<u32>>,
+    ) -> Self {
         self.source_millis_behind_latest(Just(source_millis_behind_latest.into()))
     }
 
     pub fn finish(self) -> impl Strategy<Value = FlowMetrics> {
         let records_in_per_sec = self.records_in_per_sec.unwrap_or(any::<f64>().boxed());
         let records_out_per_sec = self.records_out_per_sec.unwrap_or(any::<f64>().boxed());
-        let idle_time_millis_per_sec = self.idle_time_millis_per_sec.unwrap_or(any::<f64>().boxed());
+        let idle_time_millis_per_sec =
+            self.idle_time_millis_per_sec.unwrap_or(any::<f64>().boxed());
         let source_back_pressured_time_millis_per_sec = self
             .source_back_pressured_time_millis_per_sec
             .unwrap_or(any::<f64>().boxed());
-        let forecasted_timestamp = self
-            .forecasted_timestamp
-            .unwrap_or(prop::option::of(arb_timestamp_after(Timestamp::now(), arb_range_duration(1..=1200))).boxed());
+        let forecasted_timestamp = self.forecasted_timestamp.unwrap_or(
+            prop::option::of(arb_timestamp_after(
+                Timestamp::now(),
+                arb_range_duration(1..=1200),
+            ))
+            .boxed(),
+        );
         let forecasted_records_in_per_sec = self
             .forecasted_records_in_per_sec
             .unwrap_or(prop::option::of(any::<f64>()).boxed());
@@ -581,7 +638,9 @@ impl ClusterMetricsStrategyBuilder {
         self.task_cpu_load(Just(task_cpu_load.into()))
     }
 
-    pub fn task_heap_memory_used(self, task_heap_memory_used: impl Strategy<Value = f64> + 'static) -> Self {
+    pub fn task_heap_memory_used(
+        self, task_heap_memory_used: impl Strategy<Value = f64> + 'static,
+    ) -> Self {
         let mut new = self;
         new.task_heap_memory_used = Some(task_heap_memory_used.boxed());
         new
@@ -591,13 +650,17 @@ impl ClusterMetricsStrategyBuilder {
         self.task_heap_memory_used(Just(task_heap_memory_used.into()))
     }
 
-    pub fn task_heap_memory_committed(self, task_heap_memory_committed: impl Strategy<Value = f64> + 'static) -> Self {
+    pub fn task_heap_memory_committed(
+        self, task_heap_memory_committed: impl Strategy<Value = f64> + 'static,
+    ) -> Self {
         let mut new = self;
         new.task_heap_memory_committed = Some(task_heap_memory_committed.boxed());
         new
     }
 
-    pub fn just_task_heap_memory_committed(self, task_heap_memory_committed: impl Into<f64>) -> Self {
+    pub fn just_task_heap_memory_committed(
+        self, task_heap_memory_committed: impl Into<f64>,
+    ) -> Self {
         self.task_heap_memory_committed(Just(task_heap_memory_committed.into()))
     }
 
@@ -619,7 +682,9 @@ impl ClusterMetricsStrategyBuilder {
         new
     }
 
-    pub fn just_task_network_input_queue_len(self, task_network_input_queue_len: impl Into<f64>) -> Self {
+    pub fn just_task_network_input_queue_len(
+        self, task_network_input_queue_len: impl Into<f64>,
+    ) -> Self {
         self.task_network_input_queue_len(Just(task_network_input_queue_len.into()))
     }
 
@@ -631,7 +696,9 @@ impl ClusterMetricsStrategyBuilder {
         new
     }
 
-    pub fn just_task_network_output_queue_len(self, task_network_output_queue_len: impl Into<f64>) -> Self {
+    pub fn just_task_network_output_queue_len(
+        self, task_network_output_queue_len: impl Into<f64>,
+    ) -> Self {
         self.task_network_output_queue_len(Just(task_network_output_queue_len.into()))
     }
 
@@ -643,7 +710,9 @@ impl ClusterMetricsStrategyBuilder {
         new
     }
 
-    pub fn just_task_network_output_pool_usage(self, task_network_output_pool_usage: impl Into<f64>) -> Self {
+    pub fn just_task_network_output_pool_usage(
+        self, task_network_output_pool_usage: impl Into<f64>,
+    ) -> Self {
         self.task_network_output_pool_usage(Just(task_network_output_pool_usage.into()))
     }
 
@@ -652,12 +721,17 @@ impl ClusterMetricsStrategyBuilder {
         let nr_task_managers = self.nr_task_managers.unwrap_or(any::<u32>().boxed());
         let task_cpu_load = self.task_cpu_load.unwrap_or(any::<f64>().boxed());
         let task_heap_memory_used = self.task_heap_memory_used.unwrap_or(any::<f64>().boxed());
-        let task_heap_memory_committed = self.task_heap_memory_committed.unwrap_or(any::<f64>().boxed());
+        let task_heap_memory_committed =
+            self.task_heap_memory_committed.unwrap_or(any::<f64>().boxed());
         let task_nr_threads = self.task_nr_threads.unwrap_or(any::<u32>().boxed());
-        let task_network_input_queue_len = self.task_network_input_queue_len.unwrap_or(any::<f64>().boxed());
-        let task_network_input_pool_usage = self.task_network_input_pool_usage.unwrap_or(any::<f64>().boxed());
-        let task_network_output_queue_len = self.task_network_output_queue_len.unwrap_or(any::<f64>().boxed());
-        let task_network_output_pool_usage = self.task_network_output_pool_usage.unwrap_or(any::<f64>().boxed());
+        let task_network_input_queue_len =
+            self.task_network_input_queue_len.unwrap_or(any::<f64>().boxed());
+        let task_network_input_pool_usage =
+            self.task_network_input_pool_usage.unwrap_or(any::<f64>().boxed());
+        let task_network_output_queue_len =
+            self.task_network_output_queue_len.unwrap_or(any::<f64>().boxed());
+        let task_network_output_pool_usage =
+            self.task_network_output_pool_usage.unwrap_or(any::<f64>().boxed());
 
         (
             nr_active_jobs,

@@ -122,7 +122,9 @@ impl ProctorContext for EligibilityContext {
 impl UpdateMetrics for EligibilityContext {
     fn update_metrics_for(phase_name: &str) -> UpdateMetricsFn {
         let phase_name = phase_name.to_string();
-        let update_fn = move |subscription_name: &str, telemetry: &Telemetry| match telemetry.clone().try_into::<Self>()
+        let update_fn = move |subscription_name: &str, telemetry: &Telemetry| match telemetry
+            .clone()
+            .try_into::<Self>()
         {
             Ok(ctx) => {
                 if let Some(last_failure_ts) = ctx.job.last_failure.map(|ts| ts.timestamp()) {
@@ -131,7 +133,8 @@ impl UpdateMetrics for EligibilityContext {
 
                 ELIGIBILITY_CTX_ALL_SINKS_HEALTHY.set(ctx.all_sinks_healthy as i64);
                 ELIGIBILITY_CTX_CLUSTER_IS_DEPLOYING.set(ctx.cluster.is_deploying as i64);
-                ELIGIBILITY_CTX_CLUSTER_LAST_DEPLOYMENT.set(ctx.cluster.last_deployment.timestamp());
+                ELIGIBILITY_CTX_CLUSTER_LAST_DEPLOYMENT
+                    .set(ctx.cluster.last_deployment.timestamp());
             },
 
             Err(err) => {

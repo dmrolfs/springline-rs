@@ -23,7 +23,8 @@ pub struct MetricSpec {
 
 impl MetricSpec {
     pub fn new(
-        metric: impl Into<String>, agg: Aggregation, telemetry_path: impl Into<String>, telemetry_type: TelemetryType,
+        metric: impl Into<String>, agg: Aggregation, telemetry_path: impl Into<String>,
+        telemetry_type: TelemetryType,
     ) -> Self {
         Self {
             metric: metric.into(),
@@ -69,10 +70,16 @@ impl PlanPositionSpec {
         match (self, candidate) {
             (Self::Any, _) => true,
             (_, PlanPositionCandidate::Any) => true,
-            (Self::Source, PlanPositionCandidate::ByName(name)) => name.starts_with(FLINK_SOURCE_PREFIX),
-            (Self::NotSource, PlanPositionCandidate::ByName(name)) => !name.starts_with(FLINK_SOURCE_PREFIX),
+            (Self::Source, PlanPositionCandidate::ByName(name)) => {
+                name.starts_with(FLINK_SOURCE_PREFIX)
+            },
+            (Self::NotSource, PlanPositionCandidate::ByName(name)) => {
+                !name.starts_with(FLINK_SOURCE_PREFIX)
+            },
             (Self::Sink, PlanPositionCandidate::ByName(name)) => name.contains(FLINK_SINK_PREFIX),
-            (Self::NotSink, PlanPositionCandidate::ByName(name)) => !name.contains(FLINK_SINK_PREFIX),
+            (Self::NotSink, PlanPositionCandidate::ByName(name)) => {
+                !name.contains(FLINK_SINK_PREFIX)
+            },
             (Self::Through, PlanPositionCandidate::ByName(name)) => {
                 !name.starts_with(FLINK_SOURCE_PREFIX) && !name.contains(FLINK_SINK_PREFIX)
             },
@@ -88,7 +95,9 @@ pub enum DerivativeCombinator {
 
 impl DerivativeCombinator {
     #[tracing::instrument(level = "trace", name = "derivative_order_combine")]
-    pub fn combine(&self, lhs: &TelemetryValue, rhs: &TelemetryValue) -> Result<TelemetryValue, TelemetryError> {
+    pub fn combine(
+        &self, lhs: &TelemetryValue, rhs: &TelemetryValue,
+    ) -> Result<TelemetryValue, TelemetryError> {
         let items = Self::do_normalize_types(lhs, rhs);
         let result = match self {
             Self::Product => combine::Product.combine(items.clone()).map(|v| v.unwrap()),
@@ -151,7 +160,8 @@ pub struct MetricCandidate<'c> {
     pub position: PlanPositionCandidate<'c>,
 }
 
-pub type MetricOrderMatcher = Box<dyn for<'c> Fn(&MetricCandidate<'c>) -> bool + Send + Sync + 'static>;
+pub type MetricOrderMatcher =
+    Box<dyn for<'c> Fn(&MetricCandidate<'c>) -> bool + Send + Sync + 'static>;
 
 impl MetricOrder {
     pub fn matches_plan_position(&self, candidate: &PlanPositionCandidate<'_>) -> bool {
@@ -324,10 +334,16 @@ impl MetricOrder {
     pub fn telemetry(&self) -> (TelemetryType, &str) {
         match self {
             Self::Job { metric: spec } => (spec.telemetry_type, spec.telemetry_path.as_str()),
-            Self::TaskManager { metric: spec } => (spec.telemetry_type, spec.telemetry_path.as_str()),
+            Self::TaskManager { metric: spec } => {
+                (spec.telemetry_type, spec.telemetry_path.as_str())
+            },
             Self::Task { metric: spec, .. } => (spec.telemetry_type, spec.telemetry_path.as_str()),
-            Self::Operator { metric: spec, .. } => (spec.telemetry_type, spec.telemetry_path.as_str()),
-            Self::Derivative { telemetry_type, telemetry_path, .. } => (*telemetry_type, telemetry_path.as_str()),
+            Self::Operator { metric: spec, .. } => {
+                (spec.telemetry_type, spec.telemetry_path.as_str())
+            },
+            Self::Derivative { telemetry_type, telemetry_path, .. } => {
+                (*telemetry_type, telemetry_path.as_str())
+            },
         }
     }
 
@@ -541,7 +557,9 @@ impl Aggregation {
 #[cfg(test)]
 mod tests {
     use crate::phases::sense::flink::metric_order::MetricCandidate;
-    use crate::phases::sense::flink::{Aggregation, MetricOrder, MetricSpec, PlanPositionCandidate, PlanPositionSpec};
+    use crate::phases::sense::flink::{
+        Aggregation, MetricOrder, MetricSpec, PlanPositionCandidate, PlanPositionSpec,
+    };
     use claim::*;
     use pretty_assertions::assert_eq;
     use proctor::elements::TelemetryType;
@@ -1058,7 +1076,10 @@ mod tests {
             },
         ];
 
-        let actual = assert_ok!(ron::ser::to_string_pretty(&data, ron::ser::PrettyConfig::default()));
+        let actual = assert_ok!(ron::ser::to_string_pretty(
+            &data,
+            ron::ser::PrettyConfig::default()
+        ));
 
         let expected = r##"|[
         |    Job({

@@ -169,8 +169,11 @@ pub(crate) static ACT_SCALE_ACTION_TIME: Lazy<HistogramVec> = Lazy::new(|| {
 
 pub(crate) static ACT_SCALE_ACTION_COUNT: Lazy<IntCounterVec> = Lazy::new(|| {
     IntCounterVec::new(
-        Opts::new("act_scale_action_count", "Count of action taken to target sizes")
-            .const_labels(proctor::metrics::CONST_LABELS.clone()),
+        Opts::new(
+            "act_scale_action_count",
+            "Count of action taken to target sizes",
+        )
+        .const_labels(proctor::metrics::CONST_LABELS.clone()),
         &["current_nr_task_managers", "target_nr_task_managers"],
     )
     .expect("failed creating act_scale_action_count metric")
@@ -183,7 +186,9 @@ pub(crate) static PIPELINE_CYCLE_TIME: Lazy<Histogram> = Lazy::new(|| {
             "cycle time processing for act actions taken on telemetry from receipt in seconds",
         )
         .const_labels(proctor::metrics::CONST_LABELS.clone())
-        .buckets(vec![0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.75, 1.0]),
+        .buckets(vec![
+            0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.75, 1.0,
+        ]),
     )
     .expect("failed creating pipeline_cycle_time metric")
 });
@@ -192,19 +197,26 @@ pub(crate) static ACT_PHASE_ERRORS: Lazy<IntCounterVec> = Lazy::new(|| {
     IntCounterVec::new(
         Opts::new("act_phase_errors", "Count of errors executing scale plans")
             .const_labels(proctor::metrics::CONST_LABELS.clone()),
-        &["current_nr_task_managers", "target_nr_task_managers", "error_type"],
+        &[
+            "current_nr_task_managers",
+            "target_nr_task_managers",
+            "error_type",
+        ],
     )
     .expect("failed creating act_phase_errors metric")
 });
 
 #[tracing::instrument(level = "trace")]
 pub fn make_logger_act_phase() -> Box<dyn SinkStage<GovernanceOutcome>> {
-    Box::new(stage::Foreach::new("actlogging_act", |plan: GovernanceOutcome| {
-        ACT_SCALE_ACTION_COUNT
-            .with_label_values(&[
-                plan.current_nr_task_managers.to_string().as_str(),
-                plan.target_nr_task_managers.to_string().as_str(),
-            ])
-            .inc();
-    }))
+    Box::new(stage::Foreach::new(
+        "actlogging_act",
+        |plan: GovernanceOutcome| {
+            ACT_SCALE_ACTION_COUNT
+                .with_label_values(&[
+                    plan.current_nr_task_managers.to_string().as_str(),
+                    plan.target_nr_task_managers.to_string().as_str(),
+                ])
+                .inc();
+        },
+    ))
 }

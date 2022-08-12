@@ -36,14 +36,17 @@ pub type DecisionPhase = (
 );
 
 #[tracing::instrument(level = "trace", skip(agent))]
-pub async fn make_decision_phase<A>(settings: &DecisionSettings, agent: &mut A) -> Result<DecisionPhase>
+pub async fn make_decision_phase<A>(
+    settings: &DecisionSettings, agent: &mut A,
+) -> Result<DecisionPhase>
 where
     A: ClearinghouseSubscriptionAgent,
 {
     let name = "decision";
     let policy = DecisionPolicy::new(settings)?;
     let subscription = policy.subscription(name, settings);
-    let decision = Box::new(PolicyPhase::with_transform(name, policy, make_decision_transform(name)).await?);
+    let decision =
+        Box::new(PolicyPhase::with_transform(name, policy, make_decision_transform(name)).await?);
     let channel = phases::subscribe_policy_phase(subscription, &decision, agent).await?;
     Ok((decision, channel))
 }

@@ -2,7 +2,9 @@ use std::collections::{HashMap, HashSet};
 
 use once_cell::sync::Lazy;
 use oso::{Oso, PolarClass, PolarValue};
-use proctor::elements::{PolicyContributor, PolicySource, PolicySubscription, QueryPolicy, QueryResult, Telemetry};
+use proctor::elements::{
+    PolicyContributor, PolicySource, PolicySubscription, QueryPolicy, QueryResult, Telemetry,
+};
 use proctor::error::PolicyError;
 use proctor::phases::sense::TelemetrySubscription;
 use proctor::ProctorContext;
@@ -81,7 +83,10 @@ impl QueryPolicy for EligibilityPolicy {
         oso.register_class(
             JobStatus::get_polar_class_builder()
                 .name("TaskStatus")
-                .add_method("last_failure_within_seconds", JobStatus::last_failure_within_seconds)
+                .add_method(
+                    "last_failure_within_seconds",
+                    JobStatus::last_failure_within_seconds,
+                )
                 .build(),
         )?;
         oso.register_class(
@@ -98,7 +103,11 @@ impl QueryPolicy for EligibilityPolicy {
     }
 
     fn make_query_args(&self, item: &Self::Item, context: &Self::Context) -> Self::Args {
-        (item.clone(), context.clone(), PolarValue::Variable(REASON.to_string()))
+        (
+            item.clone(),
+            context.clone(),
+            PolarValue::Variable(REASON.to_string()),
+        )
     }
 
     fn query_policy(&self, engine: &Oso, args: Self::Args) -> Result<QueryResult, PolicyError> {
@@ -114,7 +123,9 @@ impl QueryPolicy for EligibilityPolicy {
                 // it's cheaper to query on negative then reverse the passed status
                 query_result.passed = !query_result.passed;
                 if !query_result.passed {
-                    if let Some(reason) = query_result.bindings.get("reason").and_then(|rs| rs.first()) {
+                    if let Some(reason) =
+                        query_result.bindings.get("reason").and_then(|rs| rs.first())
+                    {
                         ELIGIBILITY_POLICY_INELIGIBLE_DECISIONS_COUNT
                             .with_label_values(&[&reason.to_string()])
                             .inc();
@@ -171,8 +182,12 @@ mod tests {
     fn test_ser_eligibility_setting() {
         let settings = EligibilitySettings {
             policies: vec![
-                assert_ok!(PolicySource::from_template_file("./resources/eligibility.polar")),
-                assert_ok!(PolicySource::from_template_file("./resources/eligibility_ext.polar")),
+                assert_ok!(PolicySource::from_template_file(
+                    "./resources/eligibility.polar"
+                )),
+                assert_ok!(PolicySource::from_template_file(
+                    "./resources/eligibility_ext.polar"
+                )),
             ],
             template_data: Some(EligibilityTemplateData {
                 policy_extension: Some("eligibility_ext".to_string()),
@@ -183,7 +198,10 @@ mod tests {
             ..EligibilitySettings::default()
         };
 
-        let rep = assert_ok!(ron::ser::to_string_pretty(&settings, ron::ser::PrettyConfig::default()));
+        let rep = assert_ok!(ron::ser::to_string_pretty(
+            &settings,
+            ron::ser::PrettyConfig::default()
+        ));
         let mut ron_deser = assert_ok!(ron::Deserializer::from_str(&rep));
         let json_rep = vec![];
         let mut json_ser = serde_json::Serializer::pretty(json_rep);
@@ -256,8 +274,12 @@ mod tests {
             actual,
             EligibilitySettings {
                 policies: vec![
-                    assert_ok!(PolicySource::from_template_file("./resources/eligibility.polar")),
-                    assert_ok!(PolicySource::from_template_file("./resources/eligibility_ext.polar")),
+                    assert_ok!(PolicySource::from_template_file(
+                        "./resources/eligibility.polar"
+                    )),
+                    assert_ok!(PolicySource::from_template_file(
+                        "./resources/eligibility_ext.polar"
+                    )),
                 ],
                 template_data: Some(EligibilityTemplateData {
                     policy_extension: Some("eligibility_ext".to_string()),

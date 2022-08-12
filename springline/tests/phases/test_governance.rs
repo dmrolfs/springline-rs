@@ -122,7 +122,9 @@ impl TestFlow {
         Ok(command_rx.1.await?)
     }
 
-    pub async fn recv_policy_event(&mut self) -> anyhow::Result<Arc<elements::PolicyFilterEvent<Data, Context>>> {
+    pub async fn recv_policy_event(
+        &mut self,
+    ) -> anyhow::Result<Arc<elements::PolicyFilterEvent<Data, Context>>> {
         Ok(self.rx_governance_monitor.recv().await?)
     }
 
@@ -153,7 +155,8 @@ impl TestFlow {
     pub async fn check_scenario(
         &mut self, label: &str, data: ScalePlan, expectation: Vec<ScalePlan>,
     ) -> anyhow::Result<()> {
-        let scenario_span = tracing::info_span!("DMR check scenario", %label, ?data, ?expectation, );
+        let scenario_span =
+            tracing::info_span!("DMR check scenario", %label, ?data, ?expectation, );
         let _ = scenario_span.enter();
 
         let timeout = Duration::from_millis(250);
@@ -248,7 +251,10 @@ impl TestFlow {
                 }
             } else {
                 tracing::error!(?timeout, "check timeout exceeded - stopping check.");
-                anyhow::bail!(format!("check {:?} timeout exceeded - stopping check.", timeout));
+                anyhow::bail!(format!(
+                    "check {:?} timeout exceeded - stopping check.",
+                    timeout
+                ));
             }
         }
 

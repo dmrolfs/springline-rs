@@ -4,7 +4,9 @@ use std::sync::Arc;
 use proctor::graph::stage::tick;
 use proctor::phases::sense::{ClearinghouseApi, ClearinghouseCmd, ClearinghouseSnapshot};
 use prometheus::{Encoder, Registry, TextEncoder};
-pub use protocol::{EngineApiError, EngineCmd, EngineServiceApi, Health, HealthReport, MetricsReport, MetricsSpan};
+pub use protocol::{
+    EngineApiError, EngineCmd, EngineServiceApi, Health, HealthReport, MetricsReport, MetricsSpan,
+};
 use regex::RegexSet;
 use tokio::sync::mpsc;
 
@@ -101,7 +103,9 @@ mod protocol {
             rx.await?
         }
 
-        pub async fn update_health(api: &EngineServiceApi, health: Health) -> Result<(), EngineApiError> {
+        pub async fn update_health(
+            api: &EngineServiceApi, health: Health,
+        ) -> Result<(), EngineApiError> {
             let (tx, rx) = oneshot::channel();
             api.send(Self::UpdateHealth(health, tx))?;
             rx.await?
@@ -384,7 +388,8 @@ impl<'r> Service<'r> {
             let metrics_families = registry.gather();
             encoder.encode(&metrics_families, &mut buffer)?;
 
-            let report = String::from_utf8(buffer).map_err(|err| EngineApiError::Handler(err.into()))?;
+            let report =
+                String::from_utf8(buffer).map_err(|err| EngineApiError::Handler(err.into()))?;
             let report = if span != &MetricsSpan::All {
                 filter_report(report, span)
             } else {
@@ -403,7 +408,9 @@ impl<'r> Service<'r> {
         &self, subscription: &Option<String>,
     ) -> Result<ClearinghouseSnapshot, EngineApiError> {
         let snapshot = match subscription.as_ref() {
-            Some(s) => ClearinghouseCmd::get_subscription_snapshot(&self.tx_clearinghouse_api, s).await,
+            Some(s) => {
+                ClearinghouseCmd::get_subscription_snapshot(&self.tx_clearinghouse_api, s).await
+            },
             None => ClearinghouseCmd::get_clearinghouse_snapshot(&self.tx_clearinghouse_api).await,
         };
 

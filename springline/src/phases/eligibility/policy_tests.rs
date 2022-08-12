@@ -14,7 +14,9 @@ use proptest::prelude::*;
 use std::collections::HashMap;
 use std::time::Duration;
 
-pub use super::{ClusterStatus, EligibilityContext, EligibilityPolicy, EligibilityTemplateData, JobStatus};
+pub use super::{
+    ClusterStatus, EligibilityContext, EligibilityPolicy, EligibilityTemplateData, JobStatus,
+};
 pub use crate::flink::{AppDataWindow, AppDataWindowBuilder, MetricCatalog};
 pub use crate::phases::policy_test_fixtures::{arb_date_time, prepare_policy_engine};
 pub use crate::settings::EligibilitySettings;
@@ -29,16 +31,22 @@ pub const COOLING_PERIOD: &str = "cooling_period";
 pub const RECENT_FAILURE: &str = "recent_failure";
 
 fn arb_policy_template_data() -> impl Strategy<Value = EligibilityTemplateData> {
-    (any::<Option<u32>>(), any::<Option<u32>>()).prop_map(|(cooling_secs, stable_secs)| EligibilityTemplateData {
-        cooling_secs,
-        stable_secs,
-        ..EligibilityTemplateData::default()
+    (any::<Option<u32>>(), any::<Option<u32>>()).prop_map(|(cooling_secs, stable_secs)| {
+        EligibilityTemplateData {
+            cooling_secs,
+            stable_secs,
+            ..EligibilityTemplateData::default()
+        }
     })
 }
 
 fn make_metric_catalog(nr_active_jobs: u32) -> MetricCatalog {
     MetricCatalog {
-        correlation_id: Id::direct(<MetricCatalog as Label>::labeler().label(), 0, "test_metric_catalog"),
+        correlation_id: Id::direct(
+            <MetricCatalog as Label>::labeler().label(),
+            0,
+            "test_metric_catalog",
+        ),
         recv_timestamp: Timestamp::now(),
         health: JobHealthMetrics {
             job_max_parallelism: Faker.fake(),

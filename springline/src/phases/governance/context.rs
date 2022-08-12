@@ -97,7 +97,9 @@ impl ProctorContext for GovernanceContext {
 impl UpdateMetrics for GovernanceContext {
     fn update_metrics_for(phase_name: &str) -> UpdateMetricsFn {
         let phase_name = phase_name.to_string();
-        let update_fn = move |subscription_name: &str, telemetry: &Telemetry| match telemetry.clone().try_into::<Self>()
+        let update_fn = move |subscription_name: &str, telemetry: &Telemetry| match telemetry
+            .clone()
+            .try_into::<Self>()
         {
             Ok(ctx) => {
                 GOVERNANCE_CTX_MIN_CLUSTER_SIZE.set(ctx.min_cluster_size as i64);
@@ -107,7 +109,10 @@ impl UpdateMetrics for GovernanceContext {
 
             Err(err) => {
                 tracing::warn!(error=?err, %phase_name, "failed to update governance context metrics on subscription: {}", subscription_name);
-                proctor::track_errors(&phase_name, &proctor::error::ProctorError::GovernancePhase(err.into()));
+                proctor::track_errors(
+                    &phase_name,
+                    &proctor::error::ProctorError::GovernancePhase(err.into()),
+                );
             },
         };
 
@@ -117,16 +122,22 @@ impl UpdateMetrics for GovernanceContext {
 
 pub static GOVERNANCE_CTX_MIN_CLUSTER_SIZE: Lazy<IntGauge> = Lazy::new(|| {
     IntGauge::with_opts(
-        Opts::new("governance_ctx_min_cluster_size", "Minimum cluster size allowed")
-            .const_labels(proctor::metrics::CONST_LABELS.clone()),
+        Opts::new(
+            "governance_ctx_min_cluster_size",
+            "Minimum cluster size allowed",
+        )
+        .const_labels(proctor::metrics::CONST_LABELS.clone()),
     )
     .expect("failed creating governance_ctx_min_cluster_size metric")
 });
 
 pub static GOVERNANCE_CTX_MAX_CLUSTER_SIZE: Lazy<IntGauge> = Lazy::new(|| {
     IntGauge::with_opts(
-        Opts::new("governance_ctx_max_cluster_size", "Maximum cluster size allowed")
-            .const_labels(proctor::metrics::CONST_LABELS.clone()),
+        Opts::new(
+            "governance_ctx_max_cluster_size",
+            "Maximum cluster size allowed",
+        )
+        .const_labels(proctor::metrics::CONST_LABELS.clone()),
     )
     .expect("failed creating governance_ctx_max_cluster_size metric")
 });

@@ -83,7 +83,10 @@ impl PolicyContributor for MetricCatalog {
         engine.register_class(
             ClusterMetrics::get_polar_class_builder()
                 .name("ClusterMetrics")
-                .add_method("task_heap_memory_load", ClusterMetrics::task_heap_memory_load)
+                .add_method(
+                    "task_heap_memory_load",
+                    ClusterMetrics::task_heap_memory_load,
+                )
                 .add_method(
                     "task_network_input_utilization",
                     ClusterMetrics::task_network_input_utilization,
@@ -258,7 +261,11 @@ pub struct FlowMetrics {
     pub source_assigned_partitions: Option<u32>,
 
     #[polar(attribute)]
-    #[serde(default, rename = "flow.source_total_lag", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        rename = "flow.source_total_lag",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub source_total_lag: Option<u32>,
 
     /// The rate at which the job processes records, which is calculated by summing the
@@ -291,7 +298,9 @@ impl fmt::Debug for FlowMetrics {
         );
         out.field("task_utilization", &self.task_utilization());
 
-        if let Some((ts, recs_in_rate)) = self.forecasted_timestamp.zip(self.forecasted_records_in_per_sec) {
+        if let Some((ts, recs_in_rate)) =
+            self.forecasted_timestamp.zip(self.forecasted_records_in_per_sec)
+        {
             out.field("forecasted_timestamp", &ts.to_string());
             out.field("forecasted_records_in_per_sec", &recs_in_rate);
         }
@@ -463,14 +472,32 @@ impl fmt::Debug for ClusterMetrics {
             .field("nr_task_managers", &self.nr_task_managers)
             .field("task_cpu_load", &self.task_cpu_load)
             .field("task_heap_memory_used", &self.task_heap_memory_used)
-            .field("task_heap_memory_committed", &self.task_heap_memory_committed)
+            .field(
+                "task_heap_memory_committed",
+                &self.task_heap_memory_committed,
+            )
             .field("task_heap_memory_load", &self.task_heap_memory_load())
             .field("task_nr_threads", &self.task_nr_threads)
-            .field("task_network_input_queue_len", &self.task_network_input_queue_len)
-            .field("task_network_input_pool_usage", &self.task_network_input_pool_usage)
-            .field("task_network_input_utilization", &self.task_network_input_utilization())
-            .field("task_network_output_queue_len", &self.task_network_output_queue_len)
-            .field("task_network_output_pool_usage", &self.task_network_output_pool_usage)
+            .field(
+                "task_network_input_queue_len",
+                &self.task_network_input_queue_len,
+            )
+            .field(
+                "task_network_input_pool_usage",
+                &self.task_network_input_pool_usage,
+            )
+            .field(
+                "task_network_input_utilization",
+                &self.task_network_input_utilization(),
+            )
+            .field(
+                "task_network_output_queue_len",
+                &self.task_network_output_queue_len,
+            )
+            .field(
+                "task_network_output_pool_usage",
+                &self.task_network_output_pool_usage,
+            )
             .field(
                 "task_network_output_utilization",
                 &self.task_network_output_utilization(),
@@ -579,7 +606,9 @@ impl SubscriptionRequirements for MetricCatalog {
 impl UpdateMetrics for MetricCatalog {
     fn update_metrics_for(name: &str) -> UpdateMetricsFn {
         let phase_name = name.to_string();
-        let update_fn = move |subscription_name: &str, telemetry: &Telemetry| match telemetry.clone().try_into::<Self>()
+        let update_fn = move |subscription_name: &str, telemetry: &Telemetry| match telemetry
+            .clone()
+            .try_into::<Self>()
         {
             Ok(catalog) => {
                 METRIC_CATALOG_TIMESTAMP.set(catalog.recv_timestamp.as_secs());
@@ -588,11 +617,13 @@ impl UpdateMetrics for MetricCatalog {
                 METRIC_CATALOG_JOB_HEALTH_NR_RESTARTS.set(catalog.health.job_nr_restarts.into());
                 METRIC_CATALOG_JOB_HEALTH_NR_COMPLETED_CHECKPOINTS
                     .set(catalog.health.job_nr_completed_checkpoints.into());
-                METRIC_CATALOG_JOB_HEALTH_NR_FAILED_CHECKPOINTS.set(catalog.health.job_nr_failed_checkpoints.into());
+                METRIC_CATALOG_JOB_HEALTH_NR_FAILED_CHECKPOINTS
+                    .set(catalog.health.job_nr_failed_checkpoints.into());
 
                 METRIC_CATALOG_FLOW_RECORDS_IN_PER_SEC.set(catalog.flow.records_in_per_sec);
                 METRIC_CATALOG_FLOW_RECORDS_OUT_PER_SEC.set(catalog.flow.records_out_per_sec);
-                METRIC_CATALOG_FLOW_IDLE_TIME_MILLIS_PER_SEC.set(catalog.flow.idle_time_millis_per_sec);
+                METRIC_CATALOG_FLOW_IDLE_TIME_MILLIS_PER_SEC
+                    .set(catalog.flow.idle_time_millis_per_sec);
                 METRIC_CATALOG_FLOW_SOURCE_BACK_PRESSURE_TIME_MILLIS_PER_SEC
                     .set(catalog.flow.source_back_pressured_time_millis_per_sec);
                 METRIC_CATALOG_FLOW_TASK_UTILIZATION.set(catalog.flow.task_utilization());
@@ -618,14 +649,20 @@ impl UpdateMetrics for MetricCatalog {
                 }
 
                 METRIC_CATALOG_CLUSTER_NR_ACTIVE_JOBS.set(catalog.cluster.nr_active_jobs.into());
-                METRIC_CATALOG_CLUSTER_NR_TASK_MANAGERS.set(catalog.cluster.nr_task_managers.into());
+                METRIC_CATALOG_CLUSTER_NR_TASK_MANAGERS
+                    .set(catalog.cluster.nr_task_managers.into());
                 METRIC_CATALOG_CLUSTER_TASK_CPU_LOAD.set(catalog.cluster.task_cpu_load);
-                METRIC_CATALOG_CLUSTER_TASK_HEAP_MEMORY_USED.set(catalog.cluster.task_heap_memory_used);
-                METRIC_CATALOG_CLUSTER_TASK_HEAP_MEMORY_COMMITTED.set(catalog.cluster.task_heap_memory_committed);
+                METRIC_CATALOG_CLUSTER_TASK_HEAP_MEMORY_USED
+                    .set(catalog.cluster.task_heap_memory_used);
+                METRIC_CATALOG_CLUSTER_TASK_HEAP_MEMORY_COMMITTED
+                    .set(catalog.cluster.task_heap_memory_committed);
                 METRIC_CATALOG_CLUSTER_TASK_NR_THREADS.set(catalog.cluster.task_nr_threads.into());
-                METRIC_CATALOG_CLUSTER_TASK_NETWORK_INPUT_QUEUE_LEN.set(catalog.cluster.task_network_input_queue_len);
-                METRIC_CATALOG_CLUSTER_TASK_NETWORK_INPUT_POOL_USAGE.set(catalog.cluster.task_network_input_pool_usage);
-                METRIC_CATALOG_CLUSTER_TASK_NETWORK_OUTPUT_QUEUE_LEN.set(catalog.cluster.task_network_output_queue_len);
+                METRIC_CATALOG_CLUSTER_TASK_NETWORK_INPUT_QUEUE_LEN
+                    .set(catalog.cluster.task_network_input_queue_len);
+                METRIC_CATALOG_CLUSTER_TASK_NETWORK_INPUT_POOL_USAGE
+                    .set(catalog.cluster.task_network_input_pool_usage);
+                METRIC_CATALOG_CLUSTER_TASK_NETWORK_OUTPUT_QUEUE_LEN
+                    .set(catalog.cluster.task_network_output_queue_len);
                 METRIC_CATALOG_CLUSTER_TASK_NETWORK_OUTPUT_POOL_USAGE
                     .set(catalog.cluster.task_network_output_pool_usage);
             },
@@ -730,16 +767,17 @@ pub static METRIC_CATALOG_FLOW_IDLE_TIME_MILLIS_PER_SEC: Lazy<Gauge> = Lazy::new
     .expect("failed creating metric_catalog_flow_idle_time_millis_per_sec metric")
 });
 
-pub static METRIC_CATALOG_FLOW_SOURCE_BACK_PRESSURE_TIME_MILLIS_PER_SEC: Lazy<Gauge> = Lazy::new(|| {
-    Gauge::with_opts(
-        Opts::new(
-            "metric_catalog_flow_source_back_pressure_time_millis_per_sec",
-            "Average source back pressure time in millis per second",
+pub static METRIC_CATALOG_FLOW_SOURCE_BACK_PRESSURE_TIME_MILLIS_PER_SEC: Lazy<Gauge> =
+    Lazy::new(|| {
+        Gauge::with_opts(
+            Opts::new(
+                "metric_catalog_flow_source_back_pressure_time_millis_per_sec",
+                "Average source back pressure time in millis per second",
+            )
+            .const_labels(proctor::metrics::CONST_LABELS.clone()),
         )
-        .const_labels(proctor::metrics::CONST_LABELS.clone()),
-    )
-    .expect("failed creating metric_catalog_flow_back_pressure_time_millis_per_sec metric")
-});
+        .expect("failed creating metric_catalog_flow_back_pressure_time_millis_per_sec metric")
+    });
 
 pub static METRIC_CATALOG_FLOW_TASK_UTILIZATION: Lazy<Gauge> = Lazy::new(|| {
     Gauge::with_opts(

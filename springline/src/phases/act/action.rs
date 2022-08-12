@@ -29,7 +29,9 @@ pub trait ScaleAction: Debug + Send + Sync {
     type In: AppData + ScaleActionPlan;
     fn label(&self) -> &str;
     fn check_preconditions(&self, session: &ActionSession) -> Result<(), ActError>;
-    async fn execute<'s>(&self, plan: &'s Self::In, session: &'s mut ActionSession) -> Result<(), ActError>;
+    async fn execute<'s>(
+        &self, plan: &'s Self::In, session: &'s mut ActionSession,
+    ) -> Result<(), ActError>;
 }
 
 pub const ACTION_TOTAL_DURATION: &str = "total_duration";

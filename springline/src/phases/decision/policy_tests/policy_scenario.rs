@@ -32,7 +32,11 @@ impl PolicyScenario {
     #[tracing::instrument(level = "debug")]
     pub fn run(&self) -> Result<QueryResult, PolicyError> {
         let context = DecisionContext {
-            correlation_id: Id::direct(<DecisionContext as Label>::labeler().label(), 0, "test_doesnt_crash"),
+            correlation_id: Id::direct(
+                <DecisionContext as Label>::labeler().label(),
+                0,
+                "test_doesnt_crash",
+            ),
             recv_timestamp: Timestamp::now(),
             custom: Default::default(),
         };
@@ -80,7 +84,9 @@ impl PolicyScenarioBuilder {
     }
 
     #[tracing::instrument(level = "debug", skip(template_data))]
-    pub fn template_data(self, template_data: impl Strategy<Value = Option<DecisionTemplateData>> + 'static) -> Self {
+    pub fn template_data(
+        self, template_data: impl Strategy<Value = Option<DecisionTemplateData>> + 'static,
+    ) -> Self {
         let template_data = template_data.boxed();
         tracing::info!("template_data={template_data:?}");
 
@@ -89,12 +95,16 @@ impl PolicyScenarioBuilder {
         new
     }
 
-    pub fn just_template_data(self, template_data: impl Into<Option<DecisionTemplateData>>) -> Self {
+    pub fn just_template_data(
+        self, template_data: impl Into<Option<DecisionTemplateData>>,
+    ) -> Self {
         self.template_data(Just(template_data.into()))
     }
 
     #[tracing::instrument(level = "debug", skip(items))]
-    pub fn items(self, items: impl Strategy<Value = AppDataWindow<MetricCatalog>> + 'static) -> Self {
+    pub fn items(
+        self, items: impl Strategy<Value = AppDataWindow<MetricCatalog>> + 'static,
+    ) -> Self {
         let items = items.boxed();
         tracing::info!("items={items:?}");
 
@@ -109,7 +119,8 @@ impl PolicyScenarioBuilder {
 
     #[tracing::instrument(level = "debug", skip(item, window))]
     pub fn one_item(
-        self, item: impl Strategy<Value = MetricCatalog> + 'static, window: impl Strategy<Value = Duration> + 'static,
+        self, item: impl Strategy<Value = MetricCatalog> + 'static,
+        window: impl Strategy<Value = Duration> + 'static,
     ) -> Self {
         let items = (item, window)
             .prop_map(|(item, window)| AppDataWindow::from_time_window(item, window))
@@ -120,7 +131,9 @@ impl PolicyScenarioBuilder {
         new
     }
 
-    pub fn just_one_item(self, item: impl Into<MetricCatalog>, window: impl Into<Duration>) -> Self {
+    pub fn just_one_item(
+        self, item: impl Into<MetricCatalog>, window: impl Into<Duration>,
+    ) -> Self {
         self.one_item(Just(item.into()), Just(window.into()))
     }
 

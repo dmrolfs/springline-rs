@@ -6,7 +6,8 @@ use proctor::elements::{RecordsPerSecond, Timestamp};
 use proctor::graph::{Connect, SinkShape, SourceShape};
 use proctor::phases::plan::{Plan, Planning};
 use proctor::phases::sense::{
-    ClearinghouseSubscriptionAgent, SubscriptionChannel, SubscriptionRequirements, TelemetrySubscription,
+    ClearinghouseSubscriptionAgent, SubscriptionChannel, SubscriptionRequirements,
+    TelemetrySubscription,
 };
 use proctor::AppData;
 use prometheus::{Gauge, Opts};
@@ -30,7 +31,9 @@ pub use context::{
     PLANNING_CTX_FORECASTING_MAX_CATCH_UP_SECS, PLANNING_CTX_FORECASTING_RECOVERY_VALID_SECS,
     PLANNING_CTX_FORECASTING_RESTART_SECS, PLANNING_CTX_MIN_SCALING_STEP,
 };
-pub use forecast::{ForecastInputs, Forecaster, LeastSquaresWorkloadForecaster, SpikeSettings, WorkloadMeasurement};
+pub use forecast::{
+    ForecastInputs, Forecaster, LeastSquaresWorkloadForecaster, SpikeSettings, WorkloadMeasurement,
+};
 pub use model::ScalePlan;
 pub use performance_history::PerformanceHistory;
 pub use performance_repository::make_performance_repository;
@@ -111,14 +114,13 @@ pub(crate) static PLANNING_FORECASTED_WORKLOAD: Lazy<Gauge> = Lazy::new(|| {
     .expect("failed creating planning_forecasted_workload metric")
 });
 
-pub(crate) static PLANNING_RECOVERY_WORKLOAD_RATE: Lazy<Gauge> =
-    Lazy::new(|| {
-        Gauge::with_opts(Opts::new(
+pub(crate) static PLANNING_RECOVERY_WORKLOAD_RATE: Lazy<Gauge> = Lazy::new(|| {
+    Gauge::with_opts(Opts::new(
         "planning_recovery_workload_rate",
         "workload rate (records per second) required to recover from restart, included processing buffered records",
     ).const_labels(proctor::metrics::CONST_LABELS.clone()))
     .expect("failed creating planning_recovery_workload_rate metric")
-    });
+});
 
 pub(crate) static PLANNING_VALID_WORKLOAD_RATE: Lazy<Gauge> = Lazy::new(|| {
     Gauge::with_opts(
@@ -146,7 +148,9 @@ where
 }
 
 #[tracing::instrument(level = "trace")]
-async fn do_make_planning_strategy(name: &str, plan_settings: &PlanSettings) -> Result<PlanningStrategy> {
+async fn do_make_planning_strategy(
+    name: &str, plan_settings: &PlanSettings,
+) -> Result<PlanningStrategy> {
     let inputs = ForecastInputs::from_settings(plan_settings)?;
     let planning = PlanningStrategy::new(
         name,

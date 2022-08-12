@@ -78,7 +78,9 @@ impl PerformanceHistory {
         neighbors
     }
 
-    fn make_neighbors(&self, lo: Option<Benchmark>, hi: Option<Benchmark>) -> Option<BenchNeighbors> {
+    fn make_neighbors(
+        &self, lo: Option<Benchmark>, hi: Option<Benchmark>,
+    ) -> Option<BenchNeighbors> {
         match (lo, hi) {
             (None, None) => None,
             (Some(mark), None) => Some(BenchNeighbors::AboveHighest(mark)),
@@ -129,7 +131,10 @@ impl BenchNeighbors {
         let calculated = (ratio * workload_rate).ceil() as usize;
         tracing::debug!(%ratio, %calculated, "calculations: {} ceil:{}", ratio * workload_rate, (ratio * workload_rate).ceil());
 
-        let size = cmp::min(lo.nr_task_managers, cmp::max(MINIMAL_CLUSTER_SIZE, calculated));
+        let size = cmp::min(
+            lo.nr_task_managers,
+            cmp::max(MINIMAL_CLUSTER_SIZE, calculated),
+        );
         tracing::debug!(%size, %ratio, %calculated, "extrapolated cluster size below lowest neighbor.");
         size
     }
@@ -190,13 +195,17 @@ mod tests {
         performance_history.add_lower_benchmark(Benchmark::new(4, 1.0.into()));
         assert_eq!(
             performance_history,
-            PerformanceHistory(maplit::btreemap! { 4 => BenchmarkRange::new(4, Some(1.0.into()), None), })
+            PerformanceHistory(
+                maplit::btreemap! { 4 => BenchmarkRange::new(4, Some(1.0.into()), None), }
+            )
         );
 
         performance_history.add_lower_benchmark(Benchmark::new(4, 3.0.into()));
         assert_eq!(
             performance_history,
-            PerformanceHistory(maplit::btreemap! { 4 => BenchmarkRange::new(4, Some(3.0.into()), None), })
+            PerformanceHistory(
+                maplit::btreemap! { 4 => BenchmarkRange::new(4, Some(3.0.into()), None), }
+            )
         );
 
         performance_history.add_lower_benchmark(Benchmark::new(2, 0.5.into()));
@@ -232,13 +241,17 @@ mod tests {
         performance_history.add_upper_benchmark(Benchmark::new(4, 1.0.into()));
         assert_eq!(
             performance_history,
-            PerformanceHistory(maplit::btreemap! { 4 => BenchmarkRange::new(4, None, Some(1.0.into())), })
+            PerformanceHistory(
+                maplit::btreemap! { 4 => BenchmarkRange::new(4, None, Some(1.0.into())), }
+            )
         );
 
         performance_history.add_upper_benchmark(Benchmark::new(4, 3.0.into()));
         assert_eq!(
             performance_history,
-            PerformanceHistory(maplit::btreemap! { 4 => BenchmarkRange::new(4, None, Some(3.0.into())), })
+            PerformanceHistory(
+                maplit::btreemap! { 4 => BenchmarkRange::new(4, None, Some(3.0.into())), }
+            )
         );
 
         performance_history.add_upper_benchmark(Benchmark::new(2, 0.5.into()));
@@ -273,19 +286,25 @@ mod tests {
         performance_history.add_upper_benchmark(Benchmark::new(4, 5.0.into()));
         assert_eq!(
             performance_history,
-            PerformanceHistory(maplit::btreemap! { 4 => BenchmarkRange::new(4, Some(1.0.into()), Some(5.0.into())), }),
+            PerformanceHistory(
+                maplit::btreemap! { 4 => BenchmarkRange::new(4, Some(1.0.into()), Some(5.0.into())), }
+            ),
         );
 
         performance_history.add_lower_benchmark(Benchmark::new(4, 7.0.into()));
         assert_eq!(
             performance_history,
-            PerformanceHistory(maplit::btreemap! { 4 => BenchmarkRange::new(4, Some(7.0.into()), None), })
+            PerformanceHistory(
+                maplit::btreemap! { 4 => BenchmarkRange::new(4, Some(7.0.into()), None), }
+            )
         );
 
         performance_history.add_upper_benchmark(Benchmark::new(4, 2.5.into()));
         assert_eq!(
             performance_history,
-            PerformanceHistory(maplit::btreemap! { 4 => BenchmarkRange::new(4, None, Some(2.5.into())) })
+            PerformanceHistory(
+                maplit::btreemap! { 4 => BenchmarkRange::new(4, None, Some(2.5.into())) }
+            )
         );
 
         Ok(())
@@ -458,7 +477,10 @@ mod tests {
         let _main_span_guard = main_span.enter();
 
         let mut performance_history = PerformanceHistory::default();
-        assert_eq!(None, performance_history.cluster_size_for_workload(1_000_000.0.into()));
+        assert_eq!(
+            None,
+            performance_history.cluster_size_for_workload(1_000_000.0.into())
+        );
 
         performance_history.add_upper_benchmark(Benchmark::new(2, 3.0.into()));
 
@@ -472,24 +494,72 @@ mod tests {
         performance_history.add_upper_benchmark(Benchmark::new(12, 25.0.into()));
 
         tracing::info!("STARTING ASSERTIONS...");
-        assert_eq!(Some(1), performance_history.cluster_size_for_workload(1.05.into()));
-        assert_eq!(Some(2), performance_history.cluster_size_for_workload(1.75.into()));
-        assert_eq!(Some(2), performance_history.cluster_size_for_workload(2.75.into()));
-        assert_eq!(Some(3), performance_history.cluster_size_for_workload(3.2.into()));
-        assert_eq!(Some(4), performance_history.cluster_size_for_workload(3.75.into()));
-        assert_eq!(Some(6), performance_history.cluster_size_for_workload(5.0.into()));
-        assert_eq!(Some(6), performance_history.cluster_size_for_workload(10.0.into()));
-        assert_eq!(Some(7), performance_history.cluster_size_for_workload(11.0.into()));
-        assert_eq!(Some(8), performance_history.cluster_size_for_workload(12.0.into()));
-        assert_eq!(Some(8), performance_history.cluster_size_for_workload(13.0.into()));
-        assert_eq!(Some(9), performance_history.cluster_size_for_workload(14.0.into()));
-        assert_eq!(Some(9), performance_history.cluster_size_for_workload(15.0.into()));
+        assert_eq!(
+            Some(1),
+            performance_history.cluster_size_for_workload(1.05.into())
+        );
+        assert_eq!(
+            Some(2),
+            performance_history.cluster_size_for_workload(1.75.into())
+        );
+        assert_eq!(
+            Some(2),
+            performance_history.cluster_size_for_workload(2.75.into())
+        );
+        assert_eq!(
+            Some(3),
+            performance_history.cluster_size_for_workload(3.2.into())
+        );
+        assert_eq!(
+            Some(4),
+            performance_history.cluster_size_for_workload(3.75.into())
+        );
+        assert_eq!(
+            Some(6),
+            performance_history.cluster_size_for_workload(5.0.into())
+        );
+        assert_eq!(
+            Some(6),
+            performance_history.cluster_size_for_workload(10.0.into())
+        );
+        assert_eq!(
+            Some(7),
+            performance_history.cluster_size_for_workload(11.0.into())
+        );
+        assert_eq!(
+            Some(8),
+            performance_history.cluster_size_for_workload(12.0.into())
+        );
+        assert_eq!(
+            Some(8),
+            performance_history.cluster_size_for_workload(13.0.into())
+        );
+        assert_eq!(
+            Some(9),
+            performance_history.cluster_size_for_workload(14.0.into())
+        );
+        assert_eq!(
+            Some(9),
+            performance_history.cluster_size_for_workload(15.0.into())
+        );
 
-        assert_eq!(Some(10), performance_history.cluster_size_for_workload(18.0.into()));
-        assert_eq!(Some(11), performance_history.cluster_size_for_workload(21.0.into()));
-        assert_eq!(Some(12), performance_history.cluster_size_for_workload(24.0.into()));
+        assert_eq!(
+            Some(10),
+            performance_history.cluster_size_for_workload(18.0.into())
+        );
+        assert_eq!(
+            Some(11),
+            performance_history.cluster_size_for_workload(21.0.into())
+        );
+        assert_eq!(
+            Some(12),
+            performance_history.cluster_size_for_workload(24.0.into())
+        );
 
-        assert_eq!(Some(48), performance_history.cluster_size_for_workload(100.0.into()));
+        assert_eq!(
+            Some(48),
+            performance_history.cluster_size_for_workload(100.0.into())
+        );
 
         Ok(())
     }

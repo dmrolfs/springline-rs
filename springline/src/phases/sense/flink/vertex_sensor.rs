@@ -20,7 +20,8 @@ use url::Url;
 
 use super::{api_model, metric_order, Aggregation, MetricOrder, Unpack};
 use crate::flink::{
-    self, JobDetail, JobId, JobSummary, VertexDetail, MC_CLUSTER__NR_ACTIVE_JOBS, MC_HEALTH__JOB_MAX_PARALLELISM,
+    self, JobDetail, JobId, JobSummary, VertexDetail, MC_CLUSTER__NR_ACTIVE_JOBS,
+    MC_HEALTH__JOB_MAX_PARALLELISM,
 };
 use crate::phases::sense::flink::api_model::FlinkMetricResponse;
 use crate::phases::sense::flink::metric_order::MetricOrderMatcher;
@@ -175,19 +176,28 @@ where
                         .map_err(|err| SenseError::Api("query_active_jobs".to_string(), err.into()))
                         .and_then(|active_jobs| async {
                             let nr_active_jobs = active_jobs.len();
-                            let metric_telemetry = Arc::new(Mutex::new(HashMap::with_capacity(nr_active_jobs + 1)));
+                            let metric_telemetry =
+                                Arc::new(Mutex::new(HashMap::with_capacity(nr_active_jobs + 1)));
 
-                            let _vertex_gather_tasks: Vec<()> =
-                                futures::future::join_all(active_jobs.into_iter().map(|job| async {
-                                    self.gather_vertex_telemetry(job, metric_telemetry.clone(), &correlation)
-                                        .await
-                                }))
-                                .await;
+                            let _vertex_gather_tasks: Vec<()> = futures::future::join_all(
+                                active_jobs.into_iter().map(|job| async {
+                                    self.gather_vertex_telemetry(
+                                        job,
+                                        metric_telemetry.clone(),
+                                        &correlation,
+                                    )
+                                    .await
+                                }),
+                            )
+                            .await;
 
                             let groups = metric_telemetry.lock().await.drain().collect();
                             super::consolidate_active_job_telemetry_for_order(groups, &self.orders)
                                 .map(|mut telemetry| {
-                                    telemetry.insert(MC_CLUSTER__NR_ACTIVE_JOBS.to_string(), nr_active_jobs.into());
+                                    telemetry.insert(
+                                        MC_CLUSTER__NR_ACTIVE_JOBS.to_string(),
+                                        nr_active_jobs.into(),
+                                    );
                                     telemetry
                                 })
                                 .and_then(Out::unpack)
@@ -196,9 +206,13 @@ where
                         .instrument(tracing::debug_span!("Flink REST API - vertex metrics"))
                         .await;
 
-                    super::identity_or_track_error(FlinkScope::Task, out).or_else(|_err| Ok(Out::default()))
+                    super::identity_or_track_error(FlinkScope::Task, out)
+                        .or_else(|_err| Ok(Out::default()))
                 })
-                .instrument(tracing::debug_span!("collect Flink vertex telemetry", ?correlation))
+                .instrument(tracing::debug_span!(
+                    "collect Flink vertex telemetry",
+                    ?correlation
+                ))
                 .await;
 
             let _ = super::identity_or_track_error(FlinkScope::Task, send_telemetry);
@@ -216,13 +230,18 @@ where
             Ok(detail) => {
                 let job_detail_telemetry = self.extract_job_detail_telemetry(&detail, correlation);
                 if !job_detail_telemetry.is_empty() {
-                    tracing::debug!(?job_detail_telemetry, "adding vertex sensor job_detail telemetry.");
+                    tracing::debug!(
+                        ?job_detail_telemetry,
+                        "adding vertex sensor job_detail telemetry."
+                    );
                     let mut groups = metric_telemetry.lock().await;
                     super::merge_into_metric_groups(&mut *groups, job_detail_telemetry);
                 }
 
                 for vertex in detail.vertices.into_iter().filter(|v| v.status.is_active()) {
-                    if let Ok(vertex_telemetry) = self.query_vertex_telemetry(&job.id, &vertex, correlation).await {
+                    if let Ok(vertex_telemetry) =
+                        self.query_vertex_telemetry(&job.id, &vertex, correlation).await
+                    {
                         tracing::debug!(job_id=?job.id, vertex_id=?vertex.id, ?vertex_telemetry, "adding vertex sensor telemetry.");
                         let mut groups = metric_telemetry.lock().await;
                         super::merge_into_metric_groups(&mut *groups, vertex_telemetry);
@@ -236,12 +255,17 @@ where
     }
 
     #[tracing::instrument(level = "trace", skip(self, job_detail))]
-    fn extract_job_detail_telemetry(&self, job_detail: &JobDetail, _correlation: &CorrelationId) -> Telemetry {
+    fn extract_job_detail_telemetry(
+        &self, job_detail: &JobDetail, _correlation: &CorrelationId,
+    ) -> Telemetry {
         let mut telemetry = Telemetry::new();
 
         let max_parallelism = job_detail.plan.nodes.iter().map(|n| n.parallelism).max_by(u32::cmp);
         if let Some(job_max_parallelism) = max_parallelism {
-            telemetry.insert(MC_HEALTH__JOB_MAX_PARALLELISM.to_string(), job_max_parallelism.into());
+            telemetry.insert(
+                MC_HEALTH__JOB_MAX_PARALLELISM.to_string(),
+                job_max_parallelism.into(),
+            );
         }
 
         telemetry
@@ -279,7 +303,11 @@ where
         &self, vertex: &VertexDetail, vertex_metrics_url: Url, correlation: &CorrelationId,
     ) -> Result<Vec<String>, SenseError> {
         let _timer = start_flink_vertex_sensor_metric_picklist_time();
-        let span = tracing::debug_span!("query Flink vertex metric picklist", ?correlation, ?vertex_metrics_url);
+        let span = tracing::debug_span!(
+            "query Flink vertex metric picklist",
+            ?correlation,
+            ?vertex_metrics_url
+        );
 
         let picklist: Result<Vec<String>, SenseError> = self
             .context
@@ -321,7 +349,8 @@ where
 
     #[tracing::instrument(level = "trace", skip(self, picklist, vertex_metrics_url))]
     async fn do_query_vertex_available_telemetry(
-        &self, vertex: &VertexDetail, picklist: Vec<String>, mut vertex_metrics_url: Url, correlation: &CorrelationId,
+        &self, vertex: &VertexDetail, picklist: Vec<String>, mut vertex_metrics_url: Url,
+        correlation: &CorrelationId,
     ) -> Result<Telemetry, SenseError> {
         let agg_span = self.agg_span_for(vertex, &picklist);
         let vertex_position_candidate = PlanPositionCandidate::ByName(&vertex.name);
@@ -436,7 +465,9 @@ pub static FLINK_VERTEX_SENSOR_TIME: Lazy<HistogramVec> = Lazy::new(|| {
             "Time spent collecting vertex telemetry from Flink in seconds",
         )
         .const_labels(proctor::metrics::CONST_LABELS.clone())
-        .buckets(vec![0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0, 5.0]),
+        .buckets(vec![
+            0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0, 5.0,
+        ]),
         &["flink_scope"],
     )
     .expect("failed creating flink_vertex_sensor_time metric")
@@ -454,7 +485,9 @@ pub static FLINK_VERTEX_SENSOR_METRIC_PICKLIST_TIME: Lazy<HistogramVec> = Lazy::
             "Time spent getting the vertex metric picklist Flink in seconds",
         )
         .const_labels(proctor::metrics::CONST_LABELS.clone())
-        .buckets(vec![0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.75, 1.0, 2.5, 5.0]),
+        .buckets(vec![
+            0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.75, 1.0, 2.5, 5.0,
+        ]),
         &["flink_scope"],
     )
     .expect("failed creating flink_vertex_sensor_metric_picklist_time metric")
@@ -474,7 +507,9 @@ pub static FLINK_VERTEX_SENSOR_AVAIL_TELEMETRY_TIME: Lazy<HistogramVec> = Lazy::
             "Time spent collecting available vertex metrics from Flink in seconds",
         )
         .const_labels(proctor::metrics::CONST_LABELS.clone())
-        .buckets(vec![0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.75, 1.0, 2.5, 5.0]),
+        .buckets(vec![
+            0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.75, 1.0, 2.5, 5.0,
+        ]),
         &["flink_scope"],
     )
     .expect("failed creating flink_vertex_sensor_avail_telemetry_time metric")
@@ -516,7 +551,12 @@ mod tests {
 
     impl RetryResponder {
         fn new(retries: u32, fail_status_code: u16, success_template: ResponseTemplate) -> Self {
-            Self(Arc::new(AtomicU32::new(0)), retries, success_template, fail_status_code)
+            Self(
+                Arc::new(AtomicU32::new(0)),
+                retries,
+                success_template,
+                fail_status_code,
+            )
         }
     }
 
@@ -551,7 +591,11 @@ mod tests {
 
     async fn test_stage_for(
         orders: &[MetricOrder], context: FlinkContext,
-    ) -> (VertexSensor<Telemetry>, mpsc::Sender<()>, mpsc::Receiver<Telemetry>) {
+    ) -> (
+        VertexSensor<Telemetry>,
+        mpsc::Sender<()>,
+        mpsc::Receiver<Telemetry>,
+    ) {
         let correlation_gen = CorrelationGenerator::default();
         let mut stage = assert_ok!(VertexSensor::new(orders, context, correlation_gen));
         let (tx_trigger, rx_trigger) = mpsc::channel(1);
@@ -790,7 +834,11 @@ mod tests {
 
             let actual = assert_ok!(
                 stage
-                    .query_vertex_telemetry(&job_id, &vertex, &Id::direct("test_query_vertex_telemetry", 23, "CBA"))
+                    .query_vertex_telemetry(
+                        &job_id,
+                        &vertex,
+                        &Id::direct("test_query_vertex_telemetry", 23, "CBA")
+                    )
                     .await
             );
 

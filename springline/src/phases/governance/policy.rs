@@ -1,7 +1,9 @@
 use std::collections::{HashMap, HashSet};
 
 use oso::{Oso, PolarClass, PolarValue};
-use proctor::elements::{PolicyContributor, PolicySource, PolicySubscription, QueryPolicy, QueryResult, Telemetry};
+use proctor::elements::{
+    PolicyContributor, PolicySource, PolicySubscription, QueryPolicy, QueryResult, Telemetry,
+};
 use proctor::error::PolicyError;
 use proctor::phases::sense::TelemetrySubscription;
 use proctor::{ProctorContext, SharedString};
@@ -136,7 +138,10 @@ mod tests {
             ..GovernanceSettings::default()
         };
 
-        let actual_rep = assert_ok!(ron::ser::to_string_pretty(&settings, ron::ser::PrettyConfig::default()));
+        let actual_rep = assert_ok!(ron::ser::to_string_pretty(
+            &settings,
+            ron::ser::PrettyConfig::default()
+        ));
 
         assert_eq!(
             actual_rep,

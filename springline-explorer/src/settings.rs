@@ -24,8 +24,14 @@ impl ReviseSettings {
         );
 
         let menu_actions: [(&str, Option<MenuAction<ExplorerState>>); 3] = [
-            ("Change environment", Some(Box::new(ReviseSettings::change_environment))),
-            ("Edit Settings", Some(Box::new(ReviseSettings::edit_settings))),
+            (
+                "Change environment",
+                Some(Box::new(ReviseSettings::change_environment)),
+            ),
+            (
+                "Edit Settings",
+                Some(Box::new(ReviseSettings::edit_settings)),
+            ),
             ("return", None),
         ];
 
@@ -56,7 +62,9 @@ impl ReviseSettings {
                     break;
                 },
                 None => {
-                    eprintln!("I don't know how you got here, but your selection is not understood.");
+                    eprintln!(
+                        "I don't know how you got here, but your selection is not understood."
+                    );
                     break;
                 },
             }
@@ -128,7 +136,10 @@ impl ReviseSettings {
         {
             let settings_rep = serde_json::to_string_pretty(&loaded)?;
             if let Some(edited) = Editor::new().edit(settings_rep.as_str())? {
-                eprintln!("{}", style(format!("Edited Settings: {:?}", edited)).bold().red());
+                eprintln!(
+                    "{}",
+                    style(format!("Edited Settings: {:?}", edited)).bold().red()
+                );
 
                 let settings_de: Settings = serde_json::from_str(&edited)?;
                 state.settings = settings_de;
@@ -166,11 +177,20 @@ impl ReviseSettings {
                     style(basename).bold(),
                     style(resource_path.as_path()).bold()
                 );
-                builder = builder.add_source(Settings::make_implicit_config_source(basename, &search_path));
+                builder = builder.add_source(Settings::make_implicit_config_source(
+                    basename,
+                    &search_path,
+                ));
 
                 builder = if let Some(env) = state.options.environment() {
-                    eprintln!("\n\tEnvironment complement: {}", style(env.to_string()).bold().blue());
-                    builder.add_source(Settings::make_app_environment_source(&env, resource_path.as_path()))
+                    eprintln!(
+                        "\n\tEnvironment complement: {}",
+                        style(env.to_string()).bold().blue()
+                    );
+                    builder.add_source(Settings::make_app_environment_source(
+                        &env,
+                        resource_path.as_path(),
+                    ))
                 } else {
                     eprintln!("\n\tEnvironment complement: {}", style("none").dim().blue());
                     builder
@@ -182,7 +202,10 @@ impl ReviseSettings {
 
         builder = match &state.options.secrets {
             Some(secrets) => {
-                eprintln!("\n\tSecrets added from: {:?}", style(secrets.as_path()).bold().red());
+                eprintln!(
+                    "\n\tSecrets added from: {:?}",
+                    style(secrets.as_path()).bold().red()
+                );
                 let s = Settings::make_secrets_source(secrets);
                 builder.add_source(s)
             },

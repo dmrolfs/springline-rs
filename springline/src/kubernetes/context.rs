@@ -89,7 +89,9 @@ impl KubernetesContext {
         Self::new(label, kube, taskmanager)
     }
 
-    pub fn new(label: impl Into<String>, kube: Client, taskmanager: TaskmanagerSpec) -> Result<Self, KubernetesError> {
+    pub fn new(
+        label: impl Into<String>, kube: Client, taskmanager: TaskmanagerSpec,
+    ) -> Result<Self, KubernetesError> {
         Ok(Self {
             label: label.into(),
             inner: Arc::new(KubernetesContextRef::new(kube, taskmanager)?),
@@ -100,7 +102,9 @@ impl KubernetesContext {
         let result = self
             .inner
             .check()
-            .instrument(tracing::debug_span!("checking kubernetes client configuration", label=%self.label))
+            .instrument(
+                tracing::debug_span!("checking kubernetes client configuration", label=%self.label),
+            )
             .await;
         tracing::info!("KubernetesContext::check: {:?}", result);
         result
@@ -177,7 +181,10 @@ impl KubernetesContextRef {
     pub async fn check(&self) -> Result<(), KubernetesError> {
         match self.list_pods(&self.taskmanager.params).await {
             Ok(tms) => {
-                tracing::info!("successful kubernetes connection - found {} taskmanagers", tms.len());
+                tracing::info!(
+                    "successful kubernetes connection - found {} taskmanagers",
+                    tms.len()
+                );
                 Ok(())
             },
 

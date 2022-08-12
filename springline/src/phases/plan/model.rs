@@ -31,8 +31,11 @@ impl fmt::Debug for ScalePlan {
             .field("correlation_id", &self.correlation_id)
             .field("recv_timestamp", &format!("{}", self.recv_timestamp))
             .field(
-                "current_to_target__nr_task_managers",
-                &format!("{}->{}", self.current_nr_task_managers, self.target_nr_task_managers),
+                "nr_task_managers_plan",
+                &format!(
+                    "{}->{}",
+                    self.current_nr_task_managers, self.target_nr_task_managers
+                ),
             )
             .finish()
     }
@@ -48,7 +51,8 @@ impl Correlation for ScalePlan {
 
 impl ScalePlan {
     pub fn new(
-        decision: DecisionResult<MetricCatalog>, calculated_nr_task_managers: Option<usize>, min_scaling_step: usize,
+        decision: DecisionResult<MetricCatalog>, calculated_nr_task_managers: Option<usize>,
+        min_scaling_step: usize,
     ) -> Option<Self> {
         use DecisionResult as DR;
 
@@ -65,7 +69,9 @@ impl ScalePlan {
         };
 
         match (decision, calculated_nr_task_managers) {
-            (DR::ScaleUp(_), Some(calculated)) if current_nr_task_managers < calculated => scale_plan_for(calculated),
+            (DR::ScaleUp(_), Some(calculated)) if current_nr_task_managers < calculated => {
+                scale_plan_for(calculated)
+            },
 
             (DR::ScaleUp(_), _) => {
                 let corrected_nr_task_managers = current_nr_task_managers + min_scaling_step;
@@ -81,7 +87,9 @@ impl ScalePlan {
                 scale_plan_for(corrected_nr_task_managers)
             },
 
-            (DR::ScaleDown(_), Some(calculated)) if calculated < current_nr_task_managers => scale_plan_for(calculated),
+            (DR::ScaleDown(_), Some(calculated)) if calculated < current_nr_task_managers => {
+                scale_plan_for(calculated)
+            },
 
             (DR::ScaleDown(_), _) => {
                 let corrected_nr_task_managers = if min_scaling_step < current_nr_task_managers {

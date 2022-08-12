@@ -9,7 +9,9 @@ mod window {
     use oso::PolarClass;
     use pretty_assertions::assert_eq;
     use pretty_snowflake::{Id, Label, Labeling};
-    use proctor::elements::{telemetry, PolicyOutcome, PolicySource, QueryPolicy, QueryResult, Timestamp};
+    use proctor::elements::{
+        telemetry, PolicyOutcome, PolicySource, QueryPolicy, QueryResult, Timestamp,
+    };
     use proctor::elements::{PolicyContributor, PolicyFilterEvent};
     use proctor::error::{PolicyError, ProctorError};
     use proctor::graph::stage::Stage;
@@ -23,7 +25,9 @@ mod window {
     use tokio_test::block_on;
     use tracing_futures::Instrument;
 
-    use crate::flink::{AppDataWindow, ClusterMetrics, FlowMetrics, JobHealthMetrics, MetricCatalog};
+    use crate::flink::{
+        AppDataWindow, ClusterMetrics, FlowMetrics, JobHealthMetrics, MetricCatalog,
+    };
     use crate::phases::CollectMetricWindow;
     use crate::settings::EngineSettings;
 
@@ -258,23 +262,24 @@ mod window {
                 1.0,                   // 7s - coverage: 0.6 [8,7,6,5] => (8 - 5) / (8 - 5) = 1.0
                 1.0,                   // 8s - coverage: 0.6 [9,8,7,6] => (9 - 6) / (9 - 6) = 1.0
                 1.0,                   // 9s - coverage: 0.6 [10,9,8,7] => (10 - 7) / (10 - 7) = 1.0
-                0.666666666666666666,  // 10s - coverage: 0.6 [10,10,9,8] => (10 - 8) / (11 - 8) = 0.666666666666666666
-                0.0,                   // 11s - coverage: 0.6 [9,10,10,9] => (9 - 9) / (12 - 9) = 0.0
+                0.666666666666666666, // 10s - coverage: 0.6 [10,10,9,8] => (10 - 8) / (11 - 8) = 0.666666666666666666
+                0.0,                  // 11s - coverage: 0.6 [9,10,10,9] => (9 - 9) / (12 - 9) = 0.0
                 -0.666666666666666666, // 12s - coverage: 0.6 [8,9,10,10] => (8 - 10) / (13 - 10) = -0.666666666666666666
-                -1.0,                  // 13s - coverage: 0.6 [7,8,9,10] => (7 - 10) / (14 - 11) = -1.0
-                -1.0,                  // 14s - coverage: 0.6 [6,7,8,9] => (6 - 9) / (15 - 12) = -1.0
-                -1.0,                  // 15s - coverage: 0.6 [5,6,7,8] => (5 - 8) / (16 - 13) = -1.0
-                -1.0,                  // 16s - coverage: 0.6 [4,5,6,7] => (4 - 7) / (17 - 14) = -1.0
-                -1.0,                  // 17s - coverage: 0.6 [3,4,5,6] => (3 - 6) / (18 - 15) = -1.0
-                -1.0,                  // 18s - coverage: 0.6 [2,3,4,5] => (2 - 5) / (19 - 16) = -1.0
-                -1.0,                  // 19s - coverage: 0.6 [1,2,3,4] => (1 - 4) / (20 - 17) = -1.0
+                -1.0, // 13s - coverage: 0.6 [7,8,9,10] => (7 - 10) / (14 - 11) = -1.0
+                -1.0, // 14s - coverage: 0.6 [6,7,8,9] => (6 - 9) / (15 - 12) = -1.0
+                -1.0, // 15s - coverage: 0.6 [5,6,7,8] => (5 - 8) / (16 - 13) = -1.0
+                -1.0, // 16s - coverage: 0.6 [4,5,6,7] => (4 - 7) / (17 - 14) = -1.0
+                -1.0, // 17s - coverage: 0.6 [3,4,5,6] => (3 - 6) / (18 - 15) = -1.0
+                -1.0, // 18s - coverage: 0.6 [2,3,4,5] => (2 - 5) / (19 - 16) = -1.0
+                -1.0, // 19s - coverage: 0.6 [1,2,3,4] => (1 - 4) / (20 - 17) = -1.0
             ];
 
             for i in 0..data.len() {
                 async {
                     assert_ok!(tx_in.send(data[i].clone()).await);
                     let actual_window = assert_some!(rx_out.recv().await);
-                    let actual = actual_window.flow_source_records_lag_max_rolling_change_per_sec(5);
+                    let actual =
+                        actual_window.flow_source_records_lag_max_rolling_change_per_sec(5);
                     tracing::debug!(%actual, ?actual_window, "received test data window");
                     let result = std::panic::catch_unwind(|| {
                         assert_relative_eq!(actual, expected[i], epsilon = 1.0e-10);
@@ -400,7 +405,8 @@ mod window {
             telemetry_window_quorum_percentage: 0.5,
             ..EngineSettings::default()
         };
-        let mut collect_stage = CollectMetricWindow::new("test_collect_metric_window", &engine_settings);
+        let mut collect_stage =
+            CollectMetricWindow::new("test_collect_metric_window", &engine_settings);
         let policy = TestPolicy {
             policies: vec![assert_ok!(PolicySource::from_complete_string(
                 "test_policy",
@@ -413,7 +419,8 @@ mod window {
 
         block_on(async {
             let mut inlet = collect_stage.inlet();
-            let mut policy_stage = assert_ok!(PolicyPhase::carry_policy_outcome("test_policy", policy).await);
+            let mut policy_stage =
+                assert_ok!(PolicyPhase::carry_policy_outcome("test_policy", policy).await);
             let mut rx_monitor = policy_stage.rx_monitor();
             let mut ctx_inlet = policy_stage.context_inlet();
             let mut outlet = policy_stage.outlet();
@@ -423,8 +430,10 @@ mod window {
             (collect_stage.outlet().clone(), policy_stage.inlet()).connect().await;
             outlet.attach("test_sink".into(), tx_out).await;
 
-            let collect_stage_handle = tokio::spawn(async move { assert_ok!(collect_stage.run().await) });
-            let policy_stage_handle = tokio::spawn(async move { assert_ok!(policy_stage.run().await) });
+            let collect_stage_handle =
+                tokio::spawn(async move { assert_ok!(collect_stage.run().await) });
+            let policy_stage_handle =
+                tokio::spawn(async move { assert_ok!(policy_stage.run().await) });
 
             let expected = [
                 None,    // [1x] - point check conditions not met

@@ -12,7 +12,9 @@ use prometheus::{IntCounter, Opts};
 use tracing_futures::Instrument;
 use url::Url;
 
-use crate::flink::{self, FlinkContext, FlinkError, JarId, JobId, JobState, RestoreMode, SavepointLocation};
+use crate::flink::{
+    self, FlinkContext, FlinkError, JarId, JobId, JobState, RestoreMode, SavepointLocation,
+};
 use crate::phases::act;
 use crate::phases::act::action::{ActionSession, ScaleAction};
 use crate::phases::act::{ActError, ScaleActionPlan};
@@ -56,13 +58,15 @@ impl ScaleAction for RestartJobs {
                 action: self.label().to_string(),
                 reason: "savepoints not set".to_string(),
             }),
-            Some(locations) if locations.completed.is_empty() => Err(ActError::ActionPrecondition {
-                action: self.label().to_string(),
-                reason: format!(
-                    "no savepoint locations found to restart after rescale: failed:{:?}.",
-                    locations.failed
-                ),
-            }),
+            Some(locations) if locations.completed.is_empty() => {
+                Err(ActError::ActionPrecondition {
+                    action: self.label().to_string(),
+                    reason: format!(
+                        "no savepoint locations found to restart after rescale: failed:{:?}.",
+                        locations.failed
+                    ),
+                })
+            },
             _ => Ok(()),
         }?;
 
@@ -81,8 +85,14 @@ impl ScaleAction for RestartJobs {
         Ok(())
     }
 
-    #[tracing::instrument(level = "info", name = "RestartFlinkWithNewParallelism::execute", skip(self))]
-    async fn execute<'s>(&self, plan: &'s Self::In, session: &'s mut ActionSession) -> Result<(), ActError> {
+    #[tracing::instrument(
+        level = "info",
+        name = "RestartFlinkWithNewParallelism::execute",
+        skip(self)
+    )]
+    async fn execute<'s>(
+        &self, plan: &'s Self::In, session: &'s mut ActionSession,
+    ) -> Result<(), ActError> {
         let timer = act::start_scale_action_timer(session.cluster_label(), self.label());
 
         let parallelism = Self::parallelism_from_plan_session(plan, session);
@@ -91,7 +101,12 @@ impl ScaleAction for RestartJobs {
         if let Some(locations) = Self::locations_from(session) {
             if let Some(ref uploaded_jars) = session.uploaded_jars {
                 let remaining_sources = self
-                    .try_jar_restarts_for_parallelism(parallelism, uploaded_jars, locations.clone(), session)
+                    .try_jar_restarts_for_parallelism(
+                        parallelism,
+                        uploaded_jars,
+                        locations.clone(),
+                        session,
+                    )
                     .await;
 
                 // -- attempt rollback to original parallelism for each source that failed to restart
@@ -110,7 +125,12 @@ impl ScaleAction for RestartJobs {
                     }
 
                     let failures = self
-                        .try_jar_restarts_for_parallelism(plan.current_replicas(), &jars, savepoints, session)
+                        .try_jar_restarts_for_parallelism(
+                            plan.current_replicas(),
+                            &jars,
+                            savepoints,
+                            session,
+                        )
                         .await;
 
                     if !failures.is_empty() {
@@ -138,7 +158,10 @@ impl ScaleAction for RestartJobs {
             };
         };
 
-        session.mark_duration(self.label(), Duration::from_secs_f64(timer.stop_and_record()));
+        session.mark_duration(
+            self.label(),
+            Duration::from_secs_f64(timer.stop_and_record()),
+        );
         outcome
     }
 }
@@ -171,12 +194,14 @@ impl RestartJobs {
     }
 
     async fn try_jar_restarts_for_parallelism(
-        &self, parallelism: usize, jars: &[JarId], mut locations: HashSet<SavepointLocation>, session: &ActionSession,
+        &self, parallelism: usize, jars: &[JarId], mut locations: HashSet<SavepointLocation>,
+        session: &ActionSession,
     ) -> Vec<(JarId, SavepointLocation, ActError)> {
         use crate::flink::JobState as JS;
 
         let correlation = session.correlation();
-        let span = tracing::info_span!("try_jar_restarts_for_parallelism", %parallelism, ?correlation);
+        let span =
+            tracing::info_span!("try_jar_restarts_for_parallelism", %parallelism, ?correlation);
 
         let jar_restarts = self
             .try_all_jar_restarts(jars, &mut locations, parallelism, session)
@@ -251,7 +276,8 @@ impl RestartJobs {
 
     #[tracing::instrument(level = "trace", skip(session))]
     async fn try_all_jar_restarts(
-        &self, jars: &[JarId], locations: &mut HashSet<SavepointLocation>, parallelism: usize, session: &ActionSession,
+        &self, jars: &[JarId], locations: &mut HashSet<SavepointLocation>, parallelism: usize,
+        session: &ActionSession,
     ) -> Result<Vec<(JobId, JarId, SavepointLocation)>, FlinkError> {
         let mut pairings = Vec::with_capacity(jars.len());
         let correlation = session.correlation();
@@ -280,7 +306,8 @@ impl RestartJobs {
 
     #[tracing::instrument(level = "trace", skip(session))]
     async fn try_jar_restart(
-        &self, jar: &JarId, locations: HashSet<SavepointLocation>, parallelism: usize, session: &ActionSession,
+        &self, jar: &JarId, locations: HashSet<SavepointLocation>, parallelism: usize,
+        session: &ActionSession,
     ) -> Result<Option<(JobId, SavepointLocation)>, FlinkError> {
         let mut job_savepoint = None;
         let correlation = session.correlation();
@@ -309,13 +336,13 @@ impl RestartJobs {
 
     #[tracing::instrument(level = "trace", skip(session))]
     async fn try_jar_restart_for_location(
-        &self, jar: &JarId, location: &SavepointLocation, parallelism: usize, session: &ActionSession,
+        &self, jar: &JarId, location: &SavepointLocation, parallelism: usize,
+        session: &ActionSession,
     ) -> Result<Either<JobId, StatusCode>, FlinkError> {
         let correlation = session.correlation();
         let step_label = super::action_step(self.label(), "try_restart_jar_for_location");
         let url = Self::restart_jar_url_for(&session.flink, jar)?;
-        let span =
-            tracing::info_span!("act::restart_jobs - restart_jar", %url, ?correlation, %jar, %location, %parallelism);
+        let span = tracing::info_span!("act::restart_jobs - restart_jar", %url, ?correlation, %jar, %location, %parallelism);
 
         let body = restart::RestartJarRequestBody {
             savepoint_path: Some(location.clone()),
@@ -361,10 +388,17 @@ impl RestartJobs {
             .await
             .and_then(|(body, status)| Self::do_assess_restart_response(body.as_str(), status));
 
-        flink::track_result("restart_jar", result, "trying jar+savepoint pair", &correlation)
+        flink::track_result(
+            "restart_jar",
+            result,
+            "trying jar+savepoint pair",
+            &correlation,
+        )
     }
 
-    fn do_assess_restart_response(body: &str, status: StatusCode) -> Result<Either<JobId, StatusCode>, FlinkError> {
+    fn do_assess_restart_response(
+        body: &str, status: StatusCode,
+    ) -> Result<Either<JobId, StatusCode>, FlinkError> {
         if status.is_success() {
             serde_json::from_str(body)
                 .map(|r: restart::RestartJarResponseBody| Left(r.job_id))
@@ -411,7 +445,9 @@ impl RestartJobs {
     }
 
     #[tracing::instrument(level = "trace", skip(session), fields(correlation = %session.correlation()))]
-    async fn wait_on_job_restart(&self, job_id: &JobId, session: &ActionSession) -> Result<JobState, FlinkError> {
+    async fn wait_on_job_restart(
+        &self, job_id: &JobId, session: &ActionSession,
+    ) -> Result<JobState, FlinkError> {
         use crate::flink::JobState as JS;
 
         let correlation = session.correlation();
@@ -500,7 +536,8 @@ impl RestartJobs {
                 .as_ref()
                 .map(|jobs| jobs.iter().cloned().collect())
                 .unwrap_or_else(HashSet::new);
-            let completed_inactive_jobs: HashSet<&JobId> = completed_jobs.difference(&active_jobs).collect();
+            let completed_inactive_jobs: HashSet<&JobId> =
+                completed_jobs.difference(&active_jobs).collect();
             if !completed_inactive_jobs.is_empty() {
                 tracing::warn!(
                     ?completed_inactive_jobs,
@@ -599,7 +636,10 @@ mod tests {
         };
 
         let actual = assert_ok!(serde_json::to_string(&body));
-        assert_eq!(actual, r##"{"parallelism":27,"savepointPath":"/path/to/savepoint"}"##)
+        assert_eq!(
+            actual,
+            r##"{"parallelism":27,"savepointPath":"/path/to/savepoint"}"##
+        )
     }
 
     #[test]

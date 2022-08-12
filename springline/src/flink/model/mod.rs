@@ -65,7 +65,12 @@ impl JobState {
     pub const fn is_active(&self) -> bool {
         !matches!(
             self,
-            Self::Finished | Self::Failing | Self::Failed | Self::Cancelling | Self::Canceled | Self::Suspended
+            Self::Finished
+                | Self::Failing
+                | Self::Failed
+                | Self::Cancelling
+                | Self::Canceled
+                | Self::Suspended
         )
     }
 
@@ -74,7 +79,10 @@ impl JobState {
     }
 
     pub const fn is_stopped(&self) -> bool {
-        matches!(self, Self::Failed | Self::Canceled | Self::Finished | Self::Suspended)
+        matches!(
+            self,
+            Self::Failed | Self::Canceled | Self::Finished | Self::Suspended
+        )
     }
 }
 
@@ -259,16 +267,25 @@ pub struct JobDetail {
 
     pub state: JobState,
 
-    #[serde(alias = "start-time", deserialize_with = "deserialize_timestamp_millis")]
+    #[serde(
+        alias = "start-time",
+        deserialize_with = "deserialize_timestamp_millis"
+    )]
     pub start_time: Timestamp,
 
-    #[serde(alias = "end-time", deserialize_with = "deserialize_opt_timestamp_millis")]
+    #[serde(
+        alias = "end-time",
+        deserialize_with = "deserialize_opt_timestamp_millis"
+    )]
     pub end_time: Option<Timestamp>,
 
     #[serde(deserialize_with = "deserialize_opt_duration_millis")]
     pub duration: Option<Duration>,
 
-    #[serde(alias = "maxParallelism", deserialize_with = "deserialize_i64_as_opt_usize")]
+    #[serde(
+        alias = "maxParallelism",
+        deserialize_with = "deserialize_i64_as_opt_usize"
+    )]
     pub max_parallelism: Option<usize>,
 
     #[serde(deserialize_with = "deserialize_timestamp_millis")]
@@ -365,17 +382,26 @@ pub struct VertexDetail {
 
     pub name: String,
 
-    #[serde(alias = "maxParallelism", deserialize_with = "deserialize_i64_as_opt_usize")]
+    #[serde(
+        alias = "maxParallelism",
+        deserialize_with = "deserialize_i64_as_opt_usize"
+    )]
     pub max_parallelism: Option<usize>,
 
     pub parallelism: usize,
 
     pub status: TaskState,
 
-    #[serde(alias = "start-time", deserialize_with = "deserialize_timestamp_millis")]
+    #[serde(
+        alias = "start-time",
+        deserialize_with = "deserialize_timestamp_millis"
+    )]
     pub start_time: Timestamp,
 
-    #[serde(alias = "end-time", deserialize_with = "deserialize_opt_timestamp_millis")]
+    #[serde(
+        alias = "end-time",
+        deserialize_with = "deserialize_opt_timestamp_millis"
+    )]
     pub end_time: Option<Timestamp>,
 
     #[serde(deserialize_with = "deserialize_opt_duration_millis")]
@@ -504,7 +530,8 @@ pub struct JobSavepointReport {
 
 impl JobSavepointReport {
     pub fn new(
-        completed_statuses: Vec<(JobId, SavepointStatus)>, failed_statuses: Vec<(JobId, SavepointStatus)>,
+        completed_statuses: Vec<(JobId, SavepointStatus)>,
+        failed_statuses: Vec<(JobId, SavepointStatus)>,
     ) -> Result<Self, FlinkError> {
         let completed = completed_statuses
             .into_iter()
@@ -515,7 +542,9 @@ impl JobSavepointReport {
                         expected: "completed savepoint status must have an operation".to_string(),
                         given: "<none>".to_string(),
                     })?
-                    .either(Ok, |cause| Err(FlinkError::Savepoint { job_id: job_id.clone(), cause }))?;
+                    .either(Ok, |cause| {
+                        Err(FlinkError::Savepoint { job_id: job_id.clone(), cause })
+                    })?;
 
                 Result::<_, FlinkError>::Ok((job_id, location))
             })

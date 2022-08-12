@@ -18,7 +18,9 @@ pub const SCALE_DOWN: &str = "down";
 pub const NO_ACTION: &str = "no action";
 pub const UNSPECIFIED: &str = "unspecified";
 
-pub fn make_decision_transform<T, C, S>(name: S) -> impl ThroughStage<PolicyOutcome<T, C>, DecisionResult<T>>
+pub fn make_decision_transform<T, C, S>(
+    name: S,
+) -> impl ThroughStage<PolicyOutcome<T, C>, DecisionResult<T>>
 where
     T: AppData + Correlation + PartialEq,
     C: ProctorContext,

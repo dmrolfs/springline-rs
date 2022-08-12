@@ -27,7 +27,9 @@ impl ScaleAction for PrepareData {
     }
 
     #[tracing::instrument(level = "info", name = "PrepareData::execute", skip(self, _plan))]
-    async fn execute<'s>(&self, _plan: &'s Self::In, session: &'s mut ActionSession) -> Result<(), ActError> {
+    async fn execute<'s>(
+        &self, _plan: &'s Self::In, session: &'s mut ActionSession,
+    ) -> Result<(), ActError> {
         let timer = act::start_scale_action_timer(session.cluster_label(), self.label());
 
         let correlation = session.correlation();
@@ -55,7 +57,10 @@ impl ScaleAction for PrepareData {
             .map(|jars| jars.into_iter().map(|j| j.id).collect())?;
 
         session.uploaded_jars = Some(jars);
-        session.mark_duration(self.label(), Duration::from_secs_f64(timer.stop_and_record()));
+        session.mark_duration(
+            self.label(),
+            Duration::from_secs_f64(timer.stop_and_record()),
+        );
         Ok(())
     }
 }

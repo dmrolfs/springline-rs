@@ -46,7 +46,10 @@ impl FlinkMetric {
                     Ok(value) => {
                         let _ = telemetry.insert(field.1.to_string(), value);
                     },
-                    Err(TelemetryError::UnsupportedConversion { from: TelemetryType::Unit, .. }) => {
+                    Err(TelemetryError::UnsupportedConversion {
+                        from: TelemetryType::Unit,
+                        ..
+                    }) => {
                         tracing::info!(
                             metric=%o.metric(), ?metric_value, order=?o,
                             "cannot convert unit metric value to satisfy metric order -- skipping."
@@ -141,10 +144,10 @@ fn suffix_for(id: &str, agg: Aggregation) -> String {
     });
 
     match forms.matches(id).into_iter().take(1).next() {
-        Some(0) => format!("{}", agg),                             // camelCase - Jobs and Kinesis
+        Some(0) => format!("{}", agg), // camelCase - Jobs and Kinesis
         Some(1) => format!(".{}", agg.to_string().to_lowercase()), // .camelCase - Task vertex
         Some(2) => format!("-{}", agg.to_string().to_lowercase()), // kabab-case - Kafka
-        Some(3) => format!(".{}", agg),                            // .PascalCase - TaskManagers
+        Some(3) => format!(".{}", agg), // .PascalCase - TaskManagers
         _ => {
             tracing::warn!(%id, %agg, "failed to match metric id to known Flink forms - defaulting to camelCase");
             format!("{}", agg)

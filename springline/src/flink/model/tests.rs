@@ -43,7 +43,9 @@ mod catalog {
 
     use super::*;
 
-    fn metrics_for_test_with_datetime(ts: DateTime<Utc>, custom: telemetry::TableType) -> MetricCatalog {
+    fn metrics_for_test_with_datetime(
+        ts: DateTime<Utc>, custom: telemetry::TableType,
+    ) -> MetricCatalog {
         let mut id_gen = assert_ok!(ID_GENERATOR.lock());
         MetricCatalog {
             correlation_id: id_gen.next_id(),
@@ -112,7 +114,10 @@ mod catalog {
     #[test]
     fn test_invalid_type_serde_issue() {
         let mut telemetry = Telemetry::new();
-        telemetry.insert("cluster.task_cpu_load".to_string(), TelemetryValue::Float(0.025));
+        telemetry.insert(
+            "cluster.task_cpu_load".to_string(),
+            TelemetryValue::Float(0.025),
+        );
         telemetry.insert(
             "cluster.task_heap_memory_used".to_string(),
             TelemetryValue::Float(2511508464.0),
@@ -121,7 +126,10 @@ mod catalog {
             "cluster.task_network_input_queue_len".to_string(),
             TelemetryValue::Float(1.0),
         );
-        telemetry.insert("health.job_uptime_millis".to_string(), TelemetryValue::Integer(201402));
+        telemetry.insert(
+            "health.job_uptime_millis".to_string(),
+            TelemetryValue::Integer(201402),
+        );
         telemetry.insert(
             "flow.forecasted_timestamp".to_string(),
             TelemetryValue::Float(Timestamp::new(1647307440, 378969192).as_secs_f64()),
@@ -130,8 +138,14 @@ mod catalog {
             "cluster.task_network_output_queue_len".to_string(),
             TelemetryValue::Float(1.0),
         );
-        telemetry.insert("cluster.nr_active_jobs".to_string(), TelemetryValue::Integer(0));
-        telemetry.insert("health.job_nr_restarts".to_string(), TelemetryValue::Integer(0));
+        telemetry.insert(
+            "cluster.nr_active_jobs".to_string(),
+            TelemetryValue::Integer(0),
+        );
+        telemetry.insert(
+            "health.job_nr_restarts".to_string(),
+            TelemetryValue::Integer(0),
+        );
         telemetry.insert(
             "recv_timestamp".to_string(),
             TelemetryValue::Table(TableValue(Box::new(maplit::hashmap! {
@@ -139,8 +153,14 @@ mod catalog {
                 "nanos".to_string() => TelemetryValue::Integer(57406000)
             }))),
         );
-        telemetry.insert("health.job_max_parallelism".to_string(), TelemetryValue::Integer(4));
-        telemetry.insert("flow.records_in_per_sec".to_string(), TelemetryValue::Float(20.0));
+        telemetry.insert(
+            "health.job_max_parallelism".to_string(),
+            TelemetryValue::Integer(4),
+        );
+        telemetry.insert(
+            "flow.records_in_per_sec".to_string(),
+            TelemetryValue::Float(20.0),
+        );
         telemetry.insert(
             "health.job_nr_completed_checkpoints".to_string(),
             TelemetryValue::Integer(0),
@@ -165,12 +185,18 @@ mod catalog {
             "cluster.task_heap_memory_committed".to_string(),
             TelemetryValue::Float(3623878656.0),
         );
-        telemetry.insert("cluster.task_nr_threads".to_string(), TelemetryValue::Integer(57));
+        telemetry.insert(
+            "cluster.task_nr_threads".to_string(),
+            TelemetryValue::Integer(57),
+        );
         telemetry.insert(
             "cluster.task_network_input_pool_usage".to_string(),
             TelemetryValue::Float(0.0),
         );
-        telemetry.insert("cluster.nr_task_managers".to_string(), TelemetryValue::Integer(5));
+        telemetry.insert(
+            "cluster.nr_task_managers".to_string(),
+            TelemetryValue::Integer(5),
+        );
         telemetry.insert(
             "correlation_id".to_string(),
             TelemetryValue::Table(TableValue(Box::new(maplit::hashmap! {
@@ -242,7 +268,10 @@ mod catalog {
             "bar".to_string() => "Neo".to_telemetry(),
         };
         let data = metrics_for_test_with_datetime(Utc::now(), cdata);
-        assert_eq!(assert_some!(assert_ok!(get_custom_metric::<i64>(&data, "foo"))), 17_i64);
+        assert_eq!(
+            assert_some!(assert_ok!(get_custom_metric::<i64>(&data, "foo"))),
+            17_i64
+        );
         assert_eq!(
             assert_some!(assert_ok!(get_custom_metric::<f64>(&data, "foo"))),
             17.0_f64
@@ -286,7 +315,8 @@ mod catalog {
     }
 
     const CORR_ID_REP: &str = "L";
-    static CORR_ID: Lazy<Id<MetricCatalog>> = Lazy::new(|| Id::direct("MetricCatalog", 12, CORR_ID_REP));
+    static CORR_ID: Lazy<Id<MetricCatalog>> =
+        Lazy::new(|| Id::direct("MetricCatalog", 12, CORR_ID_REP));
 
     #[test]
     fn test_metric_catalog_serde() {
@@ -658,14 +688,20 @@ mod window {
         let combined = port_2.combine(&port_1);
         assert_eq!(combined.time_window, port_2.time_window);
         let actual: Vec<MetricCatalog> = combined.into_iter().collect();
-        assert_eq!(actual, vec![m3.clone(), m4.clone(), m5.clone(), m6.clone(), m7.clone()]);
+        assert_eq!(
+            actual,
+            vec![m3.clone(), m4.clone(), m5.clone(), m6.clone(), m7.clone()]
+        );
 
         let (port_3, remaining) = make_test_window(4, interval, &ms);
         let (port_4, _) = make_test_window(2, interval, &remaining);
         let combined = port_3.clone().combine(&port_4);
         assert_eq!(combined.time_window, port_3.time_window);
         let actual: Vec<MetricCatalog> = combined.into_iter().collect();
-        assert_eq!(actual, vec![m2.clone(), m3.clone(), m4.clone(), m5.clone(), m6.clone()]);
+        assert_eq!(
+            actual,
+            vec![m2.clone(), m3.clone(), m4.clone(), m5.clone(), m6.clone()]
+        );
         let combined = port_4.clone().combine(&port_3);
         assert_eq!(combined.time_window, port_4.time_window);
         let actual: Vec<MetricCatalog> = combined.into_iter().collect();
@@ -707,7 +743,10 @@ mod window {
         assert_eq!(actual, vec![m4.clone(), m5.clone(), m6.clone(), m7.clone()]);
         let combined = port_2.clone().combine(&port_1);
         let actual: Vec<MetricCatalog> = combined.into_iter().collect();
-        assert_eq!(actual, vec![m3.clone(), m4.clone(), m5.clone(), m6.clone(), m7.clone()]);
+        assert_eq!(
+            actual,
+            vec![m3.clone(), m4.clone(), m5.clone(), m6.clone(), m7.clone()]
+        );
 
         let (port_3, remaining) = make_test_window(6, interval, &shuffled);
         assert_eq!(port_3.len(), 6);
@@ -721,7 +760,10 @@ mod window {
             "port_3.combine(port_4)"
         );
         assert_eq!(combined.len(), port_3.len() + 1);
-        assert_eq!(assert_some!(combined.window_interval()).duration(), port_3.time_window);
+        assert_eq!(
+            assert_some!(combined.window_interval()).duration(),
+            port_3.time_window
+        );
         let actual: Vec<MetricCatalog> = combined.into_iter().collect();
         assert_eq!(
             actual,
@@ -737,7 +779,10 @@ mod window {
         );
         let combined = port_4.clone().combine(&port_3);
         assert_eq!(combined.len(), port_4.len() + 1);
-        assert_eq!(assert_some!(combined.window_interval()).duration(), port_4.time_window);
+        assert_eq!(
+            assert_some!(combined.window_interval()).duration(),
+            port_4.time_window
+        );
         let actual: Vec<MetricCatalog> = combined.into_iter().collect();
         assert_eq!(actual, vec![m6.clone(), m7.clone()]);
     }
@@ -787,39 +832,66 @@ mod window {
         );
 
         tracing::info_span!("looking back for 5 seconds").in_scope(|| {
-            assert_eq!(window.for_duration_from_head(Duration::from_secs(5), f), false);
+            assert_eq!(
+                window.for_duration_from_head(Duration::from_secs(5), f),
+                false
+            );
         });
 
         tracing::info_span!("looking back for 11 seconds").in_scope(|| {
-            assert_eq!(window.for_duration_from_head(Duration::from_secs(11), f), true);
+            assert_eq!(
+                window.for_duration_from_head(Duration::from_secs(11), f),
+                true
+            );
         });
 
         tracing::info_span!("looking back for 21 seconds").in_scope(|| {
-            assert_eq!(window.for_duration_from_head(Duration::from_secs(21), f), true);
+            assert_eq!(
+                window.for_duration_from_head(Duration::from_secs(21), f),
+                true
+            );
         });
 
         tracing::info_span!("looking back for 31 seconds").in_scope(|| {
-            assert_eq!(window.for_duration_from_head(Duration::from_secs(31), f), true);
+            assert_eq!(
+                window.for_duration_from_head(Duration::from_secs(31), f),
+                true
+            );
         });
 
         tracing::info_span!("looking back for 41 seconds").in_scope(|| {
-            assert_eq!(window.for_duration_from_head(Duration::from_secs(41), f), true);
+            assert_eq!(
+                window.for_duration_from_head(Duration::from_secs(41), f),
+                true
+            );
         });
 
         tracing::info_span!("looking back for 51 seconds").in_scope(|| {
-            assert_eq!(window.for_duration_from_head(Duration::from_secs(51), f), false);
+            assert_eq!(
+                window.for_duration_from_head(Duration::from_secs(51), f),
+                false
+            );
         });
 
         tracing::info_span!("looking back for 61 seconds").in_scope(|| {
-            assert_eq!(window.for_duration_from_head(Duration::from_secs(61), f), false);
+            assert_eq!(
+                window.for_duration_from_head(Duration::from_secs(61), f),
+                false
+            );
         });
 
         tracing::info_span!("looking back for 71 seconds").in_scope(|| {
-            assert_eq!(window.for_duration_from_head(Duration::from_secs(71), f), false);
+            assert_eq!(
+                window.for_duration_from_head(Duration::from_secs(71), f),
+                false
+            );
         });
 
         tracing::info_span!("looking back for 2000 seconds").in_scope(|| {
-            assert_eq!(window.for_duration_from_head(Duration::from_secs(2000), f), false);
+            assert_eq!(
+                window.for_duration_from_head(Duration::from_secs(2000), f),
+                false
+            );
         });
     }
 
@@ -854,7 +926,11 @@ mod window {
         assert!(remaining.is_empty());
 
         tracing::info_span!("looking back for 5 seconds").in_scope(|| {
-            assert_relative_eq!(window.flow_task_utilization_rolling_average(5), 0.9, epsilon = 1.0e-10);
+            assert_relative_eq!(
+                window.flow_task_utilization_rolling_average(5),
+                0.9,
+                epsilon = 1.0e-10
+            );
         });
 
         tracing::info_span!("looking back for 11 seconds").in_scope(|| {
@@ -866,7 +942,11 @@ mod window {
         });
 
         tracing::info_span!("looking back for 21 seconds").in_scope(|| {
-            assert_relative_eq!(window.flow_task_utilization_rolling_average(21), 0.8, epsilon = 1.0e-10);
+            assert_relative_eq!(
+                window.flow_task_utilization_rolling_average(21),
+                0.8,
+                epsilon = 1.0e-10
+            );
         });
 
         tracing::info_span!("looking back for 31 seconds").in_scope(|| {
@@ -878,7 +958,11 @@ mod window {
         });
 
         tracing::info_span!("looking back for 41 seconds").in_scope(|| {
-            assert_relative_eq!(window.flow_task_utilization_rolling_average(41), 0.7, epsilon = 1.0e-10);
+            assert_relative_eq!(
+                window.flow_task_utilization_rolling_average(41),
+                0.7,
+                epsilon = 1.0e-10
+            );
         });
 
         tracing::info_span!("looking back for 51 seconds").in_scope(|| {
@@ -890,11 +974,19 @@ mod window {
         });
 
         tracing::info_span!("looking back for 61 seconds").in_scope(|| {
-            assert_relative_eq!(window.flow_task_utilization_rolling_average(61), 0.6, epsilon = 1.0e-10);
+            assert_relative_eq!(
+                window.flow_task_utilization_rolling_average(61),
+                0.6,
+                epsilon = 1.0e-10
+            );
         });
 
         tracing::info_span!("looking back for 75 seconds").in_scope(|| {
-            assert_relative_eq!(window.flow_task_utilization_rolling_average(71), 0.6, epsilon = 1.0e-10);
+            assert_relative_eq!(
+                window.flow_task_utilization_rolling_average(71),
+                0.6,
+                epsilon = 1.0e-10
+            );
         });
     }
 }

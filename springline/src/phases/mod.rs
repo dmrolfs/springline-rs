@@ -1,6 +1,8 @@
 use proctor::graph::{Connect, SourceShape};
 use proctor::phases::policy_phase::PolicyPhase;
-use proctor::phases::sense::{ClearinghouseSubscriptionAgent, SubscriptionChannel, TelemetrySubscription};
+use proctor::phases::sense::{
+    ClearinghouseSubscriptionAgent, SubscriptionChannel, TelemetrySubscription,
+};
 use proctor::{AppData, Correlation, ProctorContext};
 use serde::Serialize;
 

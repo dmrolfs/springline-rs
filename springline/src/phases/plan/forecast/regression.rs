@@ -19,8 +19,8 @@ impl LinearRegression {
         let (n, sum_x, sum_y, sum_xy, sum_x2, sum_y2) = Self::components(data);
         let slope = (n * sum_xy - sum_x * sum_y) / (n * sum_x2 - pow(sum_x, 2));
         let y_intercept = (sum_y - slope * sum_x) / n;
-        let correlation_coefficient =
-            (n * sum_xy - sum_x * sum_y) / ((n * sum_x2 - pow(sum_x, 2)) * (n * sum_y2 - pow(sum_y, 2))).sqrt();
+        let correlation_coefficient = (n * sum_xy - sum_x * sum_y)
+            / ((n * sum_x2 - pow(sum_x, 2)) * (n * sum_y2 - pow(sum_y, 2))).sqrt();
         Self { slope, y_intercept, correlation_coefficient }
     }
 
@@ -52,7 +52,9 @@ impl WorkloadForecast for LinearRegression {
     fn workload_at(&self, timestamp: Timestamp) -> Result<RecordsPerSecond, PlanError> {
         let x: f64 = timestamp.into();
         // Ok(RecordsPerSecond::new(self.slope * x + self.y_intercept))
-        Ok(RecordsPerSecond::new(self.slope.mul_add(x, self.y_intercept)))
+        Ok(RecordsPerSecond::new(
+            self.slope.mul_add(x, self.y_intercept),
+        ))
     }
 
     fn total_records_between(&self, start: Timestamp, end: Timestamp) -> Result<f64, PlanError> {
@@ -79,10 +81,21 @@ impl QuadraticRegression {
         let n = data.len() as f64;
         let (sum_x, sum_y, sum_x2, sum_x3, sum_x4, sum_xy, sum_x2y) = data
             .iter()
-            .map(|(x, y)| (x, y, pow(*x, 2), pow(*x, 3), pow(*x, 4), x * y, pow(*x, 2) * y))
+            .map(|(x, y)| {
+                (
+                    x,
+                    y,
+                    pow(*x, 2),
+                    pow(*x, 3),
+                    pow(*x, 4),
+                    x * y,
+                    pow(*x, 2) * y,
+                )
+            })
             .fold(
                 (0., 0., 0., 0., 0., 0., 0.),
-                |(acc_x, acc_y, acc_x2, acc_x3, acc_x4, acc_xy, acc_x2y), (x, y, x2, x3, x4, xy, x2y)| {
+                |(acc_x, acc_y, acc_x2, acc_x3, acc_x4, acc_xy, acc_x2y),
+                 (x, y, x2, x3, x4, xy, x2y)| {
                     (
                         acc_x + x,
                         acc_y + y,
@@ -97,7 +110,9 @@ impl QuadraticRegression {
 
         tracing::trace!(%sum_x, %sum_y, %sum_x2, %sum_x3, %sum_x4, %sum_xy, %sum_x2y, %n, "intermediate quadratic regression calculations");
 
-        let m_x = Matrix3::new(sum_x4, sum_x3, sum_x2, sum_x3, sum_x2, sum_x, sum_x2, sum_x, n);
+        let m_x = Matrix3::new(
+            sum_x4, sum_x3, sum_x2, sum_x3, sum_x2, sum_x, sum_x2, sum_x, n,
+        );
         tracing::trace!(X=?m_x, "Matrix X");
 
         let m_y = Matrix3x1::new(sum_x2y, sum_xy, sum_y);
@@ -133,12 +148,15 @@ impl WorkloadForecast for QuadraticRegression {
     fn workload_at(&self, timestamp: Timestamp) -> Result<RecordsPerSecond, PlanError> {
         let x: f64 = timestamp.into();
         // Ok(RecordsPerSecond::new(self.a * pow(x, 2) + self.b * x + self.c))
-        Ok(RecordsPerSecond::new(self.a.mul_add(pow(x, 2), self.b * x) + self.c))
+        Ok(RecordsPerSecond::new(
+            self.a.mul_add(pow(x, 2), self.b * x) + self.c,
+        ))
     }
 
     fn total_records_between(&self, start: Timestamp, end: Timestamp) -> Result<f64, PlanError> {
         // let integral = |x: f64| self.a / 3. * pow(x, 3) + self.b / 2. * pow(x, 2) + self.c * x;
-        let integral = |x: f64| (self.a / 3.).mul_add(pow(x, 3), (self.b / 2.).mul_add(pow(x, 2), self.c * x));
+        let integral =
+            |x: f64| (self.a / 3.).mul_add(pow(x, 3), (self.b / 2.).mul_add(pow(x, 2), self.c * x));
         Ok(integral(end.into()) - integral(start.into()))
     }
 
@@ -203,7 +221,11 @@ mod tests {
         let regression = LinearRegression::from_data(&data);
 
         let accuracy = 0.69282037;
-        assert_relative_eq!(regression.correlation_coefficient(), 0.853, epsilon = 1.0e-3);
+        assert_relative_eq!(
+            regression.correlation_coefficient(),
+            0.853,
+            epsilon = 1.0e-3
+        );
 
         let actual = assert_ok!(regression.workload_at(3.into()));
         assert_relative_eq!(actual, 3.0.into(), epsilon = accuracy);

@@ -14,11 +14,12 @@ use proctor::ProctorResult;
 use springline::flink::{ClusterMetrics, FlowMetrics, JobHealthMetrics, MetricCatalog};
 use springline::phases::decision::DecisionResult;
 use springline::phases::plan::{
-    make_performance_repository, FlinkPlanningMonitor, ForecastInputs, PlanningContext, PlanningMeasurement,
+    make_performance_repository, FlinkPlanningMonitor, ForecastInputs, PlanningContext,
+    PlanningMeasurement,
 };
 use springline::phases::plan::{
-    FlinkPlanning, LeastSquaresWorkloadForecaster, PerformanceRepositorySettings, PerformanceRepositoryType, ScalePlan,
-    SpikeSettings,
+    FlinkPlanning, LeastSquaresWorkloadForecaster, PerformanceRepositorySettings,
+    PerformanceRepositoryType, ScalePlan, SpikeSettings,
 };
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
@@ -45,14 +46,18 @@ struct TestFlow {
 }
 
 impl TestFlow {
-    pub async fn new(planning_stage: TestStage, rx_planning_monitor: FlinkPlanningMonitor) -> anyhow::Result<Self> {
+    pub async fn new(
+        planning_stage: TestStage, rx_planning_monitor: FlinkPlanningMonitor,
+    ) -> anyhow::Result<Self> {
         let data_sensor: stage::ActorSource<InData> = stage::ActorSource::new("data_sensor");
         let tx_data_sensor_api = data_sensor.tx_api();
 
-        let decision_sensor: stage::ActorSource<InDecision> = stage::ActorSource::new("decision_sensor");
+        let decision_sensor: stage::ActorSource<InDecision> =
+            stage::ActorSource::new("decision_sensor");
         let tx_decision_sensor_api = decision_sensor.tx_api();
 
-        let context_sensor: stage::ActorSource<PlanningContext> = stage::ActorSource::new("context_sensor");
+        let context_sensor: stage::ActorSource<PlanningContext> =
+            stage::ActorSource::new("context_sensor");
         let tx_context_sensor_api = context_sensor.tx_api();
 
         let mut sink = stage::Fold::<_, Out, _>::new("sink", Vec::new(), |mut acc, item| {
@@ -178,7 +183,8 @@ const STEP: i64 = 15;
 
 #[tracing::instrument(level = "info")]
 fn make_test_data(
-    start: Timestamp, tick: i64, nr_task_managers: u32, source_records_lag_max: u32, records_per_sec: f64,
+    start: Timestamp, tick: i64, nr_task_managers: u32, source_records_lag_max: u32,
+    records_per_sec: f64,
 ) -> MetricCatalog {
     let timestamp = Utc.timestamp(start.as_secs() + tick * STEP, 0).into();
     let corr_id = CORRELATION_ID.clone();
@@ -203,7 +209,9 @@ fn make_test_data(
             source_records_lag_max: Some(source_records_lag_max),
             source_assigned_partitions: Some(nr_task_managers),
             source_total_lag: Some(source_records_lag_max * nr_task_managers),
-            source_records_consumed_rate: Some((source_records_lag_max * nr_task_managers * 2) as f64),
+            source_records_consumed_rate: Some(
+                (source_records_lag_max * nr_task_managers * 2) as f64,
+            ),
             source_millis_behind_latest: None,
         },
         cluster: ClusterMetrics {
@@ -223,12 +231,21 @@ fn make_test_data(
 }
 
 fn make_test_data_series(
-    start: Timestamp, nr_task_managers: u32, source_records_lag_max: u32, mut gen: impl FnMut(i64) -> f64,
+    start: Timestamp, nr_task_managers: u32, source_records_lag_max: u32,
+    mut gen: impl FnMut(i64) -> f64,
 ) -> Vec<MetricCatalog> {
     let total = 30;
     (0..total)
         .into_iter()
-        .map(move |tick| make_test_data(start, tick, nr_task_managers, source_records_lag_max, gen(tick)))
+        .map(move |tick| {
+            make_test_data(
+                start,
+                tick,
+                nr_task_managers,
+                source_records_lag_max,
+                gen(tick),
+            )
+        })
         .collect()
 }
 
@@ -242,10 +259,16 @@ enum DecisionType {
 
 #[tracing::instrument(level = "info")]
 fn make_decision(
-    decision: DecisionType, start: Timestamp, tick: i64, nr_task_managers: u32, source_records_lag_max: u32,
-    records_per_sec: f64,
+    decision: DecisionType, start: Timestamp, tick: i64, nr_task_managers: u32,
+    source_records_lag_max: u32, records_per_sec: f64,
 ) -> InDecision {
-    let data = make_test_data(start, tick, nr_task_managers, source_records_lag_max, records_per_sec);
+    let data = make_test_data(
+        start,
+        tick,
+        nr_task_managers,
+        source_records_lag_max,
+        records_per_sec,
+    );
     match decision {
         DecisionType::Up => DecisionResult::ScaleUp(data),
         DecisionType::Down => DecisionResult::ScaleDown(data),
@@ -269,13 +292,23 @@ async fn test_flink_planning_linear() {
     ));
 
     let forecast_builder = LeastSquaresWorkloadForecaster::new(20, SpikeSettings::default());
-    let performance_repository = assert_ok!(make_performance_repository(&PerformanceRepositorySettings {
-        storage: PerformanceRepositoryType::Memory,
-        storage_path: None,
-    }));
+    let performance_repository = assert_ok!(make_performance_repository(
+        &PerformanceRepositorySettings {
+            storage: PerformanceRepositoryType::Memory,
+            storage_path: None,
+        }
+    ));
 
-    let mut planning =
-        assert_ok!(TestPlanning::new("test_planning_1", 2, inputs, forecast_builder, performance_repository,).await);
+    let mut planning = assert_ok!(
+        TestPlanning::new(
+            "test_planning_1",
+            2,
+            inputs,
+            forecast_builder,
+            performance_repository,
+        )
+        .await
+    );
 
     let start: DateTime<Utc> = fake::faker::chrono::raw::DateTimeBefore(EN, Utc::now()).fake();
     let data = make_test_data_series(start.into(), 2, 1000, |tick| tick as f64);
@@ -284,13 +317,27 @@ async fn test_flink_planning_linear() {
 
     assert_ok!(
         planning
-            .update_performance_history(&make_decision(DecisionType::Up, last_data.recv_timestamp, 0, 2, 0, 25.))
+            .update_performance_history(&make_decision(
+                DecisionType::Up,
+                last_data.recv_timestamp,
+                0,
+                2,
+                0,
+                25.
+            ))
             .await
     );
     tracing::warn!("DMR: planning history = {:?}", planning);
     assert_ok!(
         planning
-            .update_performance_history(&make_decision(DecisionType::Up, last_data.recv_timestamp, 0, 4, 0, 75.))
+            .update_performance_history(&make_decision(
+                DecisionType::Up,
+                last_data.recv_timestamp,
+                0,
+                4,
+                0,
+                75.
+            ))
             .await
     );
     tracing::warn!("DMR: planning history = {:?}", planning);
@@ -389,28 +436,54 @@ async fn test_flink_planning_sine() {
     ));
 
     let forecaster = LeastSquaresWorkloadForecaster::new(20, SpikeSettings::default());
-    let performance_repository = assert_ok!(make_performance_repository(&PerformanceRepositorySettings {
-        storage: PerformanceRepositoryType::Memory,
-        storage_path: None,
-    }));
+    let performance_repository = assert_ok!(make_performance_repository(
+        &PerformanceRepositorySettings {
+            storage: PerformanceRepositoryType::Memory,
+            storage_path: None,
+        }
+    ));
 
-    let mut planning =
-        assert_ok!(TestPlanning::new("test_planning_2", 2, inputs, forecaster, performance_repository,).await);
+    let mut planning = assert_ok!(
+        TestPlanning::new(
+            "test_planning_2",
+            2,
+            inputs,
+            forecaster,
+            performance_repository,
+        )
+        .await
+    );
 
     let start: DateTime<Utc> = fake::faker::chrono::raw::DateTimeBefore(EN, Utc::now()).fake();
-    let data = make_test_data_series(start.into(), 2, 1000, |tick| 75. * ((tick as f64) / 15.).sin());
+    let data = make_test_data_series(start.into(), 2, 1000, |tick| {
+        75. * ((tick as f64) / 15.).sin()
+    });
     let data_len = data.len();
     let last_data = assert_some!(data.last()).clone();
 
     assert_ok!(
         planning
-            .update_performance_history(&make_decision(DecisionType::Up, last_data.recv_timestamp, 1, 2, 0, 25.))
+            .update_performance_history(&make_decision(
+                DecisionType::Up,
+                last_data.recv_timestamp,
+                1,
+                2,
+                0,
+                25.
+            ))
             .await
     );
     tracing::warn!("DMR: planning history = {:?}", planning);
     assert_ok!(
         planning
-            .update_performance_history(&make_decision(DecisionType::Up, last_data.recv_timestamp, 2, 4, 0, 75.))
+            .update_performance_history(&make_decision(
+                DecisionType::Up,
+                last_data.recv_timestamp,
+                2,
+                4,
+                0,
+                75.
+            ))
             .await
     );
     tracing::warn!("DMR: planning history = {:?}", planning);
@@ -503,16 +576,28 @@ async fn test_flink_planning_context_change() {
     ));
 
     let forecaster = LeastSquaresWorkloadForecaster::new(20, SpikeSettings::default());
-    let performance_repository = assert_ok!(make_performance_repository(&PerformanceRepositorySettings {
-        storage: PerformanceRepositoryType::Memory,
-        storage_path: None,
-    }));
+    let performance_repository = assert_ok!(make_performance_repository(
+        &PerformanceRepositorySettings {
+            storage: PerformanceRepositoryType::Memory,
+            storage_path: None,
+        }
+    ));
 
-    let mut planning =
-        assert_ok!(TestPlanning::new("test_planning_3", 2, inputs, forecaster, performance_repository,).await);
+    let mut planning = assert_ok!(
+        TestPlanning::new(
+            "test_planning_3",
+            2,
+            inputs,
+            forecaster,
+            performance_repository,
+        )
+        .await
+    );
 
     let start: DateTime<Utc> = fake::faker::chrono::raw::DateTimeBefore(EN, Utc::now()).fake();
-    let data = make_test_data_series(start.into(), 2, 1000, |tick| 75. * ((tick as f64) / 15.).sin());
+    let data = make_test_data_series(start.into(), 2, 1000, |tick| {
+        75. * ((tick as f64) / 15.).sin()
+    });
     let data_len = data.len();
     let penultimate_data = data[data.len() - 2].clone();
     let last_data = data[data.len() - 1].clone();
@@ -532,7 +617,14 @@ async fn test_flink_planning_context_change() {
     tracing::warn!("DMR: planning history = {:?}", planning);
     assert_ok!(
         planning
-            .update_performance_history(&make_decision(DecisionType::Up, last_data.recv_timestamp, 2, 4, 0, 75.))
+            .update_performance_history(&make_decision(
+                DecisionType::Up,
+                last_data.recv_timestamp,
+                2,
+                4,
+                0,
+                75.
+            ))
             .await
     );
     tracing::warn!("DMR: planning history = {:?}", planning);

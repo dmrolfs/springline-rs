@@ -1,6 +1,8 @@
 use crate::flink::MC_FLOW__RECORDS_IN_PER_SEC;
 use crate::phases::sense::flink::Aggregation::*;
-use crate::phases::sense::flink::{DerivativeCombinator, FlinkScope, MetricOrder, MetricSpec, PlanPositionSpec};
+use crate::phases::sense::flink::{
+    DerivativeCombinator, FlinkScope, MetricOrder, MetricSpec, PlanPositionSpec,
+};
 use once_cell::sync::Lazy;
 use proctor::elements::TelemetryType::*;
 
@@ -33,15 +35,30 @@ pub static STD_METRIC_ORDERS: Lazy<Vec<MetricOrder>> = Lazy::new(|| {
         },
         MetricOrder::Task {
             position: PlanPositionSpec::Any,
-            metric: MetricSpec::new("numRecordsInPerSecond", Max, MC_FLOW__RECORDS_IN_PER_SEC, Float),
+            metric: MetricSpec::new(
+                "numRecordsInPerSecond",
+                Max,
+                MC_FLOW__RECORDS_IN_PER_SEC,
+                Float,
+            ),
         },
         MetricOrder::Task {
             position: PlanPositionSpec::Source,
-            metric: MetricSpec::new("numRecordsOutPerSecond", Sum, "flow.records_out_per_sec", Float),
+            metric: MetricSpec::new(
+                "numRecordsOutPerSecond",
+                Sum,
+                "flow.records_out_per_sec",
+                Float,
+            ),
         },
         MetricOrder::Task {
             position: PlanPositionSpec::NotSource,
-            metric: MetricSpec::new("idleTimeMsPerSecond", Avg, "flow.idle_time_millis_per_sec", Float),
+            metric: MetricSpec::new(
+                "idleTimeMsPerSecond",
+                Avg,
+                "flow.idle_time_millis_per_sec",
+                Float,
+            ),
         },
         MetricOrder::Task {
             position: PlanPositionSpec::Source,
@@ -72,7 +89,12 @@ pub static STD_METRIC_ORDERS: Lazy<Vec<MetricOrder>> = Lazy::new(|| {
             ),
         },
         MetricOrder::TaskManager {
-            metric: MetricSpec::new("Status.JVM.Threads.Count", Max, "cluster.task_nr_threads", Integer),
+            metric: MetricSpec::new(
+                "Status.JVM.Threads.Count",
+                Max,
+                "cluster.task_nr_threads",
+                Integer,
+            ),
         },
         MetricOrder::Task {
             position: PlanPositionSpec::Any,

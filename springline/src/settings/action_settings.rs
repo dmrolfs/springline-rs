@@ -162,7 +162,9 @@ mod tests {
             action_timeout: Duration::from_secs(700),
             taskmanager: TaskmanagerContext {
                 label_selector: "app=flink,component=taskmanager".to_string(),
-                deploy_resource: KubernetesDeployResource::StatefulSet { name: "springline".to_string() },
+                deploy_resource: KubernetesDeployResource::StatefulSet {
+                    name: "springline".to_string(),
+                },
                 kubernetes_api: KubernetesApiConstraints {
                     api_timeout: Duration::from_secs(285),
                     polling_interval: Duration::from_secs(10),
@@ -240,7 +242,9 @@ mod tests {
             action_timeout: Duration::from_secs(777),
             taskmanager: TaskmanagerContext {
                 label_selector: "app=flink,component=taskmanager".to_string(),
-                deploy_resource: KubernetesDeployResource::StatefulSet { name: "springline".to_string() },
+                deploy_resource: KubernetesDeployResource::StatefulSet {
+                    name: "springline".to_string(),
+                },
                 kubernetes_api: KubernetesApiConstraints {
                     api_timeout: Duration::from_secs(275),
                     polling_interval: Duration::from_secs(7),
@@ -248,7 +252,9 @@ mod tests {
             },
             flink: FlinkActionSettings {
                 savepoint: SavepointSettings {
-                    directory: Some("/service_namespace_port/v1/jobs/flink_job_id/savepoints".to_string()),
+                    directory: Some(
+                        "/service_namespace_port/v1/jobs/flink_job_id/savepoints".to_string(),
+                    ),
                     ..SavepointSettings::default()
                 },
                 restart: FlinkRestartSettings {

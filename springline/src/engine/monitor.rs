@@ -15,10 +15,16 @@ use prometheus::{IntCounter, IntGauge, Opts};
 use crate::engine::service::{EngineCmd, EngineServiceApi, Health};
 use crate::engine::{PhaseFlag, PhaseFlags};
 use crate::flink;
-use crate::phases::act::{ActEvent, ActMonitor, ACT_PHASE_ERRORS, ACT_SCALE_ACTION_COUNT, PIPELINE_CYCLE_TIME};
-use crate::phases::decision::{DecisionContext, DecisionEvent, DecisionMonitor, DecisionResult, ScaleDirection};
+use crate::phases::act::{
+    ActEvent, ActMonitor, ACT_PHASE_ERRORS, ACT_SCALE_ACTION_COUNT, PIPELINE_CYCLE_TIME,
+};
+use crate::phases::decision::{
+    DecisionContext, DecisionEvent, DecisionMonitor, DecisionResult, ScaleDirection,
+};
 use crate::phases::eligibility::{EligibilityContext, EligibilityEvent, EligibilityMonitor};
-use crate::phases::governance::{GovernanceContext, GovernanceEvent, GovernanceMonitor, GovernanceOutcome};
+use crate::phases::governance::{
+    GovernanceContext, GovernanceEvent, GovernanceMonitor, GovernanceOutcome,
+};
 use crate::phases::plan::{FlinkPlanningEvent, FlinkPlanningMonitor, PlanningStrategy, ScalePlan};
 use crate::phases::{decision, WindowApi, WindowCmd};
 
@@ -140,7 +146,9 @@ impl Monitor {
     }
 
     async fn update_health(&self, ready_phases: &PhaseFlags) {
-        if let Err(err) = EngineCmd::update_health(&self.tx_engine, Health::Ready(*ready_phases)).await {
+        if let Err(err) =
+            EngineCmd::update_health(&self.tx_engine, Health::Ready(*ready_phases)).await
+        {
             tracing::warn!(error=?err, "failed to update engine health");
         }
     }
@@ -150,21 +158,36 @@ impl Monitor {
         use proctor::phases::sense::SubscriptionRequirements;
 
         vec![
-            (PhaseFlag::Eligibility, EligibilityContext::required_fields().is_empty()),
-            (PhaseFlag::Decision, DecisionContext::required_fields().is_empty()),
-            (PhaseFlag::Governance, GovernanceContext::required_fields().is_empty()),
+            (
+                PhaseFlag::Eligibility,
+                EligibilityContext::required_fields().is_empty(),
+            ),
+            (
+                PhaseFlag::Decision,
+                DecisionContext::required_fields().is_empty(),
+            ),
+            (
+                PhaseFlag::Governance,
+                GovernanceContext::required_fields().is_empty(),
+            ),
         ]
         .into_iter()
         .for_each(|(phase, is_ready)| {
             if is_ready {
-                tracing::info!(?phase, "springline {} phase starts as ready for data.", phase);
+                tracing::info!(
+                    ?phase,
+                    "springline {} phase starts as ready for data.",
+                    phase
+                );
                 loaded.toggle(phase);
             }
         })
     }
 
     #[allow(clippy::cognitive_complexity)]
-    async fn handle_eligibility_event(&self, event: Arc<EligibilityEvent>, loaded: &mut BitFlags<PhaseFlag>) {
+    async fn handle_eligibility_event(
+        &self, event: Arc<EligibilityEvent>, loaded: &mut BitFlags<PhaseFlag>,
+    ) {
         match &*event {
             EligibilityEvent::ItemPassed(item, query_result) => {
                 tracing::debug!(?event, ?query_result, correlation=%item.correlation(), "data item passed eligibility");
@@ -174,7 +197,9 @@ impl Monitor {
                 tracing::info!(?event, ?query_result, correlation=%item.correlation(), "data item blocked in eligibility");
                 ELIGIBILITY_IS_ELIGIBLE_FOR_SCALING.set(false as i64)
             },
-            EligibilityEvent::ContextChanged(Some(ctx)) if !loaded.contains(PhaseFlag::Eligibility) => {
+            EligibilityEvent::ContextChanged(Some(ctx))
+                if !loaded.contains(PhaseFlag::Eligibility) =>
+            {
                 tracing::info!(?event, correlation=%ctx.correlation(),"Eligibility Phase initial context loaded!");
                 loaded.toggle(PhaseFlag::Eligibility);
                 self.update_health(loaded).await;
@@ -186,7 +211,9 @@ impl Monitor {
     }
 
     #[allow(clippy::cognitive_complexity)]
-    async fn handle_decision_event(&self, event: Arc<DecisionEvent>, loaded: &mut BitFlags<PhaseFlag>) {
+    async fn handle_decision_event(
+        &self, event: Arc<DecisionEvent>, loaded: &mut BitFlags<PhaseFlag>,
+    ) {
         match &*event {
             DecisionEvent::ItemPassed(item, query_result) => {
                 tracing::info!(?event, ?query_result, correlation=%item.correlation(), "data item passed scaling decision");
@@ -217,12 +244,15 @@ impl Monitor {
     }
 
     #[allow(clippy::cognitive_complexity)]
-    async fn handle_plan_event(&self, event: Arc<PlanEvent<PlanningStrategy>>, loaded: &mut BitFlags<PhaseFlag>) {
+    async fn handle_plan_event(
+        &self, event: Arc<PlanEvent<PlanningStrategy>>, loaded: &mut BitFlags<PhaseFlag>,
+    ) {
         match &*event {
             PlanEvent::DecisionPlanned(decision, plan) => match decision {
                 DecisionResult::ScaleUp(_) | DecisionResult::ScaleDown(_) => {
                     tracing::info!(?event, correlation=%decision.item().correlation(), "planning for scaling decision");
-                    DECISION_PLAN_CURRENT_NR_TASK_MANAGERS.set(plan.current_nr_task_managers as i64);
+                    DECISION_PLAN_CURRENT_NR_TASK_MANAGERS
+                        .set(plan.current_nr_task_managers as i64);
                     PLAN_TARGET_NR_TASK_MANAGERS.set(plan.target_nr_task_managers as i64);
                 },
                 _no_action => {
@@ -251,7 +281,9 @@ impl Monitor {
                 tracing::debug!(?observation, correlation=?observation.correlation_id, "observation added to planning");
                 PLAN_OBSERVATION_COUNT.inc();
 
-                if let Some((tx, (forecast_ts, forecast_val))) = self.tx_feedback.as_ref().zip(*next_forecast) {
+                if let Some((tx, (forecast_ts, forecast_val))) =
+                    self.tx_feedback.as_ref().zip(*next_forecast)
+                {
                     let feedback = PlanningFeedback {
                         forecasted_timestamp: forecast_ts,
                         forecasted_records_in_per_sec: forecast_val,
@@ -273,7 +305,9 @@ impl Monitor {
     }
 
     #[allow(clippy::cognitive_complexity)]
-    async fn handle_governance_event(&self, event: Arc<GovernanceEvent>, loaded: &mut BitFlags<PhaseFlag>) {
+    async fn handle_governance_event(
+        &self, event: Arc<GovernanceEvent>, loaded: &mut BitFlags<PhaseFlag>,
+    ) {
         match &*event {
             GovernanceEvent::ItemPassed(item, query_result) => {
                 tracing::info!(?event, ?query_result, correlation=%item.correlation(), "data item passed governance");
@@ -283,7 +317,9 @@ impl Monitor {
                 tracing::info!(?event, ?query_result, correlation=%item.correlation(), "data item blocked in governance");
                 GOVERNANCE_PLAN_ACCEPTED.set(false as i64)
             },
-            GovernanceEvent::ContextChanged(Some(ctx)) if !loaded.contains(PhaseFlag::Governance) => {
+            GovernanceEvent::ContextChanged(Some(ctx))
+                if !loaded.contains(PhaseFlag::Governance) =>
+            {
                 tracing::info!(?event, correlation=%ctx.correlation(), "Governance Phase initial context loaded!");
                 loaded.toggle(PhaseFlag::Governance);
                 self.update_health(loaded).await;
@@ -295,12 +331,16 @@ impl Monitor {
     }
 
     #[tracing::instrument(level="trace", skip(self, _loaded), fields(correlation=%event.correlation()))]
-    async fn handle_action_event(&self, event: Arc<ActEvent<GovernanceOutcome>>, _loaded: &mut BitFlags<PhaseFlag>) {
+    async fn handle_action_event(
+        &self, event: Arc<ActEvent<GovernanceOutcome>>, _loaded: &mut BitFlags<PhaseFlag>,
+    ) {
         let now = Timestamp::now();
 
         let action_feedback = match &*event {
             ActEvent::PlanActionStarted(plan) => Self::do_handle_rescale_started(plan),
-            ActEvent::PlanExecuted { plan, durations } => self.do_handle_rescale_executed(plan, durations, now).await,
+            ActEvent::PlanExecuted { plan, durations } => {
+                self.do_handle_rescale_executed(plan, durations, now).await
+            },
             ActEvent::PlanFailed { plan, error_metric_label } => {
                 Self::do_handle_rescale_failed(plan, error_metric_label, now)
             },
@@ -349,7 +389,9 @@ impl Monitor {
         }
     }
 
-    fn do_handle_rescale_failed(plan: &ScalePlan, error_metric_label: &str, _now: Timestamp) -> ActionFeedback {
+    fn do_handle_rescale_failed(
+        plan: &ScalePlan, error_metric_label: &str, _now: Timestamp,
+    ) -> ActionFeedback {
         tracing::warn!(%error_metric_label, ?plan, correlation=%plan.correlation(), "rescale action during act phase failed.");
         ACT_PHASE_ERRORS
             .with_label_values(&[
@@ -395,8 +437,11 @@ pub static DECISION_RESCALE_DECISION: Lazy<IntGauge> = Lazy::new(|| {
 
 pub static PLAN_OBSERVATION_COUNT: Lazy<IntCounter> = Lazy::new(|| {
     IntCounter::with_opts(
-        Opts::new("plan_observation_count", "Number of observations made for planning.")
-            .const_labels(proctor::metrics::CONST_LABELS.clone()),
+        Opts::new(
+            "plan_observation_count",
+            "Number of observations made for planning.",
+        )
+        .const_labels(proctor::metrics::CONST_LABELS.clone()),
     )
     .expect("failed creating plan_observation_count metric")
 });

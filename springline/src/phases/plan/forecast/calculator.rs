@@ -16,12 +16,18 @@ pub struct ForecastInputs {
 }
 
 impl ForecastInputs {
-    pub fn new(restart: Duration, max_catch_up: Duration, valid_offset: Duration) -> Result<Self, PlanError> {
+    pub fn new(
+        restart: Duration, max_catch_up: Duration, valid_offset: Duration,
+    ) -> Result<Self, PlanError> {
         Self { restart, max_catch_up, valid_offset }.check()
     }
 
     pub fn from_settings(settings: &PlanSettings) -> Result<Self, PlanError> {
-        Self::new(settings.restart, settings.max_catch_up, settings.recovery_valid)
+        Self::new(
+            settings.restart,
+            settings.max_catch_up,
+            settings.recovery_valid,
+        )
     }
 
     pub fn check(self) -> Result<Self, PlanError> {
@@ -33,7 +39,10 @@ impl ForecastInputs {
 
     fn check_duration(label: &str, d: Duration) -> Result<Duration, PlanError> {
         if d == Duration::ZERO {
-            return Err(PlanError::ZeroDuration(format!("workload forecast {}", label)));
+            return Err(PlanError::ZeroDuration(format!(
+                "workload forecast {}",
+                label
+            )));
         }
 
         if (f64::MAX as u128) < d.as_millis() {
@@ -72,7 +81,10 @@ impl<F: Forecaster> ForecastCalculator<F> {
 
     pub fn add_observation(&mut self, measurement: impl Into<WorkloadMeasurement>) {
         let measurement = measurement.into();
-        tracing::debug!(?measurement, "adding workload measurement to forecast calculator.");
+        tracing::debug!(
+            ?measurement,
+            "adding workload measurement to forecast calculator."
+        );
         self.forecaster.add_observation(measurement)
     }
 
@@ -104,7 +116,8 @@ impl<F: Forecaster> ForecastCalculator<F> {
         let forecast = self.forecaster.forecast()?;
         tracing::debug!(?forecast, "workload forecast model calculated.");
 
-        let total_records = self.total_records_between(&*forecast, trigger_point, recovery)? + buffered_records;
+        let total_records =
+            self.total_records_between(&*forecast, trigger_point, recovery)? + buffered_records;
         tracing::debug!(total_records_at_valid_time=%total_records, "estimated total records to process before valid time");
 
         let recovery_rate = self.recovery_rate(total_records);
@@ -166,7 +179,11 @@ mod tests {
         assert_ok!(ForecastCalculator::new(MockForecaster::new(), inputs));
         assert_ok!(ForecastCalculator::new(
             MockForecaster::new(),
-            assert_ok!(ForecastInputs::new(d1, Duration::from_millis(123_456_7), d3))
+            assert_ok!(ForecastInputs::new(
+                d1,
+                Duration::from_millis(123_456_7),
+                d3
+            ))
         ));
 
         let err1 = assert_err!(ForecastInputs::new(Duration::ZERO, d1, d3));
@@ -192,7 +209,11 @@ mod tests {
             RecordsPerSecond::new(0.128_205),
             epsilon = 1.0e-6
         );
-        assert_relative_eq!(c1.recovery_rate(0.), RecordsPerSecond::new(0.), epsilon = 1.0e-6);
+        assert_relative_eq!(
+            c1.recovery_rate(0.),
+            RecordsPerSecond::new(0.),
+            epsilon = 1.0e-6
+        );
 
         let c2 = assert_ok!(ForecastCalculator::new(
             MockForecaster::new(),
@@ -274,7 +295,10 @@ mod tests {
             builder
         }
 
-        let mut c1 = assert_ok!(ForecastCalculator::new(mock_workload_calc_builder(0.25.into()), inputs));
+        let mut c1 = assert_ok!(ForecastCalculator::new(
+            mock_workload_calc_builder(0.25.into()),
+            inputs
+        ));
         let actual = assert_ok!(c1.calculate_target_rate(now.into(), 333.));
         assert_relative_eq!(actual, RecordsPerSecond::new(0.5551282), epsilon = 1.0e-7);
 

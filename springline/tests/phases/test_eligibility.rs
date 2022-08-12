@@ -11,9 +11,13 @@ use proctor::graph::stage::{self, WithApi, WithMonitor};
 use proctor::graph::{Connect, Graph, SinkShape, SourceShape};
 use proctor::phases::policy_phase::PolicyPhase;
 use proctor::ProctorIdGenerator;
-use springline::flink::{AppDataWindow, ClusterMetrics, FlowMetrics, JobHealthMetrics, MetricCatalog};
+use springline::flink::{
+    AppDataWindow, ClusterMetrics, FlowMetrics, JobHealthMetrics, MetricCatalog,
+};
 use springline::phases::eligibility::{ClusterStatus, JobStatus};
-use springline::phases::eligibility::{EligibilityContext, EligibilityPolicy, EligibilityTemplateData};
+use springline::phases::eligibility::{
+    EligibilityContext, EligibilityPolicy, EligibilityTemplateData,
+};
 use springline::settings::EligibilitySettings;
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
@@ -22,9 +26,10 @@ type Data = AppDataWindow<MetricCatalog>;
 type Context = EligibilityContext;
 
 lazy_static! {
-    static ref DT_1: DateTime<Utc> = DateTime::parse_from_str("2021-05-05T17:11:07.246310806Z", "%+")
-        .unwrap()
-        .with_timezone(&Utc);
+    static ref DT_1: DateTime<Utc> =
+        DateTime::parse_from_str("2021-05-05T17:11:07.246310806Z", "%+")
+            .unwrap()
+            .with_timezone(&Utc);
     static ref DT_1_STR: String = format!("{}", DT_1.format("%+"));
     static ref DT_1_TS: i64 = DT_1.timestamp();
 }
@@ -41,7 +46,9 @@ struct TestFlow {
 }
 
 impl TestFlow {
-    pub async fn new(stage: PolicyPhase<Data, Data, Context, EligibilityTemplateData>) -> anyhow::Result<Self> {
+    pub async fn new(
+        stage: PolicyPhase<Data, Data, Context, EligibilityTemplateData>,
+    ) -> anyhow::Result<Self> {
         let data_sensor: stage::ActorSource<Data> = stage::ActorSource::new("plan_sensor");
         let tx_data_sensor_api = data_sensor.tx_api();
 
@@ -117,7 +124,9 @@ impl TestFlow {
         Ok(command_rx.1.await?)
     }
 
-    pub async fn recv_policy_event(&mut self) -> anyhow::Result<Arc<elements::PolicyFilterEvent<Data, Context>>> {
+    pub async fn recv_policy_event(
+        &mut self,
+    ) -> anyhow::Result<Arc<elements::PolicyFilterEvent<Data, Context>>> {
         Ok(self.rx_stage_monitor.recv().await?)
     }
 
@@ -145,8 +154,11 @@ impl TestFlow {
     }
 
     #[tracing::instrument(level = "info", skip(self))]
-    pub async fn check_scenario(&mut self, label: &str, data: Data, expectation: Vec<Data>) -> anyhow::Result<()> {
-        let scenario_span = tracing::info_span!("DMR check scenario", %label, ?data, ?expectation, );
+    pub async fn check_scenario(
+        &mut self, label: &str, data: Data, expectation: Vec<Data>,
+    ) -> anyhow::Result<()> {
+        let scenario_span =
+            tracing::info_span!("DMR check scenario", %label, ?data, ?expectation, );
         let _ = scenario_span.enter();
 
         let timeout = Duration::from_millis(250);
@@ -241,7 +253,10 @@ impl TestFlow {
                 }
             } else {
                 tracing::error!(?timeout, "check timeout exceeded - stopping check.");
-                anyhow::bail!(format!("check {:?} timeout exceeded - stopping check.", timeout));
+                anyhow::bail!(format!(
+                    "check {:?} timeout exceeded - stopping check.",
+                    timeout
+                ));
             }
         }
 
@@ -522,11 +537,12 @@ async fn test_flink_eligibility_block_on_rescaling() -> anyhow::Result<()> {
     Ok(())
 }
 
-static ID_GENERATOR: Lazy<Mutex<ProctorIdGenerator<()>>> = Lazy::new(|| Mutex::new(ProctorIdGenerator::default()));
+static ID_GENERATOR: Lazy<Mutex<ProctorIdGenerator<()>>> =
+    Lazy::new(|| Mutex::new(ProctorIdGenerator::default()));
 
 pub fn make_context(
-    last_failure: Option<DateTime<Utc>>, is_deploying: bool, is_rescaling: bool, last_deployment: DateTime<Utc>,
-    custom: telemetry::TableType,
+    last_failure: Option<DateTime<Utc>>, is_deploying: bool, is_rescaling: bool,
+    last_deployment: DateTime<Utc>, custom: telemetry::TableType,
 ) -> Context {
     let mut gen = ID_GENERATOR.lock().unwrap();
 

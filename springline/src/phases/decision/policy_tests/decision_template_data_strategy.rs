@@ -39,7 +39,9 @@ impl DecisionTemplateDataStrategyBuilder {
         self.max_healthy_relative_lag_velocity(Just(max_healthy_relative_lag_velocity.into()))
     }
 
-    pub fn max_healthy_lag(self, max_healthy_lag: impl Strategy<Value = Option<f64>> + 'static) -> Self {
+    pub fn max_healthy_lag(
+        self, max_healthy_lag: impl Strategy<Value = Option<f64>> + 'static,
+    ) -> Self {
         let mut new = self;
         new.max_healthy_lag = Some(max_healthy_lag.boxed());
         new
@@ -49,7 +51,9 @@ impl DecisionTemplateDataStrategyBuilder {
         self.max_healthy_lag(Just(max_healthy_lag.into()))
     }
 
-    pub fn min_task_utilization(self, min_task_utilization: impl Strategy<Value = Option<f64>> + 'static) -> Self {
+    pub fn min_task_utilization(
+        self, min_task_utilization: impl Strategy<Value = Option<f64>> + 'static,
+    ) -> Self {
         let mut new = self;
         new.min_task_utilization = Some(min_task_utilization.boxed());
         new
@@ -59,7 +63,9 @@ impl DecisionTemplateDataStrategyBuilder {
         self.min_task_utilization(Just(min_task_utilization.into()))
     }
 
-    pub fn max_healthy_cpu_load(self, max_healthy_cpu_load: impl Strategy<Value = Option<f64>> + 'static) -> Self {
+    pub fn max_healthy_cpu_load(
+        self, max_healthy_cpu_load: impl Strategy<Value = Option<f64>> + 'static,
+    ) -> Self {
         let mut new = self;
         new.max_healthy_cpu_load = Some(max_healthy_cpu_load.boxed());
         new
@@ -77,7 +83,9 @@ impl DecisionTemplateDataStrategyBuilder {
         new
     }
 
-    pub fn just_max_healthy_heap_memory_load(self, max_healthy_heap_memory_load: impl Into<Option<f64>>) -> Self {
+    pub fn just_max_healthy_heap_memory_load(
+        self, max_healthy_heap_memory_load: impl Into<Option<f64>>,
+    ) -> Self {
         self.max_healthy_heap_memory_load(Just(max_healthy_heap_memory_load.into()))
     }
 
@@ -95,13 +103,17 @@ impl DecisionTemplateDataStrategyBuilder {
         self.max_healthy_network_io_utilization(Just(max_healthy_network_io_utilization.into()))
     }
 
-    pub fn evaluate_duration_secs(self, evaluate_duration_secs: impl Strategy<Value = Option<u32>> + 'static) -> Self {
+    pub fn evaluate_duration_secs(
+        self, evaluate_duration_secs: impl Strategy<Value = Option<u32>> + 'static,
+    ) -> Self {
         let mut new = self;
         new.evaluate_duration_secs = Some(evaluate_duration_secs.boxed());
         new
     }
 
-    pub fn just_evaluate_duration_secs(self, evaluate_duration_secs: impl Into<Option<u32>>) -> Self {
+    pub fn just_evaluate_duration_secs(
+        self, evaluate_duration_secs: impl Into<Option<u32>>,
+    ) -> Self {
         self.evaluate_duration_secs(Just(evaluate_duration_secs.into()))
     }
 
@@ -111,7 +123,8 @@ impl DecisionTemplateDataStrategyBuilder {
         let max_healthy_relative_lag_velocity = self
             .max_healthy_relative_lag_velocity
             .unwrap_or(prop::option::of(-1e10_f64..=1e10).boxed());
-        let max_healthy_lag = self.max_healthy_lag.unwrap_or(prop::option::of(-10_f64..=1e10).boxed());
+        let max_healthy_lag =
+            self.max_healthy_lag.unwrap_or(prop::option::of(-10_f64..=1e10).boxed());
         let min_task_utilization = self
             .min_task_utilization
             .unwrap_or(prop::option::of(-10_f64..=1e10).boxed());

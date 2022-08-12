@@ -41,7 +41,9 @@ impl PopulateData for MetricCatalog {
         let facets: [(&str, Option<MetricCatalogLens>); 21] = [
             (
                 "correlation_id",
-                Some(MetricCatalogLens::Root(MetricCatalogRootLens::CorrelationId)),
+                Some(MetricCatalogLens::Root(
+                    MetricCatalogRootLens::CorrelationId,
+                )),
             ),
             (
                 "timestamp",
@@ -57,11 +59,15 @@ impl PopulateData for MetricCatalog {
             ),
             (
                 "health.job_nr_completed_checkpoints",
-                Some(MetricCatalogLens::Health(JobHealthLens::NrCompletedCheckpoints)),
+                Some(MetricCatalogLens::Health(
+                    JobHealthLens::NrCompletedCheckpoints,
+                )),
             ),
             (
                 "health.job_nr_failed_checkpoints",
-                Some(MetricCatalogLens::Health(JobHealthLens::NrFailedCheckpoints)),
+                Some(MetricCatalogLens::Health(
+                    JobHealthLens::NrFailedCheckpoints,
+                )),
             ),
             (
                 "flow.records_in_per_sec",
@@ -97,7 +103,9 @@ impl PopulateData for MetricCatalog {
             ),
             (
                 "cluster.task_heap_memory_committed",
-                Some(MetricCatalogLens::Cluster(ClusterLens::TaskHeapMemoryCommitted)),
+                Some(MetricCatalogLens::Cluster(
+                    ClusterLens::TaskHeapMemoryCommitted,
+                )),
             ),
             (
                 "cluster.task_nr_threads",
@@ -105,19 +113,27 @@ impl PopulateData for MetricCatalog {
             ),
             (
                 "cluster.task_network_input_queue_len",
-                Some(MetricCatalogLens::Cluster(ClusterLens::TaskNetworkInputQueueLen)),
+                Some(MetricCatalogLens::Cluster(
+                    ClusterLens::TaskNetworkInputQueueLen,
+                )),
             ),
             (
                 "cluster.task_network_input_pool_usage",
-                Some(MetricCatalogLens::Cluster(ClusterLens::TaskNetworkInputPoolUsage)),
+                Some(MetricCatalogLens::Cluster(
+                    ClusterLens::TaskNetworkInputPoolUsage,
+                )),
             ),
             (
                 "cluster.task_network_output_queue_len",
-                Some(MetricCatalogLens::Cluster(ClusterLens::TaskNetworkOutputQueueLen)),
+                Some(MetricCatalogLens::Cluster(
+                    ClusterLens::TaskNetworkOutputQueueLen,
+                )),
             ),
             (
                 "cluster.task_network_output_pool_usage",
-                Some(MetricCatalogLens::Cluster(ClusterLens::TaskNetworkOutputPoolUsage)),
+                Some(MetricCatalogLens::Cluster(
+                    ClusterLens::TaskNetworkOutputPoolUsage,
+                )),
             ),
             ("Exit", None),
         ];
@@ -200,7 +216,8 @@ enum MetricCatalogRootLens {
     Timestamp,
 }
 
-static METRIC_CATALOG_LABEL: Lazy<String> = Lazy::new(|| <MetricCatalog as Label>::labeler().label().to_string());
+static METRIC_CATALOG_LABEL: Lazy<String> =
+    Lazy::new(|| <MetricCatalog as Label>::labeler().label().to_string());
 
 impl Lens for MetricCatalogRootLens {
     type T = MetricCatalog;
@@ -254,8 +271,12 @@ impl Lens for JobHealthLens {
         match self {
             Self::UptimeMillis => telemetry.job_uptime_millis = u32::from_str(value_rep.as_ref())?,
             Self::NrRestarts => telemetry.job_nr_restarts = u32::from_str(value_rep.as_ref())?,
-            Self::NrCompletedCheckpoints => telemetry.job_nr_completed_checkpoints = u32::from_str(value_rep.as_ref())?,
-            Self::NrFailedCheckpoints => telemetry.job_nr_failed_checkpoints = u32::from_str(value_rep.as_ref())?,
+            Self::NrCompletedCheckpoints => {
+                telemetry.job_nr_completed_checkpoints = u32::from_str(value_rep.as_ref())?
+            },
+            Self::NrFailedCheckpoints => {
+                telemetry.job_nr_failed_checkpoints = u32::from_str(value_rep.as_ref())?
+            },
         }
 
         Ok(())
@@ -289,8 +310,12 @@ impl Lens for FlowLens {
 
     fn set(&self, telemetry: &mut Self::T, value_rep: impl AsRef<str>) -> anyhow::Result<()> {
         match self {
-            Self::RecordsInPerSec => telemetry.records_in_per_sec = f64::from_str(value_rep.as_ref())?,
-            Self::RecordsOutPerSec => telemetry.records_out_per_sec = f64::from_str(value_rep.as_ref())?,
+            Self::RecordsInPerSec => {
+                telemetry.records_in_per_sec = f64::from_str(value_rep.as_ref())?
+            },
+            Self::RecordsOutPerSec => {
+                telemetry.records_out_per_sec = f64::from_str(value_rep.as_ref())?
+            },
             Self::SourceRecordsLagMax => {
                 telemetry.source_records_lag_max = if value_rep.as_ref().is_empty() {
                     None
@@ -336,9 +361,15 @@ impl Lens for ClusterLens {
             Self::TaskHeapMemoryCommitted => format!("{}", telemetry.task_heap_memory_committed),
             Self::TaskNrThreads => format!("{}", telemetry.task_nr_threads),
             Self::TaskNetworkInputQueueLen => format!("{}", telemetry.task_network_input_queue_len),
-            Self::TaskNetworkInputPoolUsage => format!("{}", telemetry.task_network_input_pool_usage),
-            Self::TaskNetworkOutputQueueLen => format!("{}", telemetry.task_network_output_queue_len),
-            Self::TaskNetworkOutputPoolUsage => format!("{}", telemetry.task_network_output_pool_usage),
+            Self::TaskNetworkInputPoolUsage => {
+                format!("{}", telemetry.task_network_input_pool_usage)
+            },
+            Self::TaskNetworkOutputQueueLen => {
+                format!("{}", telemetry.task_network_output_queue_len)
+            },
+            Self::TaskNetworkOutputPoolUsage => {
+                format!("{}", telemetry.task_network_output_pool_usage)
+            },
         }
     }
 
@@ -347,8 +378,12 @@ impl Lens for ClusterLens {
             Self::NrActiveJobs => telemetry.nr_active_jobs = u32::from_str(value_rep.as_ref())?,
             Self::NrTaskManagers => telemetry.nr_task_managers = u32::from_str(value_rep.as_ref())?,
             Self::TaskCpuLoad => telemetry.task_cpu_load = f64::from_str(value_rep.as_ref())?,
-            Self::TaskHeapMemoryUsed => telemetry.task_heap_memory_used = f64::from_str(value_rep.as_ref())?,
-            Self::TaskHeapMemoryCommitted => telemetry.task_heap_memory_committed = f64::from_str(value_rep.as_ref())?,
+            Self::TaskHeapMemoryUsed => {
+                telemetry.task_heap_memory_used = f64::from_str(value_rep.as_ref())?
+            },
+            Self::TaskHeapMemoryCommitted => {
+                telemetry.task_heap_memory_committed = f64::from_str(value_rep.as_ref())?
+            },
             Self::TaskNrThreads => telemetry.task_nr_threads = u32::from_str(value_rep.as_ref())?,
             Self::TaskNetworkInputQueueLen => {
                 telemetry.task_network_input_queue_len = f64::from_str(value_rep.as_ref())?

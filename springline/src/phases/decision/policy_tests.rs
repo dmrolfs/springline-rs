@@ -29,7 +29,9 @@ pub const INPUT_NETWORK_IO: &str = "input_network_io";
 pub const OUTPUT_NETWORK_IO: &str = "output_network_io";
 
 #[tracing::instrument(level = "info")]
-pub fn arb_perturbed_duration(center: Duration, perturb_factor: f64) -> impl Strategy<Value = Duration> {
+pub fn arb_perturbed_duration(
+    center: Duration, perturb_factor: f64,
+) -> impl Strategy<Value = Duration> {
     Just(center.as_secs_f64()).prop_perturb(move |center, mut rng| {
         let factor_range = (-perturb_factor)..=perturb_factor;
         let deviation = center * rng.gen_range(factor_range);
@@ -38,40 +40,48 @@ pub fn arb_perturbed_duration(center: Duration, perturb_factor: f64) -> impl Str
 }
 
 pub fn arb_timestamp_window(
-    start: Timestamp, window: impl Strategy<Value = Duration>, interval: impl Strategy<Value = Duration> + 'static,
+    start: Timestamp, window: impl Strategy<Value = Duration>,
+    interval: impl Strategy<Value = Duration> + 'static,
 ) -> impl Strategy<Value = (Vec<Timestamp>, Duration)> {
     let interval = interval.boxed();
     let interval = move || interval.clone();
     window.prop_flat_map(move |window| {
         let acc_start = Just((vec![start], Some((start, window))));
-        do_arb_timestamp_window_loop(acc_start, interval.clone()).prop_map(move |(ts, _)| (ts, window))
+        do_arb_timestamp_window_loop(acc_start, interval.clone())
+            .prop_map(move |(ts, _)| (ts, window))
     })
 }
 
 #[tracing::instrument(level = "info", skip(acc, make_interval_strategy))]
 fn do_arb_timestamp_window_loop<I>(
-    acc: impl Strategy<Value = (Vec<Timestamp>, Option<(Timestamp, Duration)>)>, make_interval_strategy: I,
+    acc: impl Strategy<Value = (Vec<Timestamp>, Option<(Timestamp, Duration)>)>,
+    make_interval_strategy: I,
 ) -> impl Strategy<Value = (Vec<Timestamp>, Option<(Timestamp, Duration)>)>
 where
     I: Fn() -> BoxedStrategy<Duration> + Clone + 'static,
 {
-    (acc, make_interval_strategy()).prop_flat_map(move |((mut acc_ts, next_remaining), next_interval)| {
-        {
-            match next_remaining {
-                None => Just((acc_ts, None)).boxed(),
-                Some((_, remaining)) if remaining < next_interval => Just((acc_ts, None)).boxed(),
-                Some((last_ts, remaining)) => {
-                    let next_ts = last_ts + next_interval;
-                    let next_remaining = remaining - next_interval;
-                    acc_ts.push(next_ts);
-                    let next_acc: (Vec<Timestamp>, Option<(Timestamp, Duration)>) =
-                        (acc_ts, Some((next_ts, next_remaining)));
-                    do_arb_timestamp_window_loop(Just(next_acc), make_interval_strategy.clone()).boxed()
-                },
+    (acc, make_interval_strategy()).prop_flat_map(
+        move |((mut acc_ts, next_remaining), next_interval)| {
+            {
+                match next_remaining {
+                    None => Just((acc_ts, None)).boxed(),
+                    Some((_, remaining)) if remaining < next_interval => {
+                        Just((acc_ts, None)).boxed()
+                    },
+                    Some((last_ts, remaining)) => {
+                        let next_ts = last_ts + next_interval;
+                        let next_remaining = remaining - next_interval;
+                        acc_ts.push(next_ts);
+                        let next_acc: (Vec<Timestamp>, Option<(Timestamp, Duration)>) =
+                            (acc_ts, Some((next_ts, next_remaining)));
+                        do_arb_timestamp_window_loop(Just(next_acc), make_interval_strategy.clone())
+                            .boxed()
+                    },
+                }
             }
-        }
-        .boxed()
-    })
+            .boxed()
+        },
+    )
 }
 
 pub fn arb_machine_node() -> impl Strategy<Value = MachineNode> {
@@ -83,7 +93,9 @@ pub fn arb_range_duration(range_secs: RangeInclusive<u64>) -> impl Strategy<Valu
 }
 
 pub fn arb_f64_range(min_inclusive: f64, max_exclusive: f64) -> impl Strategy<Value = f64> {
-    any::<f64>().prop_filter("out of range", move |val| min_inclusive <= *val && *val < max_exclusive)
+    any::<f64>().prop_filter("out of range", move |val| {
+        min_inclusive <= *val && *val < max_exclusive
+    })
 }
 
 pub fn arb_timestamp() -> impl Strategy<Value = Timestamp> {
@@ -118,7 +130,8 @@ pub fn arb_telemetry_value() -> impl Strategy<Value = TelemetryValue> {
             prop_oneof![
                 // Take the inner strategy and make the two recursive cases.
                 prop::collection::vec(inner.clone(), 0..10).prop_map(TelemetryValue::Seq),
-                arb_telemetry_table_type().prop_map(|table: telemetry::TableType| TelemetryValue::Table(table.into())),
+                arb_telemetry_table_type()
+                    .prop_map(|table: telemetry::TableType| TelemetryValue::Table(table.into())),
             ]
         },
     )

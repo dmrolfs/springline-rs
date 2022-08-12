@@ -16,7 +16,8 @@ use tokio::signal::unix::{self, SignalKind};
 use tracing::Subscriber;
 
 static METRICS_REGISTRY: Lazy<Registry> = Lazy::new(|| {
-    Registry::new_custom(Some("springline".to_string()), None).expect("failed to create prometheus registry")
+    Registry::new_custom(Some("springline".to_string()), None)
+        .expect("failed to create prometheus registry")
 });
 
 fn main() -> Result<()> {
@@ -233,8 +234,10 @@ fn get_tracing_subscriber(log_directives: impl AsRef<str>) -> impl Subscriber + 
     let console = console_subscriber::ConsoleLayer::builder().spawn();
     let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(log_directives.as_ref()));
-    let bunyan_formatting =
-        tracing_bunyan_formatter::BunyanFormattingLayer::new("springline".to_string(), std::io::stdout);
+    let bunyan_formatting = tracing_bunyan_formatter::BunyanFormattingLayer::new(
+        "springline".to_string(),
+        std::io::stdout,
+    );
 
     tracing_subscriber::registry::Registry::default()
         .with(console)

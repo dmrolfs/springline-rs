@@ -44,14 +44,17 @@ async fn make_client(settings: &KubernetesSettings) -> Result<kube::Client, Kube
             kube::Config::from_cluster_env()?
         },
         LoadKubeConfig::KubeConfig(options) => {
-            tracing::info!("create kubernetes client config from the default local kubeconfig file.");
+            tracing::info!(
+                "create kubernetes client config from the default local kubeconfig file."
+            );
             kube::Config::from_kubeconfig(&options.clone().into()).await?
         },
         LoadKubeConfig::CustomKubeConfig { kubeconfig, options } => {
             tracing::info!(
                 "Configure the kubernetes client with custom kubeconfig, bypassing the normal config parsing."
             );
-            kube::Config::from_custom_kubeconfig(kubeconfig.clone().into(), &options.clone().into()).await?
+            kube::Config::from_custom_kubeconfig(kubeconfig.clone().into(), &options.clone().into())
+                .await?
         },
     };
 
@@ -122,7 +125,9 @@ impl<'de> Deserialize<'de> for KubernetesDeployResource {
                 })?;
 
                 match workload_resource.to_lowercase().as_str() {
-                    STATEFUL_SET => Ok(KubernetesDeployResource::StatefulSet { name: name.to_string() }),
+                    STATEFUL_SET => {
+                        Ok(KubernetesDeployResource::StatefulSet { name: name.to_string() })
+                    },
                     value => Err(serde::de::Error::custom(format!(
                         "unknown kubernetes workload resource representation: {}",
                         value

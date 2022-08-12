@@ -59,7 +59,10 @@ pub fn run_metrics_exporter<'s>(
             rx_shutdown.await.ok();
         });
         graceful.await?;
-        tracing::info!("{:?} metrics exporter shutting down", std::env::current_exe());
+        tracing::info!(
+            "{:?} metrics exporter shutting down",
+            std::env::current_exe()
+        );
         Ok(())
     });
 

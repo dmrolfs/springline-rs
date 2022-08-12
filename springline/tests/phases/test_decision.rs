@@ -13,7 +13,9 @@ use proctor::phases::policy_phase::PolicyPhase;
 use proctor::phases::sense::clearinghouse::TelemetryCacheSettings;
 use proctor::phases::sense::{self, Sense, SubscriptionRequirements, TelemetrySubscription};
 use proctor::{AppData, ProctorContext};
-use springline::flink::{AppDataWindow, MetricCatalog, MC_CLUSTER__NR_ACTIVE_JOBS, MC_CLUSTER__NR_TASK_MANAGERS};
+use springline::flink::{
+    AppDataWindow, MetricCatalog, MC_CLUSTER__NR_ACTIVE_JOBS, MC_CLUSTER__NR_TASK_MANAGERS,
+};
 use springline::phases::decision::{make_decision_transform, DecisionResult, DECISION_DIRECTION};
 use springline::phases::decision::{DecisionContext, DecisionPolicy, DecisionTemplateData};
 use springline::settings::{DecisionSettings, EngineSettings};
@@ -56,8 +58,9 @@ where
     C: ProctorContext,
 {
     pub async fn new(
-        sensor_out_subscription: TelemetrySubscription, context_subscription: TelemetrySubscription,
-        decision_stage: impl ThroughStage<Data, Out>, decision_context_inlet: Inlet<C>,
+        sensor_out_subscription: TelemetrySubscription,
+        context_subscription: TelemetrySubscription, decision_stage: impl ThroughStage<Data, Out>,
+        decision_context_inlet: Inlet<C>,
         tx_decision_api: elements::PolicyFilterApi<C, DecisionTemplateData>,
         rx_decision_monitor: elements::PolicyFilterMonitor<Data, C>,
     ) -> anyhow::Result<Self> {
@@ -77,12 +80,16 @@ where
         let tx_clearinghouse_api = builder.clearinghouse.tx_api();
 
         tracing::info!("CONNECT CONTEXT SUBSCRIPTION...");
-        let context_channel =
-            sense::SubscriptionChannel::<C>::connect_subscription(context_subscription, (&mut builder).into()).await?;
+        let context_channel = sense::SubscriptionChannel::<C>::connect_subscription(
+            context_subscription,
+            (&mut builder).into(),
+        )
+        .await?;
         let sense = builder.build_for_out_subscription(sensor_out_subscription).await?;
 
         let engine_settings = EngineSettings::default();
-        let collect = springline::phases::CollectMetricWindow::new("collect_window", &engine_settings);
+        let collect =
+            springline::phases::CollectMetricWindow::new("collect_window", &engine_settings);
         let mut sink = stage::Fold::<_, Out, _>::new("sink", Vec::new(), |mut acc, item| {
             acc.push(item);
             acc
@@ -157,7 +164,9 @@ where
         command_rx.1.await.map_err(|err| err.into())
     }
 
-    pub async fn recv_policy_event(&mut self) -> anyhow::Result<Arc<elements::PolicyFilterEvent<Data, C>>> {
+    pub async fn recv_policy_event(
+        &mut self,
+    ) -> anyhow::Result<Arc<elements::PolicyFilterEvent<Data, C>>> {
         self.rx_decision_monitor.recv().await.map_err(|err| err.into())
     }
 
@@ -388,8 +397,10 @@ async fn test_decision_common() -> anyhow::Result<()> {
     )
     .await?;
     let decision_context_inlet = decision_stage.context_inlet();
-    let tx_decision_api: elements::PolicyFilterApi<DecisionContext, DecisionTemplateData> = decision_stage.tx_api();
-    let rx_decision_monitor: elements::PolicyFilterMonitor<Data, DecisionContext> = decision_stage.rx_monitor();
+    let tx_decision_api: elements::PolicyFilterApi<DecisionContext, DecisionTemplateData> =
+        decision_stage.tx_api();
+    let rx_decision_monitor: elements::PolicyFilterMonitor<Data, DecisionContext> =
+        decision_stage.rx_monitor();
 
     let mut flow = TestFlow::new(
         telemetry_subscription,
@@ -413,7 +424,9 @@ async fn test_decision_common() -> anyhow::Result<()> {
     // tracing::info!(?event, "DMR: TESTING policy event for context change");
     // claim::assert_matches!(event, elements::PolicyFilterEvent::ContextChanged(_));
 
-    tracing::info!("DMR: pushing metrics padding - req metrics subscriptions fields not used in test.");
+    tracing::info!(
+        "DMR: pushing metrics padding - req metrics subscriptions fields not used in test."
+    );
     flow.push_telemetry(make_test_item_padding()).await?;
 
     let ts = *DT_1 + chrono::Duration::hours(1);
@@ -458,7 +471,10 @@ async fn test_decision_common() -> anyhow::Result<()> {
 
     assert_eq!(
         actual_vals,
-        vec![(std::f64::consts::PI, "up"), (std::f64::consts::LN_2, "down"),]
+        vec![
+            (std::f64::consts::PI, "up"),
+            (std::f64::consts::LN_2, "down"),
+        ]
     );
 
     Ok(())

@@ -32,7 +32,10 @@ impl ExplorerState {
     }
 
     pub fn load_settings(options: &CliOptions) -> Result<Settings> {
-        eprintln!("\n{}\n", style(format!("DMR: OPTIONS: {:#?}", options)).bright().blue());
+        eprintln!(
+            "\n{}\n",
+            style(format!("DMR: OPTIONS: {:#?}", options)).bright().blue()
+        );
         let settings = Settings::load(options)?;
         Ok(settings)
     }

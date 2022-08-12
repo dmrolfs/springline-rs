@@ -49,8 +49,10 @@ pub async fn make_sense_phase(
 
 #[tracing::instrument(level = "trace", skip(settings))]
 fn do_set_metric_catalog_supplemental_telemetry(settings: &SensorSettings) {
-    let assigned_telemetry: HashSet<&str> = flink::STD_METRIC_ORDERS.iter().map(|o| o.telemetry().1).collect();
-    let ordered_telemetry: HashSet<&str> = settings.flink.metric_orders.iter().map(|o| o.telemetry().1).collect();
+    let assigned_telemetry: HashSet<&str> =
+        flink::STD_METRIC_ORDERS.iter().map(|o| o.telemetry().1).collect();
+    let ordered_telemetry: HashSet<&str> =
+        settings.flink.metric_orders.iter().map(|o| o.telemetry().1).collect();
     let unassigned_telemetry: HashSet<String> = ordered_telemetry
         .difference(&assigned_telemetry)
         .map(|t| t.to_string())

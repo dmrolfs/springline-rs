@@ -29,7 +29,10 @@ impl PopulateContext for EligibilityContext {
             .interact()?;
         let last_deployment = now - chrono::Duration::seconds(since_last_deployment as i64);
 
-        let last_failure = if Confirm::with_theme(&*THEME).with_prompt("Model a failure?").interact()? {
+        let last_failure = if Confirm::with_theme(&*THEME)
+            .with_prompt("Model a failure?")
+            .interact()?
+        {
             let since_failure = Input::with_theme(&*THEME)
                 .with_prompt("How many seconds before policy evaluation did the failure occur?")
                 .default(settings.template_data.clone().and_then(|td| td.stable_secs).unwrap_or(0))

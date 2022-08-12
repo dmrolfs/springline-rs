@@ -18,8 +18,8 @@ mod policy;
 pub use context::{ClusterStatus, EligibilityContext, JobStatus};
 pub use context::{CLUSTER__IS_RESCALING, CLUSTER__LAST_DEPLOYMENT};
 pub(crate) use context::{
-    ELIGIBILITY_CTX_ALL_SINKS_HEALTHY, ELIGIBILITY_CTX_CLUSTER_IS_DEPLOYING, ELIGIBILITY_CTX_CLUSTER_LAST_DEPLOYMENT,
-    ELIGIBILITY_CTX_TASK_LAST_FAILURE,
+    ELIGIBILITY_CTX_ALL_SINKS_HEALTHY, ELIGIBILITY_CTX_CLUSTER_IS_DEPLOYING,
+    ELIGIBILITY_CTX_CLUSTER_LAST_DEPLOYMENT, ELIGIBILITY_CTX_TASK_LAST_FAILURE,
 };
 pub(crate) use policy::ELIGIBILITY_POLICY_INELIGIBLE_DECISIONS_COUNT;
 pub use policy::{EligibilityPolicy, EligibilityTemplateData};
@@ -28,16 +28,27 @@ use crate::flink::{AppDataWindow, MetricCatalog};
 
 pub type EligibilityData = AppDataWindow<MetricCatalog>;
 pub type EligibilityOutcome = EligibilityData;
-pub type EligibilityApi = proctor::elements::PolicyFilterApi<EligibilityContext, EligibilityTemplateData>;
-pub type EligibilityMonitor = proctor::elements::PolicyFilterMonitor<EligibilityData, EligibilityContext>;
+pub type EligibilityApi =
+    proctor::elements::PolicyFilterApi<EligibilityContext, EligibilityTemplateData>;
+pub type EligibilityMonitor =
+    proctor::elements::PolicyFilterMonitor<EligibilityData, EligibilityContext>;
 pub type EligibilityPhase = (
-    Box<PolicyPhase<EligibilityData, EligibilityOutcome, EligibilityContext, EligibilityTemplateData>>,
+    Box<
+        PolicyPhase<
+            EligibilityData,
+            EligibilityOutcome,
+            EligibilityContext,
+            EligibilityTemplateData,
+        >,
+    >,
     SubscriptionChannel<EligibilityContext>,
 );
 pub type EligibilityEvent = PolicyFilterEvent<EligibilityData, EligibilityContext>;
 
 #[tracing::instrument(level = "trace", skip(agent))]
-pub async fn make_eligibility_phase<A>(settings: &EligibilitySettings, agent: &mut A) -> Result<EligibilityPhase>
+pub async fn make_eligibility_phase<A>(
+    settings: &EligibilitySettings, agent: &mut A,
+) -> Result<EligibilityPhase>
 where
     A: ClearinghouseSubscriptionAgent,
 {

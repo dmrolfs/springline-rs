@@ -43,13 +43,16 @@ impl ScaleAction for PatchReplicas {
     }
 
     #[tracing::instrument(level = "info", name = "PatchReplicas::execute", skip(self))]
-    async fn execute<'s>(&self, plan: &'s Self::In, session: &'s mut ActionSession) -> Result<(), ActError> {
+    async fn execute<'s>(
+        &self, plan: &'s Self::In, session: &'s mut ActionSession,
+    ) -> Result<(), ActError> {
         let timer = act::start_scale_action_timer(session.cluster_label(), self.label());
 
         let correlation = session.correlation();
         let nr_target_taskmanagers = plan.target_replicas();
 
-        let original_nr_taskmanager_replicas = session.kube.taskmanager().deploy.get_scale(&correlation).await?;
+        let original_nr_taskmanager_replicas =
+            session.kube.taskmanager().deploy.get_scale(&correlation).await?;
         tracing::info!(%nr_target_taskmanagers, ?original_nr_taskmanager_replicas, "patching to scale taskmanager replicas");
 
         let _nr_patched_taskmanager_replicas = session
@@ -73,16 +76,24 @@ impl ScaleAction for PatchReplicas {
             }
         }
 
-        let confirmed_nr_taskmanagers = self.block_for_rescaled_taskmanagers(plan, &session.flink).await;
+        let confirmed_nr_taskmanagers =
+            self.block_for_rescaled_taskmanagers(plan, &session.flink).await;
         session.nr_confirmed_rescaled_taskmanagers = Some(confirmed_nr_taskmanagers);
 
-        session.mark_duration(self.label(), Duration::from_secs_f64(timer.stop_and_record()));
+        session.mark_duration(
+            self.label(),
+            Duration::from_secs_f64(timer.stop_and_record()),
+        );
         Ok(())
     }
 }
 
 impl PatchReplicas {
-    #[tracing::instrument(level = "info", name = "patch_replicas::block_until_satisfied", skip(plan, kube))]
+    #[tracing::instrument(
+        level = "info",
+        name = "patch_replicas::block_until_satisfied",
+        skip(plan, kube)
+    )]
     async fn block_until_satisfied(
         &self, plan: &<Self as ScaleAction>::In, kube: &KubernetesContext,
     ) -> Result<(), ActError> {
@@ -102,7 +113,8 @@ impl PatchReplicas {
         let mut action_satisfied = false;
         let start = Instant::now();
         while start.elapsed() < api_constraints.api_timeout {
-            let (statuses, is_satisfied) = Self::do_assess_patch_completion(plan, kube, start).await?;
+            let (statuses, is_satisfied) =
+                Self::do_assess_patch_completion(plan, kube, start).await?;
             pods_by_status.replace(statuses);
             action_satisfied = is_satisfied;
             if action_satisfied {
@@ -133,7 +145,11 @@ impl PatchReplicas {
         Ok(())
     }
 
-    #[tracing::instrument(level = "trace", name = "patch_replicas::assess_patch_completion", skip())]
+    #[tracing::instrument(
+        level = "trace",
+        name = "patch_replicas::assess_patch_completion",
+        skip()
+    )]
     async fn do_assess_patch_completion(
         plan: &<Self as ScaleAction>::In, kube: &KubernetesContext, start: Instant,
     ) -> Result<(HashMap<String, Vec<Pod>>, bool), KubernetesError> {
@@ -183,7 +199,9 @@ impl PatchReplicas {
     name = "patch_replicas::block_for_rescaled_taskmanagers"
         skip(self, plan, flink)
     )]
-    async fn block_for_rescaled_taskmanagers(&self, plan: &<Self as ScaleAction>::In, flink: &FlinkContext) -> usize {
+    async fn block_for_rescaled_taskmanagers(
+        &self, plan: &<Self as ScaleAction>::In, flink: &FlinkContext,
+    ) -> usize {
         let correlation = plan.correlation();
         let nr_target_taskmanagers = plan.target_replicas();
 
@@ -230,7 +248,9 @@ impl PatchReplicas {
         nr_confirmed_taskmanagers
     }
 
-    fn do_count_running_pods(pods_by_status: &HashMap<String, Vec<Pod>>) -> (usize, HashMap<String, usize>) {
+    fn do_count_running_pods(
+        pods_by_status: &HashMap<String, Vec<Pod>>,
+    ) -> (usize, HashMap<String, usize>) {
         // if pods_by_status.is_empty() {
         //     return (0, HashMap::new());
         // }

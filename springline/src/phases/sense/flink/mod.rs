@@ -6,7 +6,9 @@ use pretty_snowflake::{AlphabetCodec, IdPrettifier, MachineNode};
 use proctor::elements::telemetry::{Telemetry, TelemetryValue};
 use proctor::error::{SenseError, TelemetryError};
 use proctor::graph::stage::{self, SourceStage, ThroughStage};
-use proctor::graph::{Connect, Graph, SinkShape, SourceShape, UniformFanInShape, UniformFanOutShape};
+use proctor::graph::{
+    Connect, Graph, SinkShape, SourceShape, UniformFanInShape, UniformFanOutShape,
+};
 use prometheus::{HistogramOpts, HistogramTimer, HistogramVec};
 
 use crate::flink::{self, CorrelationGenerator, FlinkContext, MC_HEALTH__JOB_MAX_PARALLELISM};
@@ -23,11 +25,13 @@ mod taskmanager_admin_sensor;
 mod vertex_sensor;
 
 pub use metric_order::{
-    Aggregation, DerivativeCombinator, FlinkScope, MetricOrder, MetricSpec, PlanPositionCandidate, PlanPositionSpec,
+    Aggregation, DerivativeCombinator, FlinkScope, MetricOrder, MetricSpec, PlanPositionCandidate,
+    PlanPositionSpec,
 };
 pub use standard_orders::STD_METRIC_ORDERS;
 pub use vertex_sensor::{
-    FLINK_VERTEX_SENSOR_AVAIL_TELEMETRY_TIME, FLINK_VERTEX_SENSOR_METRIC_PICKLIST_TIME, FLINK_VERTEX_SENSOR_TIME,
+    FLINK_VERTEX_SENSOR_AVAIL_TELEMETRY_TIME, FLINK_VERTEX_SENSOR_METRIC_PICKLIST_TIME,
+    FLINK_VERTEX_SENSOR_TIME,
 };
 
 #[derive(Debug)]
@@ -40,19 +44,31 @@ pub struct FlinkSensorSpecification<'a> {
 }
 
 #[tracing::instrument(level = "trace")]
-pub async fn make_sensor(spec: FlinkSensorSpecification<'_>) -> Result<Box<dyn SourceStage<Telemetry>>, SenseError> {
+pub async fn make_sensor(
+    spec: FlinkSensorSpecification<'_>,
+) -> Result<Box<dyn SourceStage<Telemetry>>, SenseError> {
     let name = format!("{}_flink_sensor", spec.name);
 
     let orders = MetricOrder::extend_standard_with_settings(spec.settings);
 
-    let correlation_gen =
-        CorrelationGenerator::distributed(spec.machine_node, IdPrettifier::<AlphabetCodec>::default());
-    let jobs_scope_sensor =
-        JobTaskmanagerSensor::new_job_sensor(orders.as_slice(), spec.context.clone(), correlation_gen.clone())?;
-    let tm_scope_sensor =
-        JobTaskmanagerSensor::new_taskmanager_sensor(orders.as_slice(), spec.context.clone(), correlation_gen.clone())?;
-    let tm_admin_sensor = TaskmanagerAdminSensor::new(spec.context.clone(), correlation_gen.clone());
-    let vertex_sensor = VertexSensor::new(orders.as_slice(), spec.context.clone(), correlation_gen)?;
+    let correlation_gen = CorrelationGenerator::distributed(
+        spec.machine_node,
+        IdPrettifier::<AlphabetCodec>::default(),
+    );
+    let jobs_scope_sensor = JobTaskmanagerSensor::new_job_sensor(
+        orders.as_slice(),
+        spec.context.clone(),
+        correlation_gen.clone(),
+    )?;
+    let tm_scope_sensor = JobTaskmanagerSensor::new_taskmanager_sensor(
+        orders.as_slice(),
+        spec.context.clone(),
+        correlation_gen.clone(),
+    )?;
+    let tm_admin_sensor =
+        TaskmanagerAdminSensor::new(spec.context.clone(), correlation_gen.clone());
+    let vertex_sensor =
+        VertexSensor::new(orders.as_slice(), spec.context.clone(), correlation_gen)?;
     let flink_sensors: Vec<Box<dyn ThroughStage<(), Telemetry>>> = vec![
         Box::new(jobs_scope_sensor),
         Box::new(tm_scope_sensor),
@@ -108,7 +124,9 @@ pub(crate) static FLINK_SENSOR_TIME: Lazy<HistogramVec> = Lazy::new(|| {
             "Time spent collecting telemetry from Flink in seconds",
         )
         .const_labels(proctor::metrics::CONST_LABELS.clone())
-        .buckets(vec![0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.75, 1.0, 2.5, 5.0, 10.0]),
+        .buckets(vec![
+            0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.75, 1.0, 2.5, 5.0, 10.0,
+        ]),
         &["flink_scope"],
     )
     .expect("failed creating flink_sensor_time metric")
@@ -140,7 +158,9 @@ where
     }
 }
 
-fn merge_into_metric_groups(metric_telemetry: &mut HashMap<String, Vec<TelemetryValue>>, vertex_telemetry: Telemetry) {
+fn merge_into_metric_groups(
+    metric_telemetry: &mut HashMap<String, Vec<TelemetryValue>>, vertex_telemetry: Telemetry,
+) {
     for (metric, vertex_val) in vertex_telemetry.into_iter() {
         metric_telemetry
             .entry(metric)
@@ -183,7 +203,9 @@ fn consolidate_active_job_telemetry_for_order(
 }
 
 #[tracing::instrument(level = "trace", skip())]
-fn do_aggregate_as_special_metric(metric: &str, values: &[TelemetryValue]) -> Option<TelemetryValue> {
+fn do_aggregate_as_special_metric(
+    metric: &str, values: &[TelemetryValue],
+) -> Option<TelemetryValue> {
     match metric {
         MC_HEALTH__JOB_MAX_PARALLELISM => {
             let max_parallelism = values.iter().max_by(|acc, val| {
@@ -218,7 +240,8 @@ fn do_aggregate_metric_order<'m>(
 
 #[tracing::instrument(level = "trace", skip(telemetry,))]
 pub fn apply_derivative_orders<'o>(
-    mut telemetry: Telemetry, candidate: &PlanPositionCandidate<'_>, derivative_orders: &'o [MetricOrder],
+    mut telemetry: Telemetry, candidate: &PlanPositionCandidate<'_>,
+    derivative_orders: &'o [MetricOrder],
 ) -> (Telemetry, Vec<&'o MetricOrder>) {
     fn extract_terms<'t>(
         t: &'t Telemetry, lhs_path: &'t str, rhs_path: &'t str,
@@ -247,12 +270,15 @@ pub fn apply_derivative_orders<'o>(
             if let Some((lhs, rhs)) = extract_terms(&telemetry, telemetry_lhs, telemetry_rhs) {
                 satisfied.push(order);
                 tracing::debug!(lhs=?(telemetry_lhs, lhs), rhs=?(telemetry_rhs, rhs), "input terms for derivative order: {telemetry_path}");
-                let result = combinator.combine(lhs, rhs).and_then(|c| telemetry_type.cast_telemetry(c));
+                let result =
+                    combinator.combine(lhs, rhs).and_then(|c| telemetry_type.cast_telemetry(c));
                 match result {
                     Ok(value) => {
                         let _ = telemetry.insert(telemetry_path.clone(), value);
                     },
-                    Err(err) => tracing::warn!(error=?err, "failed to compute derivative metric order - skipping"),
+                    Err(err) => {
+                        tracing::warn!(error=?err, "failed to compute derivative metric order - skipping")
+                    },
                 }
             }
         }

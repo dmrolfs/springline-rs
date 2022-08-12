@@ -68,7 +68,9 @@ impl FromStr for PerformanceRepositoryType {
 pub trait PerformanceRepository: Debug + Sync + Send {
     async fn check(&self) -> Result<(), PlanError>;
     async fn load(&self, job_name: &str) -> Result<Option<PerformanceHistory>, PlanError>;
-    async fn save(&mut self, job_name: &str, performance_history: &PerformanceHistory) -> Result<(), PlanError>;
+    async fn save(
+        &mut self, job_name: &str, performance_history: &PerformanceHistory,
+    ) -> Result<(), PlanError>;
     async fn close(self: Box<Self>) -> Result<(), PlanError>;
 }
 
@@ -94,7 +96,9 @@ impl PerformanceRepository for PerformanceMemoryRepository {
     }
 
     #[tracing::instrument(level = "trace", skip(self))]
-    async fn save(&mut self, job_name: &str, performance_history: &PerformanceHistory) -> Result<(), PlanError> {
+    async fn save(
+        &mut self, job_name: &str, performance_history: &PerformanceHistory,
+    ) -> Result<(), PlanError> {
         let old = self.0.insert(job_name.to_string(), performance_history.clone());
         tracing::debug!(%job_name, ?old, "replacing performance history in repository.");
         Ok(())
@@ -186,7 +190,10 @@ impl PerformanceRepository for PerformanceFileRepository {
                 let ph = match serde_json::from_reader(reader) {
                     Ok(a) => Ok(Some(a)),
                     Err(err) if err.classify() == Category::Eof => {
-                        tracing::debug!(?performance_history_path, "performance history empty, creating new.");
+                        tracing::debug!(
+                            ?performance_history_path,
+                            "performance history empty, creating new."
+                        );
                         Ok(None)
                     },
                     Err(err) => Err(err),
@@ -207,7 +214,9 @@ impl PerformanceRepository for PerformanceFileRepository {
     }
 
     #[tracing::instrument(level = "trace", skip(self))]
-    async fn save(&mut self, job_name: &str, performance_history: &PerformanceHistory) -> Result<(), PlanError> {
+    async fn save(
+        &mut self, job_name: &str, performance_history: &PerformanceHistory,
+    ) -> Result<(), PlanError> {
         let performance_history_path = self.path_for(self.file_name_for(job_name).as_str());
         let performance_history_file = self.file_for(performance_history_path.clone(), true)?;
         let writer = BufWriter::new(performance_history_file);

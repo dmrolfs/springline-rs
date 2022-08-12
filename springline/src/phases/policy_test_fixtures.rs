@@ -14,7 +14,9 @@ pub fn prepare_policy_engine<P: QueryPolicy>(policy: &P) -> Result<Oso, PolicyEr
                 let f = std::fs::File::open(path);
                 match &f {
                     Ok(f0) => tracing::info!(file=?f0, ?path, "opened policy source file."),
-                    Err(err) => tracing::error!(error=?err, ?path, "failed to open policy source file."),
+                    Err(err) => {
+                        tracing::error!(error=?err, ?path, "failed to open policy source file.")
+                    },
                 };
 
                 let mut contents = String::new();
@@ -83,10 +85,20 @@ pub fn arb_date_time() -> impl Strategy<Value = DateTime<Utc>> {
     )
         .prop_flat_map(|(yr, mnth, h, m, s, n): (i32, u32, u32, u32, u32, u32)| {
             let day = 1_u32..=last_day_of_month(yr, mnth);
-            (Just(yr), Just(mnth), day, Just(h), Just(m), Just(s), Just(n))
+            (
+                Just(yr),
+                Just(mnth),
+                day,
+                Just(h),
+                Just(m),
+                Just(s),
+                Just(n),
+            )
         })
-        .prop_map(|(yr, mnth, day, h, m, s, n): (i32, u32, u32, u32, u32, u32, u32)| {
-            // tracing::info!("DMR: yr:{yr} mnth:{mnth} day:{day} h:{h} m:{m} s:{s} n:{n}");
-            Utc.ymd(yr, mnth, day).and_hms_nano(h, m, s, n)
-        })
+        .prop_map(
+            |(yr, mnth, day, h, m, s, n): (i32, u32, u32, u32, u32, u32, u32)| {
+                // tracing::info!("DMR: yr:{yr} mnth:{mnth} day:{day} h:{h} m:{m} s:{s} n:{n}");
+                Utc.ymd(yr, mnth, day).and_hms_nano(h, m, s, n)
+            },
+        )
 }

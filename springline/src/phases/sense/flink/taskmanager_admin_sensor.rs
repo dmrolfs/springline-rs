@@ -70,7 +70,11 @@ where
         Ok(())
     }
 
-    #[tracing::instrument(level = "trace", name = "run Flink taskmanager admin sensor stage", skip(self))]
+    #[tracing::instrument(
+        level = "trace",
+        name = "run Flink taskmanager admin sensor stage",
+        skip(self)
+    )]
     async fn run(&mut self) -> ProctorResult<()> {
         self.do_run().await?;
         Ok(())
@@ -112,14 +116,19 @@ where
                     let result = self
                         .context
                         .query_nr_taskmanagers(&correlation)
-                        .map_err(|err| SenseError::Api("query_nr_taskmanagers".to_string(), err.into()))
+                        .map_err(|err| {
+                            SenseError::Api("query_nr_taskmanagers".to_string(), err.into())
+                        })
                         .instrument(tracing::debug_span!(
                             "Flink REST API - taskmanager admin::nr_taskmanagers"
                         ))
                         .await
                         .and_then(|nr_taskmanagers| {
                             let mut telemetry: telemetry::TableType = HashMap::default();
-                            telemetry.insert(MC_CLUSTER__NR_TASK_MANAGERS.to_string(), nr_taskmanagers.into());
+                            telemetry.insert(
+                                MC_CLUSTER__NR_TASK_MANAGERS.to_string(),
+                                nr_taskmanagers.into(),
+                            );
                             Out::unpack(telemetry.into()).map_err(|err| err.into())
                         });
 
@@ -180,7 +189,11 @@ mod tests {
 
     async fn test_stage_for(
         context: FlinkContext,
-    ) -> (tokio::task::JoinHandle<()>, mpsc::Sender<()>, mpsc::Receiver<Telemetry>) {
+    ) -> (
+        tokio::task::JoinHandle<()>,
+        mpsc::Sender<()>,
+        mpsc::Receiver<Telemetry>,
+    ) {
         let mut stage = TaskmanagerAdminSensor::new(context, CorrelationGenerator::default());
         let (tx_trigger, rx_trigger) = mpsc::channel(1);
         let (tx_out, rx_out) = mpsc::channel(8);
@@ -324,7 +337,8 @@ mod tests {
                 let actual: Telemetry = assert_some!(rx_out.recv().await);
                 assert_eq!(
                     actual,
-                    maplit::hashmap! { MC_CLUSTER__NR_TASK_MANAGERS.to_string() => 2.into(), }.into()
+                    maplit::hashmap! { MC_CLUSTER__NR_TASK_MANAGERS.to_string() => 2.into(), }
+                        .into()
                 );
             }
 

@@ -65,7 +65,8 @@ impl<Out> JobTaskmanagerSensor<Out> {
     }
 
     fn new(
-        scope: FlinkScope, orders: &[MetricOrder], context: FlinkContext, correlation_gen: CorrelationGenerator,
+        scope: FlinkScope, orders: &[MetricOrder], context: FlinkContext,
+        correlation_gen: CorrelationGenerator,
     ) -> Result<Self, SenseError> {
         let name = format!("Flink{scope}Sensor").to_snake_case();
         let trigger = Inlet::new(&name, "trigger");
@@ -267,7 +268,8 @@ where
         );
         tracing::debug!(?metrics, ?agg_span, "flink sensing url = {:?}", url);
 
-        let order_matchers: HashMap<&MetricOrder, &MetricOrderMatcher> = self.order_matchers.iter().collect();
+        let order_matchers: HashMap<&MetricOrder, &MetricOrderMatcher> =
+            self.order_matchers.iter().collect();
 
         while self.trigger.recv().await.is_some() {
             let _stage_timer = stage::start_stage_eval_time(self.name());
@@ -359,7 +361,12 @@ mod tests {
 
     impl RetryResponder {
         fn new(retries: u32, fail_status_code: u16, success_template: ResponseTemplate) -> Self {
-            Self(Arc::new(AtomicU32::new(0)), retries, success_template, fail_status_code)
+            Self(
+                Arc::new(AtomicU32::new(0)),
+                retries,
+                success_template,
+                fail_status_code,
+            )
         }
     }
 
@@ -394,9 +401,18 @@ mod tests {
 
     async fn test_stage_for(
         scope: FlinkScope, orders: &[MetricOrder], context: FlinkContext,
-    ) -> (tokio::task::JoinHandle<()>, mpsc::Sender<()>, mpsc::Receiver<Telemetry>) {
+    ) -> (
+        tokio::task::JoinHandle<()>,
+        mpsc::Sender<()>,
+        mpsc::Receiver<Telemetry>,
+    ) {
         let correlation_gen = CorrelationGenerator::default();
-        let mut stage = assert_ok!(JobTaskmanagerSensor::new(scope, orders, context, correlation_gen));
+        let mut stage = assert_ok!(JobTaskmanagerSensor::new(
+            scope,
+            orders,
+            context,
+            correlation_gen
+        ));
         let (tx_trigger, rx_trigger) = mpsc::channel(1);
         let (tx_out, rx_out) = mpsc::channel(8);
         stage.trigger.attach("trigger".into(), rx_trigger).await;
@@ -439,7 +455,8 @@ mod tests {
                 .await;
 
             let context = assert_ok!(context_for(&mock_server));
-            let (handle, tx_trigger, mut rx_out) = test_stage_for(FlinkScope::Job, &STD_METRIC_ORDERS, context).await;
+            let (handle, tx_trigger, mut rx_out) =
+                test_stage_for(FlinkScope::Job, &STD_METRIC_ORDERS, context).await;
 
             let sensor_handle = tokio::spawn(async move {
                 assert_ok!(tx_trigger.send(()).await);
@@ -557,7 +574,8 @@ mod tests {
                 .await;
 
             let context = assert_ok!(context_for(&mock_server));
-            let (handle, tx_trigger, mut rx_out) = test_stage_for(FlinkScope::Job, &STD_METRIC_ORDERS, context).await;
+            let (handle, tx_trigger, mut rx_out) =
+                test_stage_for(FlinkScope::Job, &STD_METRIC_ORDERS, context).await;
 
             let sensor_handle = tokio::spawn(async move {
                 assert_ok!(tx_trigger.send(()).await);
@@ -612,7 +630,8 @@ mod tests {
             let mock_server = MockServer::start().await;
 
             let (uptime, restarts, failed_checkpts, b) = make_jobs_data();
-            let metric_response = RetryResponder::new(1, 500, ResponseTemplate::new(200).set_body_json(b));
+            let metric_response =
+                RetryResponder::new(1, 500, ResponseTemplate::new(200).set_body_json(b));
             Mock::given(method("GET"))
                 .and(path("/jobs/metrics"))
                 .and(QueryParamKeyMatcher::new("get"))
@@ -630,7 +649,8 @@ mod tests {
                 .await;
 
             let context = assert_ok!(context_for(&mock_server));
-            let (handle, tx_trigger, mut rx_out) = test_stage_for(FlinkScope::Job, &STD_METRIC_ORDERS, context).await;
+            let (handle, tx_trigger, mut rx_out) =
+                test_stage_for(FlinkScope::Job, &STD_METRIC_ORDERS, context).await;
 
             let sensor_handle = tokio::spawn(async move {
                 assert_ok!(tx_trigger.send(()).await);
@@ -685,8 +705,10 @@ mod tests {
             let mock_server = MockServer::start().await;
 
             let cpu_load: f64 = 16. * ((0..100_000_000).fake::<i64>() as f64 / 100_000_000.);
-            let heap_used: f64 = 1_000_000_000. * ((0..100_000_000).fake::<i64>() as f64 / 100_000_000.);
-            let heap_committed: f64 = 1_000_000_000. * ((0..100_000_000).fake::<i64>() as f64 / 100_000_000.);
+            let heap_used: f64 =
+                1_000_000_000. * ((0..100_000_000).fake::<i64>() as f64 / 100_000_000.);
+            let heap_committed: f64 =
+                1_000_000_000. * ((0..100_000_000).fake::<i64>() as f64 / 100_000_000.);
             let nr_threads: i32 = (1..150).fake();
             let tm_available_metrics = json!([
                 { "id": "Status.Network.AvailableMemorySegments" },

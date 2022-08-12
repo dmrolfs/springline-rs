@@ -43,7 +43,11 @@ pub struct FlinkSettings {
     #[serde_as(as = "DurationMilliSeconds")]
     pub max_retry_interval: Duration,
 
-    #[serde(default, rename = "pool_idle_timeout_secs", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        rename = "pool_idle_timeout_secs",
+        skip_serializing_if = "Option::is_none"
+    )]
     #[serde_as(as = "Option<DurationSeconds>")]
     pub pool_idle_timeout: Option<Duration>,
 
@@ -111,10 +115,10 @@ impl FlinkSettings {
         let mut result = HeaderMap::with_capacity(self.headers.len());
 
         for (k, v) in self.headers.iter() {
-            let name =
-                HeaderName::from_str(k.as_str()).map_err(|err| FlinkError::InvalidRequestHeaderDetail(err.into()))?;
-            let value =
-                HeaderValue::from_str(v.as_str()).map_err(|err| FlinkError::InvalidRequestHeaderDetail(err.into()))?;
+            let name = HeaderName::from_str(k.as_str())
+                .map_err(|err| FlinkError::InvalidRequestHeaderDetail(err.into()))?;
+            let value = HeaderValue::from_str(v.as_str())
+                .map_err(|err| FlinkError::InvalidRequestHeaderDetail(err.into()))?;
             result.insert(name, value);
         }
 
@@ -164,7 +168,10 @@ mod tests {
             job_manager_uri_scheme: "http".to_string(),
             job_manager_host: "dr-flink-jm-0".to_string(),
             job_manager_port: 8081,
-            headers: vec![(reqwest::header::AUTHORIZATION.to_string(), "foobar".to_string())],
+            headers: vec![(
+                reqwest::header::AUTHORIZATION.to_string(),
+                "foobar".to_string(),
+            )],
             max_retries: 5,
             pool_idle_timeout: None,
             pool_max_idle_per_host: None,

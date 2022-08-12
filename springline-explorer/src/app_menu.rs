@@ -43,7 +43,9 @@ impl AppMenu {
                     }
                 },
                 None => {
-                    eprintln!("I don't know how you got here, but your selection is not understood.");
+                    eprintln!(
+                        "I don't know how you got here, but your selection is not understood."
+                    );
                 },
             }
         }

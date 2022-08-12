@@ -3,7 +3,8 @@ use std::collections::{HashMap, HashSet};
 use once_cell::sync::Lazy;
 use oso::{Oso, PolarClass, PolarValue};
 use proctor::elements::{
-    PolicyContributor, PolicySource, PolicySubscription, QueryPolicy, QueryResult, Telemetry, Timestamp,
+    PolicyContributor, PolicySource, PolicySubscription, QueryPolicy, QueryResult, Telemetry,
+    Timestamp,
 };
 use proctor::error::PolicyError;
 use proctor::phases::sense::TelemetrySubscription;
@@ -283,7 +284,10 @@ mod tests {
             ..DecisionTemplateData::default()
         };
 
-        let rep = assert_ok!(ron::ser::to_string_pretty(&data, ron::ser::PrettyConfig::default()));
+        let rep = assert_ok!(ron::ser::to_string_pretty(
+            &data,
+            ron::ser::PrettyConfig::default()
+        ));
         let expected_rep = r##"|{
         |    "basis": "decision_basis",
         |    "max_healthy_relative_lag_velocity": Some(1.0),

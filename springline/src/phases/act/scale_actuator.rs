@@ -35,7 +35,9 @@ impl ScaleActuator<ScalePlan> {
 
         let composite: CompositeAction<ScalePlan> = action::CompositeAction::default()
             .add_action_step(action::PrepareData)
-            .add_action_step(action::CancelWithSavepoint::from_settings(flink_action_settings))
+            .add_action_step(action::CancelWithSavepoint::from_settings(
+                flink_action_settings,
+            ))
             .add_action_step(action::PatchReplicas::from_settings(settings))
             .add_action_step(action::RestartJobs::from_settings(flink_action_settings));
 
@@ -134,7 +136,11 @@ where
             *is_rescaling = true;
             self.notify_action_started(plan.clone());
             let _timer = proctor::graph::stage::start_stage_eval_time(STAGE_NAME);
-            let mut session = ActionSession::new(plan.correlation().clone(), self.kube.clone(), self.flink.clone());
+            let mut session = ActionSession::new(
+                plan.correlation().clone(),
+                self.kube.clone(),
+                self.flink.clone(),
+            );
 
             let outcome = match self.action.check_preconditions(&session) {
                 Ok(_) => {
@@ -168,7 +174,9 @@ where
     fn notify_action_started(&self, plan: In) {
         tracing::info!(?plan, "rescale action started");
         match self.tx_action_monitor.send(Arc::new(ActEvent::PlanActionStarted(plan))) {
-            Ok(nr_recipients) => tracing::debug!("published PlanActionStarted event to {nr_recipients} recipients."),
+            Ok(nr_recipients) => {
+                tracing::debug!("published PlanActionStarted event to {nr_recipients} recipients.")
+            },
             Err(err) => tracing::warn!(error=?err, "failed to publish PlanActionStarted event."),
         }
     }

@@ -148,7 +148,10 @@ impl Forecaster for LeastSquaresWorkloadForecaster {
 
     fn forecast(&mut self) -> Result<Box<dyn WorkloadForecast>, PlanError> {
         if !self.have_enough_data() {
-            return Err(PlanError::NotEnoughData { supplied: self.data.len(), need: self.window_size });
+            return Err(PlanError::NotEnoughData {
+                supplied: self.data.len(),
+                need: self.window_size,
+            });
         }
 
         self.data.make_contiguous();
@@ -230,7 +233,8 @@ mod tests {
         .collect();
 
         let test_scenario = |influence: f64, measurements: Vec<usize>| {
-            let test_data: Vec<(Point, usize)> = data.clone().into_iter().zip(measurements).collect();
+            let test_data: Vec<(Point, usize)> =
+                data.clone().into_iter().zip(measurements).collect();
 
             let spike_settings: SpikeSettings = SpikeSettings {
                 std_deviation_threshold: 5.,

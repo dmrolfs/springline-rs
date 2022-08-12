@@ -10,7 +10,9 @@ use tracing::Instrument;
 use url::Url;
 
 use super::{ActionSession, ScaleAction};
-use crate::flink::{self, FlinkContext, FlinkError, JobId, JobSavepointReport, OperationStatus, SavepointStatus};
+use crate::flink::{
+    self, FlinkContext, FlinkError, JobId, JobSavepointReport, OperationStatus, SavepointStatus,
+};
 use crate::phases::act;
 use crate::phases::act::ActError;
 use crate::phases::plan::ScalePlan;
@@ -72,8 +74,14 @@ impl ScaleAction for CancelWithSavepoint {
         Ok(())
     }
 
-    #[tracing::instrument(level = "info", name = "StopFlinkWithSavepoint::execute", skip(self, _plan))]
-    async fn execute<'s>(&self, _plan: &'s Self::In, session: &'s mut ActionSession) -> Result<(), ActError> {
+    #[tracing::instrument(
+        level = "info",
+        name = "StopFlinkWithSavepoint::execute",
+        skip(self, _plan)
+    )]
+    async fn execute<'s>(
+        &self, _plan: &'s Self::In, session: &'s mut ActionSession,
+    ) -> Result<(), ActError> {
         let timer = act::start_scale_action_timer(session.cluster_label(), self.label());
 
         let active_jobs = session.active_jobs.clone().unwrap_or_default();
@@ -83,7 +91,10 @@ impl ScaleAction for CancelWithSavepoint {
         self.do_wait_for_job_cancel(&job_triggers, session).await?;
         session.savepoints = Some(savepoint_report);
 
-        session.mark_duration(self.label(), Duration::from_secs_f64(timer.stop_and_record()));
+        session.mark_duration(
+            self.label(),
+            Duration::from_secs_f64(timer.stop_and_record()),
+        );
         Ok(())
     }
 }
@@ -116,9 +127,13 @@ impl CancelWithSavepoint {
     ) -> Result<Vec<JobId>, ActError> {
         let mut tasks = Vec::new();
         for (job, _) in job_triggers.iter().cloned() {
-            let cancelled =
-                Self::wait_on_job_cancel(job.clone(), self.polling_interval, self.savepoint_timeout, session)
-                    .map(|outcome| (job, outcome));
+            let cancelled = Self::wait_on_job_cancel(
+                job.clone(),
+                self.polling_interval,
+                self.savepoint_timeout,
+                session,
+            )
+            .map(|outcome| (job, outcome));
             tasks.push(cancelled);
         }
 
@@ -217,7 +232,8 @@ impl CancelWithSavepoint {
             let start = Instant::now();
 
             loop {
-                let job_detail = session.flink.query_job_details(&job, &session.correlation()).await;
+                let job_detail =
+                    session.flink.query_job_details(&job, &session.correlation()).await;
                 match job_detail {
                     Ok(details) if !details.state.is_active() => {
                         tracing::info!(job_status=%details.state, "job {job} is not active.");
@@ -243,15 +259,15 @@ impl CancelWithSavepoint {
             }
         };
 
-        tokio::time::timeout(cancel_timeout, task)
-            .await
-            .map_err(|_elapsed| FlinkError::Timeout(format!("flink cancel job {job}"), cancel_timeout))
+        tokio::time::timeout(cancel_timeout, task).await.map_err(|_elapsed| {
+            FlinkError::Timeout(format!("flink cancel job {job}"), cancel_timeout)
+        })
     }
 
     #[tracing::instrument(level = "trace", skip(session))]
     async fn wait_on_savepoint(
-        job: JobId, trigger: trigger::TriggerId, polling_interval: Duration, savepoint_timeout: Duration,
-        session: &ActionSession,
+        job: JobId, trigger: trigger::TriggerId, polling_interval: Duration,
+        savepoint_timeout: Duration, session: &ActionSession,
     ) -> Result<SavepointStatus, FlinkError> {
         let task = async {
             let start = Instant::now();
@@ -396,7 +412,9 @@ impl CancelWithSavepoint {
     }
 
     #[tracing::instrument(level = "trace", skip(tasks))]
-    async fn block_for_all_cancellations<F>(tasks: Vec<F>, correlation: &CorrelationId) -> Result<Vec<JobId>, ActError>
+    async fn block_for_all_cancellations<F>(
+        tasks: Vec<F>, correlation: &CorrelationId,
+    ) -> Result<Vec<JobId>, ActError>
     where
         F: Future<Output = (JobId, Result<(), FlinkError>)> + Send,
     {
@@ -502,7 +520,9 @@ mod query {
     use serde::{Deserialize, Serialize};
     use serde_with::serde_as;
 
-    use crate::flink::{FailureCause, FlinkError, OperationStatus, SavepointLocation, SavepointStatus};
+    use crate::flink::{
+        FailureCause, FlinkError, OperationStatus, SavepointLocation, SavepointStatus,
+    };
 
     #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
     pub struct SavepointInfoResponseBody {
@@ -603,7 +623,9 @@ mod tests {
     use serde_test::{assert_tokens, Token};
 
     use super::*;
-    use crate::phases::act::action::savepoint::query::{QueueState, QueueStatus, SavepointOperation};
+    use crate::phases::act::action::savepoint::query::{
+        QueueState, QueueStatus, SavepointOperation,
+    };
 
     #[test]
     fn test_savepoint_body_serde_tokens() {
@@ -652,13 +674,17 @@ mod tests {
         });
         let success_rep = assert_ok!(serde_json::to_string(&success));
 
-        let actual: query::SavepointInfoResponseBody = assert_ok!(serde_json::from_str(&success_rep));
+        let actual: query::SavepointInfoResponseBody =
+            assert_ok!(serde_json::from_str(&success_rep));
         assert_eq!(
             actual,
             query::SavepointInfoResponseBody {
                 status: QueueStatus { id: QueueState::Completed },
                 operation: Some(SavepointOperation {
-                    location: Some("s3a://dev-flink-58dz/foo/savepoints/savepoint-957152-e82cbb4804b1".to_string()),
+                    location: Some(
+                        "s3a://dev-flink-58dz/foo/savepoints/savepoint-957152-e82cbb4804b1"
+                            .to_string()
+                    ),
                     failure_cause: None,
                 }),
             }

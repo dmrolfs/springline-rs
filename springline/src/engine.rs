@@ -21,13 +21,16 @@ pub use service::EngineApiError;
 use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
 
-pub use self::http::{run_http_server, shutdown_http_server, HttpJoinHandle, TxHttpGracefulShutdown};
+pub use self::http::{
+    run_http_server, shutdown_http_server, HttpJoinHandle, TxHttpGracefulShutdown,
+};
 pub use self::metrics_exporter::{
     run_metrics_exporter, shutdown_exporter, ExporterJoinHandle, TxExporterGracefulShutdown,
 };
 pub use self::monitor::{
-    DECISION_PLAN_CURRENT_NR_TASK_MANAGERS, DECISION_RESCALE_DECISION, ELIGIBILITY_IS_ELIGIBLE_FOR_SCALING,
-    GOVERNANCE_PLAN_ACCEPTED, PLAN_OBSERVATION_COUNT, PLAN_TARGET_NR_TASK_MANAGERS,
+    DECISION_PLAN_CURRENT_NR_TASK_MANAGERS, DECISION_RESCALE_DECISION,
+    ELIGIBILITY_IS_ELIGIBLE_FOR_SCALING, GOVERNANCE_PLAN_ACCEPTED, PLAN_OBSERVATION_COUNT,
+    PLAN_TARGET_NR_TASK_MANAGERS,
 };
 use crate::engine::service::{EngineCmd, EngineServiceApi, Health, Service};
 use crate::flink::{FlinkContext, MetricCatalog};
@@ -75,11 +78,16 @@ pub enum PhaseFlag {
 pub trait EngineState {}
 
 pub type BoxedTelemetrySource = Box<dyn SourceStage<Telemetry>>;
-pub type BoxedSourceFactory = Box<dyn Fn(&Settings) -> BoxedTelemetrySource + Send + Sync + 'static>;
+pub type BoxedSourceFactory =
+    Box<dyn Fn(&Settings) -> BoxedTelemetrySource + Send + Sync + 'static>;
 pub type FeedbackSource = (BoxedTelemetrySource, ActorSourceApi<Telemetry>);
 pub type BoxedFeedbackFactory = Box<dyn Fn(&Settings) -> FeedbackSource + Send + Sync + 'static>;
-pub type ActionWithMonitor = (Box<dyn SinkStage<GovernanceOutcome>>, ActMonitor<GovernanceOutcome>);
-pub type ActionWithMonitorFactory = Box<dyn Fn(&Settings) -> ActionWithMonitor + Send + Sync + 'static>;
+pub type ActionWithMonitor = (
+    Box<dyn SinkStage<GovernanceOutcome>>,
+    ActMonitor<GovernanceOutcome>,
+);
+pub type ActionWithMonitorFactory =
+    Box<dyn Fn(&Settings) -> ActionWithMonitor + Send + Sync + 'static>;
 
 #[derive(Default, Clone)]
 pub struct Building {
@@ -162,7 +170,9 @@ impl AutoscaleEngine<Building> {
     }
 
     #[tracing::instrument(level = "trace", skip(self, settings))]
-    pub async fn finish(self, sensor_flink: FlinkContext, settings: &Settings) -> Result<AutoscaleEngine<Ready>> {
+    pub async fn finish(
+        self, sensor_flink: FlinkContext, settings: &Settings,
+    ) -> Result<AutoscaleEngine<Ready>> {
         let machine_node = MachineNode::new(settings.engine.machine_id, settings.engine.node_id)?;
 
         let mut sensors = self
@@ -180,8 +190,14 @@ impl AutoscaleEngine<Building> {
             tx
         });
 
-        let (mut sense_builder, tx_stop_flink_sensor) =
-            sense::make_sense_phase("data", sensor_flink, &settings.sensor, sensors, machine_node).await?;
+        let (mut sense_builder, tx_stop_flink_sensor) = sense::make_sense_phase(
+            "data",
+            sensor_flink,
+            &settings.sensor,
+            sensors,
+            machine_node,
+        )
+        .await?;
         let (eligibility_phase, eligibility_channel) =
             eligibility::make_eligibility_phase(&settings.eligibility, &mut sense_builder).await?;
         let rx_eligibility_monitor = eligibility_phase.rx_monitor();
@@ -218,17 +234,18 @@ impl AutoscaleEngine<Building> {
             settings.sensor.flink.metrics_interval,
         );
 
-        let collect_window = crate::phases::CollectMetricWindow::new("collect_window", &settings.engine);
+        let collect_window =
+            crate::phases::CollectMetricWindow::new("collect_window", &settings.engine);
         let tx_collect_window_api = collect_window.tx_api();
 
-        let reduce_window =
-            proctor::graph::stage::FilterMap::new("catalog_from_window", |decision_window: DecisionOutcome| {
-                match decision_window {
-                    DecisionResult::ScaleUp(p) => p.head().cloned().map(DecisionResult::ScaleUp),
-                    DecisionResult::ScaleDown(p) => p.head().cloned().map(DecisionResult::ScaleDown),
-                    DecisionResult::NoAction(p) => p.head().cloned().map(DecisionResult::NoAction),
-                }
-            });
+        let reduce_window = proctor::graph::stage::FilterMap::new(
+            "catalog_from_window",
+            |decision_window: DecisionOutcome| match decision_window {
+                DecisionResult::ScaleUp(p) => p.head().cloned().map(DecisionResult::ScaleUp),
+                DecisionResult::ScaleDown(p) => p.head().cloned().map(DecisionResult::ScaleDown),
+                DecisionResult::NoAction(p) => p.head().cloned().map(DecisionResult::NoAction),
+            },
+        );
         let reduce_window = reduce_window.with_block_logging();
 
         let tx_clearinghouse_api = sense.tx_api();
@@ -247,7 +264,10 @@ impl AutoscaleEngine<Building> {
         (collect_window.outlet(), eligibility_phase.inlet()).connect().await;
         (eligibility_phase.outlet(), decision_phase.inlet()).connect().await;
         (decision_phase.outlet(), reduce_window.inlet()).connect().await;
-        (reduce_window.outlet(), planning_phase.phase.decision_inlet())
+        (
+            reduce_window.outlet(),
+            planning_phase.phase.decision_inlet(),
+        )
             .connect()
             .await;
         (planning_phase.phase.outlet(), governance_phase.inlet()).connect().await;
@@ -314,7 +334,9 @@ impl AutoscaleEngine<Ready> {
         let tx_service_api = self.inner.tx_service_api.clone();
         let graph_handle = tokio::spawn(async move {
             let result = self.inner.graph.run().await;
-            if let Err(err) = EngineCmd::update_health(&self.inner.tx_service_api, Health::GraphStopped).await {
+            if let Err(err) =
+                EngineCmd::update_health(&self.inner.tx_service_api, Health::GraphStopped).await
+            {
                 tracing::error!(error=?err, "Graph stopped but failed to notify engine of health status.");
             }
             result
