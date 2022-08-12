@@ -49,8 +49,8 @@ kubernetes:
   # kubernetes namespace is used.
 #  namespace:
 
-  # Period to allow cluster to stabilize after a patch operation. Defaults to 1 minute.
-#  patch_settle_timeout_secs: 60
+  # Period to allow cluster to stabilize after a patch operation. Defaults to 3 minutes.
+#  patch_settle_timeout_secs: 180
 
 sensor:
   clearinghouse:

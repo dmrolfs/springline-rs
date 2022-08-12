@@ -29,7 +29,7 @@ pub struct KubernetesSettings {
     /// kubernetes namespace is used.
     pub namespace: Option<String>,
 
-    /// Period to allow cluster to stabilize after a patch operation. Defaults to 1 minute.
+    /// Period to allow cluster to stabilize after a patch operation. Defaults to 3 minutes.
     #[serde_as(as = "serde_with::DurationSeconds<u64>")]
     #[serde(
         rename = "patch_settle_timeout_secs",
@@ -50,7 +50,7 @@ impl Default for KubernetesSettings {
 
 impl KubernetesSettings {
     pub const fn default_settle_timeout_secs() -> Duration {
-        Duration::from_secs(60)
+        Duration::from_secs(180)
     }
 }
 
