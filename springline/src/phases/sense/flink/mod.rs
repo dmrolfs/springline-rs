@@ -11,7 +11,10 @@ use proctor::graph::{
 };
 use prometheus::{HistogramOpts, HistogramTimer, HistogramVec};
 
-use crate::flink::{self, CorrelationGenerator, FlinkContext, MC_HEALTH__JOB_MAX_PARALLELISM};
+use crate::flink::{
+    self, CorrelationGenerator, FlinkContext, MC_HEALTH__JOB_MAX_PARALLELISM,
+    MC_HEALTH__JOB_NONSOURCE_MAX_PARALLELISM,
+};
 use crate::phases::sense::flink::job_taskmanager_sensor::JobTaskmanagerSensor;
 use crate::phases::sense::flink::taskmanager_admin_sensor::TaskmanagerAdminSensor;
 use crate::phases::sense::flink::vertex_sensor::VertexSensor;
@@ -183,7 +186,7 @@ fn consolidate_active_job_telemetry_for_order(
 
     let mut telemetry = Telemetry::new();
     for (metric, values) in job_telemetry {
-        let aggregated_value = do_aggregate_as_special_metric(&metric, &values)
+        let aggregated_value = do_aggregate_nonorder_metric(&metric, &values)
             .or_else(|| {
                 match do_aggregate_metric_order(&metric, values, &metric_agg) {
                     Ok(aggregated) => aggregated,
@@ -203,11 +206,9 @@ fn consolidate_active_job_telemetry_for_order(
 }
 
 #[tracing::instrument(level = "trace", skip())]
-fn do_aggregate_as_special_metric(
-    metric: &str, values: &[TelemetryValue],
-) -> Option<TelemetryValue> {
+fn do_aggregate_nonorder_metric(metric: &str, values: &[TelemetryValue]) -> Option<TelemetryValue> {
     match metric {
-        MC_HEALTH__JOB_MAX_PARALLELISM => {
+        MC_HEALTH__JOB_MAX_PARALLELISM | MC_HEALTH__JOB_NONSOURCE_MAX_PARALLELISM => {
             let max_parallelism = values.iter().max_by(|acc, val| {
                 let lhs = u32::try_from(*acc).ok();
                 let rhs = u32::try_from(*val).ok();

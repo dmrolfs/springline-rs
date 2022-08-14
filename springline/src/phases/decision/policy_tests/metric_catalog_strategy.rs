@@ -225,6 +225,7 @@ pub fn arb_job_health_metrics() -> impl Strategy<Value = JobHealthMetrics> {
 #[derive(Debug, Default, Clone)]
 pub struct JobHealthMetricsStrategyBuilder {
     job_max_parallelism: Option<BoxedStrategy<u32>>,
+    job_nonsource_max_parallelism: Option<BoxedStrategy<u32>>,
     job_uptime_millis: Option<BoxedStrategy<u32>>,
     job_nr_restarts: Option<BoxedStrategy<u32>>,
     job_nr_completed_checkpoints: Option<BoxedStrategy<u32>>,
@@ -251,6 +252,20 @@ impl JobHealthMetricsStrategyBuilder {
 
     pub fn just_job_max_parallelism(self, job_max_parallelism: impl Into<u32>) -> Self {
         self.job_max_parallelism(Just(job_max_parallelism.into()))
+    }
+
+    pub fn job_nonsource_max_parallelism(
+        self, job_nonsource_max_parallelism: impl Strategy<Value = u32> + 'static,
+    ) -> Self {
+        let mut new = self;
+        new.job_nonsource_max_parallelism = Some(job_nonsource_max_parallelism.boxed());
+        new
+    }
+
+    pub fn just_job_nonsource_max_parallelism(
+        self, job_nonsource_max_parallelism: impl Into<u32>,
+    ) -> Self {
+        self.job_nonsource_max_parallelism(Just(job_nonsource_max_parallelism.into()))
     }
 
     pub fn job_uptime_millis(
@@ -302,24 +317,34 @@ impl JobHealthMetricsStrategyBuilder {
     }
 
     pub fn finish(self) -> impl Strategy<Value = JobHealthMetrics> {
-        let job_max_parallelism = self.job_max_parallelism.unwrap_or(any::<u32>().boxed());
-        let job_uptime_millis = self.job_uptime_millis.unwrap_or(any::<u32>().boxed());
-        let job_nr_restarts = self.job_nr_restarts.unwrap_or(any::<u32>().boxed());
-        let job_nr_completed_checkpoints =
-            self.job_nr_completed_checkpoints.unwrap_or(any::<u32>().boxed());
-        let job_nr_failed_checkpoints =
-            self.job_nr_failed_checkpoints.unwrap_or(any::<u32>().boxed());
-
+        let job_nonsource_max_parallelism_strategy = self.job_nonsource_max_parallelism.clone();
+        let all_nonsource__max_parallelism = self
+            .job_max_parallelism
+            .unwrap_or(any::<u32>().boxed())
+            .prop_flat_map(move |all_max| {
+                let nonsource_max = job_nonsource_max_parallelism_strategy
+                    .clone()
+                    .map(move |nm_strategy| {
+                        nm_strategy
+                            .prop_filter(
+                                "nonsource parallelism cannot be above all max",
+                                move |nm| *nm <= all_max,
+                            )
+                            .boxed()
+                    })
+                    .unwrap_or((0..=all_max).boxed());
+                (Just(all_max), nonsource_max)
+            });
         (
-            job_max_parallelism,
-            job_uptime_millis,
-            job_nr_restarts,
-            job_nr_completed_checkpoints,
-            job_nr_failed_checkpoints,
+            all_nonsource__max_parallelism,
+            self.job_uptime_millis.unwrap_or(any::<u32>().boxed()),
+            self.job_nr_restarts.unwrap_or(any::<u32>().boxed()),
+            self.job_nr_completed_checkpoints.unwrap_or(any::<u32>().boxed()),
+            self.job_nr_failed_checkpoints.unwrap_or(any::<u32>().boxed()),
         )
             .prop_map(
                 |(
-                    job_max_parallelism,
+                    (job_max_parallelism, job_nonsource_max_parallelism),
                     job_uptime_millis,
                     job_nr_restarts,
                     job_nr_completed_checkpoints,
@@ -327,6 +352,7 @@ impl JobHealthMetricsStrategyBuilder {
                 )| {
                     JobHealthMetrics {
                         job_max_parallelism,
+                        job_nonsource_max_parallelism,
                         job_uptime_millis,
                         job_nr_restarts,
                         job_nr_completed_checkpoints,

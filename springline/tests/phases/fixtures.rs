@@ -29,6 +29,7 @@ pub fn make_test_item(
 pub fn make_test_item_padding() -> Telemetry {
     let padding = maplit::hashmap! {
         "health.job_max_parallelism".to_string() => 16.into(),
+        "health.job_nonsource_max_parallelism".to_string() => 16.into(),
         "health.job_uptime_millis".to_string() => (0).into(),
         "health.job_nr_restarts".to_string() => (0).into(),
         "health.job_nr_completed_checkpoints".to_string() => (0).into(),

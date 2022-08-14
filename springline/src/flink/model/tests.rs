@@ -158,6 +158,10 @@ mod catalog {
             TelemetryValue::Integer(4),
         );
         telemetry.insert(
+            "health.job_nonsource_max_parallelism".to_string(),
+            TelemetryValue::Integer(3),
+        );
+        telemetry.insert(
             "flow.records_in_per_sec".to_string(),
             TelemetryValue::Float(20.0),
         );
@@ -225,6 +229,7 @@ mod catalog {
                 recv_timestamp: Timestamp::new(1647307527, 57406000),
                 health: JobHealthMetrics {
                     job_max_parallelism: 4,
+                    job_nonsource_max_parallelism: 3,
                     job_uptime_millis: 201402,
                     job_nr_restarts: 0,
                     job_nr_completed_checkpoints: 0,
@@ -327,6 +332,7 @@ mod catalog {
             recv_timestamp: ts,
             health: JobHealthMetrics {
                 job_max_parallelism: 0,
+                job_nonsource_max_parallelism: 0,
                 job_uptime_millis: 1_234_567,
                 job_nr_restarts: 3,
                 job_nr_completed_checkpoints: 12_345,
@@ -379,6 +385,8 @@ mod catalog {
                 Token::U32(ts_nsecs),
                 Token::TupleStructEnd,
                 Token::Str("health.job_max_parallelism"),
+                Token::U32(0),
+                Token::Str("health.job_nonsource_max_parallelism"),
                 Token::U32(0),
                 Token::Str("health.job_uptime_millis"),
                 Token::U32(1_234_567),
@@ -457,6 +465,7 @@ mod catalog {
             recv_timestamp: ts,
             health: JobHealthMetrics {
                 job_max_parallelism: 12,
+                job_nonsource_max_parallelism: 9,
                 job_uptime_millis: 1_234_567,
                 job_nr_restarts: 3,
                 job_nr_completed_checkpoints: 12_345,
@@ -502,6 +511,7 @@ mod catalog {
                 SUBSCRIPTION_CORRELATION.to_string() => corr_id.to_telemetry(),
                 SUBSCRIPTION_TIMESTAMP.to_string() => TelemetryValue::Seq(vec![ts_secs.to_telemetry(), ts_nsecs.to_telemetry(),]),
                 "health.job_max_parallelism".to_string() => 12.to_telemetry(),
+                "health.job_nonsource_max_parallelism".to_string() => 9.to_telemetry(),
                 "health.job_uptime_millis".to_string() => (1_234_567).to_telemetry(),
                 "health.job_nr_restarts".to_string() => (3).to_telemetry(),
                 "health.job_nr_completed_checkpoints".to_string() => (12_345).to_telemetry(),

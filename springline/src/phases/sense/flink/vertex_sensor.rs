@@ -21,12 +21,13 @@ use url::Url;
 use super::{api_model, metric_order, Aggregation, MetricOrder, Unpack};
 use crate::flink::{
     self, JobDetail, JobId, JobSummary, VertexDetail, MC_CLUSTER__NR_ACTIVE_JOBS,
-    MC_HEALTH__JOB_MAX_PARALLELISM,
+    MC_HEALTH__JOB_MAX_PARALLELISM, MC_HEALTH__JOB_NONSOURCE_MAX_PARALLELISM,
 };
 use crate::phases::sense::flink::api_model::FlinkMetricResponse;
 use crate::phases::sense::flink::metric_order::MetricOrderMatcher;
 use crate::phases::sense::flink::{
-    CorrelationGenerator, FlinkContext, FlinkScope, PlanPositionCandidate, JOB_SCOPE, TASK_SCOPE,
+    CorrelationGenerator, FlinkContext, FlinkScope, PlanPositionCandidate, PlanPositionSpec,
+    JOB_SCOPE, TASK_SCOPE,
 };
 use crate::CorrelationId;
 
@@ -260,15 +261,39 @@ where
     ) -> Telemetry {
         let mut telemetry = Telemetry::new();
 
-        let max_parallelism = job_detail.plan.nodes.iter().map(|n| n.parallelism).max_by(u32::cmp);
-        if let Some(job_max_parallelism) = max_parallelism {
+        let (all_max_parallelism, nonsource_max_parallelism) =
+            Self::do_find_max_parallelisms(job_detail.vertices.as_slice());
+
+        if let Some(job_max_parallelism) = all_max_parallelism {
             telemetry.insert(
                 MC_HEALTH__JOB_MAX_PARALLELISM.to_string(),
                 job_max_parallelism.into(),
             );
         }
 
+        if let Some(job_nonsource_max_parallelism) = nonsource_max_parallelism {
+            telemetry.insert(
+                MC_HEALTH__JOB_NONSOURCE_MAX_PARALLELISM.to_string(),
+                job_nonsource_max_parallelism.into(),
+            );
+        }
+
         telemetry
+    }
+
+    fn do_find_max_parallelisms(vertices: &[VertexDetail]) -> (Option<usize>, Option<usize>) {
+        vertices.iter().fold((None, None), |(all_max, nonsource_max), v| {
+            let new_all_max = all_max.map(|m| m.max(v.parallelism)).unwrap_or(v.parallelism);
+
+            let candidate = PlanPositionCandidate::ByName(v.name.as_str());
+            let new_nonsource_max = if PlanPositionSpec::NotSource.matches(&candidate) {
+                nonsource_max.map(|m| m.max(v.parallelism))
+            } else {
+                nonsource_max
+            };
+
+            (Some(new_all_max), new_nonsource_max)
+        })
     }
 
     #[tracing::instrument(level = "trace", skip(self))]

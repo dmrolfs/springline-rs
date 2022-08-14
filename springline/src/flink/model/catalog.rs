@@ -131,6 +131,7 @@ impl Semigroup for MetricCatalog {
 }
 
 pub const MC_HEALTH__JOB_MAX_PARALLELISM: &str = "health.job_max_parallelism";
+pub const MC_HEALTH__JOB_NONSOURCE_MAX_PARALLELISM: &str = "health.job_nonsource_max_parallelism";
 
 #[derive(PolarClass, Debug, Default, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub struct JobHealthMetrics {
@@ -140,6 +141,14 @@ pub struct JobHealthMetrics {
     #[polar(attribute)]
     #[serde(default, rename = "health.job_max_parallelism")]
     pub job_max_parallelism: u32,
+
+    /// Max parallelism for non-source vertices found in Job. Source vertices may be fixed around
+    /// the number of input partitions, with the remainder of the job running at a lower
+    /// parallelism. If this is below the number of task managers, then an up rescale plan may
+    /// simply restart at an increased parallelism up to the number of task managers.
+    #[polar(attribute)]
+    #[serde(default, rename = "health.job_nonsource_max_parallelism")]
+    pub job_nonsource_max_parallelism: u32,
 
     // todo per Flink doc's this metric does not work properly under Reactive mode. remove in favor of eligibility's
     // last_failure?
@@ -176,6 +185,7 @@ impl Monoid for JobHealthMetrics {
     fn empty() -> Self {
         Self {
             job_max_parallelism: 0,
+            job_nonsource_max_parallelism: 0,
             job_uptime_millis: 0,
             job_nr_restarts: 0,
             job_nr_completed_checkpoints: 0,
@@ -554,6 +564,7 @@ impl SubscriptionRequirements for MetricCatalog {
         maplit::hashset! {
             // JobHealthMetrics
             MC_HEALTH__JOB_MAX_PARALLELISM.into(),
+            MC_HEALTH__JOB_NONSOURCE_MAX_PARALLELISM.into(),
             "health.job_uptime_millis".into(),
             "health.job_nr_restarts".into(),
             "health.job_nr_completed_checkpoints".into(),
