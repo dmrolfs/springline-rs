@@ -28,8 +28,8 @@ settings_loader = { git = "https://github.com/dmrolfs/settings-loader-rs", featu
 #settings_loader = { path = "../../settings-loader-rs", features = ["http"] }
 
 anyhow = "1.0.61"
-chrono = "0.4.21"
-clap = { version = "3.2.16", features = ["derive"] }
+chrono = "0.4.22"
+clap = { version = "3.2.17", features = ["derive"] }
 # until ron feature and builder fns in *published* config-rs
 config = "0.13.2"
 #config = { version = "^0.11", default_features = true, features = ["ron"] }

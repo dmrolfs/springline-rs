@@ -9,8 +9,8 @@ metadata:
   annotations:
 {{ include "common.annotations" . | indent 4 }}
     prometheus.io/path: "/metrics"
-    prometheus.io/port: '9898'
-    prometheus.io/scrapehifreq: "true"
+    prometheus.io/port: 9898
+    prometheus.io/scrapehifreq: true
 spec:
   replicas: {{ .Values.replicaCount }}
   selector:
