@@ -43,9 +43,13 @@ proptest! {
     ) {
         let query_result = match scenario.run() {
             Ok(r) => Some(r),
-            Err(PolicyError::Validation(err)) => None,
+            Err(PolicyError::Validation(err)) => {
+                tracing::info!(error=?err, "query result validation error - ignoring");
+                None
+            },
             Err(err) => {
-                prop_assert!(false, "validation error: {:?}", err);
+                tracing::error!(error=?err, "query result policy error");
+                prop_assert!(false, "policy execution error: {:?}", err);
                 None
             },
         };

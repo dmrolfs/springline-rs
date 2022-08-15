@@ -318,7 +318,7 @@ impl JobHealthMetricsStrategyBuilder {
 
     pub fn finish(self) -> impl Strategy<Value = JobHealthMetrics> {
         let job_nonsource_max_parallelism_strategy = self.job_nonsource_max_parallelism.clone();
-        let all_nonsource__max_parallelism = self
+        let all_nonsource_max_parallelism = self
             .job_max_parallelism
             .unwrap_or(any::<u32>().boxed())
             .prop_flat_map(move |all_max| {
@@ -336,7 +336,7 @@ impl JobHealthMetricsStrategyBuilder {
                 (Just(all_max), nonsource_max)
             });
         (
-            all_nonsource__max_parallelism,
+            all_nonsource_max_parallelism,
             self.job_uptime_millis.unwrap_or(any::<u32>().boxed()),
             self.job_nr_restarts.unwrap_or(any::<u32>().boxed()),
             self.job_nr_completed_checkpoints.unwrap_or(any::<u32>().boxed()),

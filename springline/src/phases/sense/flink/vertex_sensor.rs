@@ -62,6 +62,7 @@ impl<Out> fmt::Debug for VertexSensor<Out> {
 const NAME: &str = "vertex_sensor";
 
 impl<Out> VertexSensor<Out> {
+    #[allow(dead_code)]
     pub fn new(
         orders: &[MetricOrder], context: FlinkContext, correlation_gen: CorrelationGenerator,
     ) -> Result<Self, SenseError> {
