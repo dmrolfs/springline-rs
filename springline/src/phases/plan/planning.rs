@@ -320,7 +320,10 @@ mod tests {
     static METRICS: Lazy<MetricCatalog> = Lazy::new(|| MetricCatalog {
         correlation_id: CORRELATION.clone(),
         recv_timestamp: Utc.timestamp(NOW, 0).into(),
-        health: JobHealthMetrics::default(),
+        health: JobHealthMetrics {
+            job_nonsource_max_parallelism: 4,
+            ..JobHealthMetrics::default()
+        },
         flow: FlowMetrics {
             // input_records_lag_max: 314.15926535897932384264,
             source_records_lag_max: Some(314),

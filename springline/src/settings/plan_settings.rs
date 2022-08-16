@@ -81,7 +81,7 @@ mod tests {
         assert_tokens(
             &settings,
             &vec![
-                Token::Struct { name: "PlanSettings", len: 7 },
+                Token::Struct { name: "PlanSettings", len: 8 },
                 Token::Str("min_cluster_size"),
                 Token::U32(3),
                 Token::Str("min_scaling_step"),

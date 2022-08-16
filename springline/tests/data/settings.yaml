@@ -92,6 +92,7 @@ decision:
     max_healthy_cpu_load: 0.7
 
 plan:
+  min_cluster_size: 1
   min_scaling_step: 2
   restart_secs: 120
   max_catch_up_secs: 600
@@ -112,7 +113,7 @@ governance:
         policy:
           path: "../resources/governance.polar"
   rules:
-    min_cluster_size: 0
+    min_cluster_size: 1
     max_cluster_size: 10
     min_scaling_step: 2
     max_scaling_step: 6
