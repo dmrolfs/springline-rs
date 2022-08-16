@@ -103,3 +103,9 @@ http://{{ include "pipeline.releaseName" . }}:{{ .Values.global.cluster.port }}
 {{- define "pipeline.jobName" -}}
 {{ .Values.global.convention.jobPrefix }}{{- required ".Values.global.pipeline.jobId is not set" .Values.global.pipeline.jobId -}}
 {{- end -}}
+
+{{- define "prometheus.annotations" -}}
+prometheus.io/scrapehifreq: "true"
+prometheus.io/port: '9898'
+prometheus.io/path: "/metrics"
+{{- end -}}

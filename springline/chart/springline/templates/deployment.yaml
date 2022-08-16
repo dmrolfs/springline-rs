@@ -8,9 +8,6 @@ metadata:
     component: {{ .Values.component }}
   annotations:
 {{ include "common.annotations" . | indent 4 }}
-    prometheus.io/path: "/metrics"
-    prometheus.io/port: 9898
-    prometheus.io/scrapehifreq: true
 spec:
   replicas: {{ .Values.replicaCount }}
   selector:
@@ -20,9 +17,10 @@ spec:
     metadata:
       labels:
 {{ include "common.labels" . | indent 8 }}
+      annotations:
+{{ include "prometheus.annotations" . | indent 8 }}
     spec:
 #      affinity:
-
 #        preferredDuringSchedulingIgnoredDuringExecution:
 #          - weight: 100
 #            podAffinityTerm:

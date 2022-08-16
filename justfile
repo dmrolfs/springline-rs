@@ -56,6 +56,24 @@ helm-install env image=image_default namespace=ns_default:
     --set global.pipeline.billingCLientAppId=$CLIENT_APP_ID \
     --namespace {{namespace}}
 
+helm-debug env image=image_default namespace=ns_default:
+  #!/usr/bin/env bash
+  set -euxo pipefail
+  echo "installing springline helm chart for image[{{image}}], configuration-env[{{env}}] to k8s namespace: {{namespace}}"
+  cd {{justfile_directory()}}/springline/chart
+  helm install autoscaler ./springline --debug \
+    --values ./springline/env/{{env}}.yaml \
+    --set image.tag={{image}} \
+    --set global.pipeline.jobId=$JOB_ID \
+    --set global.pipeline.versionId=$VERSION_ID \
+    --set global.pipeline.templateId=$TEMPLATE_ID \
+    --set global.pipeline.id=$PIPELINE_ID \
+    --set global.pipeline.customerBillingTag=$BILLING_TAG \
+    --set global.pipeline.billingCLientAppId=$CLIENT_APP_ID \
+    --namespace {{namespace}}
+    --debug
+    --dry-run
+
 helm-uninstall namespace=ns_default:
   #!/usr/bin/env bash
   set -euxo pipefail
