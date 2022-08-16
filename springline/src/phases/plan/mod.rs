@@ -42,7 +42,7 @@ pub use planning::{FlinkPlanning, FlinkPlanningEvent, FlinkPlanningMonitor};
 
 use crate::flink::{MetricCatalog, MC_FLOW__RECORDS_IN_PER_SEC};
 
-const MINIMAL_CLUSTER_SIZE: usize = 1;
+const MINIMAL_JOB_PARALLELISM: u32 = 1;
 
 pub type PlanningStrategy = planning::FlinkPlanning<forecast::LeastSquaresWorkloadForecaster>;
 pub type PlanningOutcome = <PlanningStrategy as Planning>::Out;
@@ -152,12 +152,16 @@ async fn do_make_planning_strategy(
     name: &str, plan_settings: &PlanSettings,
 ) -> Result<PlanningStrategy> {
     let inputs = ForecastInputs::from_settings(plan_settings)?;
+    let forecaster = LeastSquaresWorkloadForecaster::new(plan_settings.window, plan_settings.spike);
+    let repository = performance_repository::make_performance_repository(&plan_settings.performance_repository)?;
+
     let planning = PlanningStrategy::new(
         name,
-        plan_settings.min_scaling_step as usize,
+        plan_settings.min_cluster_size,
+        plan_settings.min_scaling_step,
         inputs,
-        forecast::LeastSquaresWorkloadForecaster::new(plan_settings.window, plan_settings.spike),
-        performance_repository::make_performance_repository(&plan_settings.performance_repository)?,
+        forecaster,
+        repository,
     )
     .await?;
     Ok(planning)

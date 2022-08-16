@@ -4,7 +4,7 @@ use std::fmt;
 
 use ::serde_with::serde_as;
 use approx::{AbsDiffEq, RelativeEq};
-use proctor::elements::{RecordsPerSecond, TelemetryType, TelemetryValue, ToTelemetry};
+use proctor::elements::{RecordsPerSecond, TelemetryType, TelemetryValue};
 use proctor::error::{PlanError, TelemetryError};
 use serde::{Deserialize, Serialize};
 
@@ -12,7 +12,7 @@ use crate::flink::MetricCatalog;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct BenchmarkRange {
-    pub nr_task_managers: usize,
+    pub job_parallelism: u32,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
@@ -25,32 +25,32 @@ pub struct BenchmarkRange {
 
 impl BenchmarkRange {
     pub const fn lo_from(b: &Benchmark) -> Self {
-        Self::new(b.nr_task_managers, Some(b.records_out_per_sec), None)
+        Self::new(b.job_parallelism, Some(b.records_out_per_sec), None)
     }
 
     pub const fn hi_from(b: &Benchmark) -> Self {
-        Self::new(b.nr_task_managers, None, Some(b.records_out_per_sec))
+        Self::new(b.job_parallelism, None, Some(b.records_out_per_sec))
     }
 
     pub const fn new(
-        nr_task_managers: usize, lo_rate: Option<RecordsPerSecond>,
+        job_parallelism: u32, lo_rate: Option<RecordsPerSecond>,
         hi_rate: Option<RecordsPerSecond>,
     ) -> Self {
-        Self { nr_task_managers, lo_rate, hi_rate }
+        Self { job_parallelism, lo_rate, hi_rate }
     }
 }
 
 impl BenchmarkRange {
     pub fn hi_mark(&self) -> Option<Benchmark> {
         self.hi_rate.map(|records_out_per_sec| Benchmark {
-            nr_task_managers: self.nr_task_managers,
+            job_parallelism: self.job_parallelism,
             records_out_per_sec,
         })
     }
 
     pub fn lo_mark(&self) -> Option<Benchmark> {
         self.lo_rate.map(|records_out_per_sec| Benchmark {
-            nr_task_managers: self.nr_task_managers,
+            job_parallelism: self.job_parallelism,
             records_out_per_sec,
         })
     }
@@ -144,7 +144,7 @@ impl AbsDiffEq for BenchmarkRange {
                 _ => false,
             };
 
-        (self.nr_task_managers == other.nr_task_managers)
+        (self.job_parallelism == other.job_parallelism)
             && do_abs_diff_eq(self.lo_rate.as_ref(), other.lo_rate.as_ref())
             && do_abs_diff_eq(self.hi_rate.as_ref(), other.hi_rate.as_ref())
     }
@@ -166,7 +166,7 @@ impl RelativeEq for BenchmarkRange {
                 _ => false,
             };
 
-        (self.nr_task_managers == other.nr_task_managers)
+        (self.job_parallelism == other.job_parallelism)
             && do_relative_eq(self.lo_rate.as_ref(), other.lo_rate.as_ref())
             && do_relative_eq(self.hi_rate.as_ref(), other.hi_rate.as_ref())
     }
@@ -175,7 +175,7 @@ impl RelativeEq for BenchmarkRange {
 #[serde_as]
 #[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Benchmark {
-    pub nr_task_managers: usize,
+    pub job_parallelism: u32,
     pub records_out_per_sec: RecordsPerSecond,
 }
 
@@ -184,14 +184,14 @@ impl fmt::Display for Benchmark {
         write!(
             f,
             "[{}:{}]",
-            self.nr_task_managers, self.records_out_per_sec
+            self.job_parallelism, self.records_out_per_sec
         )
     }
 }
 
 impl Benchmark {
-    pub const fn new(nr_task_managers: usize, records_out_per_sec: RecordsPerSecond) -> Self {
-        Self { nr_task_managers, records_out_per_sec }
+    pub const fn new(job_parallelism: u32, records_out_per_sec: RecordsPerSecond) -> Self {
+        Self { job_parallelism, records_out_per_sec }
     }
 }
 
@@ -204,7 +204,7 @@ impl From<MetricCatalog> for Benchmark {
 impl From<&MetricCatalog> for Benchmark {
     fn from(that: &MetricCatalog) -> Self {
         Self {
-            nr_task_managers: that.cluster.nr_task_managers as usize,
+            job_parallelism: that.health.job_nonsource_max_parallelism,
             records_out_per_sec: that.flow.records_out_per_sec.into(),
         }
     }
@@ -212,7 +212,7 @@ impl From<&MetricCatalog> for Benchmark {
 
 impl PartialOrd for Benchmark {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.nr_task_managers.cmp(&other.nr_task_managers))
+        Some(self.job_parallelism.cmp(&other.job_parallelism))
     }
 }
 
@@ -226,7 +226,7 @@ impl AbsDiffEq for Benchmark {
 
     #[inline]
     fn abs_diff_eq(&self, other: &Self, epsilon: Self::Epsilon) -> bool {
-        (self.nr_task_managers == other.nr_task_managers)
+        (self.job_parallelism == other.job_parallelism)
             && (self.records_out_per_sec.abs_diff_eq(&other.records_out_per_sec, epsilon))
     }
 }
@@ -240,7 +240,7 @@ impl RelativeEq for Benchmark {
     fn relative_eq(
         &self, other: &Self, epsilon: Self::Epsilon, max_relative: Self::Epsilon,
     ) -> bool {
-        (self.nr_task_managers == other.nr_task_managers)
+        (self.job_parallelism == other.job_parallelism)
             && (self.records_out_per_sec.relative_eq(
                 &other.records_out_per_sec,
                 epsilon,
@@ -249,15 +249,15 @@ impl RelativeEq for Benchmark {
     }
 }
 
-const T_NR_TASK_MANAGERS: &str = "nr_task_managers";
+const T_JOB_PARALLELISM: &str = "job_parallelism";
 const T_RECORDS_OUT_PER_SEC: &str = "records_out_per_sec";
 
 impl From<Benchmark> for TelemetryValue {
     fn from(that: Benchmark) -> Self {
         Self::Table(
             maplit::hashmap! {
-                T_NR_TASK_MANAGERS.to_string() => that.nr_task_managers.to_telemetry(),
-                T_RECORDS_OUT_PER_SEC.to_string() => that.records_out_per_sec.to_telemetry(),
+                T_JOB_PARALLELISM.to_string() => that.job_parallelism.into(),
+                T_RECORDS_OUT_PER_SEC.to_string() => that.records_out_per_sec.into(),
             }
             .into(),
         )
@@ -269,20 +269,18 @@ impl TryFrom<TelemetryValue> for Benchmark {
 
     fn try_from(telemetry: TelemetryValue) -> Result<Self, Self::Error> {
         if let TelemetryValue::Table(rep) = telemetry {
-            let nr_task_managers = rep
-                .get(T_NR_TASK_MANAGERS)
-                .map(|v| usize::try_from(v.clone()))
-                .ok_or_else(|| PlanError::DataNotFound(T_NR_TASK_MANAGERS.to_string()))??;
+            let job_parallelism = rep
+                .get(T_JOB_PARALLELISM)
+                .map(|v| u32::try_from(v.clone()))
+                .ok_or_else(|| PlanError::DataNotFound(T_JOB_PARALLELISM.to_string()))??;
 
             let records_out_per_sec = rep
                 .get(T_RECORDS_OUT_PER_SEC)
                 .map(|v| f64::try_from(v.clone()))
-                .ok_or_else(|| PlanError::DataNotFound(T_RECORDS_OUT_PER_SEC.to_string()))??;
+                .ok_or_else(|| PlanError::DataNotFound(T_RECORDS_OUT_PER_SEC.to_string()))??
+                .into();
 
-            Ok(Self {
-                nr_task_managers,
-                records_out_per_sec: records_out_per_sec.into(),
-            })
+            Ok(Self { job_parallelism, records_out_per_sec, })
         } else {
             Err(TelemetryError::TypeError {
                 expected: TelemetryType::Table,

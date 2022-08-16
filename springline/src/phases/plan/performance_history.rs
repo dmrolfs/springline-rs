@@ -7,21 +7,21 @@ use serde::{Deserialize, Serialize};
 use splines::{Interpolation, Key, Spline};
 
 use crate::phases::plan::benchmark::{Benchmark, BenchmarkRange};
-use crate::phases::plan::MINIMAL_CLUSTER_SIZE;
+use crate::phases::plan::MINIMAL_JOB_PARALLELISM;
 
 // expect the spread of cluster size will be small and certainly not unbounded. If history is
 // unbounded, need to consider a bounded data structure (cache).
 #[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
-pub struct PerformanceHistory(BTreeMap<usize, BenchmarkRange>);
+pub struct PerformanceHistory(BTreeMap<u32, BenchmarkRange>);
 
 impl PerformanceHistory {
     #[tracing::instrument(level = "debug")]
     pub fn add_lower_benchmark(&mut self, b: Benchmark) {
-        if let Some(entry) = self.0.get_mut(&b.nr_task_managers) {
+        if let Some(entry) = self.0.get_mut(&b.job_parallelism) {
             entry.set_lo_rate(b.records_out_per_sec);
         } else {
             let entry = BenchmarkRange::lo_from(&b);
-            self.0.insert(entry.nr_task_managers, entry);
+            self.0.insert(entry.job_parallelism, entry);
         }
 
         // todo: dropped clearing performance history inconsistencies (see todo at file bottom)
@@ -30,11 +30,11 @@ impl PerformanceHistory {
 
     #[tracing::instrument(level = "debug")]
     pub fn add_upper_benchmark(&mut self, b: Benchmark) {
-        if let Some(entry) = self.0.get_mut(&b.nr_task_managers) {
+        if let Some(entry) = self.0.get_mut(&b.job_parallelism) {
             entry.set_hi_rate(b.records_out_per_sec);
         } else {
             let entry = BenchmarkRange::hi_from(&b);
-            self.0.insert(entry.nr_task_managers, entry);
+            self.0.insert(entry.job_parallelism, entry);
         }
 
         // todo: dropped clearing performance history inconsistencies (see todo at file bottom)
@@ -47,9 +47,9 @@ impl PerformanceHistory {
 }
 
 impl PerformanceHistory {
-    pub fn cluster_size_for_workload(&self, workload_rate: RecordsPerSecond) -> Option<usize> {
+    pub fn job_parallelism_for_workload(&self, workload_rate: RecordsPerSecond) -> Option<u32> {
         self.evaluate_neighbors(workload_rate)
-            .map(|neighbors| neighbors.cluster_size_for(workload_rate))
+            .map(|neighbors| neighbors.job_parallelism_for(workload_rate))
     }
 
     #[tracing::instrument(level = "trace")]
@@ -92,16 +92,16 @@ impl PerformanceHistory {
 }
 
 impl IntoIterator for PerformanceHistory {
-    type IntoIter = std::collections::btree_map::IntoIter<usize, BenchmarkRange>;
-    type Item = (usize, BenchmarkRange);
+    type IntoIter = std::collections::btree_map::IntoIter<u32, BenchmarkRange>;
+    type Item = (u32, BenchmarkRange);
 
     fn into_iter(self) -> Self::IntoIter {
         self.0.into_iter()
     }
 }
 
-impl From<BTreeMap<usize, BenchmarkRange>> for PerformanceHistory {
-    fn from(that: BTreeMap<usize, BenchmarkRange>) -> Self {
+impl From<BTreeMap<u32, BenchmarkRange>> for PerformanceHistory {
+    fn from(that: BTreeMap<u32, BenchmarkRange>) -> Self {
         Self(that)
     }
 }
@@ -114,7 +114,7 @@ enum BenchNeighbors {
 }
 
 impl BenchNeighbors {
-    fn cluster_size_for(&self, workload_rate: RecordsPerSecond) -> usize {
+    fn job_parallelism_for(&self, workload_rate: RecordsPerSecond) -> u32 {
         match self {
             BenchNeighbors::BelowLowest(lo) => Self::extrapolate_lo(workload_rate, lo),
             BenchNeighbors::AboveHighest(hi) => Self::extrapolate_hi(workload_rate, hi),
@@ -122,57 +122,70 @@ impl BenchNeighbors {
         }
     }
 
+    fn try_f64_to_u32(value: f64) -> Result<u32, anyhow::Error> {
+        Ok(value.round().rem_euclid(2_f64.powi(32)) as u32)
+    }
+
     #[tracing::instrument(level = "debug")]
-    fn extrapolate_lo(workload_rate: RecordsPerSecond, lo: &Benchmark) -> usize {
+    fn extrapolate_lo(workload_rate: RecordsPerSecond, lo: &Benchmark) -> u32 {
         let workload_rate: f64 = workload_rate.into();
         let lo_rate: f64 = lo.records_out_per_sec.into();
 
-        let ratio: f64 = (lo.nr_task_managers as f64) / lo_rate;
-        let calculated = (ratio * workload_rate).ceil() as usize;
+        let ratio: f64 = (f64::from(lo.job_parallelism)) / lo_rate;
+        let calculated = Self::try_f64_to_u32((ratio * workload_rate).ceil())
+            .unwrap_or_else(|err| {
+                tracing::error!(error=?err, "failed to convert calculated job parallelism into integer - using lo benchmark: {}", lo.job_parallelism);
+                lo.job_parallelism
+            });
+
         tracing::debug!(%ratio, %calculated, "calculations: {} ceil:{}", ratio * workload_rate, (ratio * workload_rate).ceil());
 
-        let size = cmp::min(
-            lo.nr_task_managers,
-            cmp::max(MINIMAL_CLUSTER_SIZE, calculated),
+        let lo_job_parallelism = cmp::min(
+            lo.job_parallelism,
+            cmp::max(MINIMAL_JOB_PARALLELISM, calculated),
         );
-        tracing::debug!(%size, %ratio, %calculated, "extrapolated cluster size below lowest neighbor.");
-        size
+        tracing::debug!(%lo_job_parallelism, %ratio, extrapolated_parallelism=%calculated, "extrapolated job parallelism below lowest neighbor.");
+        lo_job_parallelism
     }
 
     #[tracing::instrument(level = "debug")]
-    fn extrapolate_hi(workload_rate: RecordsPerSecond, hi: &Benchmark) -> usize {
+    fn extrapolate_hi(workload_rate: RecordsPerSecond, hi: &Benchmark) -> u32 {
         let workload_rate: f64 = workload_rate.into();
         let hi_rate: f64 = hi.records_out_per_sec.into();
 
-        let ratio: f64 = (hi.nr_task_managers as f64) / hi_rate;
-        let calculated = ratio * workload_rate;
+        let ratio: f64 = (f64::from(hi.job_parallelism)) / hi_rate;
+        let calculated = Self::try_f64_to_u32((ratio * workload_rate).ceil())
+            .unwrap_or_else(|err| {
+                tracing::error!(error=?err, "failed to convert calculated job parallelism into integer - using hi benchmark: {}", hi.job_parallelism);
+                hi.job_parallelism
+            });
 
-        let size = cmp::max(
-            hi.nr_task_managers,
-            cmp::max(MINIMAL_CLUSTER_SIZE, calculated.ceil() as usize),
+        let hi_job_parallelism = cmp::max(
+            hi.job_parallelism,
+            cmp::max(MINIMAL_JOB_PARALLELISM, calculated),
         );
-        tracing::debug!(%size, %ratio, extrapolated_size=%calculated, "extrapolated cluster size above highest neighbor.");
-        size
+        tracing::debug!(%hi_job_parallelism, %ratio, extrapolated_parallelism=%calculated, "extrapolated job parallelism above highest neighbor.");
+        hi_job_parallelism
     }
 
     #[tracing::instrument(level = "debug")]
-    fn interpolate(workload_rate: RecordsPerSecond, lo: &Benchmark, hi: &Benchmark) -> usize {
+    fn interpolate(workload_rate: RecordsPerSecond, lo: &Benchmark, hi: &Benchmark) -> u32 {
         let start: Key<f64, f64> = Key::new(
             lo.records_out_per_sec.into(),
-            lo.nr_task_managers as f64,
+            f64::from(lo.job_parallelism),
             Interpolation::Linear,
         );
         let end: Key<f64, f64> = Key::new(
             hi.records_out_per_sec.into(),
-            hi.nr_task_managers as f64,
+            f64::from(hi.job_parallelism),
             Interpolation::Linear,
         );
         let spline = Spline::from_vec(vec![start, end]);
         let sampled: f64 = spline.clamped_sample(workload_rate.into()).unwrap();
 
-        let size = sampled.ceil() as usize;
-        tracing::debug!(%size, interpolated_size=?sampled, "interpolated cluster size between neighbors.");
-        size
+        let job_parallelism = Self::try_f64_to_u32(sampled.ceil()).expect("start-end are valid integers so in between must also be");
+        tracing::debug!(%job_parallelism, interpolated_job_parallelism=?sampled, "interpolated job parallelism between neighbors.");
+        job_parallelism
     }
 }
 
@@ -317,10 +330,10 @@ mod tests {
             hi: Benchmark::new(4, 1.0.into()),
         };
 
-        assert_eq!(3, neighbors.cluster_size_for(0.75.into()));
-        assert_eq!(2, neighbors.cluster_size_for(0.5.into()));
-        assert_eq!(4, neighbors.cluster_size_for(1.0.into()));
-        assert_eq!(3, neighbors.cluster_size_for(0.55.into()));
+        assert_eq!(3, neighbors.job_parallelism_for(0.75.into()));
+        assert_eq!(2, neighbors.job_parallelism_for(0.5.into()));
+        assert_eq!(4, neighbors.job_parallelism_for(1.0.into()));
+        assert_eq!(3, neighbors.job_parallelism_for(0.55.into()));
         Ok(())
     }
 
@@ -332,8 +345,8 @@ mod tests {
         };
 
         // verify outside of boundary is clamped
-        assert_eq!(2, neighbors.cluster_size_for(0.05.into()));
-        assert_eq!(4, neighbors.cluster_size_for(1.5.into()));
+        assert_eq!(2, neighbors.job_parallelism_for(0.05.into()));
+        assert_eq!(4, neighbors.job_parallelism_for(1.5.into()));
         Ok(())
     }
 
@@ -344,13 +357,13 @@ mod tests {
             hi: Benchmark::new(4, 5.0.into()),
         };
 
-        assert_eq!(4, neighbors.cluster_size_for(3.5.into()));
-        assert_eq!(4, neighbors.cluster_size_for(4.0.into()));
-        assert_eq!(4, neighbors.cluster_size_for(4.75.into()));
-        assert_eq!(4, neighbors.cluster_size_for(3.0.into()));
-        assert_eq!(4, neighbors.cluster_size_for(5.0.into()));
-        assert_eq!(4, neighbors.cluster_size_for(2.5.into()));
-        assert_eq!(4, neighbors.cluster_size_for(9.5.into()));
+        assert_eq!(4, neighbors.job_parallelism_for(3.5.into()));
+        assert_eq!(4, neighbors.job_parallelism_for(4.0.into()));
+        assert_eq!(4, neighbors.job_parallelism_for(4.75.into()));
+        assert_eq!(4, neighbors.job_parallelism_for(3.0.into()));
+        assert_eq!(4, neighbors.job_parallelism_for(5.0.into()));
+        assert_eq!(4, neighbors.job_parallelism_for(2.5.into()));
+        assert_eq!(4, neighbors.job_parallelism_for(9.5.into()));
         Ok(())
     }
 
@@ -362,14 +375,14 @@ mod tests {
 
         let neighbors = BenchNeighbors::BelowLowest(Benchmark::new(4, 1.0.into()));
 
-        assert_eq!(1, neighbors.cluster_size_for(0.0.into()));
-        assert_eq!(1, neighbors.cluster_size_for(0.1.into()));
-        assert_eq!(1, neighbors.cluster_size_for(0.25.into()));
-        assert_eq!(2, neighbors.cluster_size_for(0.35.into()));
-        assert_eq!(2, neighbors.cluster_size_for(0.5.into()));
-        assert_eq!(3, neighbors.cluster_size_for(0.6.into()));
-        assert_eq!(4, neighbors.cluster_size_for(1.0.into()));
-        assert_eq!(4, neighbors.cluster_size_for(10.0.into()));
+        assert_eq!(1, neighbors.job_parallelism_for(0.0.into()));
+        assert_eq!(1, neighbors.job_parallelism_for(0.1.into()));
+        assert_eq!(1, neighbors.job_parallelism_for(0.25.into()));
+        assert_eq!(2, neighbors.job_parallelism_for(0.35.into()));
+        assert_eq!(2, neighbors.job_parallelism_for(0.5.into()));
+        assert_eq!(3, neighbors.job_parallelism_for(0.6.into()));
+        assert_eq!(4, neighbors.job_parallelism_for(1.0.into()));
+        assert_eq!(4, neighbors.job_parallelism_for(10.0.into()));
         Ok(())
     }
 
@@ -381,16 +394,16 @@ mod tests {
 
         let neighbors = BenchNeighbors::AboveHighest(Benchmark::new(4, 1.0.into()));
 
-        assert_eq!(4, neighbors.cluster_size_for(0.0.into()));
-        assert_eq!(4, neighbors.cluster_size_for(0.5.into()));
-        assert_eq!(4, neighbors.cluster_size_for(1.0.into()));
-        assert_eq!(6, neighbors.cluster_size_for(1.5.into()));
-        assert_eq!(8, neighbors.cluster_size_for(2.0.into()));
-        assert_eq!(7, neighbors.cluster_size_for(1.56.into()));
-        assert_eq!(7, neighbors.cluster_size_for(1.66.into()));
-        assert_eq!(20, neighbors.cluster_size_for(5.0.into()));
-        assert_eq!(21, neighbors.cluster_size_for(5.00000000001.into()));
-        assert_eq!(40, neighbors.cluster_size_for(10.0.into()));
+        assert_eq!(4, neighbors.job_parallelism_for(0.0.into()));
+        assert_eq!(4, neighbors.job_parallelism_for(0.5.into()));
+        assert_eq!(4, neighbors.job_parallelism_for(1.0.into()));
+        assert_eq!(6, neighbors.job_parallelism_for(1.5.into()));
+        assert_eq!(8, neighbors.job_parallelism_for(2.0.into()));
+        assert_eq!(7, neighbors.job_parallelism_for(1.56.into()));
+        assert_eq!(7, neighbors.job_parallelism_for(1.66.into()));
+        assert_eq!(20, neighbors.job_parallelism_for(5.0.into()));
+        assert_eq!(21, neighbors.job_parallelism_for(5.00000000001.into()));
+        assert_eq!(40, neighbors.job_parallelism_for(10.0.into()));
         Ok(())
     }
 
@@ -479,7 +492,7 @@ mod tests {
         let mut performance_history = PerformanceHistory::default();
         assert_eq!(
             None,
-            performance_history.cluster_size_for_workload(1_000_000.0.into())
+            performance_history.job_parallelism_for_workload(1_000_000.0.into())
         );
 
         performance_history.add_upper_benchmark(Benchmark::new(2, 3.0.into()));
@@ -496,69 +509,69 @@ mod tests {
         tracing::info!("STARTING ASSERTIONS...");
         assert_eq!(
             Some(1),
-            performance_history.cluster_size_for_workload(1.05.into())
+            performance_history.job_parallelism_for_workload(1.05.into())
         );
         assert_eq!(
             Some(2),
-            performance_history.cluster_size_for_workload(1.75.into())
+            performance_history.job_parallelism_for_workload(1.75.into())
         );
         assert_eq!(
             Some(2),
-            performance_history.cluster_size_for_workload(2.75.into())
+            performance_history.job_parallelism_for_workload(2.75.into())
         );
         assert_eq!(
             Some(3),
-            performance_history.cluster_size_for_workload(3.2.into())
+            performance_history.job_parallelism_for_workload(3.2.into())
         );
         assert_eq!(
             Some(4),
-            performance_history.cluster_size_for_workload(3.75.into())
+            performance_history.job_parallelism_for_workload(3.75.into())
         );
         assert_eq!(
             Some(6),
-            performance_history.cluster_size_for_workload(5.0.into())
+            performance_history.job_parallelism_for_workload(5.0.into())
         );
         assert_eq!(
             Some(6),
-            performance_history.cluster_size_for_workload(10.0.into())
+            performance_history.job_parallelism_for_workload(10.0.into())
         );
         assert_eq!(
             Some(7),
-            performance_history.cluster_size_for_workload(11.0.into())
+            performance_history.job_parallelism_for_workload(11.0.into())
         );
         assert_eq!(
             Some(8),
-            performance_history.cluster_size_for_workload(12.0.into())
+            performance_history.job_parallelism_for_workload(12.0.into())
         );
         assert_eq!(
             Some(8),
-            performance_history.cluster_size_for_workload(13.0.into())
+            performance_history.job_parallelism_for_workload(13.0.into())
         );
         assert_eq!(
             Some(9),
-            performance_history.cluster_size_for_workload(14.0.into())
+            performance_history.job_parallelism_for_workload(14.0.into())
         );
         assert_eq!(
             Some(9),
-            performance_history.cluster_size_for_workload(15.0.into())
+            performance_history.job_parallelism_for_workload(15.0.into())
         );
 
         assert_eq!(
             Some(10),
-            performance_history.cluster_size_for_workload(18.0.into())
+            performance_history.job_parallelism_for_workload(18.0.into())
         );
         assert_eq!(
             Some(11),
-            performance_history.cluster_size_for_workload(21.0.into())
+            performance_history.job_parallelism_for_workload(21.0.into())
         );
         assert_eq!(
             Some(12),
-            performance_history.cluster_size_for_workload(24.0.into())
+            performance_history.job_parallelism_for_workload(24.0.into())
         );
 
         assert_eq!(
             Some(48),
-            performance_history.cluster_size_for_workload(100.0.into())
+            performance_history.job_parallelism_for_workload(100.0.into())
         );
 
         Ok(())

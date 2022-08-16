@@ -303,6 +303,7 @@ async fn test_flink_planning_linear() {
     let mut planning = assert_ok!(
         TestPlanning::new(
             "test_planning_1",
+            1,
             2,
             inputs,
             forecast_builder,
@@ -399,6 +400,8 @@ async fn test_flink_planning_linear() {
             vec![ScalePlan {
                 recv_timestamp: timestamp,
                 correlation_id: correlation_id.clone(),
+                current_job_parallelism: 6,
+                target_job_parallelism: 2,
                 target_nr_task_managers: 6, // todo: also allow 5???
                 current_nr_task_managers: 2,
             }]
@@ -411,6 +414,8 @@ async fn test_flink_planning_linear() {
             vec![ScalePlan {
                 recv_timestamp: timestamp,
                 correlation_id,
+                current_job_parallelism: 2,
+                target_job_parallelism: 5,
                 target_nr_task_managers: 5,
                 current_nr_task_managers: 2,
             }]
@@ -447,6 +452,7 @@ async fn test_flink_planning_sine() {
     let mut planning = assert_ok!(
         TestPlanning::new(
             "test_planning_2",
+            1,
             2,
             inputs,
             forecaster,
@@ -543,8 +549,10 @@ async fn test_flink_planning_sine() {
             vec![ScalePlan {
                 recv_timestamp: timestamp,
                 correlation_id: CORRELATION_ID.clone(),
-                target_nr_task_managers: 8,
+                current_job_parallelism: 2,
+                target_job_parallelism: 8,
                 current_nr_task_managers: 2,
+                target_nr_task_managers: 8,
             }]
         )
     }) {
@@ -554,8 +562,10 @@ async fn test_flink_planning_sine() {
             vec![ScalePlan {
                 recv_timestamp: timestamp,
                 correlation_id: CORRELATION_ID.clone(),
-                target_nr_task_managers: 9,
+                current_job_parallelism: 2,
+                target_job_parallelism:9,
                 current_nr_task_managers: 2,
+                target_nr_task_managers: 9,
             }]
         )
     }
@@ -587,6 +597,7 @@ async fn test_flink_planning_context_change() {
     let mut planning = assert_ok!(
         TestPlanning::new(
             "test_planning_3",
+            1,
             2,
             inputs,
             forecaster,
@@ -717,8 +728,10 @@ async fn test_flink_planning_context_change() {
             ScalePlan {
                 recv_timestamp: penultimate_timestamp,
                 correlation_id: CORRELATION_ID.clone(),
-                target_nr_task_managers: 8,
+                current_job_parallelism: 2,
+                target_job_parallelism: 8,
                 current_nr_task_managers: 2,
+                target_nr_task_managers: 8,
             },
         )
     }) {
@@ -729,8 +742,10 @@ async fn test_flink_planning_context_change() {
                 ScalePlan {
                     recv_timestamp: penultimate_timestamp,
                     correlation_id: CORRELATION_ID.clone(),
-                    target_nr_task_managers: 9,
+                    current_job_parallelism: 2,
+                    target_job_parallelism: 9,
                     current_nr_task_managers: 2,
+                    target_nr_task_managers: 9,
                 },
             )
         }) {
@@ -740,8 +755,10 @@ async fn test_flink_planning_context_change() {
                 ScalePlan {
                     recv_timestamp: penultimate_timestamp,
                     correlation_id: CORRELATION_ID.clone(),
-                    target_nr_task_managers: 7,
+                    current_job_parallelism: 2,
+                    target_job_parallelism: 7,
                     current_nr_task_managers: 2,
+                    target_nr_task_managers: 7,
                 },
             )
         }

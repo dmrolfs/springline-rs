@@ -410,6 +410,7 @@ mod tests {
                 ..DecisionSettings::default()
             },
             plan: PlanSettings {
+                min_cluster_size: 1,
                 min_scaling_step: 2,
                 restart: Duration::from_secs(120),
                 max_catch_up: Duration::from_secs(600),
@@ -433,7 +434,7 @@ mod tests {
                     ..GovernancePolicySettings::default()
                 },
                 rules: GovernanceRuleSettings {
-                    min_cluster_size: 0,
+                    min_cluster_size: 1,
                     max_cluster_size: 10,
                     min_scaling_step: 2,
                     max_scaling_step: 6,
@@ -596,6 +597,7 @@ mod tests {
                 ..DecisionTemplateData::default()
             }),
         plan: PlanSettings {
+            min_cluster_size: 1,
             min_scaling_step: 2,
             restart: Duration::from_secs(2 * 60),
             max_catch_up: Duration::from_secs(10 * 60),
@@ -616,7 +618,7 @@ mod tests {
                 PolicySource::from_complete_file("./resources/governance.polar")
             )),
             rules: GovernanceRuleSettings {
-                min_cluster_size: 0,
+                min_cluster_size: 1,
                 max_cluster_size: 20,
                 min_scaling_step: 2,
                 max_scaling_step: 4,

@@ -9,6 +9,9 @@ use crate::phases::plan::{PerformanceRepositorySettings, SpikeSettings};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(test, derive(PartialEq))]
 pub struct PlanSettings {
+    /// Minimum cluster size used in rescale planning.
+    pub min_cluster_size: u32,
+
     /// Minimum scaling step used in rescale planing.
     pub min_scaling_step: u32,
 
@@ -36,6 +39,7 @@ pub struct PlanSettings {
 impl Default for PlanSettings {
     fn default() -> Self {
         Self {
+            min_cluster_size: 1,
             min_scaling_step: 1,
             restart: Duration::from_secs(2 * 60),
             max_catch_up: Duration::from_secs(13 * 60),
@@ -57,6 +61,7 @@ mod tests {
     #[test]
     fn test_serde_plan_settings() {
         let settings = PlanSettings {
+            min_cluster_size:3,
             min_scaling_step: 2,
             restart: Duration::from_secs(3 * 60),
             max_catch_up: Duration::from_secs(10 * 60),
@@ -77,6 +82,8 @@ mod tests {
             &settings,
             &vec![
                 Token::Struct { name: "PlanSettings", len: 7 },
+                Token::Str("min_cluster_size"),
+                Token::U32(3),
                 Token::Str("min_scaling_step"),
                 Token::U32(2),
                 Token::Str("restart_secs"),

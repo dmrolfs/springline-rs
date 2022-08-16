@@ -40,7 +40,8 @@ pub enum FlinkPlanningEvent {
 #[derive(Debug)]
 pub struct FlinkPlanning<F: Forecaster> {
     name: String,
-    min_scaling_step: usize,
+    min_cluster_size: u32,
+    min_scaling_step: u32,
     pub forecast_calculator: ForecastCalculator<F>,
     performance_history: PerformanceHistory,
     performance_repository: Box<dyn PerformanceRepository>,
@@ -53,6 +54,7 @@ pub struct FlinkPlanning<F: Forecaster> {
 impl<F: Forecaster> PartialEq for FlinkPlanning<F> {
     fn eq(&self, other: &Self) -> bool {
         self.name == other.name
+            && self.min_cluster_size == other.min_cluster_size
             && self.min_scaling_step == other.min_scaling_step
             && self.forecast_calculator.inputs == other.forecast_calculator.inputs
             && self.performance_history == other.performance_history
@@ -61,7 +63,7 @@ impl<F: Forecaster> PartialEq for FlinkPlanning<F> {
 
 impl<F: Forecaster> FlinkPlanning<F> {
     pub async fn new(
-        planning_name: &str, min_scaling_step: usize, inputs: ForecastInputs, forecaster: F,
+        planning_name: &str, min_cluster_size: u32, min_scaling_step: u32, inputs: ForecastInputs, forecaster: F,
         performance_repository: Box<dyn PerformanceRepository>,
     ) -> Result<Self, PlanError> {
         performance_repository.check().await?;
@@ -78,6 +80,7 @@ impl<F: Forecaster> FlinkPlanning<F> {
 
         Ok(Self {
             name,
+            min_cluster_size,
             min_scaling_step,
             forecast_calculator,
             performance_history,
@@ -143,7 +146,7 @@ impl<F: Forecaster> FlinkPlanning<F> {
     ) -> Result<Option<ScalePlan>, PlanError> {
         let plan = if self.forecast_calculator.have_enough_data() {
             let history = &self.performance_history;
-            let current_nr_task_managers = decision.item().cluster.nr_task_managers;
+            let current_job_parallelism = decision.item().health.job_nonsource_max_parallelism;
             let buffered_records = Self::buffered_lag_score(decision.item());
 
             let forecasted_workload = self
@@ -151,10 +154,10 @@ impl<F: Forecaster> FlinkPlanning<F> {
                 .calculate_target_rate(decision.item().recv_timestamp, buffered_records)?;
             PLANNING_FORECASTED_WORKLOAD.set(*forecasted_workload.as_ref());
 
-            let required_nr_task_managers = history.cluster_size_for_workload(forecasted_workload);
+            let required_job_parallelism = history.job_parallelism_for_workload(forecasted_workload);
 
             if let Some(plan) =
-                ScalePlan::new(decision, required_nr_task_managers, self.min_scaling_step)
+                ScalePlan::new(decision, required_job_parallelism, self.min_cluster_size, self.min_scaling_step)
             {
                 if let Some(ref mut outlet) = self.outlet {
                     tracing::info!(?plan, "pushing scale plan.");
@@ -165,9 +168,9 @@ impl<F: Forecaster> FlinkPlanning<F> {
                 Some(plan)
             } else {
                 tracing::warn!(
-                    ?required_nr_task_managers,
-                    %current_nr_task_managers,
-                    "planning performance history suggests no change in cluster size needed in spite of decision."
+                    ?required_job_parallelism,
+                    %current_job_parallelism,
+                    "planning performance history suggests no change in job parallelism needed in spite of decision."
                 );
                 // todo: should we clear some of the history????
                 None
@@ -196,8 +199,8 @@ impl<F: Forecaster> FlinkPlanning<F> {
             item.flow.source_records_lag_max,
             item.flow.source_millis_behind_latest,
         ) {
-            (Some(lag), _) => lag as f64,
-            (None, Some(lag)) => lag as f64,
+            (Some(lag), _) => f64::from(lag),
+            (None, Some(lag)) => f64::from(lag),
             (None, None) => 0_f64,
         }
     }
@@ -303,7 +306,7 @@ mod tests {
     use crate::phases::plan::benchmark::*;
     use crate::phases::plan::forecast::*;
     use crate::phases::plan::performance_repository::*;
-    use crate::phases::plan::{PerformanceRepositorySettings, MINIMAL_CLUSTER_SIZE};
+    use crate::phases::plan::{PerformanceRepositorySettings, MINIMAL_JOB_PARALLELISM};
 
     type TestPlanning = FlinkPlanning<LeastSquaresWorkloadForecaster>;
     #[allow(dead_code)]
@@ -392,6 +395,7 @@ mod tests {
         let (tx_monitor, _) = broadcast::channel(num_cpus::get() * 2);
         let planning = FlinkPlanning {
             name: planning_name.to_string(),
+            min_cluster_size: 1,
             min_scaling_step: 2,
             forecast_calculator: calc,
             performance_history: PerformanceHistory::default(),
@@ -457,7 +461,9 @@ mod tests {
                     ScalePlan {
                         recv_timestamp,
                         correlation_id: CORRELATION.clone(),
-                        target_nr_task_managers: min_step as u32 + METRICS.cluster.nr_task_managers,
+                        current_job_parallelism: METRICS.health.job_nonsource_max_parallelism,
+                        target_job_parallelism: min_step + METRICS.health.job_nonsource_max_parallelism,
+                        target_nr_task_managers: min_step + METRICS.cluster.nr_task_managers,
                         current_nr_task_managers: METRICS.cluster.nr_task_managers,
                     },
                 )
@@ -473,7 +479,9 @@ mod tests {
                     ScalePlan {
                         recv_timestamp,
                         correlation_id: CORRELATION.clone(),
-                        target_nr_task_managers: METRICS.cluster.nr_task_managers - min_step as u32,
+                        current_job_parallelism: METRICS.health.job_nonsource_max_parallelism,
+                        target_job_parallelism: METRICS.health.job_nonsource_max_parallelism - min_step,
+                        target_nr_task_managers: METRICS.cluster.nr_task_managers - min_step,
                         current_nr_task_managers: METRICS.cluster.nr_task_managers,
                     },
                 )
@@ -481,7 +489,7 @@ mod tests {
             );
 
             planning.lock().await.min_scaling_step =
-                METRICS.cluster.nr_task_managers as usize + 1_000;
+                METRICS.health.job_nonsource_max_parallelism + 1_000;
 
             assert_ok!(
                 assert_scale_decision_scenario(
@@ -492,7 +500,9 @@ mod tests {
                     ScalePlan {
                         recv_timestamp,
                         correlation_id: CORRELATION.clone(),
-                        target_nr_task_managers: MINIMAL_CLUSTER_SIZE as u32,
+                        current_job_parallelism: METRICS.health.job_nonsource_max_parallelism,
+                        target_job_parallelism: MINIMAL_JOB_PARALLELISM,
+                        target_nr_task_managers: MINIMAL_JOB_PARALLELISM,
                         current_nr_task_managers: METRICS.cluster.nr_task_managers,
                     },
                 )
@@ -541,6 +551,8 @@ mod tests {
                     ScalePlan {
                         recv_timestamp,
                         correlation_id: CORRELATION.clone(),
+                        current_job_parallelism: METRICS.health.job_nonsource_max_parallelism,
+                        target_job_parallelism: 16,
                         target_nr_task_managers: 16,
                         current_nr_task_managers: METRICS.cluster.nr_task_managers,
                     },
