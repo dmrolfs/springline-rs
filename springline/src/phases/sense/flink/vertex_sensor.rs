@@ -264,6 +264,11 @@ where
 
         let (all_max_parallelism, nonsource_max_parallelism) =
             Self::do_find_max_parallelisms(job_detail.vertices.as_slice());
+        tracing::debug!(
+            ?all_max_parallelism,
+            ?nonsource_max_parallelism,
+            "scraped job max parallelism attributes"
+        );
 
         if let Some(job_max_parallelism) = all_max_parallelism {
             telemetry.insert(
@@ -283,16 +288,22 @@ where
     }
 
     fn do_find_max_parallelisms(vertices: &[VertexDetail]) -> (Option<usize>, Option<usize>) {
-        vertices.iter().fold((None, None), |(all_max, nonsource_max), v| {
-            let new_all_max = all_max.map(|m| m.max(v.parallelism)).unwrap_or(v.parallelism);
+        vertices.iter().fold((None, None), |(acc_all_max, acc_nonsource_max), v| {
+            let new_all_max = acc_all_max.map(|m| m.max(v.parallelism)).unwrap_or(v.parallelism);
 
             let candidate = PlanPositionCandidate::ByName(v.name.as_str());
-            let new_nonsource_max = if PlanPositionSpec::NotSource.matches(&candidate) {
-                nonsource_max.map(|m| m.max(v.parallelism))
+            let is_nonsource = PlanPositionSpec::NotSource.matches(&candidate);
+            let new_nonsource_max = if is_nonsource {
+                Some(acc_nonsource_max.map(|m| m.max(v.parallelism)).unwrap_or(v.parallelism))
             } else {
-                nonsource_max
+                acc_nonsource_max
             };
 
+            tracing::debug!(
+                all_max_parallelism=?new_all_max, nonsource_max_parallelism=?new_nonsource_max,
+                "after assessing vertex {} [source={}]",
+                v.name, !is_nonsource
+            );
             (Some(new_all_max), new_nonsource_max)
         })
     }

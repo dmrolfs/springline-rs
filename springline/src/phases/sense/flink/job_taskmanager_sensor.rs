@@ -223,7 +223,7 @@ where
         let mut requested_metrics = HashSet::new();
         let mut available_orders = Vec::new();
         for (order, matches) in self.order_matchers.iter() {
-            tracing::info!(sensor_name=%self.name, scope=%self.scope, "DMR:considering order: {order:?}...");
+            tracing::debug!(sensor_name=%self.name, scope=%self.scope, "considering order: {order:?}...");
             let mut order_metrics = vec![];
             for metric in flink_scope_metrics.iter() {
                 let candidate = metric_order::MetricCandidate {
@@ -240,9 +240,9 @@ where
             }
 
             if order_metrics.is_empty() {
-                tracing::info!(sensor_name=%self.name, scope=%self.scope, "DMR:no metrics matched order: {order:?}");
+                tracing::info!(sensor_name=%self.name, scope=%self.scope, "no metrics matched order: {order:?}");
             } else {
-                tracing::info!(sensor_name=%self.name, scope=%self.scope, ?order, "DMR:including metrics matching order: {order_metrics:?}");
+                tracing::info!(sensor_name=%self.name, scope=%self.scope, ?order, "including metrics matching order: {order_metrics:?}");
             }
         }
 

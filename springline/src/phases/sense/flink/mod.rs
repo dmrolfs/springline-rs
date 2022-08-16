@@ -265,7 +265,9 @@ pub fn apply_derivative_orders<'o>(
         {
             tracing::debug!(
                 position_matches=%order.matches_plan_position(candidate),
-                "applying derivative order: {order:?}."
+                lhs_telemetry=?telemetry.get(telemetry_lhs.as_str()),
+                rhs_telemetry=?telemetry.get(telemetry_rhs.as_str()),
+                "trying derivative order: {order:?}."
             );
 
             if let Some((lhs, rhs)) = extract_terms(&telemetry, telemetry_lhs, telemetry_rhs) {
