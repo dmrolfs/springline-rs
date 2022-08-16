@@ -30,7 +30,10 @@ application:
 
   governance:
     rules:
-      max_cluster_size: 16
+      min_scaling_step: 2
+      max_scaling_step: 10
+      min_cluster_size: 1
+      max_cluster_size: 40
 
   action:
     taskmanager:
