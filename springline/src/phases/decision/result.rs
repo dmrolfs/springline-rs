@@ -287,6 +287,14 @@ impl<T> DecisionResult<T> {
         }
     }
 
+    pub fn from_direction(item: T, direction: ScaleDirection) -> Self {
+        match direction {
+            ScaleDirection::Up => Self::ScaleUp(item),
+            ScaleDirection::Down => Self::ScaleDown(item),
+            ScaleDirection::None => Self::NoAction(item),
+        }
+    }
+
     #[inline]
     #[allow(clippy::missing_const_for_fn)]
     pub fn item(&self) -> &T {
@@ -294,6 +302,14 @@ impl<T> DecisionResult<T> {
             Self::ScaleUp(item) => item,
             Self::ScaleDown(item) => item,
             Self::NoAction(item) => item,
+        }
+    }
+
+    pub const fn direction(&self) -> ScaleDirection {
+        match self {
+            Self::ScaleUp(_) => ScaleDirection::Up,
+            Self::ScaleDown(_) => ScaleDirection::Down,
+            Self::NoAction(_) => ScaleDirection::None,
         }
     }
 }
