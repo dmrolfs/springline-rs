@@ -183,7 +183,7 @@ const STEP: i64 = 15;
 
 #[tracing::instrument(level = "info")]
 fn make_test_data(
-    start: Timestamp, tick: i64, nr_task_managers: u32, source_records_lag_max: u32,
+    start: Timestamp, tick: i64, parallelism: u32, source_records_lag_max: u32,
     records_per_sec: f64,
 ) -> MetricCatalog {
     let timestamp = Utc.timestamp(start.as_secs() + tick * STEP, 0).into();
@@ -193,8 +193,8 @@ fn make_test_data(
         correlation_id: corr_id,
         recv_timestamp: timestamp,
         health: JobHealthMetrics {
-            job_max_parallelism: 16,
-            job_nonsource_max_parallelism: 15,
+            job_max_parallelism: u32::max(16, parallelism),
+            job_nonsource_max_parallelism: parallelism,
             job_uptime_millis: 1_234_567,
             job_nr_restarts: 3,
             job_nr_completed_checkpoints: 12_345,
@@ -208,16 +208,16 @@ fn make_test_data(
             forecasted_timestamp: Some(forecasted_timestamp),
             forecasted_records_in_per_sec: Some(records_per_sec),
             source_records_lag_max: Some(source_records_lag_max),
-            source_assigned_partitions: Some(nr_task_managers),
-            source_total_lag: Some(source_records_lag_max * nr_task_managers),
+            source_assigned_partitions: Some(parallelism),
+            source_total_lag: Some(source_records_lag_max * parallelism),
             source_records_consumed_rate: Some(
-                (source_records_lag_max * nr_task_managers * 2) as f64,
+                (source_records_lag_max * parallelism * 2) as f64,
             ),
             source_millis_behind_latest: None,
         },
         cluster: ClusterMetrics {
             nr_active_jobs: 1,
-            nr_task_managers,
+            nr_task_managers: parallelism,
             task_cpu_load: 0.65,
             task_heap_memory_used: 92_987_f64,
             task_heap_memory_committed: 103_929_920_f64,
@@ -232,7 +232,7 @@ fn make_test_data(
 }
 
 fn make_test_data_series(
-    start: Timestamp, nr_task_managers: u32, source_records_lag_max: u32,
+    start: Timestamp, parallelsim: u32, source_records_lag_max: u32,
     mut gen: impl FnMut(i64) -> f64,
 ) -> Vec<MetricCatalog> {
     let total = 30;
@@ -242,7 +242,7 @@ fn make_test_data_series(
             make_test_data(
                 start,
                 tick,
-                nr_task_managers,
+                parallelsim,
                 source_records_lag_max,
                 gen(tick),
             )
@@ -260,13 +260,13 @@ enum DecisionType {
 
 #[tracing::instrument(level = "info")]
 fn make_decision(
-    decision: DecisionType, start: Timestamp, tick: i64, nr_task_managers: u32,
+    decision: DecisionType, start: Timestamp, tick: i64, parallelsim: u32,
     source_records_lag_max: u32, records_per_sec: f64,
 ) -> InDecision {
     let data = make_test_data(
         start,
         tick,
-        nr_task_managers,
+        parallelsim,
         source_records_lag_max,
         records_per_sec,
     );
@@ -303,7 +303,6 @@ async fn test_flink_planning_linear() {
     let mut planning = assert_ok!(
         TestPlanning::new(
             "test_planning_1",
-            1,
             2,
             inputs,
             forecast_builder,
@@ -400,10 +399,10 @@ async fn test_flink_planning_linear() {
             vec![ScalePlan {
                 recv_timestamp: timestamp,
                 correlation_id: correlation_id.clone(),
-                current_job_parallelism: 6,
-                target_job_parallelism: 2,
-                target_nr_task_managers: 6, // todo: also allow 5???
+                current_job_parallelism: 2,
+                target_job_parallelism: 6,
                 current_nr_task_managers: 2,
+                target_nr_task_managers: 6, // todo: also allow 5???
             }]
         )
     });
@@ -416,8 +415,8 @@ async fn test_flink_planning_linear() {
                 correlation_id,
                 current_job_parallelism: 2,
                 target_job_parallelism: 5,
-                target_nr_task_managers: 5,
                 current_nr_task_managers: 2,
+                target_nr_task_managers: 5,
             }]
         )
     }
@@ -452,7 +451,6 @@ async fn test_flink_planning_sine() {
     let mut planning = assert_ok!(
         TestPlanning::new(
             "test_planning_2",
-            1,
             2,
             inputs,
             forecaster,
@@ -563,7 +561,7 @@ async fn test_flink_planning_sine() {
                 recv_timestamp: timestamp,
                 correlation_id: CORRELATION_ID.clone(),
                 current_job_parallelism: 2,
-                target_job_parallelism:9,
+                target_job_parallelism: 9,
                 current_nr_task_managers: 2,
                 target_nr_task_managers: 9,
             }]
@@ -597,7 +595,6 @@ async fn test_flink_planning_context_change() {
     let mut planning = assert_ok!(
         TestPlanning::new(
             "test_planning_3",
-            1,
             2,
             inputs,
             forecaster,
