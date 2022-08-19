@@ -40,7 +40,6 @@ pub enum FlinkPlanningEvent {
 #[derive(Debug)]
 pub struct FlinkPlanning<F: Forecaster> {
     name: String,
-    min_cluster_size: u32,
     min_scaling_step: u32,
     pub forecast_calculator: ForecastCalculator<F>,
     performance_history: PerformanceHistory,
@@ -54,7 +53,6 @@ pub struct FlinkPlanning<F: Forecaster> {
 impl<F: Forecaster> PartialEq for FlinkPlanning<F> {
     fn eq(&self, other: &Self) -> bool {
         self.name == other.name
-            && self.min_cluster_size == other.min_cluster_size
             && self.min_scaling_step == other.min_scaling_step
             && self.forecast_calculator.inputs == other.forecast_calculator.inputs
             && self.performance_history == other.performance_history
@@ -63,7 +61,7 @@ impl<F: Forecaster> PartialEq for FlinkPlanning<F> {
 
 impl<F: Forecaster> FlinkPlanning<F> {
     pub async fn new(
-        planning_name: &str, min_cluster_size: u32, min_scaling_step: u32, inputs: ForecastInputs, forecaster: F,
+        planning_name: &str, min_scaling_step: u32, inputs: ForecastInputs, forecaster: F,
         performance_repository: Box<dyn PerformanceRepository>,
     ) -> Result<Self, PlanError> {
         performance_repository.check().await?;
@@ -80,7 +78,6 @@ impl<F: Forecaster> FlinkPlanning<F> {
 
         Ok(Self {
             name,
-            min_cluster_size,
             min_scaling_step,
             forecast_calculator,
             performance_history,
@@ -157,7 +154,7 @@ impl<F: Forecaster> FlinkPlanning<F> {
             let required_job_parallelism = history.job_parallelism_for_workload(forecasted_workload);
 
             if let Some(plan) =
-                ScalePlan::new(decision, required_job_parallelism, self.min_cluster_size, self.min_scaling_step)
+                ScalePlan::new(decision, required_job_parallelism, self.min_scaling_step)
             {
                 if let Some(ref mut outlet) = self.outlet {
                     tracing::info!(?plan, "pushing scale plan.");
@@ -398,7 +395,6 @@ mod tests {
         let (tx_monitor, _) = broadcast::channel(num_cpus::get() * 2);
         let planning = FlinkPlanning {
             name: planning_name.to_string(),
-            min_cluster_size: 1,
             min_scaling_step: 2,
             forecast_calculator: calc,
             performance_history: PerformanceHistory::default(),

@@ -587,6 +587,7 @@ mod tests {
     pub struct RetryResponder(Arc<AtomicU32>, u32, ResponseTemplate, u16);
 
     impl RetryResponder {
+        #[allow(dead_code)]
         fn new(retries: u32, fail_status_code: u16, success_template: ResponseTemplate) -> Self {
             Self(
                 Arc::new(AtomicU32::new(0)),

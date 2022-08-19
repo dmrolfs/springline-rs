@@ -157,7 +157,6 @@ async fn do_make_planning_strategy(
 
     let planning = PlanningStrategy::new(
         name,
-        plan_settings.min_cluster_size,
         plan_settings.min_scaling_step,
         inputs,
         forecaster,
