@@ -153,7 +153,8 @@ async fn do_make_planning_strategy(
 ) -> Result<PlanningStrategy> {
     let inputs = ForecastInputs::from_settings(plan_settings)?;
     let forecaster = LeastSquaresWorkloadForecaster::new(plan_settings.window, plan_settings.spike);
-    let repository = performance_repository::make_performance_repository(&plan_settings.performance_repository)?;
+    let repository =
+        performance_repository::make_performance_repository(&plan_settings.performance_repository)?;
 
     let planning = PlanningStrategy::new(
         name,

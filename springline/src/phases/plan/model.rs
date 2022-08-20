@@ -63,7 +63,7 @@ impl Correlation for ScalePlan {
 }
 
 impl ScalePlan {
-    #[tracing::instrument(level="trace", name="ScalePlace::new", skip())]
+    #[tracing::instrument(level = "trace", name = "ScalePlace::new", skip())]
     pub fn new(
         decision: DecisionResult<MetricCatalog>, calculated_job_parallelism: Option<u32>,
         min_scaling_step: u32,
@@ -79,23 +79,25 @@ impl ScalePlan {
 
                 let (target_job_parallelism, target_nr_task_managers) = match direction {
                     ScaleDirection::Up => {
-                        let min_target_parallelism = current_job_parallelism.saturating_add(min_scaling_step);
+                        let min_target_parallelism =
+                            current_job_parallelism.saturating_add(min_scaling_step);
 
-                        let p = calculated_job_parallelism.map_or(
-                            min_target_parallelism,
-                                |calculated_p| u32::max(calculated_p, min_target_parallelism)
-                        );
+                        let p = calculated_job_parallelism
+                            .map_or(min_target_parallelism, |calculated_p| {
+                                u32::max(calculated_p, min_target_parallelism)
+                            });
                         let tms = u32::max(p, current_nr_task_managers);
                         tracing::debug!(%min_target_parallelism, %p, %tms, "calculating UP ScalePlan");
                         (p, tms)
                     },
                     ScaleDirection::Down => {
-                        let max_target_parallelism = current_job_parallelism.saturating_sub(min_scaling_step);
+                        let max_target_parallelism =
+                            current_job_parallelism.saturating_sub(min_scaling_step);
 
-                        let p0 = calculated_job_parallelism.map_or(
-                            max_target_parallelism,
-                            |calculated_p| u32::min(calculated_p, max_target_parallelism)
-                        );
+                        let p0 = calculated_job_parallelism
+                            .map_or(max_target_parallelism, |calculated_p| {
+                                u32::min(calculated_p, max_target_parallelism)
+                            });
                         let p = u32::max(MINIMAL_JOB_PARALLELISM, p0);
                         let tms = u32::min(p, current_nr_task_managers);
                         tracing::debug!(%max_target_parallelism, %p0, %p, %tms, "calculating DOWN ScalePlan");
@@ -122,6 +124,18 @@ impl ScalePlan {
             (current, target) if target < current => ScaleDirection::Down,
             (..) => ScaleDirection::None,
         }
+    }
+
+    pub fn job_parallelism_difference(&self) -> i64 {
+        let current = i64::from(self.current_job_parallelism);
+        let target = i64::from(self.target_job_parallelism);
+        target.saturating_sub(current)
+    }
+
+    pub fn nr_task_managers_difference(&self) -> i64 {
+        let current = i64::from(self.current_nr_task_managers);
+        let target = i64::from(self.target_nr_task_managers);
+        target.saturating_sub(current)
     }
 }
 
@@ -294,14 +308,14 @@ mod tests {
         }
     }
 
-
     #[test]
     fn test_specific_scale_plan() {
         let (direction, current_nr_task_managers, current_job_parallelism, calculated_parallelism) =
             (ScaleDirection::Down, 0, 4, Some(0));
         let min_scaling_step = 1;
 
-        let decision = make_decision_result(direction, current_job_parallelism, current_nr_task_managers);
+        let decision =
+            make_decision_result(direction, current_job_parallelism, current_nr_task_managers);
 
         once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
         let main_span = tracing::info_span!(
@@ -310,27 +324,48 @@ mod tests {
         );
         let _main_span_guard = main_span.enter();
 
-        assert_eq!(current_job_parallelism, decision.item().health.job_nonsource_max_parallelism);
-        assert_eq!(current_nr_task_managers, decision.item().cluster.nr_task_managers);
+        assert_eq!(
+            current_job_parallelism,
+            decision.item().health.job_nonsource_max_parallelism
+        );
+        assert_eq!(
+            current_nr_task_managers,
+            decision.item().cluster.nr_task_managers
+        );
 
-        if let Some(actual) = ScalePlan::new(decision.clone(), calculated_parallelism, min_scaling_step) {
+        if let Some(actual) =
+            ScalePlan::new(decision.clone(), calculated_parallelism, min_scaling_step)
+        {
             assert_eq!(&actual.correlation_id, &decision.item().correlation_id);
             assert_eq!(actual.recv_timestamp, decision.item().recv_timestamp);
             assert_eq!(actual.current_job_parallelism, current_job_parallelism);
             assert_eq!(actual.current_nr_task_managers, current_nr_task_managers);
 
             let calculated_target = match direction {
-                ScaleDirection::Up => u32::max(current_job_parallelism, calculated_parallelism.unwrap_or(current_job_parallelism)),
-                ScaleDirection::Down => u32::min(current_job_parallelism, calculated_parallelism.unwrap_or(current_job_parallelism)),
+                ScaleDirection::Up => u32::max(
+                    current_job_parallelism,
+                    calculated_parallelism.unwrap_or(current_job_parallelism),
+                ),
+                ScaleDirection::Down => u32::min(
+                    current_job_parallelism,
+                    calculated_parallelism.unwrap_or(current_job_parallelism),
+                ),
                 ScaleDirection::None => current_job_parallelism,
             };
 
-            let parallelism_diff = i64::from(calculated_target).saturating_sub(i64::from(current_job_parallelism));
+            let parallelism_diff =
+                i64::from(calculated_target).saturating_sub(i64::from(current_job_parallelism));
 
-            let up_min_adj_parallelism = u32::max(calculated_target, current_job_parallelism.saturating_add(min_scaling_step));
+            let up_min_adj_parallelism = u32::max(
+                calculated_target,
+                current_job_parallelism.saturating_add(min_scaling_step),
+            );
             let down_max_adj_parallelism = u32::max(
-            MINIMAL_JOB_PARALLELISM,
-            u32::min(calculated_target, current_job_parallelism.saturating_sub(min_scaling_step))
+                MINIMAL_JOB_PARALLELISM,
+                u32::min(
+                    calculated_target,
+                    current_job_parallelism.saturating_sub(min_scaling_step),
+                ),
             );
 
             tracing::info!(
@@ -351,54 +386,118 @@ mod tests {
                 },
 
                 ScaleDirection::None => {
-                    assert_eq!(actual.target_job_parallelism, actual.current_job_parallelism);
-                    assert_eq!(actual.target_nr_task_managers, actual.current_nr_task_managers);
+                    assert_eq!(
+                        actual.target_job_parallelism,
+                        actual.current_job_parallelism
+                    );
+                    assert_eq!(
+                        actual.target_nr_task_managers,
+                        actual.current_nr_task_managers
+                    );
                 },
             }
 
             match direction {
-                ScaleDirection::Up if up_min_adj_parallelism < current_nr_task_managers && parallelism_diff.abs() <= min_scaling_step as i64 => {
-                    assert_eq!(actual.target_job_parallelism, u32::max(calculated_target, up_min_adj_parallelism));
+                ScaleDirection::Up
+                    if up_min_adj_parallelism < current_nr_task_managers
+                        && parallelism_diff.abs() <= min_scaling_step as i64 =>
+                {
+                    assert_eq!(
+                        actual.target_job_parallelism,
+                        u32::max(calculated_target, up_min_adj_parallelism)
+                    );
                     assert_eq!(actual.target_nr_task_managers, current_nr_task_managers);
                 },
 
                 ScaleDirection::Up if parallelism_diff.abs() <= min_scaling_step as i64 => {
-                    assert_eq!(actual.target_job_parallelism, u32::max(calculated_target, up_min_adj_parallelism));
-                    assert_eq!(actual.target_nr_task_managers, actual.target_job_parallelism);
+                    assert_eq!(
+                        actual.target_job_parallelism,
+                        u32::max(calculated_target, up_min_adj_parallelism)
+                    );
+                    assert_eq!(
+                        actual.target_nr_task_managers,
+                        actual.target_job_parallelism
+                    );
                 },
 
                 ScaleDirection::Up if up_min_adj_parallelism < current_nr_task_managers => {
-                    assert_eq!(actual.target_job_parallelism, u32::max(calculated_target, up_min_adj_parallelism));
+                    assert_eq!(
+                        actual.target_job_parallelism,
+                        u32::max(calculated_target, up_min_adj_parallelism)
+                    );
                     assert_eq!(actual.target_nr_task_managers, current_nr_task_managers);
                 },
 
                 ScaleDirection::Up => {
-                    assert_eq!(actual.target_job_parallelism, u32::max(calculated_target, up_min_adj_parallelism));
-                    assert_eq!(actual.target_nr_task_managers, actual.target_job_parallelism);
+                    assert_eq!(
+                        actual.target_job_parallelism,
+                        u32::max(calculated_target, up_min_adj_parallelism)
+                    );
+                    assert_eq!(
+                        actual.target_nr_task_managers,
+                        actual.target_job_parallelism
+                    );
                 },
 
-                ScaleDirection::Down if current_nr_task_managers < down_max_adj_parallelism && parallelism_diff.abs() <= min_scaling_step as i64 => {
-                    assert_eq!(actual.target_job_parallelism, u32::max(MINIMAL_JOB_PARALLELISM, u32::min(calculated_target, down_max_adj_parallelism)));
+                ScaleDirection::Down
+                    if current_nr_task_managers < down_max_adj_parallelism
+                        && parallelism_diff.abs() <= min_scaling_step as i64 =>
+                {
+                    assert_eq!(
+                        actual.target_job_parallelism,
+                        u32::max(
+                            MINIMAL_JOB_PARALLELISM,
+                            u32::min(calculated_target, down_max_adj_parallelism)
+                        )
+                    );
                     assert_eq!(actual.target_nr_task_managers, current_nr_task_managers);
                 },
 
                 ScaleDirection::Down if parallelism_diff.abs() <= min_scaling_step as i64 => {
-                    assert_eq!(actual.target_job_parallelism, u32::max(MINIMAL_JOB_PARALLELISM, u32::min(calculated_target, down_max_adj_parallelism)));
-                    assert_eq!(actual.target_nr_task_managers, actual.target_job_parallelism);
+                    assert_eq!(
+                        actual.target_job_parallelism,
+                        u32::max(
+                            MINIMAL_JOB_PARALLELISM,
+                            u32::min(calculated_target, down_max_adj_parallelism)
+                        )
+                    );
+                    assert_eq!(
+                        actual.target_nr_task_managers,
+                        actual.target_job_parallelism
+                    );
                 },
 
                 ScaleDirection::Down if current_nr_task_managers < down_max_adj_parallelism => {
-                    assert_eq!(actual.target_job_parallelism, u32::max(MINIMAL_JOB_PARALLELISM, u32::min(calculated_target, down_max_adj_parallelism)));
+                    assert_eq!(
+                        actual.target_job_parallelism,
+                        u32::max(
+                            MINIMAL_JOB_PARALLELISM,
+                            u32::min(calculated_target, down_max_adj_parallelism)
+                        )
+                    );
                     assert_eq!(actual.target_nr_task_managers, current_nr_task_managers);
                 },
 
                 ScaleDirection::Down => {
-                    assert_eq!(actual.target_job_parallelism, u32::max(MINIMAL_JOB_PARALLELISM, u32::min(calculated_target, down_max_adj_parallelism)));
-                    assert_eq!(actual.target_nr_task_managers, actual.target_job_parallelism);
+                    assert_eq!(
+                        actual.target_job_parallelism,
+                        u32::max(
+                            MINIMAL_JOB_PARALLELISM,
+                            u32::min(calculated_target, down_max_adj_parallelism)
+                        )
+                    );
+                    assert_eq!(
+                        actual.target_nr_task_managers,
+                        actual.target_job_parallelism
+                    );
                 },
 
                 ScaleDirection::None => {
-                    assert!(false, "no scale should be created for no rescale, but got {:?}", actual);
+                    assert!(
+                        false,
+                        "no scale should be created for no rescale, but got {:?}",
+                        actual
+                    );
                 },
             }
         } else {

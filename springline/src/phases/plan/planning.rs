@@ -151,7 +151,8 @@ impl<F: Forecaster> FlinkPlanning<F> {
                 .calculate_target_rate(decision.item().recv_timestamp, buffered_records)?;
             PLANNING_FORECASTED_WORKLOAD.set(*forecasted_workload.as_ref());
 
-            let required_job_parallelism = history.job_parallelism_for_workload(forecasted_workload);
+            let required_job_parallelism =
+                history.job_parallelism_for_workload(forecasted_workload);
 
             if let Some(plan) =
                 ScalePlan::new(decision, required_job_parallelism, self.min_scaling_step)
@@ -461,7 +462,8 @@ mod tests {
                         recv_timestamp,
                         correlation_id: CORRELATION.clone(),
                         current_job_parallelism: METRICS.health.job_nonsource_max_parallelism,
-                        target_job_parallelism: min_step + METRICS.health.job_nonsource_max_parallelism,
+                        target_job_parallelism: min_step
+                            + METRICS.health.job_nonsource_max_parallelism,
                         target_nr_task_managers: min_step + METRICS.cluster.nr_task_managers,
                         current_nr_task_managers: METRICS.cluster.nr_task_managers,
                     },
@@ -479,7 +481,8 @@ mod tests {
                         recv_timestamp,
                         correlation_id: CORRELATION.clone(),
                         current_job_parallelism: METRICS.health.job_nonsource_max_parallelism,
-                        target_job_parallelism: METRICS.health.job_nonsource_max_parallelism - min_step,
+                        target_job_parallelism: METRICS.health.job_nonsource_max_parallelism
+                            - min_step,
                         target_nr_task_managers: METRICS.cluster.nr_task_managers - min_step,
                         current_nr_task_managers: METRICS.cluster.nr_task_managers,
                     },

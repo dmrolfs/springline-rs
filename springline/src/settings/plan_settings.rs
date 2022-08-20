@@ -61,7 +61,7 @@ mod tests {
     #[test]
     fn test_serde_plan_settings() {
         let settings = PlanSettings {
-            min_cluster_size:3,
+            min_cluster_size: 3,
             min_scaling_step: 2,
             restart: Duration::from_secs(3 * 60),
             max_catch_up: Duration::from_secs(10 * 60),

@@ -159,7 +159,7 @@ impl TestFlow {
             tracing::info_span!("DMR check scenario", %label, ?data, ?expectation, );
         let _ = scenario_span.enter();
 
-        let timeout = Duration::from_millis(250);
+        let timeout = Duration::from_millis(500);
 
         assert_ok!(self.push_data(data).await);
         claim::assert_matches!(
@@ -170,7 +170,7 @@ impl TestFlow {
         let result = assert_ok!(
             self.check_sink_accumulation(label, timeout, |acc| {
                 let check_span =
-                    tracing::info_span!("DMR check sensesensor accumulation", %label, ?expectation, ?timeout);
+                    tracing::info_span!("DMR check sensor accumulation", %label, ?expectation, ?timeout);
                 let _ = check_span.enter();
 
                 tracing::warn!(
@@ -289,6 +289,8 @@ async fn test_flink_governance_flow_simple_and_happy() -> anyhow::Result<()> {
 
     let mut flow = TestFlow::new(governance_stage).await?;
 
+    let min_parallelism = 1;
+    let max_parallelism = 20;
     let min_cluster_size = 2;
     let max_cluster_size = 10;
     let min_scaling_step = 1;
@@ -296,6 +298,8 @@ async fn test_flink_governance_flow_simple_and_happy() -> anyhow::Result<()> {
     let context = GovernanceContext {
         correlation_id: Id::direct("GovernanceContext", 0, "A"),
         recv_timestamp: Timestamp::new(0, 0),
+        min_parallelism,
+        max_parallelism,
         min_cluster_size,
         max_cluster_size,
         min_scaling_step,
@@ -353,6 +357,8 @@ async fn test_flink_governance_flow_simple_below_min_cluster_size() -> anyhow::R
 
     let mut flow = TestFlow::new(governance_stage).await?;
 
+    let min_parallelism = 1;
+    let max_parallelism = 20;
     let min_cluster_size = 2;
     let max_cluster_size = 10;
     let min_scaling_step = 1;
@@ -360,6 +366,8 @@ async fn test_flink_governance_flow_simple_below_min_cluster_size() -> anyhow::R
     let context = GovernanceContext {
         correlation_id: Id::direct("GovernanceContext", 0, "A"),
         recv_timestamp: Timestamp::new(0, 0),
+        min_parallelism,
+        max_parallelism,
         min_cluster_size,
         max_cluster_size,
         min_scaling_step,
@@ -389,7 +397,7 @@ async fn test_flink_governance_flow_simple_below_min_cluster_size() -> anyhow::R
                 recv_timestamp: timestamp,
                 correlation_id: CORRELATION_ID.clone(),
                 current_job_parallelism: 4,
-                target_job_parallelism: min_cluster_size,
+                target_job_parallelism: min_parallelism,
                 current_nr_task_managers: 4,
                 target_nr_task_managers: min_cluster_size,
             }]
@@ -417,6 +425,8 @@ async fn test_flink_governance_flow_simple_above_max_cluster_size() -> anyhow::R
 
     let mut flow = TestFlow::new(governance_stage).await?;
 
+    let min_parallelism = 1;
+    let max_parallelism = 20;
     let min_cluster_size = 2;
     let max_cluster_size = 10;
     let min_scaling_step = 1;
@@ -424,6 +434,8 @@ async fn test_flink_governance_flow_simple_above_max_cluster_size() -> anyhow::R
     let context = GovernanceContext {
         correlation_id: Id::direct("GovernanceContext", 0, "A"),
         recv_timestamp: Timestamp::new(0, 0),
+        min_parallelism,
+        max_parallelism,
         min_cluster_size,
         max_cluster_size,
         min_scaling_step,
@@ -452,9 +464,9 @@ async fn test_flink_governance_flow_simple_above_max_cluster_size() -> anyhow::R
             vec![ScalePlan {
                 recv_timestamp: timestamp,
                 correlation_id: CORRELATION_ID.clone(),
-                current_job_parallelism: 61,
-                target_job_parallelism: max_cluster_size,
-                current_nr_task_managers: 61,
+                current_job_parallelism: 6,
+                target_job_parallelism: 6 + max_scaling_step,
+                current_nr_task_managers: 6,
                 target_nr_task_managers: max_cluster_size,
             }]
         )
@@ -481,6 +493,8 @@ async fn test_flink_governance_flow_simple_step_up_too_big() -> anyhow::Result<(
 
     let mut flow = TestFlow::new(governance_stage).await?;
 
+    let min_parallelism = 1;
+    let max_parallelism = 20;
     let min_cluster_size = 2;
     let max_cluster_size = 10;
     let min_scaling_step = 1;
@@ -488,6 +502,8 @@ async fn test_flink_governance_flow_simple_step_up_too_big() -> anyhow::Result<(
     let context = GovernanceContext {
         correlation_id: Id::direct("GovernanceContext", 0, "A"),
         recv_timestamp: Timestamp::new(0, 0),
+        min_parallelism,
+        max_parallelism,
         min_cluster_size,
         max_cluster_size,
         min_scaling_step,
@@ -545,6 +561,8 @@ async fn test_flink_governance_flow_simple_step_down_too_big() -> anyhow::Result
 
     let mut flow = TestFlow::new(governance_stage).await?;
 
+    let min_parallelism = 1;
+    let max_parallelism = 20;
     let min_cluster_size = 2;
     let max_cluster_size = 10;
     let min_scaling_step = 1;
@@ -552,6 +570,8 @@ async fn test_flink_governance_flow_simple_step_down_too_big() -> anyhow::Result
     let context = GovernanceContext {
         correlation_id: Id::direct("GovernanceContext", 0, "A"),
         recv_timestamp: Timestamp::new(0, 0),
+        min_parallelism,
+        max_parallelism,
         min_cluster_size,
         max_cluster_size,
         min_scaling_step,
@@ -612,6 +632,8 @@ async fn test_flink_governance_flow_simple_step_up_before_max() -> anyhow::Resul
 
     let mut flow = TestFlow::new(governance_stage).await?;
 
+    let min_parallelism = 1;
+    let max_parallelism = 20;
     let min_cluster_size = 2;
     let max_cluster_size = 10;
     let min_scaling_step = 1;
@@ -619,6 +641,8 @@ async fn test_flink_governance_flow_simple_step_up_before_max() -> anyhow::Resul
     let context = GovernanceContext {
         correlation_id: Id::direct("GovernanceContext", 0, "A"),
         recv_timestamp: Timestamp::new(0, 0),
+        min_parallelism,
+        max_parallelism,
         min_cluster_size,
         max_cluster_size,
         min_scaling_step,
@@ -676,6 +700,8 @@ async fn test_flink_governance_flow_simple_step_down_before_min() -> anyhow::Res
 
     let mut flow = TestFlow::new(governance_stage).await?;
 
+    let min_parallelism = 1;
+    let max_parallelism = 20;
     let min_cluster_size = 2;
     let max_cluster_size = 10;
     let min_scaling_step = 1;
@@ -683,6 +709,8 @@ async fn test_flink_governance_flow_simple_step_down_before_min() -> anyhow::Res
     let context = GovernanceContext {
         correlation_id: Id::direct("GovernanceContext", 0, "A"),
         recv_timestamp: Timestamp::new(0, 0),
+        min_parallelism,
+        max_parallelism,
         min_cluster_size,
         max_cluster_size,
         min_scaling_step,

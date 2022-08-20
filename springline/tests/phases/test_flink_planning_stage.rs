@@ -210,9 +210,7 @@ fn make_test_data(
             source_records_lag_max: Some(source_records_lag_max),
             source_assigned_partitions: Some(parallelism),
             source_total_lag: Some(source_records_lag_max * parallelism),
-            source_records_consumed_rate: Some(
-                (source_records_lag_max * parallelism * 2) as f64,
-            ),
+            source_records_consumed_rate: Some((source_records_lag_max * parallelism * 2) as f64),
             source_millis_behind_latest: None,
         },
         cluster: ClusterMetrics {
@@ -239,13 +237,7 @@ fn make_test_data_series(
     (0..total)
         .into_iter()
         .map(move |tick| {
-            make_test_data(
-                start,
-                tick,
-                parallelsim,
-                source_records_lag_max,
-                gen(tick),
-            )
+            make_test_data(start, tick, parallelsim, source_records_lag_max, gen(tick))
         })
         .collect()
 }

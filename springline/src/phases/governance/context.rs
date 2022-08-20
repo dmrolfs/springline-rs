@@ -20,17 +20,33 @@ pub struct GovernanceContext {
     pub correlation_id: Id<Self>,
     pub recv_timestamp: Timestamp,
 
-    /// Minimal cluster size autoscaling will allow to scale down to.
-    // - source from governance settings
+    /// Minimal job parallelism autoscaling will allow to rescale to.
+    /// - source from governance settings
+    #[polar(attribute)]
+    pub min_parallelism: u32,
+
+    /// Maximum job parallelism autoscaling will allow to rescale to.
+    /// - source from governance settings
+    #[polar(attribute)]
+    pub max_parallelism: u32,
+
+    /// Minimal cluster size autoscaling will allow to rescale to.
+    /// - source from governance settings
     #[polar(attribute)]
     pub min_cluster_size: u32,
 
+    /// Maximum cluster size autoscaling will allow to rescale to.
+    /// - source from governance settings
     #[polar(attribute)]
     pub max_cluster_size: u32,
 
+    /// Minimal step in parallelism and cluster size autoscaling will allow to rescale.
+    /// - source from governance settings
     #[polar(attribute)]
     pub min_scaling_step: u32,
 
+    /// Maximum step in parallelism and cluster size autoscaling will allow to rescale.
+    /// - source from governance settings
     #[polar(attribute)]
     pub max_scaling_step: u32,
 
@@ -44,6 +60,10 @@ impl Debug for GovernanceContext {
         f.debug_struct("GovernanceContext")
             .field("correlation_id", &self.correlation_id)
             .field("recv_timestamp", &self.recv_timestamp.to_string())
+            .field(
+                "parallelism",
+                &format!("[{}, {}]", self.min_parallelism, self.max_parallelism),
+            )
             .field(
                 "cluster_size",
                 &format!("[{}, {}]", self.min_cluster_size, self.max_cluster_size),
@@ -67,7 +87,9 @@ impl Correlation for GovernanceContext {
 
 impl PartialEq for GovernanceContext {
     fn eq(&self, other: &Self) -> bool {
-        self.min_cluster_size == other.min_cluster_size
+        self.min_parallelism == other.min_parallelism
+            && self.max_parallelism == other.max_parallelism
+            && self.min_cluster_size == other.min_cluster_size
             && self.max_cluster_size == other.max_cluster_size
             && self.min_scaling_step == other.min_scaling_step
             && self.max_scaling_step == other.max_scaling_step
@@ -78,6 +100,8 @@ impl PartialEq for GovernanceContext {
 impl SubscriptionRequirements for GovernanceContext {
     fn required_fields() -> HashSet<String> {
         maplit::hashset! {
+            "min_parallelism".into(),
+            "max_parallelism".into(),
             "min_cluster_size".into(),
             "max_cluster_size".into(),
             "min_scaling_step".into(),
@@ -170,6 +194,8 @@ mod tests {
             // custom_prop_a in prop::num::f64::ANY,
             // custom_prop_b in prop::num::i64::ANY,
     ) {
+        let min_parallelism = 5;
+        let max_parallelism = 250;
         let min_cluster_size = 7;
         let max_cluster_size = 199;
         let min_scaling_step = 1;
@@ -180,6 +206,8 @@ mod tests {
         let context = GovernanceContext {
             correlation_id: Id::direct("GovernanceContext", 0, "A"),
             recv_timestamp: Timestamp::new(0, 0),
+            min_parallelism,
+            max_parallelism,
             min_cluster_size,
             max_cluster_size,
             min_scaling_step,
@@ -204,6 +232,10 @@ mod tests {
             Token::I64(0),
             Token::U32(0),
             Token::TupleStructEnd,
+            Token::Str("min_parallelism"),
+            Token::U32(min_parallelism),
+            Token::Str("max_parallelism"),
+            Token::U32(max_parallelism),
             Token::Str("min_cluster_size"),
             Token::U32(min_cluster_size),
             Token::Str("max_cluster_size"),
@@ -224,8 +256,8 @@ mod tests {
         });
 
         if result.is_err() {
-            expected.swap(21, 23);
-            expected.swap(22, 24);
+            expected.swap(25, 27);
+            expected.swap(26, 28);
             assert_tokens(&context, expected.as_slice());
         }
     }
@@ -239,6 +271,8 @@ mod tests {
     ) {
         once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
 
+        let min_parallelism = 3;
+        let max_parallelism = 300;
         let min_cluster_size = 7;
         let max_cluster_size = 199;
         let min_scaling_step = 2;
@@ -249,6 +283,8 @@ mod tests {
         let data: Telemetry = maplit::hashmap! {
             "correlation_id" => Id::<GovernanceContext>::direct("GovernanceContext", 0, "A").to_telemetry(),
             "recv_timestamp" => Timestamp::new(0, 0).to_telemetry(),
+            "min_parallelism" => min_parallelism.to_telemetry(),
+            "max_parallelism" => max_parallelism.to_telemetry(),
             "min_cluster_size" => min_cluster_size.to_telemetry(),
             "max_cluster_size" => max_cluster_size.to_telemetry(),
             "min_scaling_step" => min_scaling_step.to_telemetry(),
@@ -266,6 +302,8 @@ mod tests {
         let expected = GovernanceContext {
             correlation_id: Id::direct("GovernanceContext", 0, "A"),
             recv_timestamp: Timestamp::new(0, 0),
+            min_parallelism,
+            max_parallelism,
             min_cluster_size,
             max_cluster_size,
             min_scaling_step,

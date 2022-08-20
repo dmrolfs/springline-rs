@@ -1,62 +1,103 @@
-accept(plan, context, adjusted_target)
-    if accept_scale_up(plan, context, adjusted_target)
-    or accept_scale_down(plan, context, adjusted_target);
+accept(plan, context, adjusted_target_parallelism, adjusted_target_nr_task_managers)
+    if accept_scale_up(plan, context, adjusted_target_parallelism, adjusted_target_nr_task_managers)
+    or accept_scale_down(plan, context, adjusted_target_parallelism, adjusted_target_nr_task_managers);
 
-accept_scale_up(plan, context, adjusted_target)
-    if check_scale_up(plan, context, adjusted)
-    and context.max_cluster_size < adjusted
-    and adjusted_target = context.max_cluster_size
-    and cut;
-
-accept_scale_up(plan, context, adjusted_target)
-    if check_scale_up(plan, context, adjusted_target)
-    and cut;
-
-check_scale_up(plan, context, adjusted_target)
+accept_scale_up(plan, context, adjusted_target_parallelism, adjusted_target_nr_task_managers)
     if not veto(plan, context)
-    and accept_step_up(plan, context, adjusted_target);
-
-
-accept_scale_down(plan, context, adjusted_target)
-    if check_scale_down(plan, context, adjusted)
-    and adjusted < context.min_cluster_size
-    and adjusted_target = context.min_cluster_size
+    and scale_up(plan)
+    and adjust_parallelism_step_up(plan, context, parallelism)
+    and adjust_nr_task_managers_step_up(plan, context, nr_task_managers)
+    and adjust_final_bounds(parallelism, context.min_parallelism, context.max_parallelism, adjusted_target_parallelism)
+    and adjust_final_bounds(nr_task_managers, context.min_cluster_size, context.max_cluster_size, adjusted_target_nr_task_managers)
     and cut;
 
-accept_scale_down(plan, context, adjusted_target)
-    if check_scale_down(plan, context, adjusted_target)
-    and cut;
-
-check_scale_down(plan, context, adjusted_target)
+accept_scale_down(plan, context, adjusted_target_parallelism, adjusted_target_nr_task_managers)
     if not veto(plan, context)
-    and accept_step_down(plan, context, adjusted_target);
+    and scale_down(plan)
+    and adjust_parallelism_step_down(plan, context, parallelism)
+    and adjust_nr_task_managers_step_down(plan, context, nr_task_managers)
+    and adjust_final_bounds(parallelism, context.min_parallelism, context.max_parallelism, adjusted_target_parallelism)
+    and adjust_final_bounds(nr_task_managers, context.min_cluster_size, context.max_cluster_size, adjusted_target_nr_task_managers)
+    and cut;
+
+# adjust final bounds
+adjust_final_bounds(target, min_bound, max_bound, adjusted_target)
+    if max(target, min_bound, target_0)
+    and min(target_0, max_bound, adjusted_target);
 
 
-accept_step_up(plan, context, adjusted_target)
-    if scale_up(plan)
-    and (plan.target_nr_task_managers - plan.current_nr_task_managers) <= context.max_scaling_step
-    and adjusted_target = plan.target_nr_task_managers;
+# parallelism steps
+adjust_parallelism_step_up(plan, context, adjusted_target)
+    if adjust_step_up(
+        plan.current_job_parallelism,
+        plan.target_job_parallelism,
+        context.min_scaling_step,
+        context.max_scaling_step,
+        adjusted_target
+    );
 
-accept_step_up(plan, context, adjusted_target)
-    if scale_up(plan)
-    and context.max_scaling_step < (plan.target_nr_task_managers - plan.current_nr_task_managers)
-    and adjusted_target = plan.current_nr_task_managers + context.max_scaling_step;
+adjust_parallelism_step_down(plan, context, adjusted_target)
+    if adjust_step_down(
+        plan.current_job_parallelism,
+        plan.target_job_parallelism,
+        context.min_scaling_step,
+        context.max_scaling_step,
+        adjusted_target
+    );
+
+# nr task managers steps
+adjust_nr_task_managers_step_up(plan, context, adjusted_target)
+    if adjust_step_up(
+        plan.current_nr_task_managers,
+        plan.target_nr_task_managers,
+        context.min_scaling_step,
+        context.max_scaling_step,
+        adjusted_target
+    );
+
+adjust_nr_task_managers_step_down(plan, context, adjusted_target)
+    if adjust_step_down(
+        plan.current_nr_task_managers,
+        plan.target_nr_task_managers,
+        context.min_scaling_step,
+        context.max_scaling_step,
+        adjusted_target
+    );
+
+# steps
+adjust_step_up(current, target, min_step, max_step, adjusted_target)
+    if min_bound = current + min_step
+    and max_bound = current + max_step
+    and max(target, min_bound, target_0)
+    and min(target_0, max_bound, adjusted_target);
+
+adjust_step_down(current, target, min_step, max_step, adjusted_target)
+    if max_bound = current - min_step
+    and min_bound = current - max_step
+    and max(target, min_bound, target_0)
+    and min(target_0, max_bound, adjusted_target);
 
 
-accept_step_down(plan, context, adjusted_target)
-    if scale_down(plan)
-    and (plan.current_nr_task_managers - plan.target_nr_task_managers) <= context.max_scaling_step
-    and adjusted_target = plan.target_nr_task_managers;
+# identify direction
+no_change(plan)
+    if plan.current_job_parallelism == plan.target_job_parallelism
+    and plan.current_nr_task_managers == plan.target_nr_task_managers;
 
-accept_step_down(plan, context, adjusted_target)
-    if scale_down(plan)
-    and context.max_scaling_step < (plan.current_nr_task_managers - plan.target_nr_task_managers)
-    and adjusted_target = plan.current_nr_task_managers - context.max_scaling_step;
+scale_up(plan)
+    if plan.current_job_parallelism < plan.target_job_parallelism
+    or plan.current_nr_task_managers < plan.target_nr_task_managers;
 
+scale_down(plan)
+    if plan.target_job_parallelism < plan.current_job_parallelism
+    or plan.target_nr_task_managers < plan.current_nr_task_managers;
 
-scale_up(plan) if plan.current_nr_task_managers < plan.target_nr_task_managers;
-scale_down(plan) if plan.target_nr_task_managers < plan.current_nr_task_managers;
-
-
+# one form of veto
+veto(plan, _context) if no_change(plan);
 veto(plan, _context) if not scale_up(plan) and not scale_down(plan);
 
+# basic ops
+min(lhs, rhs, result) if lhs <= rhs and result = lhs;
+min(lhs, rhs, result) if rhs < lhs and result = rhs;
+
+max(lhs, rhs, result) if lhs <= rhs and result = rhs;
+max(lhs, rhs, result) if rhs < lhs and result = lhs;

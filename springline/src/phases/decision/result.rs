@@ -287,7 +287,7 @@ impl<T> DecisionResult<T> {
         }
     }
 
-    pub fn from_direction(item: T, direction: ScaleDirection) -> Self {
+    pub const fn from_direction(item: T, direction: ScaleDirection) -> Self {
         match direction {
             ScaleDirection::Up => Self::ScaleUp(item),
             ScaleDirection::Down => Self::ScaleDown(item),

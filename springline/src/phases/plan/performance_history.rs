@@ -183,7 +183,8 @@ impl BenchNeighbors {
         let spline = Spline::from_vec(vec![start, end]);
         let sampled: f64 = spline.clamped_sample(workload_rate.into()).unwrap();
 
-        let job_parallelism = Self::try_f64_to_u32(sampled.ceil()).expect("start-end are valid integers so in between must also be");
+        let job_parallelism = Self::try_f64_to_u32(sampled.ceil())
+            .expect("start-end are valid integers so in between must also be");
         tracing::debug!(%job_parallelism, interpolated_job_parallelism=?sampled, "interpolated job parallelism between neighbors.");
         job_parallelism
     }

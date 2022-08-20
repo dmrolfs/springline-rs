@@ -33,8 +33,7 @@ impl BenchmarkRange {
     }
 
     pub const fn new(
-        job_parallelism: u32, lo_rate: Option<RecordsPerSecond>,
-        hi_rate: Option<RecordsPerSecond>,
+        job_parallelism: u32, lo_rate: Option<RecordsPerSecond>, hi_rate: Option<RecordsPerSecond>,
     ) -> Self {
         Self { job_parallelism, lo_rate, hi_rate }
     }
@@ -181,11 +180,7 @@ pub struct Benchmark {
 
 impl fmt::Display for Benchmark {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "[{}:{}]",
-            self.job_parallelism, self.records_out_per_sec
-        )
+        write!(f, "[{}:{}]", self.job_parallelism, self.records_out_per_sec)
     }
 }
 
@@ -269,10 +264,10 @@ impl TryFrom<TelemetryValue> for Benchmark {
 
     fn try_from(telemetry: TelemetryValue) -> Result<Self, Self::Error> {
         if let TelemetryValue::Table(rep) = telemetry {
-            let job_parallelism = rep
-                .get(T_JOB_PARALLELISM)
-                .map(|v| u32::try_from(v.clone()))
-                .ok_or_else(|| PlanError::DataNotFound(T_JOB_PARALLELISM.to_string()))??;
+            let job_parallelism =
+                rep.get(T_JOB_PARALLELISM)
+                    .map(|v| u32::try_from(v.clone()))
+                    .ok_or_else(|| PlanError::DataNotFound(T_JOB_PARALLELISM.to_string()))??;
 
             let records_out_per_sec = rep
                 .get(T_RECORDS_OUT_PER_SEC)
@@ -280,7 +275,7 @@ impl TryFrom<TelemetryValue> for Benchmark {
                 .ok_or_else(|| PlanError::DataNotFound(T_RECORDS_OUT_PER_SEC.to_string()))??
                 .into();
 
-            Ok(Self { job_parallelism, records_out_per_sec, })
+            Ok(Self { job_parallelism, records_out_per_sec })
         } else {
             Err(TelemetryError::TypeError {
                 expected: TelemetryType::Table,

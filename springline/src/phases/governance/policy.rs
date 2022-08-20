@@ -15,7 +15,8 @@ use crate::metrics::UpdateMetrics;
 use crate::phases::plan::ScalePlan;
 use crate::settings::GovernanceSettings;
 
-pub const ADJUSTED_TARGET: &str = "adjusted_target";
+pub const ADJUSTED_TARGET_PARALLELISM: &str = "adjusted_target_parallelism";
+pub const ADJUSTED_TARGET_NR_TASK_MANAGERS: &str = "adjusted_target_nr_task_managers";
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
@@ -65,7 +66,7 @@ impl PolicySubscription for GovernancePolicy {
 }
 
 impl QueryPolicy for GovernancePolicy {
-    type Args = (Self::Item, Self::Context, PolarValue);
+    type Args = (Self::Item, Self::Context, PolarValue, PolarValue);
     type Context = GovernanceContext;
     type Item = ScalePlan;
     type TemplateData = GovernanceTemplateData;
@@ -87,7 +88,8 @@ impl QueryPolicy for GovernancePolicy {
         (
             item.clone(),
             context.clone(),
-            PolarValue::Variable(ADJUSTED_TARGET.to_string()),
+            PolarValue::Variable(ADJUSTED_TARGET_PARALLELISM.to_string()),
+            PolarValue::Variable(ADJUSTED_TARGET_NR_TASK_MANAGERS.to_string()),
         )
     }
 
