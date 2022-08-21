@@ -26,12 +26,20 @@ pub use savepoint::CancelWithSavepoint;
 
 #[async_trait]
 pub trait ScaleAction: Debug + Send + Sync {
-    type In: AppData + ScaleActionPlan;
+    type Plan: AppData + ScaleActionPlan;
+    type Session;
+
     fn label(&self) -> &str;
-    fn check_preconditions(&self, session: &ActionSession) -> Result<(), ActError>;
+
+    fn check_preconditions(&self, session: &Self::Session) -> Result<(), ActError>;
+
     async fn execute<'s>(
-        &self, plan: &'s Self::In, session: &'s mut ActionSession,
+        &self, plan: &'s Self::Plan, session: &'s mut Self::Session,
     ) -> Result<(), ActError>;
+
+    async fn on_error<'s>(&self, error: ActError, plan: &'s Self::Plan, session: &'s mut Self::Session) -> Result<(), ActError> {
+        Err(error)
+    }
 }
 
 pub const ACTION_TOTAL_DURATION: &str = "total_duration";

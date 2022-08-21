@@ -23,7 +23,7 @@ const STAGE_NAME: &str = "execute_scaling";
 pub struct ScaleActuator<In> {
     kube: KubernetesContext,
     flink: FlinkContext,
-    action: Box<dyn ScaleAction<In = In>>,
+    action: Box<dyn ScaleAction<Plan= In>>,
     inlet: Inlet<In>,
     pub tx_action_monitor: broadcast::Sender<Arc<protocol::ActEvent<In>>>,
 }

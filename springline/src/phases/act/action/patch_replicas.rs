@@ -32,19 +32,20 @@ impl PatchReplicas {
 
 #[async_trait]
 impl ScaleAction for PatchReplicas {
-    type In = ScalePlan;
+    type Plan = ScalePlan;
+    type Session = ActionSession;
 
     fn label(&self) -> &str {
         ACTION_LABEL
     }
 
-    fn check_preconditions(&self, _session: &ActionSession) -> Result<(), ActError> {
+    fn check_preconditions(&self, _session: &Self::Session) -> Result<(), ActError> {
         Ok(())
     }
 
     #[tracing::instrument(level = "info", name = "PatchReplicas::execute", skip(self))]
     async fn execute<'s>(
-        &self, plan: &'s Self::In, session: &'s mut ActionSession,
+        &self, plan: &'s Self::Plan, session: &'s mut Self::Session,
     ) -> Result<(), ActError> {
         let timer = act::start_scale_action_timer(session.cluster_label(), self.label());
 
@@ -86,6 +87,10 @@ impl ScaleAction for PatchReplicas {
         );
         Ok(())
     }
+
+    async fn on_error<'s>(&self, error: ActError, plan: &'s Self::Plan, session: &'s mut Self::Session) -> Result<(), ActError> {
+        todo!()
+    }
 }
 
 impl PatchReplicas {
@@ -95,7 +100,7 @@ impl PatchReplicas {
         skip(plan, kube)
     )]
     async fn block_until_satisfied(
-        &self, plan: &<Self as ScaleAction>::In, kube: &KubernetesContext,
+        &self, plan: &<Self as ScaleAction>::Plan, kube: &KubernetesContext,
     ) -> Result<(), ActError> {
         let correlation = plan.correlation();
         let target_nr_task_managers = plan.target_replicas();
@@ -151,7 +156,7 @@ impl PatchReplicas {
         skip()
     )]
     async fn do_assess_patch_completion(
-        plan: &<Self as ScaleAction>::In, kube: &KubernetesContext, start: Instant,
+        plan: &<Self as ScaleAction>::Plan, kube: &KubernetesContext, start: Instant,
     ) -> Result<(HashMap<String, Vec<Pod>>, bool), KubernetesError> {
         let correlation = plan.correlation();
         let target_nr_task_managers = plan.target_replicas();
@@ -200,7 +205,7 @@ impl PatchReplicas {
         skip(self, plan, flink)
     )]
     async fn block_for_rescaled_taskmanagers(
-        &self, plan: &<Self as ScaleAction>::In, flink: &FlinkContext,
+        &self, plan: &<Self as ScaleAction>::Plan, flink: &FlinkContext,
     ) -> usize {
         let correlation = plan.correlation();
         let nr_target_taskmanagers = plan.target_replicas();

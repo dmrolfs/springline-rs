@@ -46,13 +46,14 @@ impl RestartJobs {
 
 #[async_trait]
 impl ScaleAction for RestartJobs {
-    type In = ScalePlan;
+    type Plan = ScalePlan;
+    type Session = ActionSession;
 
     fn label(&self) -> &str {
         ACTION_LABEL
     }
 
-    fn check_preconditions(&self, session: &ActionSession) -> Result<(), ActError> {
+    fn check_preconditions(&self, session: &Self::Session) -> Result<(), ActError> {
         match &session.savepoints {
             None => Err(ActError::ActionPrecondition {
                 action: self.label().to_string(),
@@ -91,7 +92,7 @@ impl ScaleAction for RestartJobs {
         skip(self)
     )]
     async fn execute<'s>(
-        &self, plan: &'s Self::In, session: &'s mut ActionSession,
+        &self, plan: &'s Self::Plan, session: &'s mut Self::Session,
     ) -> Result<(), ActError> {
         let timer = act::start_scale_action_timer(session.cluster_label(), self.label());
 
@@ -163,6 +164,10 @@ impl ScaleAction for RestartJobs {
             Duration::from_secs_f64(timer.stop_and_record()),
         );
         outcome
+    }
+
+    async fn on_error<'s>(&self, error: ActError, plan: &'s Self::Plan, session: &'s mut Self::Session) -> Result<(), ActError> {
+        todo!()
     }
 }
 

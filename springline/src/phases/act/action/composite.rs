@@ -10,22 +10,22 @@ use crate::phases::act::{self, ActError, ScaleActionPlan};
 pub const ACTION_LABEL: &str = "composite";
 
 #[derive(Debug)]
-pub struct CompositeAction<P> {
-    pub actions: Vec<Box<dyn ScaleAction<In = P>>>,
+pub struct CompositeAction<P, S> {
+    pub actions: Vec<Box<dyn ScaleAction<Plan = P, Session = S>>>,
 }
 
-impl<P> Default for CompositeAction<P> {
+impl<P, S> Default for CompositeAction<P, S> {
     fn default() -> Self {
         Self { actions: Vec::default() }
     }
 }
 
-impl<P> CompositeAction<P>
+impl<P, S> CompositeAction<P, S>
 where
     P: AppData + ScaleActionPlan,
 {
     pub fn add_action_step(
-        mut self, action: impl ScaleAction<In = <Self as ScaleAction>::In> + 'static,
+        mut self, action: impl ScaleAction<Plan= <Self as ScaleAction>::Plan, Session = <Self as ScaleAction>::Session> + 'static,
     ) -> Self {
         self.actions.push(Box::new(action));
         self
@@ -33,23 +33,24 @@ where
 }
 
 #[async_trait]
-impl<P> ScaleAction for CompositeAction<P>
+impl<P, S> ScaleAction for CompositeAction<P, S>
 where
     P: AppData + ScaleActionPlan,
 {
-    type In = P;
+    type Plan = P;
+    type Session = ActionSession;
 
     fn label(&self) -> &str {
         ACTION_LABEL
     }
 
-    fn check_preconditions(&self, _session: &ActionSession) -> Result<(), ActError> {
+    fn check_preconditions(&self, _session: &Self::Session) -> Result<(), ActError> {
         Ok(())
     }
 
     #[tracing::instrument(level = "info", name = "CompositeAction::execute", skip(self))]
     async fn execute<'s>(
-        &self, plan: &'s Self::In, session: &'s mut ActionSession,
+        &self, plan: &'s Self::Plan, session: &'s mut Self::Session,
     ) -> Result<(), ActError> {
         let timer =
             act::start_scale_action_timer(session.cluster_label(), super::ACTION_TOTAL_DURATION);
