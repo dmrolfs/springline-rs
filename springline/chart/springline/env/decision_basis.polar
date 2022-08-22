@@ -26,6 +26,7 @@ evaluation_window(window) if window = {{#if evaluate_duration_secs}}{{evaluate_d
 {{#if max_healthy_lag}}
 scale_up(item, _context, reason) if
     not item.flow.source_records_lag_max == nil
+    and not item.flow.source_assigned_partitions == nil
     and evaluation_window(window)
     and lag = item.flow_source_total_lag_rolling_average(window)
     and {{max_healthy_lag}} < lag
