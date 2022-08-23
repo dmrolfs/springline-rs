@@ -16,8 +16,7 @@ scale_down(item, _context, reason) if
     and evaluation_window(window)
     and utilization = item.flow_task_utilization_rolling_average(window)
     and utilization < {{min_task_utilization}}
-    and total_lag = item.flow_source_total_lag_rolling_average(window)
-    and total_lag == 0.0
+    and item.flow_source_total_lag_rolling_average(window) == 0.0
     and reason = "low_utilization_and_zero_lag";
 {{/if}}
 
