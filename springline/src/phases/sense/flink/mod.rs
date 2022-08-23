@@ -13,7 +13,7 @@ use prometheus::{HistogramOpts, HistogramTimer, HistogramVec};
 
 use crate::flink::{
     self, CorrelationGenerator, FlinkContext, MC_HEALTH__JOB_MAX_PARALLELISM,
-    MC_HEALTH__JOB_NONSOURCE_MAX_PARALLELISM,
+    MC_HEALTH__JOB_NONSOURCE_MAX_PARALLELISM, MC_HEALTH__JOB_SOURCE_MAX_PARALLELISM,
 };
 use crate::phases::sense::flink::job_taskmanager_sensor::JobTaskmanagerSensor;
 use crate::phases::sense::flink::taskmanager_admin_sensor::TaskmanagerAdminSensor;
@@ -208,7 +208,9 @@ fn consolidate_active_job_telemetry_for_order(
 #[tracing::instrument(level = "trace", skip())]
 fn do_aggregate_nonorder_metric(metric: &str, values: &[TelemetryValue]) -> Option<TelemetryValue> {
     match metric {
-        MC_HEALTH__JOB_MAX_PARALLELISM | MC_HEALTH__JOB_NONSOURCE_MAX_PARALLELISM => {
+        MC_HEALTH__JOB_MAX_PARALLELISM
+        | MC_HEALTH__JOB_SOURCE_MAX_PARALLELISM
+        | MC_HEALTH__JOB_NONSOURCE_MAX_PARALLELISM => {
             let max_parallelism = values.iter().max_by(|acc, val| {
                 let lhs = u32::try_from(*acc).ok();
                 let rhs = u32::try_from(*val).ok();

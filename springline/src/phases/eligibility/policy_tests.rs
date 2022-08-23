@@ -41,6 +41,10 @@ fn arb_policy_template_data() -> impl Strategy<Value = EligibilityTemplateData> 
 }
 
 fn make_metric_catalog(nr_active_jobs: u32) -> MetricCatalog {
+    let job_source_max_parallelism: u32 = Faker.fake();
+    let job_nonsource_max_parallelism: u32 = Faker.fake();
+    let job_max_parallelism = job_source_max_parallelism.max(job_nonsource_max_parallelism);
+
     MetricCatalog {
         correlation_id: Id::direct(
             <MetricCatalog as Label>::labeler().label(),
@@ -49,8 +53,9 @@ fn make_metric_catalog(nr_active_jobs: u32) -> MetricCatalog {
         ),
         recv_timestamp: Timestamp::now(),
         health: JobHealthMetrics {
-            job_max_parallelism: Faker.fake(),
-            job_nonsource_max_parallelism: Faker.fake(),
+            job_max_parallelism,
+            job_source_max_parallelism,
+            job_nonsource_max_parallelism,
             job_uptime_millis: Faker.fake(),
             job_nr_restarts: Faker.fake(),
             job_nr_completed_checkpoints: Faker.fake(),

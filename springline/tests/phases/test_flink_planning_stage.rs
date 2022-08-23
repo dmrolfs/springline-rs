@@ -194,6 +194,7 @@ fn make_test_data(
         recv_timestamp: timestamp,
         health: JobHealthMetrics {
             job_max_parallelism: 16,
+            job_source_max_parallelism: 16,
             job_nonsource_max_parallelism: 15,
             job_uptime_millis: 1_234_567,
             job_nr_restarts: 3,
