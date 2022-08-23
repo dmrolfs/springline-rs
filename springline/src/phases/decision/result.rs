@@ -145,8 +145,9 @@ fn log_data_for_reason(
         (ScaleDirection::None, _) => {},
 
         (_, Some(RELATIVE_LAG_VELOCITY)) => {
-            let source_records_lag_max = item.flow.source_records_lag_max;
-            let source_assigned_partitions = item.flow.source_assigned_partitions;
+            let source_records_lag_max = item.flow_source_records_lag_max_rolling_average(window);
+            let source_assigned_partitions =
+                item.flow_source_assigned_partitions_rolling_average(window);
             let relative_lag_velocity = item.flow_source_relative_lag_change_rate(window);
 
             tracing::info!(
@@ -156,8 +157,9 @@ fn log_data_for_reason(
         },
 
         (_, Some(LOW_UTILIZATION_AND_ZERO_LAG)) => {
-            let source_records_lag_max = item.flow.source_records_lag_max;
-            let source_assigned_partitions = item.flow.source_assigned_partitions;
+            let source_records_lag_max = item.flow_source_records_lag_max_rolling_average(window);
+            let source_assigned_partitions =
+                item.flow_source_assigned_partitions_rolling_average(window);
             let nonsource_utilization = item.flow_task_utilization_rolling_average(window);
             let total_lag = item.flow_source_total_lag_rolling_average(window);
 
@@ -168,8 +170,9 @@ fn log_data_for_reason(
         },
 
         (_, Some(TOTAL_LAG)) => {
-            let source_records_lag_max = item.flow.source_records_lag_max;
-            let source_assigned_partitions = item.flow.source_assigned_partitions;
+            let source_records_lag_max = item.flow_source_records_lag_max_rolling_average(window);
+            let source_assigned_partitions =
+                item.flow_source_assigned_partitions_rolling_average(window);
             let total_lag = item.flow_source_total_lag_rolling_average(window);
 
             tracing::info!(

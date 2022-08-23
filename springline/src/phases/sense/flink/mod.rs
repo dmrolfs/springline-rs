@@ -272,19 +272,43 @@ pub fn apply_derivative_orders<'o>(
                 "trying derivative order: {order:?}."
             );
 
-            if let Some((lhs, rhs)) = extract_terms(&telemetry, telemetry_lhs, telemetry_rhs) {
-                satisfied.push(order);
-                tracing::debug!(lhs=?(telemetry_lhs, lhs), rhs=?(telemetry_rhs, rhs), "input terms for derivative order: {telemetry_path}");
-                let result =
-                    combinator.combine(lhs, rhs).and_then(|c| telemetry_type.cast_telemetry(c));
-                match result {
-                    Ok(value) => {
-                        let _ = telemetry.insert(telemetry_path.clone(), value);
-                    },
-                    Err(err) => {
-                        tracing::warn!(error=?err, "failed to compute derivative metric order - skipping")
-                    },
-                }
+            match extract_terms(&telemetry, telemetry_lhs, telemetry_rhs) {
+                Some((lhs, rhs)) => {
+                    let lhs_term = (telemetry_lhs, lhs);
+                    let rhs_term = (telemetry_rhs, rhs);
+
+                    satisfied.push(order);
+                    tracing::debug!(
+                        ?lhs_term,
+                        ?rhs_term,
+                        "input terms for derivative order: {telemetry_path}"
+                    );
+                    let result =
+                        combinator.combine(lhs, rhs).and_then(|c| telemetry_type.cast_telemetry(c));
+                    match result {
+                        Ok(value) => {
+                            tracing::info!(
+                                ?lhs_term, ?rhs_term, derived_metric=?(telemetry_path, &value),
+                                "DMR: adding calculated derivative order to telemetry"
+                            );
+                            let _ = telemetry.insert(telemetry_path.clone(), value);
+                        },
+                        Err(err) => {
+                            tracing::warn!(
+                                error=?err, ?order, ?lhs_term, ?rhs_term,
+                                "failed to compute derivative metric order - skipping"
+                            );
+                        },
+                    }
+                },
+                None => {
+                    let lhs = telemetry.get(telemetry_lhs);
+                    let rhs = telemetry.get(telemetry_rhs);
+                    tracing::info!(
+                        lhs_term=?(telemetry_lhs, lhs), rhs_term=?(telemetry_rhs, rhs),
+                        "not all dependent terms available to derive order: {order:?}"
+                    );
+                },
             }
         }
     }
