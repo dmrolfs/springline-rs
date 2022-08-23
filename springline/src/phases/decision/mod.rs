@@ -45,8 +45,21 @@ where
     let name = "decision";
     let policy = DecisionPolicy::new(settings)?;
     let subscription = policy.subscription(name, settings);
-    let decision =
-        Box::new(PolicyPhase::with_transform(name, policy, make_decision_transform(name)).await?);
+    let decision = Box::new(
+        PolicyPhase::with_transform(
+            name,
+            policy,
+            make_decision_transform(
+                name,
+                settings
+                    .template_data
+                    .as_ref()
+                    .and_then(|td| td.evaluate_duration_secs)
+                    .unwrap_or(60),
+            ),
+        )
+        .await?,
+    );
     let channel = phases::subscribe_policy_phase(subscription, &decision, agent).await?;
     Ok((decision, channel))
 }
