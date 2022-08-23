@@ -1487,8 +1487,8 @@ pub static METRIC_CATALOG_FLOW_SOURCE_BACK_PRESSURE_TIME_1_MIN_ROLLING_AVG: Lazy
 mod tests {
     use super::*;
     use crate::flink::FlowMetrics;
-    use claim::*;
     use approx::*;
+    use claim::*;
     use pretty_assertions::assert_eq;
     use serde_test::{assert_tokens, Token};
 
