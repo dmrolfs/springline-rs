@@ -393,7 +393,14 @@ async fn test_decision_common() -> anyhow::Result<()> {
     let decision_stage = PolicyPhase::with_transform(
         "common_decision".into(),
         policy,
-        make_decision_transform("common_decision_transform"),
+        make_decision_transform(
+            "common_decision_transform",
+            POLICY_SETTINGS
+                .template_data
+                .as_ref()
+                .and_then(|d| d.evaluate_duration_secs)
+                .unwrap_or(120),
+        ),
     )
     .await?;
     let decision_context_inlet = decision_stage.context_inlet();

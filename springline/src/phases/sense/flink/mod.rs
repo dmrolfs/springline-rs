@@ -13,7 +13,7 @@ use prometheus::{HistogramOpts, HistogramTimer, HistogramVec};
 
 use crate::flink::{
     self, CorrelationGenerator, FlinkContext, MC_HEALTH__JOB_MAX_PARALLELISM,
-    MC_HEALTH__JOB_NONSOURCE_MAX_PARALLELISM,
+    MC_HEALTH__JOB_NONSOURCE_MAX_PARALLELISM, MC_HEALTH__JOB_SOURCE_MAX_PARALLELISM,
 };
 use crate::phases::sense::flink::job_taskmanager_sensor::JobTaskmanagerSensor;
 use crate::phases::sense::flink::taskmanager_admin_sensor::TaskmanagerAdminSensor;
@@ -208,7 +208,9 @@ fn consolidate_active_job_telemetry_for_order(
 #[tracing::instrument(level = "trace", skip())]
 fn do_aggregate_nonorder_metric(metric: &str, values: &[TelemetryValue]) -> Option<TelemetryValue> {
     match metric {
-        MC_HEALTH__JOB_MAX_PARALLELISM | MC_HEALTH__JOB_NONSOURCE_MAX_PARALLELISM => {
+        MC_HEALTH__JOB_MAX_PARALLELISM
+        | MC_HEALTH__JOB_SOURCE_MAX_PARALLELISM
+        | MC_HEALTH__JOB_NONSOURCE_MAX_PARALLELISM => {
             let max_parallelism = values.iter().max_by(|acc, val| {
                 let lhs = u32::try_from(*acc).ok();
                 let rhs = u32::try_from(*val).ok();
@@ -270,19 +272,43 @@ pub fn apply_derivative_orders<'o>(
                 "trying derivative order: {order:?}."
             );
 
-            if let Some((lhs, rhs)) = extract_terms(&telemetry, telemetry_lhs, telemetry_rhs) {
-                satisfied.push(order);
-                tracing::debug!(lhs=?(telemetry_lhs, lhs), rhs=?(telemetry_rhs, rhs), "input terms for derivative order: {telemetry_path}");
-                let result =
-                    combinator.combine(lhs, rhs).and_then(|c| telemetry_type.cast_telemetry(c));
-                match result {
-                    Ok(value) => {
-                        let _ = telemetry.insert(telemetry_path.clone(), value);
-                    },
-                    Err(err) => {
-                        tracing::warn!(error=?err, "failed to compute derivative metric order - skipping")
-                    },
-                }
+            match extract_terms(&telemetry, telemetry_lhs, telemetry_rhs) {
+                Some((lhs, rhs)) => {
+                    let lhs_term = (telemetry_lhs, lhs);
+                    let rhs_term = (telemetry_rhs, rhs);
+
+                    satisfied.push(order);
+                    tracing::debug!(
+                        ?lhs_term,
+                        ?rhs_term,
+                        "input terms for derivative order: {telemetry_path}"
+                    );
+                    let result =
+                        combinator.combine(lhs, rhs).and_then(|c| telemetry_type.cast_telemetry(c));
+                    match result {
+                        Ok(value) => {
+                            tracing::info!(
+                                ?lhs_term, ?rhs_term, derived_metric=?(telemetry_path, &value),
+                                "DMR: adding calculated derivative order to telemetry"
+                            );
+                            let _ = telemetry.insert(telemetry_path.clone(), value);
+                        },
+                        Err(err) => {
+                            tracing::warn!(
+                                error=?err, ?order, ?lhs_term, ?rhs_term,
+                                "failed to compute derivative metric order - skipping"
+                            );
+                        },
+                    }
+                },
+                None => {
+                    let lhs = telemetry.get(telemetry_lhs);
+                    let rhs = telemetry.get(telemetry_rhs);
+                    tracing::info!(
+                        lhs_term=?(telemetry_lhs, lhs), rhs_term=?(telemetry_rhs, rhs),
+                        "not all dependent terms available to derive order: {order:?}"
+                    );
+                },
             }
         }
     }

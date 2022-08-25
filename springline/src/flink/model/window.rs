@@ -487,6 +487,22 @@ impl PolicyContributor for AppDataWindow<MetricCatalog> {
                     Self::flow_source_records_lag_max_above_threshold,
                 )
                 .add_method(
+                    "flow_source_assigned_partitions_rolling_average",
+                    Self::flow_source_assigned_partitions_rolling_average,
+                )
+                .add_method(
+                    "flow_source_assigned_partitions_rolling_change_per_sec",
+                    Self::flow_source_assigned_partitions_rolling_change_per_sec,
+                )
+                .add_method(
+                    "flow_source_assigned_partitions_below_threshold",
+                    Self::flow_source_assigned_partitions_below_threshold,
+                )
+                .add_method(
+                    "flow_source_assigned_partitions_above_threshold",
+                    Self::flow_source_assigned_partitions_above_threshold,
+                )
+                .add_method(
                     "flow_source_total_lag_rolling_average",
                     Self::flow_source_total_lag_rolling_average,
                 )
@@ -968,6 +984,7 @@ impl AppDataWindow<MetricCatalog> {
 
     window_opt_integer_ops_for!(
         flow_source_records_lag_max = |m: &MetricCatalog| m.flow.source_records_lag_max
+        flow_source_assigned_partitions = |m: &MetricCatalog| m.flow.source_assigned_partitions
         flow_source_total_lag = |m: &MetricCatalog| m.flow.source_total_lag
         flow_source_millis_behind_latest = |m: &MetricCatalog| m.flow.source_millis_behind_latest
     );
@@ -1469,6 +1486,8 @@ pub static METRIC_CATALOG_FLOW_SOURCE_BACK_PRESSURE_TIME_1_MIN_ROLLING_AVG: Lazy
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::flink::FlowMetrics;
+    use approx::*;
     use claim::*;
     use pretty_assertions::assert_eq;
     use serde_test::{assert_tokens, Token};
@@ -1589,5 +1608,61 @@ mod tests {
 
         assert_eq!(Saturating(1_f64).combine(&Saturating(1_f64)).0, 2_f64);
         assert_eq!(Saturating(f64::MAX).combine(&Saturating(1_f64)).0, f64::MAX);
+    }
+
+    #[test]
+    fn test_window_total_lag_rolling_average() {
+        once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
+        let main_span = tracing::info_span!("test_window_total_lag_rolling_average");
+        let _ = main_span.enter();
+
+        let start = Timestamp::now();
+        let incr = Duration::from_secs(15);
+        let basis = MetricCatalog::empty();
+
+        let builder = (0..10).into_iter().fold(
+            AppDataWindow::builder().with_time_window(Duration::from_secs(120)),
+            |acc, i| {
+                let source_total_lag = Some(100 + i * 10);
+                acc.with_item(MetricCatalog {
+                    recv_timestamp: start + incr * i,
+                    flow: FlowMetrics { source_total_lag, ..basis.flow.clone() },
+                    ..basis.clone()
+                })
+            },
+        );
+        let data = assert_ok!(builder.build());
+        tracing::info!(?data, "AAA");
+        assert_eq!(data.flow_source_total_lag_rolling_average(120), 150.0);
+    }
+
+    #[test]
+    fn test_mixed_window_total_lag_rolling_average() {
+        once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
+        let main_span = tracing::info_span!("test_mixed_window_total_lag_rolling_average");
+        let _ = main_span.enter();
+
+        let start = Timestamp::now();
+        let incr = Duration::from_secs(15);
+        let basis = MetricCatalog::empty();
+
+        let builder = (0..10).into_iter().fold(
+            AppDataWindow::builder().with_time_window(Duration::from_secs(120)),
+            |acc, i| {
+                let source_total_lag = if i % 2 == 0 { Some(100 + i * 10) } else { None };
+                acc.with_item(MetricCatalog {
+                    recv_timestamp: start + incr * i,
+                    flow: FlowMetrics { source_total_lag, ..basis.flow.clone() },
+                    ..basis.clone()
+                })
+            },
+        );
+        let data = assert_ok!(builder.build());
+        tracing::info!(?data, "AAA");
+        assert_relative_eq!(
+            data.flow_source_total_lag_rolling_average(120),
+            66.66666666666666,
+            epsilon = f64::EPSILON
+        );
     }
 }

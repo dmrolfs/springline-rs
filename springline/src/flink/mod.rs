@@ -10,7 +10,7 @@ pub use model::catalog::{
     MC_CLUSTER__NR_ACTIVE_JOBS, MC_CLUSTER__NR_TASK_MANAGERS,
     MC_FLOW__FORECASTED_RECORDS_IN_PER_SEC, MC_FLOW__FORECASTED_TIMESTAMP,
     MC_FLOW__RECORDS_IN_PER_SEC, MC_HEALTH__JOB_MAX_PARALLELISM,
-    MC_HEALTH__JOB_NONSOURCE_MAX_PARALLELISM,
+    MC_HEALTH__JOB_NONSOURCE_MAX_PARALLELISM, MC_HEALTH__JOB_SOURCE_MAX_PARALLELISM,
 };
 pub(crate) use model::catalog::{
     METRIC_CATALOG_CLUSTER_NR_ACTIVE_JOBS, METRIC_CATALOG_CLUSTER_NR_TASK_MANAGERS,
@@ -162,7 +162,7 @@ pub(crate) fn track_result<T>(
     label: &str, result: Result<T, FlinkError>, error_message: &str, correlation: &CorrelationId,
 ) -> Result<T, FlinkError> {
     if let Err(ref err) = result {
-        tracing::error!(error=?err, ?correlation, "{}", error_message);
+        tracing::error!(%label, error=?err, ?correlation, "{}", error_message);
         track_flink_errors(label, err);
     }
 

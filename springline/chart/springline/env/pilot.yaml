@@ -5,7 +5,7 @@ imagePullSecrets:
 #  dnsTail: -api-dev.plm.platform.in.here.com
 deployment:
   log:
-    level: "info,springline::phases::sense::flink=info,springline::flink::model=info,springline::phases::act=trace"
+    level: "info,springline::phases::sense::flink=info,springline::flink=debug,springline::phases::act=trace"
     polar: "info"
     backtrace: "1"
 
@@ -33,7 +33,7 @@ application:
       min_scaling_step: 2
       max_scaling_step: 10
       min_cluster_size: 1
-      max_cluster_size: 40
+      max_cluster_size: 32
 
   action:
     taskmanager:

@@ -240,7 +240,7 @@ where
             }
 
             if order_metrics.is_empty() {
-                tracing::info!(sensor_name=%self.name, scope=%self.scope, "no metrics matched order: {order:?}");
+                tracing::debug!(sensor_name=%self.name, scope=%self.scope, "no metrics matched order: {order:?}");
             } else {
                 tracing::info!(sensor_name=%self.name, scope=%self.scope, ?order, "including metrics matching order: {order_metrics:?}");
             }
@@ -253,12 +253,15 @@ where
     async fn do_run(&mut self) -> Result<(), SenseError> {
         let (metrics, metric_orders) = self.distill_metric_orders().await?;
         let agg_span: HashSet<Aggregation> = metric_orders.iter().map(|o| o.agg()).collect();
-        tracing::debug!("requested metrics:{metrics:?} metric orders:{metric_orders:?}, aggregations:{agg_span:?}");
+        tracing::debug!(
+            requested_metrics=?metrics, ?metric_orders, aggregations=?agg_span,
+            "{} - {} scope: requested metrics.", self.name, self.scope
+        );
 
         if metrics.is_empty() || metric_orders.is_empty() {
             // todo: best to end this useless stage or do nothing in loop? I hope end is best.
-            tracing::warn!(stage=%self.name(), "no flink metric orders for scope - stopping {} sensor stage.", self.scope);
-            return Ok(());
+            tracing::warn!(stage=%self.name(), "no flink metric orders for scope - possibly unnecessary {} sensor stage.", self.scope);
+            // return Ok(()); -- don't stop: case where this pops up is Flink started but has ZERO running or completed jobs before springline is started; e.g., flink started without a job or a stopped job "aged" out of flink memory.
         }
 
         let scope_rep = self.scope.to_string().to_lowercase();

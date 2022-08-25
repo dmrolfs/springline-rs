@@ -7,9 +7,11 @@ use pretty_snowflake::Id;
 use proctor::elements::{PolicyOutcome, QueryResult, TelemetryType, TelemetryValue, ToTelemetry};
 use proctor::error::{DecisionError, TelemetryError};
 use proctor::graph::stage::{self, ThroughStage};
-use proctor::{AppData, Correlation, ProctorContext};
+use proctor::Correlation;
 
-use crate::phases::decision::{ScaleDirection, DECISION_SCALING_DECISION_COUNT_METRIC};
+use crate::phases::decision::{
+    DecisionContext, DecisionData, ScaleDirection, DECISION_SCALING_DECISION_COUNT_METRIC,
+};
 use crate::phases::REASON;
 
 pub const DECISION_DIRECTION: &str = "direction";
@@ -18,57 +20,58 @@ pub const SCALE_DOWN: &str = "down";
 pub const NO_ACTION: &str = "no action";
 pub const UNSPECIFIED: &str = "unspecified";
 
-pub fn make_decision_transform<T, C, S>(
-    name: S,
-) -> impl ThroughStage<PolicyOutcome<T, C>, DecisionResult<T>>
-where
-    T: AppData + Correlation + PartialEq,
-    C: ProctorContext,
-    S: Into<String>,
-{
-    stage::Map::new(name, |outcome: PolicyOutcome<T, C>| {
-        let transform_span = tracing::trace_span!(
-            "distill policy outcome into action",
-            item=?outcome.item, policy_results=?outcome.policy_results,
-        );
-        let _guard = transform_span.enter();
+pub fn make_decision_transform(
+    name: impl Into<String>, window: u32,
+) -> impl ThroughStage<PolicyOutcome<DecisionData, DecisionContext>, DecisionResult<DecisionData>> {
+    stage::Map::new(
+        name,
+        move |outcome: PolicyOutcome<DecisionData, DecisionContext>| {
+            let transform_span = tracing::trace_span!(
+                "distill policy outcome into action",
+                item=?outcome.item, policy_results=?outcome.policy_results,
+            );
+            let _guard = transform_span.enter();
 
-        let result: DecisionResult<T> = if outcome.passed() {
-            match get_direction_and_reason(&outcome.policy_results) {
-                Ok((ScaleDirection::None, reason)) => {
-                    if let Some(r) = reason {
+            let (result, reason): (DecisionResult<DecisionData>, Option<String>) = if outcome
+                .passed()
+            {
+                match get_direction_and_reason(&outcome.policy_results) {
+                    Ok((ScaleDirection::None, reason)) => {
+                        if let Some(ref r) = reason {
+                            DECISION_SCALING_DECISION_COUNT_METRIC
+                                .with_label_values(&[NO_ACTION, r.as_str()])
+                                .inc();
+                        }
+                        (DecisionResult::NoAction(outcome.item), reason)
+                    },
+                    Ok((ScaleDirection::Up, reason)) => {
+                        let reason_rep = reason.as_deref().unwrap_or(UNSPECIFIED);
                         DECISION_SCALING_DECISION_COUNT_METRIC
-                            .with_label_values(&[NO_ACTION, r.as_str()])
+                            .with_label_values(&[SCALE_UP, reason_rep])
                             .inc();
-                    }
-                    DecisionResult::NoAction(outcome.item)
-                },
-                Ok((ScaleDirection::Up, reason)) => {
-                    let reason_rep = reason.as_deref().unwrap_or(UNSPECIFIED);
-                    DECISION_SCALING_DECISION_COUNT_METRIC
-                        .with_label_values(&[SCALE_UP, reason_rep])
-                        .inc();
-                    DecisionResult::ScaleUp(outcome.item)
-                },
-                Ok((ScaleDirection::Down, reason)) => {
-                    let reason_rep = reason.as_deref().unwrap_or(UNSPECIFIED);
-                    DECISION_SCALING_DECISION_COUNT_METRIC
-                        .with_label_values(&[SCALE_DOWN, reason_rep])
-                        .inc();
-                    DecisionResult::ScaleDown(outcome.item)
-                },
-                Err(err) => {
-                    tracing::error!(error=?err, "error in decision policy - taking NoAction");
-                    DecisionResult::NoAction(outcome.item)
-                },
-            }
-        } else {
-            tracing::debug!("item did not pass context policy review.");
-            DecisionResult::NoAction(outcome.item)
-        };
+                        (DecisionResult::ScaleUp(outcome.item), reason)
+                    },
+                    Ok((ScaleDirection::Down, reason)) => {
+                        let reason_rep = reason.as_deref().unwrap_or(UNSPECIFIED);
+                        DECISION_SCALING_DECISION_COUNT_METRIC
+                            .with_label_values(&[SCALE_DOWN, reason_rep])
+                            .inc();
+                        (DecisionResult::ScaleDown(outcome.item), reason)
+                    },
+                    Err(err) => {
+                        tracing::error!(error=?err, "error in decision policy - taking NoAction");
+                        (DecisionResult::NoAction(outcome.item), None)
+                    },
+                }
+            } else {
+                tracing::debug!("item did not pass context policy review.");
+                (DecisionResult::NoAction(outcome.item), None)
+            };
 
-        result
-    })
+            log_data_for_reason(result.direction(), reason.as_deref(), result.item(), window);
+            result
+        },
+    )
 }
 
 pub fn get_direction_and_reason(
@@ -121,6 +124,74 @@ fn do_tally_binding_voted(ballots: Vec<String>) -> Vec<(String, usize)> {
     });
 
     grouped
+}
+
+const RELATIVE_LAG_VELOCITY: &str = "relative_lag_velocity";
+const LOW_UTILIZATION_AND_ZERO_LAG: &str = "low_utilization_and_zero_lag";
+const TOTAL_LAG: &str = "total_lag";
+const SOURCE_BACKPRESSURE: &str = "source_backpressure";
+const NO_REASON: &str = "no_reason_given";
+
+#[allow(clippy::cognitive_complexity)]
+fn log_data_for_reason(
+    direction: ScaleDirection, reason: Option<&str>, item: &DecisionData, window: u32,
+) {
+    let message = format!(
+        "{direction} decision made for: {}",
+        reason.unwrap_or(NO_REASON)
+    );
+
+    match (direction, reason) {
+        (ScaleDirection::None, _) => {},
+
+        (_, Some(RELATIVE_LAG_VELOCITY)) => {
+            let source_records_lag_max = item.flow_source_records_lag_max_rolling_average(window);
+            let source_assigned_partitions =
+                item.flow_source_assigned_partitions_rolling_average(window);
+            let relative_lag_velocity = item.flow_source_relative_lag_change_rate(window);
+
+            tracing::info!(
+                correlation=%item.correlation(),
+                %window, ?source_records_lag_max, ?source_assigned_partitions, %relative_lag_velocity,
+                message
+            );
+        },
+
+        (_, Some(LOW_UTILIZATION_AND_ZERO_LAG)) => {
+            let source_records_lag_max = item.flow_source_records_lag_max_rolling_average(window);
+            let source_assigned_partitions =
+                item.flow_source_assigned_partitions_rolling_average(window);
+            let nonsource_utilization = item.flow_task_utilization_rolling_average(window);
+            let total_lag = item.flow_source_total_lag_rolling_average(window);
+
+            tracing::info!(
+                correlation=%item.correlation(),
+                %window, ?source_records_lag_max, ?source_assigned_partitions, %nonsource_utilization, %total_lag,
+                message
+            );
+        },
+
+        (_, Some(TOTAL_LAG)) => {
+            let source_records_lag_max = item.flow_source_records_lag_max_rolling_average(window);
+            let source_assigned_partitions =
+                item.flow_source_assigned_partitions_rolling_average(window);
+            let total_lag = item.flow_source_total_lag_rolling_average(window);
+
+            tracing::info!(
+                correlation=%item.correlation(),
+                %window, ?source_records_lag_max, ?source_assigned_partitions, %total_lag,
+                message
+            );
+        },
+
+        (_, Some(SOURCE_BACKPRESSURE)) => {
+            let source_backpressure =
+                item.flow_source_back_pressured_time_millis_per_sec_rolling_average(window);
+            tracing::info!(correlation=%item.correlation(), %window, %source_backpressure, message);
+        },
+
+        _ => tracing::info!(correlation=%item.correlation(), ?reason, ?item, message),
+    }
 }
 
 // pub fn make_decision_transform<T, C, S>(name: S) -> impl ThroughStage<PolicyOutcome<T, C>, DecisionResult<T>>

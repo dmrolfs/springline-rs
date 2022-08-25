@@ -111,7 +111,7 @@ probes:
 
 application:
   kubernetes:
-    patch_settle_timeout_secs: 180
+    patch_settle_timeout_secs: 300
 
   sensor:
     flink:

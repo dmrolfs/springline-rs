@@ -78,7 +78,7 @@ fn transcode(doc: String, from: ConfigFormat, to: ConfigFormat) -> anyhow::Resul
         },
         (Json, Ron) => {
             let mut deser = serde_json::Deserializer::from_str(&doc);
-            let mut ser = ron::Serializer::new(io::stdout(), None, false)?;
+            let mut ser = ron::Serializer::new(io::stdout(), None)?;
             serde_transcode::transcode(&mut deser, &mut ser)?;
         },
         (from, to) => unimplemented!("combination not support: {:?} => {:?}", from, to),

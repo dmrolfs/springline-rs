@@ -29,7 +29,7 @@ pub struct ScaleActuator<In> {
 }
 
 impl ScaleActuator<ScalePlan> {
-    #[tracing::instrument(level = "trace", skip(kube))]
+    #[tracing::instrument(level = "trace", name = "ScaleActuator::new", skip(kube))]
     pub fn new(kube: KubernetesContext, flink: FlinkContext, settings: &Settings) -> Self {
         let flink_action_settings = &settings.action.flink;
 

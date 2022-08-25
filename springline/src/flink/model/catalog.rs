@@ -131,6 +131,7 @@ impl Semigroup for MetricCatalog {
 }
 
 pub const MC_HEALTH__JOB_MAX_PARALLELISM: &str = "health.job_max_parallelism";
+pub const MC_HEALTH__JOB_SOURCE_MAX_PARALLELISM: &str = "health.job_source_max_parallelism";
 pub const MC_HEALTH__JOB_NONSOURCE_MAX_PARALLELISM: &str = "health.job_nonsource_max_parallelism";
 
 #[derive(PolarClass, Debug, Default, PartialEq, Eq, Clone, Serialize, Deserialize)]
@@ -141,6 +142,14 @@ pub struct JobHealthMetrics {
     #[polar(attribute)]
     #[serde(default, rename = "health.job_max_parallelism")]
     pub job_max_parallelism: u32,
+
+    /// Max parallelism for source vertices found in Job. Source vertices may be fixed around
+    /// the number of input partitions, with the remainder of the job running at a lower
+    /// parallelism. If this is below the number of task managers, then an up rescale plan may
+    /// simply restart at an increased parallelism up to the number of task managers.
+    #[polar(attribute)]
+    #[serde(default, rename = "health.job_source_max_parallelism")]
+    pub job_source_max_parallelism: u32,
 
     /// Max parallelism for non-source vertices found in Job. Source vertices may be fixed around
     /// the number of input partitions, with the remainder of the job running at a lower
@@ -185,6 +194,7 @@ impl Monoid for JobHealthMetrics {
     fn empty() -> Self {
         Self {
             job_max_parallelism: 0,
+            job_source_max_parallelism: 0,
             job_nonsource_max_parallelism: 0,
             job_uptime_millis: 0,
             job_nr_restarts: 0,
@@ -564,6 +574,7 @@ impl SubscriptionRequirements for MetricCatalog {
         maplit::hashset! {
             // JobHealthMetrics
             MC_HEALTH__JOB_MAX_PARALLELISM.into(),
+            MC_HEALTH__JOB_SOURCE_MAX_PARALLELISM.into(),
             MC_HEALTH__JOB_NONSOURCE_MAX_PARALLELISM.into(),
             "health.job_uptime_millis".into(),
             "health.job_nr_restarts".into(),
@@ -595,11 +606,7 @@ impl SubscriptionRequirements for MetricCatalog {
             // FlowMetrics
             "flow.forecasted_timestamp".into(),
             "flow.forecasted_records_in_per_sec".into(),
-            // "flow.source_records_lag_max".into(),
-            // "flow.source_assigned_partitions".into(),
-            // "flow.source_total_lag".into(),
-            // "flow.source_records_consumed_rate".into(),
-            // "flow.source_millis_behind_latest".into(),
+            "flow.source_total_lag".into(),
         };
 
         if let Some(supplemental) = SUPPLEMENTAL_TELEMETRY.get().cloned() {
