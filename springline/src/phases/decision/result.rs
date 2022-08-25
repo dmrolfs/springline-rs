@@ -151,6 +151,7 @@ fn log_data_for_reason(
             let relative_lag_velocity = item.flow_source_relative_lag_change_rate(window);
 
             tracing::info!(
+                correlation=%item.correlation(),
                 %window, ?source_records_lag_max, ?source_assigned_partitions, %relative_lag_velocity,
                 message
             );
@@ -164,6 +165,7 @@ fn log_data_for_reason(
             let total_lag = item.flow_source_total_lag_rolling_average(window);
 
             tracing::info!(
+                correlation=%item.correlation(),
                 %window, ?source_records_lag_max, ?source_assigned_partitions, %nonsource_utilization, %total_lag,
                 message
             );
@@ -176,6 +178,7 @@ fn log_data_for_reason(
             let total_lag = item.flow_source_total_lag_rolling_average(window);
 
             tracing::info!(
+                correlation=%item.correlation(),
                 %window, ?source_records_lag_max, ?source_assigned_partitions, %total_lag,
                 message
             );
@@ -184,10 +187,10 @@ fn log_data_for_reason(
         (_, Some(SOURCE_BACKPRESSURE)) => {
             let source_backpressure =
                 item.flow_source_back_pressured_time_millis_per_sec_rolling_average(window);
-            tracing::info!(%window, %source_backpressure, message);
+            tracing::info!(correlation=%item.correlation(), %window, %source_backpressure, message);
         },
 
-        _ => tracing::info!(?reason, ?item, message),
+        _ => tracing::info!(correlation=%item.correlation(), ?reason, ?item, message),
     }
 }
 
