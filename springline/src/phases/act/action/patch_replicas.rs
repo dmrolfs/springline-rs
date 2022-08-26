@@ -1,8 +1,10 @@
 use std::collections::HashMap;
+use std::marker::PhantomData;
 use std::time::Duration;
 
 use async_trait::async_trait;
 use k8s_openapi::api::core::v1::Pod;
+use proctor::AppData;
 use tokio::time::Instant;
 use tracing_futures::Instrument;
 
@@ -11,41 +13,48 @@ use crate::flink::FlinkContext;
 use crate::kubernetes::{self, FlinkComponent, KubernetesContext, KubernetesError};
 use crate::phases::act;
 use crate::phases::act::{ActError, ScaleActionPlan};
-use crate::phases::plan::{ScaleDirection, ScalePlan};
+use crate::phases::plan::ScaleDirection;
 use crate::settings::Settings;
 
 pub const ACTION_LABEL: &str = "patch_replicas";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PatchReplicas {
+pub struct PatchReplicas<P> {
     pub taskmanager_settle_timeout: Duration,
     pub flink_polling_interval: Duration,
+    marker: PhantomData<P>,
 }
 
-impl PatchReplicas {
+impl<P> PatchReplicas<P> {
     pub const fn from_settings(settings: &Settings) -> Self {
         let taskmanager_settle_timeout = settings.kubernetes.patch_settle_timeout;
         let flink_polling_interval = settings.action.flink.polling_interval;
-        Self { taskmanager_settle_timeout, flink_polling_interval }
+        Self {
+            taskmanager_settle_timeout,
+            flink_polling_interval,
+            marker: PhantomData,
+        }
     }
 }
 
 #[async_trait]
-impl ScaleAction for PatchReplicas {
-    type Plan = ScalePlan;
-    type Session = ActionSession;
+impl<P> ScaleAction for PatchReplicas<P>
+where
+    P: AppData + ScaleActionPlan,
+{
+    type Plan = P;
 
     fn label(&self) -> &str {
         ACTION_LABEL
     }
 
-    fn check_preconditions(&self, _session: &Self::Session) -> Result<(), ActError> {
+    fn check_preconditions(&self, _session: &ActionSession) -> Result<(), ActError> {
         Ok(())
     }
 
     #[tracing::instrument(level = "info", name = "PatchReplicas::execute", skip(self))]
     async fn execute<'s>(
-        &self, plan: &'s Self::Plan, session: &'s mut Self::Session,
+        &self, plan: &'s Self::Plan, session: &'s mut ActionSession,
     ) -> Result<(), ActError> {
         let correlation = session.correlation();
         let nr_target_taskmanagers = plan.target_replicas();
@@ -82,12 +91,17 @@ impl ScaleAction for PatchReplicas {
         Ok(())
     }
 
-    async fn on_error<'s>(&self, error: ActError, plan: &'s Self::Plan, session: &'s mut Self::Session) -> Result<(), ActError> {
+    async fn on_error<'s>(
+        &self, error: ActError, plan: &'s Self::Plan, session: &'s mut ActionSession,
+    ) -> Result<(), ActError> {
         todo!()
     }
 }
 
-impl PatchReplicas {
+impl<P> PatchReplicas<P>
+where
+    P: AppData + ScaleActionPlan,
+{
     #[tracing::instrument(
         level = "info",
         name = "patch_replicas::block_until_satisfied",

@@ -17,12 +17,13 @@ pub use action::ACTION_TOTAL_DURATION;
 pub use action::FLINK_MISSED_JAR_RESTARTS;
 pub use scale_actuator::ScaleActuator;
 
-use crate::phases::plan::ScalePlan;
+use crate::phases::plan::{ScaleDirection, ScalePlan};
 use crate::CorrelationId;
 
 pub trait ScaleActionPlan {
     fn correlation(&self) -> &CorrelationId;
     fn recv_timestamp(&self) -> Timestamp;
+    fn direction(&self) -> ScaleDirection;
     fn current_replicas(&self) -> usize;
     fn target_replicas(&self) -> usize;
 }
@@ -34,6 +35,10 @@ impl ScaleActionPlan for ScalePlan {
 
     fn recv_timestamp(&self) -> Timestamp {
         self.recv_timestamp
+    }
+
+    fn direction(&self) -> ScaleDirection {
+        self.direction()
     }
 
     fn current_replicas(&self) -> usize {

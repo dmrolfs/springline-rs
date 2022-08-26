@@ -11,11 +11,10 @@ use proctor::{AppData, ProctorResult};
 use tokio::sync::broadcast;
 use tracing::Instrument;
 
-use super::action::{self, ActionSession, CompositeAction, ScaleAction};
+use super::action::{self, ActionSession, ScaleAction};
 use super::{protocol, ActError, ActEvent, ScaleActionPlan};
 use crate::flink::FlinkContext;
 use crate::kubernetes::KubernetesContext;
-use crate::phases::plan::ScalePlan;
 use crate::settings::Settings;
 
 const STAGE_NAME: &str = "execute_scaling";
@@ -23,18 +22,21 @@ const STAGE_NAME: &str = "execute_scaling";
 pub struct ScaleActuator<In> {
     kube: KubernetesContext,
     flink: FlinkContext,
-    action: Box<dyn ScaleAction<Plan= In>>,
+    action: Box<dyn ScaleAction<Plan = In>>,
     inlet: Inlet<In>,
     pub tx_action_monitor: broadcast::Sender<Arc<protocol::ActEvent<In>>>,
 }
 
-impl ScaleActuator<ScalePlan> {
+impl<In> ScaleActuator<In>
+where
+    In: AppData + ScaleActionPlan,
+{
     #[tracing::instrument(level = "trace", name = "ScaleActuator::new", skip(kube))]
     pub fn new(kube: KubernetesContext, flink: FlinkContext, settings: &Settings) -> Self {
         let flink_action_settings = &settings.action.flink;
 
-        let composite: CompositeAction<ScalePlan> = action::CompositeAction::default()
-            .add_action_step(action::PrepareData)
+        let composite: action::CompositeAction<In> = action::CompositeAction::default()
+            .add_action_step(action::PrepareData::default())
             .add_action_step(action::CancelWithSavepoint::from_settings(
                 flink_action_settings,
             ))

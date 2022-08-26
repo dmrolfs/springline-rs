@@ -1,10 +1,12 @@
 use std::future::Future;
+use std::marker::PhantomData;
 use std::time::Duration;
 
 use async_trait::async_trait;
 use futures_util::{FutureExt, TryFutureExt};
 use http::Method;
 use proctor::error::UrlError;
+use proctor::AppData;
 use tokio::time::Instant;
 use tracing::Instrument;
 use url::Url;
@@ -14,40 +16,43 @@ use crate::flink::{
     self, FlinkContext, FlinkError, JobId, JobSavepointReport, OperationStatus, SavepointStatus,
 };
 use crate::phases::act;
-use crate::phases::act::ActError;
-use crate::phases::plan::ScalePlan;
+use crate::phases::act::{ActError, ScaleActionPlan};
 use crate::settings::FlinkActionSettings;
 use crate::CorrelationId;
 
 pub const ACTION_LABEL: &str = "savepoint";
 
 #[derive(Debug)]
-pub struct CancelWithSavepoint {
+pub struct CancelWithSavepoint<P> {
     pub polling_interval: Duration,
     pub savepoint_timeout: Duration,
     pub savepoint_dir: Option<String>,
+    marker: PhantomData<P>,
 }
 
-impl CancelWithSavepoint {
+impl<P> CancelWithSavepoint<P> {
     pub fn from_settings(settings: &FlinkActionSettings) -> Self {
         Self {
             polling_interval: settings.polling_interval,
             savepoint_timeout: settings.savepoint.operation_timeout,
             savepoint_dir: settings.savepoint.directory.clone(),
+            marker: PhantomData,
         }
     }
 }
 
 #[async_trait]
-impl ScaleAction for CancelWithSavepoint {
-    type Plan = ScalePlan;
-    type Session = ActionSession;
+impl<P> ScaleAction for CancelWithSavepoint<P>
+where
+    P: AppData + ScaleActionPlan,
+{
+    type Plan = P;
 
     fn label(&self) -> &str {
         ACTION_LABEL
     }
 
-    fn check_preconditions(&self, session: &Self::Session) -> Result<(), ActError> {
+    fn check_preconditions(&self, session: &ActionSession) -> Result<(), ActError> {
         match &session.active_jobs {
             None => Err(ActError::ActionPrecondition {
                 action: self.label().to_string(),
@@ -81,7 +86,7 @@ impl ScaleAction for CancelWithSavepoint {
         skip(self, _plan)
     )]
     async fn execute<'s>(
-        &self, _plan: &'s Self::Plan, session: &'s mut Self::Session,
+        &self, _plan: &'s Self::Plan, session: &'s mut ActionSession,
     ) -> Result<(), ActError> {
         let active_jobs = session.active_jobs.clone().unwrap_or_default();
         let job_triggers = Self::trigger_savepoints_for(&active_jobs, session).await?;
@@ -92,12 +97,17 @@ impl ScaleAction for CancelWithSavepoint {
         Ok(())
     }
 
-    async fn on_error<'s>(&self, error: ActError, plan: &'s Self::Plan, session: &'s mut Self::Session) -> Result<(), ActError> {
+    async fn on_error<'s>(
+        &self, error: ActError, plan: &'s Self::Plan, session: &'s mut ActionSession,
+    ) -> Result<(), ActError> {
         todo!()
     }
 }
 
-impl CancelWithSavepoint {
+impl<P> CancelWithSavepoint<P>
+where
+    P: AppData + ScaleActionPlan,
+{
     #[tracing::instrument(level = "info", skip(self, job_triggers, session))]
     async fn do_collect_savepoint_report<'s>(
         &self, job_triggers: &[(JobId, trigger::TriggerId)], session: &'s ActionSession,

@@ -27,17 +27,19 @@ pub use savepoint::CancelWithSavepoint;
 #[async_trait]
 pub trait ScaleAction: Debug + Send + Sync {
     type Plan: AppData + ScaleActionPlan;
-    type Session;
 
     fn label(&self) -> &str;
 
-    fn check_preconditions(&self, session: &Self::Session) -> Result<(), ActError>;
+    fn check_preconditions(&self, session: &ActionSession) -> Result<(), ActError>;
 
     async fn execute<'s>(
-        &self, plan: &'s Self::Plan, session: &'s mut Self::Session,
+        &self, plan: &'s Self::Plan, session: &'s mut ActionSession,
     ) -> Result<(), ActError>;
 
-    async fn on_error<'s>(&self, error: ActError, plan: &'s Self::Plan, session: &'s mut Self::Session) -> Result<(), ActError> {
+    async fn on_error<'s>(
+        &self, error: ActError, plan: &'s Self::Plan, session: &'s mut ActionSession,
+    ) -> Result<(), ActError> {
+        tracing::error!(?error, ?plan, ?session, correlation=%plan.correlation(), "rescale failed on action: {}", self.label());
         Err(error)
     }
 }

@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::marker::PhantomData;
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -8,6 +9,7 @@ use futures_util::{FutureExt, StreamExt, TryFutureExt};
 use http::{Method, StatusCode};
 use once_cell::sync::Lazy;
 use proctor::error::UrlError;
+use proctor::AppData;
 use prometheus::{IntCounter, Opts};
 use tracing_futures::Instrument;
 use url::Url;
@@ -18,21 +20,21 @@ use crate::flink::{
 use crate::phases::act;
 use crate::phases::act::action::{ActionSession, ScaleAction};
 use crate::phases::act::{ActError, ScaleActionPlan};
-use crate::phases::plan::ScalePlan;
 use crate::settings::FlinkActionSettings;
 
 pub const ACTION_LABEL: &str = "restart_jobs";
 
 #[derive(Debug)]
-pub struct RestartJobs {
+pub struct RestartJobs<P> {
     pub restart_timeout: Duration,
     pub polling_interval: Duration,
     pub allow_non_restored_state: Option<bool>,
     pub program_args: Option<Vec<String>>,
     pub restore_mode: Option<RestoreMode>,
+    marker: PhantomData<P>,
 }
 
-impl RestartJobs {
+impl<P> RestartJobs<P> {
     pub fn from_settings(settings: &FlinkActionSettings) -> Self {
         Self {
             restart_timeout: settings.restart.operation_timeout,
@@ -40,20 +42,23 @@ impl RestartJobs {
             allow_non_restored_state: settings.restart.allow_non_restored_state,
             program_args: settings.restart.program_args.clone(),
             restore_mode: settings.restart.restore_mode,
+            marker: PhantomData,
         }
     }
 }
 
 #[async_trait]
-impl ScaleAction for RestartJobs {
-    type Plan = ScalePlan;
-    type Session = ActionSession;
+impl<P> ScaleAction for RestartJobs<P>
+where
+    P: AppData + ScaleActionPlan,
+{
+    type Plan = P;
 
     fn label(&self) -> &str {
         ACTION_LABEL
     }
 
-    fn check_preconditions(&self, session: &Self::Session) -> Result<(), ActError> {
+    fn check_preconditions(&self, session: &ActionSession) -> Result<(), ActError> {
         match &session.savepoints {
             None => Err(ActError::ActionPrecondition {
                 action: self.label().to_string(),
@@ -92,7 +97,7 @@ impl ScaleAction for RestartJobs {
         skip(self)
     )]
     async fn execute<'s>(
-        &self, plan: &'s Self::Plan, session: &'s mut Self::Session,
+        &self, plan: &'s Self::Plan, session: &'s mut ActionSession,
     ) -> Result<(), ActError> {
         let parallelism = Self::parallelism_from_plan_session(plan, session);
 
@@ -160,17 +165,22 @@ impl ScaleAction for RestartJobs {
         outcome
     }
 
-    async fn on_error<'s>(&self, error: ActError, plan: &'s Self::Plan, session: &'s mut Self::Session) -> Result<(), ActError> {
+    async fn on_error<'s>(
+        &self, error: ActError, plan: &'s Self::Plan, session: &'s mut ActionSession,
+    ) -> Result<(), ActError> {
         todo!()
     }
 }
 
-impl RestartJobs {
+impl<P> RestartJobs<P>
+where
+    P: AppData + ScaleActionPlan,
+{
     /// Returns the parallelism to use for the restart. In the case of a scale up, this will most
     /// likely be the new parallelism. In the case of a scale down, this will most likely be the
     /// current parallelism. Discrepancies between the two cases are due to rescaling the cluster
     /// partially completed within budgeted time.
-    fn parallelism_from_plan_session(plan: &ScalePlan, session: &ActionSession) -> usize {
+    fn parallelism_from_plan_session(plan: &P, session: &ActionSession) -> usize {
         let mut parallelism = plan.target_replicas();
 
         if let Some(nr_tm_confirmed) = session.nr_confirmed_rescaled_taskmanagers {

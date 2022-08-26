@@ -1,35 +1,46 @@
+use std::marker::PhantomData;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use proctor::AppData;
 use tracing::Instrument;
 
 use super::{ActionSession, ScaleAction};
 use crate::flink::{JarId, JobId};
 use crate::phases::act;
-use crate::phases::act::ActError;
-use crate::phases::plan::ScalePlan;
+use crate::phases::act::{ActError, ScaleActionPlan};
 
 pub const ACTION_LABEL: &str = "prepare_data";
 
 #[derive(Debug)]
-pub struct PrepareData;
+pub struct PrepareData<P> {
+    marker: PhantomData<P>,
+}
+
+impl<P> Default for PrepareData<P> {
+    fn default() -> Self {
+        Self { marker: PhantomData }
+    }
+}
 
 #[async_trait]
-impl ScaleAction for PrepareData {
-    type Plan = ScalePlan;
-    type Session = ActionSession;
+impl<P> ScaleAction for PrepareData<P>
+where
+    P: AppData + ScaleActionPlan,
+{
+    type Plan = P;
 
     fn label(&self) -> &str {
         ACTION_LABEL
     }
 
-    fn check_preconditions(&self, _session: &Self::Session) -> Result<(), ActError> {
+    fn check_preconditions(&self, _session: &ActionSession) -> Result<(), ActError> {
         Ok(())
     }
 
     #[tracing::instrument(level = "info", name = "PrepareData::execute", skip(self, _plan))]
     async fn execute<'s>(
-        &self, _plan: &'s Self::Plan, session: &'s mut Self::Session,
+        &self, _plan: &'s Self::Plan, session: &'s mut ActionSession,
     ) -> Result<(), ActError> {
         let correlation = session.correlation();
         // todo: consider moving this to context channel?? would support keeping track of jar and job?
