@@ -83,19 +83,12 @@ impl ScaleAction for CancelWithSavepoint {
     async fn execute<'s>(
         &self, _plan: &'s Self::Plan, session: &'s mut Self::Session,
     ) -> Result<(), ActError> {
-        let timer = act::start_scale_action_timer(session.cluster_label(), self.label());
-
         let active_jobs = session.active_jobs.clone().unwrap_or_default();
         let job_triggers = Self::trigger_savepoints_for(&active_jobs, session).await?;
 
         let savepoint_report = self.do_collect_savepoint_report(&job_triggers, session).await?;
         self.do_wait_for_job_cancel(&job_triggers, session).await?;
         session.savepoints = Some(savepoint_report);
-
-        session.mark_duration(
-            self.label(),
-            Duration::from_secs_f64(timer.stop_and_record()),
-        );
         Ok(())
     }
 

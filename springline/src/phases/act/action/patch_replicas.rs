@@ -47,8 +47,6 @@ impl ScaleAction for PatchReplicas {
     async fn execute<'s>(
         &self, plan: &'s Self::Plan, session: &'s mut Self::Session,
     ) -> Result<(), ActError> {
-        let timer = act::start_scale_action_timer(session.cluster_label(), self.label());
-
         let correlation = session.correlation();
         let nr_target_taskmanagers = plan.target_replicas();
 
@@ -81,10 +79,6 @@ impl ScaleAction for PatchReplicas {
             self.block_for_rescaled_taskmanagers(plan, &session.flink).await;
         session.nr_confirmed_rescaled_taskmanagers = Some(confirmed_nr_taskmanagers);
 
-        session.mark_duration(
-            self.label(),
-            Duration::from_secs_f64(timer.stop_and_record()),
-        );
         Ok(())
     }
 

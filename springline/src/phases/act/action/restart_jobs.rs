@@ -94,8 +94,6 @@ impl ScaleAction for RestartJobs {
     async fn execute<'s>(
         &self, plan: &'s Self::Plan, session: &'s mut Self::Session,
     ) -> Result<(), ActError> {
-        let timer = act::start_scale_action_timer(session.cluster_label(), self.label());
-
         let parallelism = Self::parallelism_from_plan_session(plan, session);
 
         let mut outcome = Ok(());
@@ -159,10 +157,6 @@ impl ScaleAction for RestartJobs {
             };
         };
 
-        session.mark_duration(
-            self.label(),
-            Duration::from_secs_f64(timer.stop_and_record()),
-        );
         outcome
     }
 

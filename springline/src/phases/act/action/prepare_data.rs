@@ -31,8 +31,6 @@ impl ScaleAction for PrepareData {
     async fn execute<'s>(
         &self, _plan: &'s Self::Plan, session: &'s mut Self::Session,
     ) -> Result<(), ActError> {
-        let timer = act::start_scale_action_timer(session.cluster_label(), self.label());
-
         let correlation = session.correlation();
         // todo: consider moving this to context channel?? would support keeping track of jar and job?
         let active_jobs: Vec<JobId> = session
@@ -58,10 +56,6 @@ impl ScaleAction for PrepareData {
             .map(|jars| jars.into_iter().map(|j| j.id).collect())?;
 
         session.uploaded_jars = Some(jars);
-        session.mark_duration(
-            self.label(),
-            Duration::from_secs_f64(timer.stop_and_record()),
-        );
         Ok(())
     }
 }

@@ -56,6 +56,7 @@ where
             act::start_scale_action_timer(session.cluster_label(), super::ACTION_TOTAL_DURATION);
 
         for action in self.actions.iter() {
+            let timer = act::start_scale_action_timer(session.cluster_label(), action.label());
             let outcome =
                 match action.check_preconditions(session) {
                     Ok(_) => action
@@ -67,6 +68,7 @@ where
                     Err(err) => Err(err),
                 };
 
+            session.mark_duration(action.label(), Duration::from_secs_f64(timer.stop_and_record()));
             if let Err(err) = outcome {
                 return Err(err);
             }
