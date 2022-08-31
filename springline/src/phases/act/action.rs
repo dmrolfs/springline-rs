@@ -1,5 +1,4 @@
-use std::collections::HashMap;
-use std::fmt::{self, Debug};
+use std::fmt::{self, Debug, Display};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -35,13 +34,6 @@ pub trait ScaleAction: Debug + Send + Sync {
     async fn execute<'s>(
         &self, plan: &'s Self::Plan, session: &'s mut ActionSession,
     ) -> Result<(), ActError>;
-
-    async fn on_error<'s>(
-        &self, error: ActError, plan: &'s Self::Plan, session: &'s mut ActionSession,
-    ) -> Result<(), ActError> {
-        tracing::error!(?error, ?plan, ?session, correlation=%plan.correlation(), "rescale failed on action: {}", self.label());
-        Err(error)
-    }
 }
 
 pub const ACTION_TOTAL_DURATION: &str = "total_duration";
@@ -50,29 +42,43 @@ fn action_step(action: &str, step: &str) -> String {
     format!("{}::{}", action, step)
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ActionOutcome {
+    pub label: String,
+    pub status: ActionStatus,
+    pub duration: Duration,
+}
+
+#[derive(Debug, Display, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum ActionStatus {
+    Success,
+    Recovered,
+    Failure,
+}
+
 #[derive(Clone)]
 pub struct ActionSession {
     pub correlation: CorrelationId,
+    pub history: Vec<ActionOutcome>,
     pub kube: KubernetesContext,
     pub flink: FlinkContext,
     pub nr_confirmed_rescaled_taskmanagers: Option<usize>,
     pub active_jobs: Option<Vec<JobId>>,
     pub uploaded_jars: Option<Vec<JarId>>,
     pub savepoints: Option<JobSavepointReport>,
-    pub durations: HashMap<String, Duration>,
 }
 
 impl ActionSession {
     pub fn new(correlation: CorrelationId, kube: KubernetesContext, flink: FlinkContext) -> Self {
         Self {
             correlation,
+            history: Default::default(),
             kube,
             flink,
             nr_confirmed_rescaled_taskmanagers: None,
             active_jobs: None,
             uploaded_jars: None,
             savepoints: None,
-            durations: HashMap::new(),
         }
     }
 
@@ -84,8 +90,14 @@ impl ActionSession {
         self.correlation.clone()
     }
 
-    pub fn mark_duration(&mut self, label: impl AsRef<str>, duration: Duration) {
-        self.durations.insert(label.as_ref().to_string(), duration);
+    pub fn mark_completion(
+        &mut self, label: impl AsRef<str>, status: ActionStatus, duration: Duration,
+    ) {
+        self.history.push(ActionOutcome {
+            label: label.as_ref().to_string(),
+            status,
+            duration,
+        })
     }
 }
 
@@ -94,7 +106,7 @@ impl Debug for ActionSession {
         let mut debug = f.debug_struct("ActionSession");
         debug
             .field("correlation", &format!("{}", self.correlation))
-            .field("durations", &self.durations);
+            .field("history", &self.history);
 
         if let Some(active_jobs) = &self.active_jobs {
             debug.field("active_jobs", &active_jobs);

@@ -1,6 +1,7 @@
 use std::error::Error;
 use std::fmt;
 use std::sync::Arc;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use cast_trait_object::dyn_upcast;
@@ -15,50 +16,51 @@ use super::action::{self, ActionSession, ScaleAction};
 use super::{protocol, ActError, ActEvent, ScaleActionPlan};
 use crate::flink::FlinkContext;
 use crate::kubernetes::KubernetesContext;
-use crate::settings::Settings;
+use crate::settings::{FlinkActionSettings, Settings};
 
 const STAGE_NAME: &str = "execute_scaling";
 
-pub struct ScaleActuator<In> {
-    kube: KubernetesContext,
-    flink: FlinkContext,
-    action: Box<dyn ScaleAction<Plan = In>>,
-    inlet: Inlet<In>,
-    pub tx_action_monitor: broadcast::Sender<Arc<protocol::ActEvent<In>>>,
+#[derive(Debug, PartialEq)]
+struct MakeActionParameters {
+    pub taskmanager_register_timeout: Duration,
+    pub flink_action_settings: FlinkActionSettings,
 }
 
-impl<In> ScaleActuator<In>
+pub struct ScaleActuator<P> {
+    kube: KubernetesContext,
+    flink: FlinkContext,
+    parameters: MakeActionParameters,
+    // action: Box<dyn ScaleAction<Plan = P>>,
+    inlet: Inlet<P>,
+    pub tx_action_monitor: broadcast::Sender<Arc<protocol::ActEvent<P>>>,
+}
+
+impl<P> ScaleActuator<P>
 where
-    In: AppData + ScaleActionPlan,
+    P: AppData + ScaleActionPlan,
 {
     #[tracing::instrument(level = "trace", name = "ScaleActuator::new", skip(kube))]
     pub fn new(kube: KubernetesContext, flink: FlinkContext, settings: &Settings) -> Self {
-        let flink_action_settings = &settings.action.flink;
-
-        let composite: action::CompositeAction<In> = action::CompositeAction::default()
-            .add_action_step(action::PrepareData::default())
-            .add_action_step(action::CancelWithSavepoint::from_settings(
-                flink_action_settings,
-            ))
-            .add_action_step(action::PatchReplicas::from_settings(settings))
-            .add_action_step(action::RestartJobs::from_settings(flink_action_settings));
-
-        let (tx_action_monitor, _) = broadcast::channel(num_cpus::get() * 2);
+        let (tx_action_monitor, _) = broadcast::channel(num_cpus::get());
+        let parameters = MakeActionParameters {
+            taskmanager_register_timeout: settings.kubernetes.patch_settle_timeout,
+            flink_action_settings: settings.action.flink.clone(),
+        };
 
         Self {
             kube,
             flink,
-            action: Box::new(composite),
+            parameters,
             inlet: Inlet::new(STAGE_NAME, PORT_DATA),
             tx_action_monitor,
         }
     }
 }
 
-impl<In> fmt::Debug for ScaleActuator<In> {
+impl<P> fmt::Debug for ScaleActuator<P> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ScaleActuator")
-            .field("action", &self.action)
+            .field("make_action_parameters", &self.parameters)
             .field("kube", &self.kube)
             .field("flink", &self.flink)
             .field("inlet", &self.inlet)
@@ -66,16 +68,16 @@ impl<In> fmt::Debug for ScaleActuator<In> {
     }
 }
 
-impl<In> proctor::graph::stage::WithMonitor for ScaleActuator<In> {
-    type Receiver = protocol::ActMonitor<In>;
+impl<P> proctor::graph::stage::WithMonitor for ScaleActuator<P> {
+    type Receiver = protocol::ActMonitor<P>;
 
     fn rx_monitor(&self) -> Self::Receiver {
         self.tx_action_monitor.subscribe()
     }
 }
 
-impl<In> SinkShape for ScaleActuator<In> {
-    type In = In;
+impl<P> SinkShape for ScaleActuator<P> {
+    type In = P;
 
     #[inline]
     fn inlet(&self) -> Inlet<Self::In> {
@@ -85,9 +87,9 @@ impl<In> SinkShape for ScaleActuator<In> {
 
 #[dyn_upcast]
 #[async_trait]
-impl<In> Stage for ScaleActuator<In>
+impl<P> Stage for ScaleActuator<P>
 where
-    In: AppData + ScaleActionPlan,
+    P: AppData + ScaleActionPlan,
 {
     #[inline]
     fn name(&self) -> &str {
@@ -113,9 +115,9 @@ where
     }
 }
 
-impl<In> ScaleActuator<In>
+impl<P> ScaleActuator<P>
 where
-    In: AppData + ScaleActionPlan,
+    P: AppData + ScaleActionPlan,
 {
     #[inline]
     async fn do_check(&self) -> Result<(), ActError> {
@@ -129,6 +131,7 @@ where
         let rescaling_lock = tokio::sync::Mutex::new(false);
 
         while let Some(plan) = inlet.recv().await {
+            let action = Self::make_rescale_up_action_plan(&plan, &self.parameters);
             let mut is_rescaling = rescaling_lock.lock().await;
             if *is_rescaling {
                 tracing::info!("prior rescale in progress, skipping.");
@@ -136,7 +139,7 @@ where
             }
 
             *is_rescaling = true;
-            self.notify_action_started(plan.clone());
+            self.notify_action_started(&plan);
             let _timer = proctor::graph::stage::start_stage_eval_time(STAGE_NAME);
             let mut session = ActionSession::new(
                 plan.correlation().clone(),
@@ -144,9 +147,9 @@ where
                 self.flink.clone(),
             );
 
-            let outcome = match self.action.check_preconditions(&session) {
+            let outcome = match action.check_preconditions(&session) {
                 Ok(_) => {
-                    self.action
+                    action
                         .execute(&plan, &mut session)
                         .instrument(tracing::info_span!("act::execute_actuator", ?plan))
                         .await
@@ -168,14 +171,36 @@ where
         Ok(())
     }
 
+    fn make_rescale_up_action_plan(
+        _plan: &P, parameters: &MakeActionParameters,
+    ) -> Box<dyn ScaleAction<Plan = P>> {
+        let action = action::CompositeAction::default()
+            .add_action_step(action::PrepareData::default())
+            .add_action_step(action::CancelWithSavepoint::from_settings(
+                &parameters.flink_action_settings,
+            ))
+            .add_action_step(action::PatchReplicas::from_settings(
+                parameters.taskmanager_register_timeout,
+                parameters.flink_action_settings.polling_interval,
+            ))
+            .add_action_step(action::RestartJobs::from_settings(
+                &parameters.flink_action_settings,
+            ));
+
+        Box::new(action)
+    }
+
     #[tracing::instrument(
         level = "trace",
         skip(self, plan),
         fields(correlation=%plan.correlation(), recv_timestamp=%plan.recv_timestamp())
     )]
-    fn notify_action_started(&self, plan: In) {
+    fn notify_action_started(&self, plan: &P) {
         tracing::info!(?plan, "rescale action started");
-        match self.tx_action_monitor.send(Arc::new(ActEvent::PlanActionStarted(plan))) {
+        match self
+            .tx_action_monitor
+            .send(Arc::new(ActEvent::PlanActionStarted(plan.clone())))
+        {
             Ok(nr_recipients) => {
                 tracing::debug!("published PlanActionStarted event to {nr_recipients} recipients.")
             },
@@ -188,13 +213,13 @@ where
         skip(self, plan, session),
         fields(correlation=%plan.correlation(), recv_timestamp=%plan.recv_timestamp())
     )]
-    fn notify_action_succeeded(&self, plan: In, session: ActionSession) {
+    fn notify_action_succeeded(&self, plan: P, session: ActionSession) {
         tracing::info!(?plan, ?session, "rescale action succeeded");
-        let event = Arc::new(ActEvent::PlanExecuted { plan, durations: session.durations.clone() });
+        let event = Arc::new(ActEvent::PlanExecuted { plan, outcomes: session.history.clone() });
 
         match self.tx_action_monitor.send(event) {
             Ok(nr_recipients) => tracing::debug!(
-                action_durations=?session.durations,
+                action_outcomes=?session.history,
                 "published PlanExecuted event to {nr_recipients} recipients."
             ),
             Err(err) => tracing::warn!(error=?err, "failed to publish PlanExecuted event."),
@@ -206,7 +231,7 @@ where
         skip(self, plan, session, error),
         fields(correlation=%plan.correlation(), recv_timestamp=%plan.recv_timestamp(), error_label=%error.label(),)
     )]
-    fn notify_action_failed<E>(&self, plan: In, session: ActionSession, error: E)
+    fn notify_action_failed<E>(&self, plan: P, session: ActionSession, error: E)
     where
         E: Error + MetricLabel,
     {
@@ -217,7 +242,7 @@ where
             .send(Arc::new(ActEvent::PlanFailed { plan, error_metric_label }))
         {
             Ok(recipients) => tracing::debug!(
-                action_durations=?session.durations, action_error=?error,
+                history=?session.history, action_error=?error,
                 "published PlanFailed to {} recipients", recipients
             ),
             Err(err) => tracing::warn!(

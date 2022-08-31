@@ -5,6 +5,7 @@ use proctor::AppData;
 use tracing::Instrument;
 
 use super::{ActionSession, ScaleAction};
+use crate::phases::act::action::ActionStatus;
 use crate::phases::act::{self, ActError, ScaleActionPlan};
 
 pub const ACTION_LABEL: &str = "composite";
@@ -24,9 +25,7 @@ impl<P> CompositeAction<P>
 where
     P: AppData + ScaleActionPlan,
 {
-    pub fn add_action_step(
-        mut self, action: impl ScaleAction<Plan = <Self as ScaleAction>::Plan> + 'static,
-    ) -> Self {
+    pub fn add_action_step(mut self, action: impl ScaleAction<Plan = P> + 'static) -> Self {
         self.actions.push(Box::new(action));
         self
     }
@@ -55,28 +54,64 @@ where
             act::start_scale_action_timer(session.cluster_label(), super::ACTION_TOTAL_DURATION);
 
         for action in self.actions.iter() {
-            let timer = act::start_scale_action_timer(session.cluster_label(), action.label());
-            let outcome =
-                match action.check_preconditions(session) {
-                    Ok(_) => action
-                        .execute(plan, session)
-                        .instrument(
-                            tracing::info_span!("act::composite::action", action=%action.label()),
-                        )
-                        .await,
-                    Err(err) => Err(err),
-                };
-
-            session.mark_duration(action.label(), Duration::from_secs_f64(timer.stop_and_record()));
-            if let Err(err) = outcome {
+            let mut status = ActionStatus::Failure;
+            if let Err(err) = action.check_preconditions(session) {
+                session.mark_completion(action.label(), status, Duration::ZERO);
                 return Err(err);
             }
 
-            // action.execute(plan, session).await?;
+            let timer = act::start_scale_action_timer(session.cluster_label(), action.label());
+
+            let execute_outcome = action
+                .execute(plan, session)
+                .instrument(tracing::info_span!("act::action::composite", action=%action.label()))
+                .await;
+
+            let outcome = match execute_outcome {
+                Err(err) => {
+                    let o = self.handle_error_on_execute(action.label(), err, plan, session).await;
+                    status = o
+                        .as_ref()
+                        .map(|_| ActionStatus::Recovered)
+                        .unwrap_or(ActionStatus::Failure);
+                    o
+                },
+                o => {
+                    status = ActionStatus::Success;
+                    o
+                },
+            };
+
+            let duration = Duration::from_secs_f64(timer.stop_and_record());
+            session.mark_completion(action.label(), status, duration);
+
+            if let Err(err) = outcome {
+                return Err(err);
+            }
         }
 
         let total_duration = Duration::from_secs_f64(timer.stop_and_record());
-        session.mark_duration(super::ACTION_TOTAL_DURATION, total_duration);
+        session.mark_completion(
+            super::ACTION_TOTAL_DURATION,
+            ActionStatus::Success,
+            total_duration,
+        );
         Ok(())
+    }
+}
+
+impl<P> CompositeAction<P>
+where
+    P: AppData + ScaleActionPlan,
+{
+    #[tracing::instrument(level = "warn", skip(self, plan, session))]
+    async fn handle_error_on_execute<'s>(
+        &self, action: &str, error: ActError, plan: &'s P, session: &'s mut ActionSession,
+    ) -> Result<(), ActError> {
+        tracing::error!(
+            ?error, ?plan, ?session, correlation=?session.correlation(),
+            "unrecoverable error during composite execute action: {action}"
+        );
+        Err(error)
     }
 }

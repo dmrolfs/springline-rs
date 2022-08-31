@@ -1,13 +1,11 @@
 use std::marker::PhantomData;
-use std::time::Duration;
 
 use async_trait::async_trait;
 use proctor::AppData;
 use tracing::Instrument;
 
 use super::{ActionSession, ScaleAction};
-use crate::flink::{JarId, JobId};
-use crate::phases::act;
+use crate::flink::{FlinkError, JarId, JobId};
 use crate::phases::act::{ActError, ScaleActionPlan};
 
 pub const ACTION_LABEL: &str = "prepare_data";
@@ -38,13 +36,13 @@ where
         Ok(())
     }
 
-    #[tracing::instrument(level = "info", name = "PrepareData::execute", skip(self, _plan))]
+    #[tracing::instrument(level = "info", name = "PrepareData::execute", skip(self, plan))]
     async fn execute<'s>(
-        &self, _plan: &'s Self::Plan, session: &'s mut ActionSession,
+        &self, plan: &'s Self::Plan, session: &'s mut ActionSession,
     ) -> Result<(), ActError> {
         let correlation = session.correlation();
-        // todo: consider moving this to context channel?? would support keeping track of jar and job?
-        let active_jobs: Vec<JobId> = session
+
+        let query_active_jobs = session
             .flink
             .query_active_jobs(&correlation)
             .instrument(tracing::info_span!(
@@ -52,11 +50,15 @@ where
                 ?correlation
             ))
             .await
-            .map(|jobs| jobs.into_iter().map(|j| j.id).collect())?;
+            .map(|jobs| jobs.into_iter().map(|j| j.id).collect());
+        let active_jobs = match query_active_jobs {
+            Err(err) => self.handle_error_on_query_active_jobs(err, plan, session).await,
+            jobs => jobs,
+        }?;
 
         session.active_jobs = Some(active_jobs);
 
-        let jars: Vec<JarId> = session
+        let query_jars = session
             .flink
             .query_uploaded_jars(&correlation)
             .instrument(tracing::info_span!(
@@ -64,9 +66,34 @@ where
                 ?correlation
             ))
             .await
-            .map(|jars| jars.into_iter().map(|j| j.id).collect())?;
+            .map(|jars| jars.into_iter().map(|j| j.id).collect());
+        let jars = match query_jars {
+            Err(err) => self.handle_error_on_query_uploaded_jars(err, plan, session).await,
+            jars => jars,
+        }?;
 
         session.uploaded_jars = Some(jars);
         Ok(())
+    }
+}
+
+impl<P> PrepareData<P>
+where
+    P: AppData + ScaleActionPlan,
+{
+    #[tracing::instrument(level = "warn", skip(self, plan, session))]
+    async fn handle_error_on_query_active_jobs<'s>(
+        &self, error: FlinkError, plan: &'s P, session: &'s mut ActionSession,
+    ) -> Result<Vec<JobId>, FlinkError> {
+        tracing::error!(?error, ?plan, ?session, correlation=%session.correlation(), "error on query active jobs");
+        Err(error)
+    }
+
+    #[tracing::instrument(level = "warn", skip(self, plan, session))]
+    async fn handle_error_on_query_uploaded_jars<'s>(
+        &self, error: FlinkError, plan: &'s P, session: &'s mut ActionSession,
+    ) -> Result<Vec<JarId>, FlinkError> {
+        tracing::error!(?error, ?plan, ?session, correlation=%session.correlation(), "error on query uploaded jars");
+        Err(error)
     }
 }

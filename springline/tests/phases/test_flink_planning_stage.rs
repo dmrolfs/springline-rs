@@ -186,6 +186,7 @@ fn make_test_data(
     start: Timestamp, tick: i64, parallelism: u32, source_records_lag_max: u32,
     records_per_sec: f64,
 ) -> MetricCatalog {
+    let job_source_max_parallelism = 16;
     let timestamp = Utc.timestamp(start.as_secs() + tick * STEP, 0).into();
     let corr_id = CORRELATION_ID.clone();
     let forecasted_timestamp = timestamp + Duration::from_secs(STEP as u64);
@@ -193,7 +194,8 @@ fn make_test_data(
         correlation_id: corr_id,
         recv_timestamp: timestamp,
         health: JobHealthMetrics {
-            job_max_parallelism: u32::max(16, parallelism),
+            job_max_parallelism: u32::max(job_source_max_parallelism, parallelism),
+            job_source_max_parallelism,
             job_nonsource_max_parallelism: parallelism,
             job_uptime_millis: 1_234_567,
             job_nr_restarts: 3,

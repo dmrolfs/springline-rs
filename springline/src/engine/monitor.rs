@@ -1,9 +1,9 @@
-use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 use enumflags2::BitFlags;
+use itertools::Itertools;
 use once_cell::sync::Lazy;
 use proctor::elements::{RecordsPerSecond, Telemetry, Timestamp, FORMAT};
 use proctor::graph::stage::{ActorSourceApi, ActorSourceCmd};
@@ -16,7 +16,8 @@ use crate::engine::service::{EngineCmd, EngineServiceApi, Health};
 use crate::engine::{PhaseFlag, PhaseFlags};
 use crate::flink;
 use crate::phases::act::{
-    ActEvent, ActMonitor, ACT_PHASE_ERRORS, ACT_SCALE_ACTION_COUNT, PIPELINE_CYCLE_TIME,
+    ActEvent, ActMonitor, ActionOutcome, ACT_PHASE_ERRORS, ACT_SCALE_ACTION_COUNT,
+    PIPELINE_CYCLE_TIME,
 };
 use crate::phases::decision::{
     DecisionContext, DecisionEvent, DecisionMonitor, DecisionResult, ScaleDirection,
@@ -338,8 +339,8 @@ impl Monitor {
 
         let action_feedback = match &*event {
             ActEvent::PlanActionStarted(plan) => Self::do_handle_rescale_started(plan),
-            ActEvent::PlanExecuted { plan, durations } => {
-                self.do_handle_rescale_executed(plan, durations, now).await
+            ActEvent::PlanExecuted { plan, outcomes } => {
+                self.do_handle_rescale_executed(plan, outcomes, now).await
             },
             ActEvent::PlanFailed { plan, error_metric_label } => {
                 Self::do_handle_rescale_failed(plan, error_metric_label, now)
@@ -360,9 +361,9 @@ impl Monitor {
     }
 
     async fn do_handle_rescale_executed(
-        &self, plan: &ScalePlan, durations: &HashMap<String, Duration>, now: Timestamp,
+        &self, plan: &ScalePlan, outcomes: &Vec<ActionOutcome>, now: Timestamp,
     ) -> ActionFeedback {
-        tracing::info!(%now, ?plan, correlation=%plan.correlation(), ?durations, "rescale executed");
+        tracing::info!(%now, ?plan, correlation=%plan.correlation(), ?outcomes, "rescale executed");
         ACT_SCALE_ACTION_COUNT
             .with_label_values(&[
                 plan.current_nr_task_managers.to_string().as_str(),
@@ -385,7 +386,7 @@ impl Monitor {
         ActionFeedback {
             is_rescaling: false,
             last_deployment: Some(now.as_utc()),
-            rescale_restart: durations.get(crate::phases::act::ACTION_TOTAL_DURATION).copied(),
+            rescale_restart: outcomes.iter().map(|o| o.duration).sum1(),
         }
     }
 

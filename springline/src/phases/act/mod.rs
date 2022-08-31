@@ -13,6 +13,7 @@ use crate::phases::governance::GovernanceOutcome;
 
 mod action;
 mod scale_actuator;
+pub use action::ActionOutcome;
 pub use action::ACTION_TOTAL_DURATION;
 pub use action::FLINK_MISSED_JAR_RESTARTS;
 pub use scale_actuator::ScaleActuator;
@@ -112,12 +113,11 @@ impl MetricLabel for ActError {
 }
 
 mod protocol {
-    use std::collections::HashMap;
     use std::sync::Arc;
-    use std::time::Duration;
 
     use tokio::sync::broadcast;
 
+    use crate::phases::act::action::ActionOutcome;
     use crate::phases::act::ScaleActionPlan;
     use crate::CorrelationId;
 
@@ -128,7 +128,7 @@ mod protocol {
         PlanActionStarted(P),
         PlanExecuted {
             plan: P,
-            durations: HashMap<String, Duration>,
+            outcomes: Vec<ActionOutcome>,
         },
         PlanFailed {
             plan: P,

@@ -161,7 +161,7 @@ mod tests {
     }
 
     fn arb_calculated_parallelism_strategy(
-        direction: ScaleDirection, current_parallelism: u32,
+        _direction: ScaleDirection, _current_parallelism: u32,
     ) -> impl Strategy<Value = Option<u32>> {
         prop::option::of(any::<u32>())
         // match direction {

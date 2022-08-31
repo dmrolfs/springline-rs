@@ -11,26 +11,24 @@ use tracing_futures::Instrument;
 use super::{ActionSession, ScaleAction};
 use crate::flink::FlinkContext;
 use crate::kubernetes::{self, FlinkComponent, KubernetesContext, KubernetesError};
-use crate::phases::act;
 use crate::phases::act::{ActError, ScaleActionPlan};
 use crate::phases::plan::ScaleDirection;
-use crate::settings::Settings;
 
 pub const ACTION_LABEL: &str = "patch_replicas";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PatchReplicas<P> {
-    pub taskmanager_settle_timeout: Duration,
+    pub taskmanager_register_timeout: Duration,
     pub flink_polling_interval: Duration,
     marker: PhantomData<P>,
 }
 
 impl<P> PatchReplicas<P> {
-    pub const fn from_settings(settings: &Settings) -> Self {
-        let taskmanager_settle_timeout = settings.kubernetes.patch_settle_timeout;
-        let flink_polling_interval = settings.action.flink.polling_interval;
+    pub const fn from_settings(
+        taskmanager_register_timeout: Duration, flink_polling_interval: Duration,
+    ) -> Self {
         Self {
-            taskmanager_settle_timeout,
+            taskmanager_register_timeout,
             flink_polling_interval,
             marker: PhantomData,
         }
@@ -63,7 +61,7 @@ where
             session.kube.taskmanager().deploy.get_scale(&correlation).await?;
         tracing::info!(%nr_target_taskmanagers, ?original_nr_taskmanager_replicas, "patching to scale taskmanager replicas");
 
-        let _nr_patched_taskmanager_replicas = session
+        let nr_patched_taskmanager_replicas = session
             .kube
             .taskmanager()
             .deploy
@@ -72,29 +70,22 @@ where
                 "kubernetes::patch_replicas",
                 ?correlation, %nr_target_taskmanagers, ?original_nr_taskmanager_replicas
             ))
-            .await?;
+            .await;
+        let _patched = match nr_patched_taskmanager_replicas {
+            Err(err) => self.handle_error_on_patch_scale(err, plan, session).await,
+            patched => patched,
+        }?;
 
-        if let Err(error) = self.block_until_satisfied(plan, &session.kube).await {
-            match error {
-                ActError::Timeout(duration, message) => tracing::error!(
-                    patch_replicas_budget=?duration,
-                    "{message} - moving on to next action."
-                ),
-                err => return Err(err),
-            }
-        }
+        let _done = match self.block_until_satisfied(plan, &session.kube).await {
+            Err(err) => self.handle_error_on_patch_block(err, plan, session).await,
+            done => done,
+        }?;
 
         let confirmed_nr_taskmanagers =
             self.block_for_rescaled_taskmanagers(plan, &session.flink).await;
         session.nr_confirmed_rescaled_taskmanagers = Some(confirmed_nr_taskmanagers);
 
         Ok(())
-    }
-
-    async fn on_error<'s>(
-        &self, error: ActError, plan: &'s Self::Plan, session: &'s mut ActionSession,
-    ) -> Result<(), ActError> {
-        todo!()
     }
 }
 
@@ -221,12 +212,12 @@ where
         tracing::debug!(
             ?correlation,
             "budgeting {:?} for Flink rescaled taskmanagers to register with job manager.",
-            self.taskmanager_settle_timeout
+            self.taskmanager_register_timeout
         );
 
         let mut nr_confirmed_taskmanagers = 0;
         let start = Instant::now();
-        while Instant::now().duration_since(start) < self.taskmanager_settle_timeout {
+        while Instant::now().duration_since(start) < self.taskmanager_register_timeout {
             match flink.query_nr_taskmanagers(correlation).await {
                 Ok(nr_taskmanagers) => {
                     nr_confirmed_taskmanagers = nr_taskmanagers;
@@ -254,7 +245,7 @@ where
             tracing::error!(
                 %nr_confirmed_taskmanagers, %nr_target_taskmanagers, ?correlation,
                 "could not confirm rescaled taskmanager connected with Flink JobManager within {:?} settle timeout - continuing with next action.",
-                self.taskmanager_settle_timeout
+                self.taskmanager_register_timeout
             );
         }
 
@@ -296,5 +287,29 @@ where
         }
 
         result
+    }
+
+    #[tracing::instrument(level = "warn", skip(self, plan, session))]
+    async fn handle_error_on_patch_scale<'s>(
+        &self, error: KubernetesError, plan: &'s P, session: &'s mut ActionSession,
+    ) -> Result<Option<i32>, KubernetesError> {
+        tracing::error!(?error, ?plan, ?session, "error on patch replicas scale");
+        Err(error)
+    }
+
+    #[tracing::instrument(level = "warn", skip(self, plan, session))]
+    async fn handle_error_on_patch_block<'s>(
+        &self, error: ActError, plan: &'s P, session: &'s mut ActionSession,
+    ) -> Result<(), ActError> {
+        match error {
+            ActError::Timeout(duration, message) => {
+                tracing::error!(
+                    ?plan, ?session, patch_replicas_budget=?duration,
+                    "{message} - moving on to next action."
+                );
+                Ok(())
+            },
+            other => Err(other),
+        }
     }
 }

@@ -17,7 +17,6 @@ use url::Url;
 use crate::flink::{
     self, FlinkContext, FlinkError, JarId, JobId, JobState, RestoreMode, SavepointLocation,
 };
-use crate::phases::act;
 use crate::phases::act::action::{ActionSession, ScaleAction};
 use crate::phases::act::{ActError, ScaleActionPlan};
 use crate::settings::FlinkActionSettings;
@@ -109,6 +108,7 @@ where
                         parallelism,
                         uploaded_jars,
                         locations.clone(),
+                        plan,
                         session,
                     )
                     .await;
@@ -133,23 +133,14 @@ where
                             plan.current_replicas(),
                             &jars,
                             savepoints,
+                            plan,
                             session,
                         )
                         .await;
 
                     if !failures.is_empty() {
-                        tracing::error!(
-                            nr_restart_failures=%failures.len(), ?failures,
-                            "Failed to restart all Flink jobs"
-                        );
-                        let mut errors = Vec::with_capacity(failures.len());
-                        let mut jar_savepoints = Vec::with_capacity(failures.len());
-                        for (j, s, e) in failures {
-                            errors.push(e.into());
-                            jar_savepoints.push((j, s));
-                        }
-
-                        outcome = Err(ActError::JobRestart { sources: errors, jar_savepoints });
+                        outcome =
+                            self.handle_remaining_restart_failures(failures, plan, session).await;
                     }
                 }
             } else {
@@ -163,12 +154,6 @@ where
         };
 
         outcome
-    }
-
-    async fn on_error<'s>(
-        &self, error: ActError, plan: &'s Self::Plan, session: &'s mut ActionSession,
-    ) -> Result<(), ActError> {
-        todo!()
     }
 }
 
@@ -202,9 +187,9 @@ where
         parallelism
     }
 
-    async fn try_jar_restarts_for_parallelism(
+    async fn try_jar_restarts_for_parallelism<'s>(
         &self, parallelism: usize, jars: &[JarId], mut locations: HashSet<SavepointLocation>,
-        session: &ActionSession,
+        plan: &'s P, session: &'s ActionSession,
     ) -> Vec<(JarId, SavepointLocation, ActError)> {
         use crate::flink::JobState as JS;
 
@@ -234,14 +219,10 @@ where
                 tracing::debug!(?job_pairings, "successful restart initiation for pairings.");
                 job_pairings
             },
-            Err(err) => {
-                flink::track_flink_errors("restart_jobs::restart", &err);
-                tracing::error!(
-                    error=?err, ?correlation,
-                    "failure while trying to restart jobs -- may need manual intervention"
-                );
-                HashMap::default()
-            },
+            Err(err) => self
+                .handle_error_on_restart_requests(err, plan, session)
+                .await
+                .unwrap_or_else(|_err| HashMap::default()),
         };
         let jobs: Vec<JobId> = job_sources.keys().cloned().collect();
 
@@ -251,24 +232,26 @@ where
         for (job, outcome) in restarted {
             match outcome {
                 Err(err) => {
-                    flink::track_flink_errors("restart_jobs::confirm", &err);
-                    tracing::error!(
-                        error=?err, ?correlation,
-                        "failure while waiting for all jobs to restart -- may need manual intervention"
-                    );
-
-                    if let Some((jar_id, savepoint_location)) = job_sources.get(&job).cloned() {
-                        failed.push((jar_id, savepoint_location, err.into()));
+                    if let Err(e) = self.handle_error_on_restart_confirm(err, plan, session).await {
+                        if let Some((jar_id, savepoint_location)) = job_sources.get(&job).cloned() {
+                            failed.push((jar_id, savepoint_location, e.into()));
+                        }
                     }
                 },
                 Ok(state) if state == JS::Failing || state == JS::Failed => {
-                    tracing::error!(%job, job_state=%state, "job failed after restart -- may need manual intervention");
-                    if let Some((jar_id, savepoint_location)) = job_sources.get(&job).cloned() {
-                        failed.push((
-                            jar_id,
-                            savepoint_location.clone(),
-                            ActError::FailedJob(job, savepoint_location),
-                        ));
+                    if let Some((jar_id, savepoint_location)) = job_sources.get(&job) {
+                        if let Err(e) = self
+                            .handle_failed_job_restart(
+                                job,
+                                savepoint_location,
+                                state,
+                                plan,
+                                session,
+                            )
+                            .await
+                        {
+                            failed.push((jar_id.clone(), savepoint_location.clone(), e));
+                        }
                     }
                 },
                 Ok(state) => {
@@ -557,6 +540,64 @@ where
             }
             true
         }
+    }
+
+    #[tracing::instrument(level = "warn", skip(self, plan, session))]
+    async fn handle_error_on_restart_requests<'s>(
+        &self, error: FlinkError, plan: &'s P, session: &'s ActionSession,
+    ) -> Result<HashMap<JobId, (JarId, SavepointLocation)>, FlinkError> {
+        flink::track_flink_errors("restart_jobs::restart", &error);
+        tracing::error!(
+            ?error, ?plan, ?session, correlation=?session.correlation(),
+            "failure while trying to restart jobs -- may need manual intervention"
+        );
+        Err(error)
+    }
+
+    #[tracing::instrument(level = "warn", skip(self, plan, session))]
+    async fn handle_error_on_restart_confirm<'s>(
+        &self, error: FlinkError, plan: &'s P, session: &'s ActionSession,
+    ) -> Result<(), FlinkError> {
+        flink::track_flink_errors("restart_jobs::confirm", &error);
+        tracing::error!(
+            ?error, ?plan, ?session, correlation=?session.correlation(),
+            "failure while waiting for all jobs to restart -- may need manual intervention"
+        );
+        Err(error)
+    }
+
+    #[tracing::instrument(level = "warn", skip(self, job, location, job_state, plan, session))]
+    async fn handle_failed_job_restart<'s>(
+        &self, job: JobId, location: &SavepointLocation, job_state: JobState, plan: &'s P,
+        session: &'s ActionSession,
+    ) -> Result<(), ActError> {
+        tracing::error!(
+            %job, %job_state, ?plan, ?session, correlation=?session.correlation(),
+            "job failed after restart -- may need manual intervention"
+        );
+
+        Err(ActError::FailedJob(job, location.clone()))
+    }
+
+    #[tracing::instrument(level = "warn", skip(self, plan, session))]
+    async fn handle_remaining_restart_failures<'s>(
+        &self, failures: Vec<(JarId, SavepointLocation, ActError)>, plan: &'s P,
+        session: &'s ActionSession,
+    ) -> Result<(), ActError> {
+        tracing::error!(
+            nr_restart_failures=%failures.len(), ?failures,
+            ?plan, ?session, correlation=?session.correlation(),
+            "Job restart failures remain after multiple attempts."
+        );
+
+        let mut errors = Vec::with_capacity(failures.len());
+        let mut jar_savepoints = Vec::with_capacity(failures.len());
+        for (j, s, e) in failures {
+            errors.push(e.into());
+            jar_savepoints.push((j, s));
+        }
+
+        Err(ActError::JobRestart { sources: errors, jar_savepoints })
     }
 }
 
