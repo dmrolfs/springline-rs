@@ -33,7 +33,7 @@ application:
       min_scaling_step: 2
       max_scaling_step: 10
       min_cluster_size: 8
-      max_cluster_size: 32
+      max_cluster_size: 16
 
   action:
     taskmanager:
