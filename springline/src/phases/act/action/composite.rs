@@ -6,7 +6,7 @@ use tracing::Instrument;
 
 use super::{ActionSession, ScaleAction};
 use crate::phases::act::action::ActionStatus;
-use crate::phases::act::{self, ActError, ScaleActionPlan};
+use crate::phases::act::{self, ActError, ActErrorDisposition, ScaleActionPlan};
 
 pub const ACTION_LABEL: &str = "composite";
 
@@ -70,6 +70,7 @@ where
             let outcome = match execute_outcome {
                 Err(err) => {
                     let o = self.handle_error_on_execute(action.label(), err, plan, session).await;
+
                     status = o
                         .as_ref()
                         .map(|_| ActionStatus::Recovered)
@@ -111,6 +112,12 @@ where
         tracing::error!(
             ?error, ?plan, ?session, correlation=?session.correlation(),
             "unrecoverable error during composite execute action: {action}"
+        );
+        act::track_act_errors(
+            &format!("{}::execute::{action}", self.label()),
+            Some(&error),
+            ActErrorDisposition::Failed,
+            plan,
         );
         Err(error)
     }

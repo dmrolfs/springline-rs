@@ -79,7 +79,8 @@ mod window {
             telemetry_window_quorum_percentage: 0.5,
             ..EngineSettings::default()
         };
-        let mut stage = CollectMetricWindow::new("test_collect_metric_window", &engine_settings);
+        let mut stage =
+            CollectMetricWindow::new("test_collect_metric_window", None, &engine_settings);
 
         block_on(async {
             let mut inlet = stage.inlet();
@@ -157,7 +158,7 @@ mod window {
             telemetry_window_quorum_percentage: 0.5,
             ..EngineSettings::default()
         };
-        let mut stage = CollectMetricWindow::new("test_window", &engine_settings);
+        let mut stage = CollectMetricWindow::new("test_window", None, &engine_settings);
 
         block_on(async {
             let mut inlet = stage.inlet();
@@ -242,7 +243,7 @@ mod window {
             telemetry_window_quorum_percentage: 0.5,
             ..EngineSettings::default()
         };
-        let mut stage = CollectMetricWindow::new("test_window", &engine_settings);
+        let mut stage = CollectMetricWindow::new("test_window", None, &engine_settings);
 
         block_on(async {
             let mut inlet = stage.inlet();
@@ -406,7 +407,7 @@ mod window {
             ..EngineSettings::default()
         };
         let mut collect_stage =
-            CollectMetricWindow::new("test_collect_metric_window", &engine_settings);
+            CollectMetricWindow::new("test_collect_metric_window", None, &engine_settings);
         let policy = TestPolicy {
             policies: vec![assert_ok!(PolicySource::from_complete_string(
                 "test_policy",

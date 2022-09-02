@@ -6,7 +6,7 @@ use tracing::Instrument;
 
 use super::{ActionSession, ScaleAction};
 use crate::flink::{FlinkError, JarId, JobId};
-use crate::phases::act::{ActError, ScaleActionPlan};
+use crate::phases::act::{self, ActError, ActErrorDisposition, ScaleActionPlan};
 
 pub const ACTION_LABEL: &str = "prepare_data";
 
@@ -86,6 +86,12 @@ where
         &self, error: FlinkError, plan: &'s P, session: &'s mut ActionSession,
     ) -> Result<Vec<JobId>, FlinkError> {
         tracing::error!(?error, ?plan, ?session, correlation=%session.correlation(), "error on query active jobs");
+        act::track_act_errors(
+            &format!("{}::query_active_jobs", self.label()),
+            Some(&error),
+            ActErrorDisposition::Failed,
+            plan,
+        );
         Err(error)
     }
 
@@ -94,6 +100,12 @@ where
         &self, error: FlinkError, plan: &'s P, session: &'s mut ActionSession,
     ) -> Result<Vec<JarId>, FlinkError> {
         tracing::error!(?error, ?plan, ?session, correlation=%session.correlation(), "error on query uploaded jars");
+        act::track_act_errors(
+            &format!("{}::query_uploaded_jars", self.label()),
+            Some(&error),
+            ActErrorDisposition::Failed,
+            plan,
+        );
         Err(error)
     }
 }

@@ -53,16 +53,16 @@ pub fn register_metrics(registry: &Registry) -> Result<()> {
         flink::METRIC_CATALOG_FLOW_SOURCE_MILLIS_BEHIND_LATEST.clone(),
     ))?;
     registry.register(Box::new(
-        flink::METRIC_CATALOG_FLOW_TASK_UTILIZATION_1_MIN_ROLLING_AVG.clone(),
+        flink::METRIC_CATALOG_FLOW_TASK_UTILIZATION_ROLLING_AVG.clone(),
     ))?;
     registry.register(Box::new(
-        flink::METRIC_CATALOG_FLOW_SOURCE_TOTAL_LAG_1_MIN_ROLLING_AVG.clone(),
+        flink::METRIC_CATALOG_FLOW_SOURCE_TOTAL_LAG_ROLLING_AVG.clone(),
     ))?;
     registry.register(Box::new(
-        flink::METRIC_CATALOG_FLOW_SOURCE_RELATIVE_LAG_CHANGE_RATE_1_MIN_ROLLING_AVG.clone(),
+        flink::METRIC_CATALOG_FLOW_SOURCE_RELATIVE_LAG_CHANGE_RATE_ROLLING_AVG.clone(),
     ))?;
     registry.register(Box::new(
-        flink::METRIC_CATALOG_FLOW_SOURCE_BACK_PRESSURE_TIME_1_MIN_ROLLING_AVG.clone(),
+        flink::METRIC_CATALOG_FLOW_SOURCE_BACK_PRESSURE_TIME_ROLLING_AVG.clone(),
     ))?;
     registry.register(Box::new(
         flink::METRIC_CATALOG_CLUSTER_NR_ACTIVE_JOBS.clone(),
@@ -168,7 +168,7 @@ pub fn register_metrics(registry: &Registry) -> Result<()> {
     registry.register(Box::new(act::ACT_SCALE_ACTION_TIME.clone()))?;
     registry.register(Box::new(act::ACT_SCALE_ACTION_COUNT.clone()))?;
     registry.register(Box::new(act::PIPELINE_CYCLE_TIME.clone()))?;
-    registry.register(Box::new(act::ACT_PHASE_ERRORS.clone()))?;
+    registry.register(Box::new(act::PHASE_ACT_ERRORS.clone()))?;
     registry.register(Box::new(act::FLINK_MISSED_JAR_RESTARTS.clone()))?;
 
     Ok(())

@@ -1066,20 +1066,39 @@ where
 }
 
 impl UpdateWindowMetrics for AppDataWindow<MetricCatalog> {
-    fn update_metrics(&self) {
-        let total_lag_1_min = self.flow_source_total_lag_rolling_average(60);
-        let utilization_1_min = self.flow_task_utilization_rolling_average(60);
-        let relative_lag_rate_1_min = self.flow_source_relative_lag_change_rate(60);
-        let source_back_pressured_rate_1_min =
-            self.flow_source_back_pressured_time_millis_per_sec_rolling_average(60);
-        METRIC_CATALOG_FLOW_TASK_UTILIZATION_1_MIN_ROLLING_AVG.set(utilization_1_min);
-        METRIC_CATALOG_FLOW_SOURCE_TOTAL_LAG_1_MIN_ROLLING_AVG.set(total_lag_1_min);
-        METRIC_CATALOG_FLOW_SOURCE_RELATIVE_LAG_CHANGE_RATE_1_MIN_ROLLING_AVG
-            .set(relative_lag_rate_1_min);
-        METRIC_CATALOG_FLOW_SOURCE_BACK_PRESSURE_TIME_1_MIN_ROLLING_AVG
-            .set(source_back_pressured_rate_1_min);
+    #[allow(clippy::cognitive_complexity)]
+    fn update_metrics(&self, window: Option<Duration>) {
+        let window_secs = window.and_then(|w| u32::try_from(w.as_secs()).ok()).unwrap_or(60);
+        let w_rep = window_secs.to_string();
+        let labels = [w_rep.as_str()];
+
+        let span = tracing::error_span!("update_metrics", %window_secs, %w_rep, ?labels);
+        let _guard = span.enter();
+
+        let total_lag = self.flow_source_total_lag_rolling_average(window_secs);
+        tracing::error!(?total_lag, "DMR: AAA");
+        let utilization = self.flow_task_utilization_rolling_average(window_secs);
+        tracing::error!(?utilization, "DMR: BBB");
+        let relative_lag_rate = self.flow_source_relative_lag_change_rate(window_secs);
+        tracing::error!(?relative_lag_rate, "DMR: CCC");
+        let source_back_pressured_rate =
+            self.flow_source_back_pressured_time_millis_per_sec_rolling_average(window_secs);
+        tracing::error!(?source_back_pressured_rate, "DMR: DDD");
+
+        METRIC_CATALOG_FLOW_TASK_UTILIZATION_ROLLING_AVG
+            .with_label_values(&labels)
+            .set(utilization);
+        METRIC_CATALOG_FLOW_SOURCE_TOTAL_LAG_ROLLING_AVG
+            .with_label_values(&labels)
+            .set(total_lag);
+        METRIC_CATALOG_FLOW_SOURCE_RELATIVE_LAG_CHANGE_RATE_ROLLING_AVG
+            .with_label_values(&labels)
+            .set(relative_lag_rate);
+        METRIC_CATALOG_FLOW_SOURCE_BACK_PRESSURE_TIME_ROLLING_AVG
+            .with_label_values(&labels)
+            .set(source_back_pressured_rate);
         tracing::debug!(
-            %utilization_1_min, %total_lag_1_min, %relative_lag_rate_1_min, %source_back_pressured_rate_1_min,
+            ?window, %window_secs, %utilization, %total_lag, %relative_lag_rate, %source_back_pressured_rate,
             "updated metric catalog window metrics."
         );
     }
@@ -1092,7 +1111,7 @@ where
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        self.head().expect("failed nonempty AppDataWindow invariant")
+        self.latest().expect("failed nonempty AppDataWindow invariant")
     }
 }
 
@@ -1435,50 +1454,54 @@ where
     }
 }
 
-pub static METRIC_CATALOG_FLOW_TASK_UTILIZATION_1_MIN_ROLLING_AVG: Lazy<Gauge> = Lazy::new(|| {
-    Gauge::with_opts(
+pub static METRIC_CATALOG_FLOW_TASK_UTILIZATION_ROLLING_AVG: Lazy<GaugeVec> = Lazy::new(|| {
+    GaugeVec::new(
         Opts::new(
-            "metric_catalog_flow_task_utilization_1_min_rolling_avg",
-            "1 min rolling average of task utilization",
+            "metric_catalog_flow_task_utilization_rolling_avg",
+            "rolling average of task utilization",
         )
         .const_labels(proctor::metrics::CONST_LABELS.clone()),
+        &["window_secs"],
     )
     .expect("failed creating metric_catalog_flow_task_utilization_1_min_rolling_avg")
 });
 
-pub static METRIC_CATALOG_FLOW_SOURCE_TOTAL_LAG_1_MIN_ROLLING_AVG: Lazy<Gauge> = Lazy::new(|| {
-    Gauge::with_opts(
+pub static METRIC_CATALOG_FLOW_SOURCE_TOTAL_LAG_ROLLING_AVG: Lazy<GaugeVec> = Lazy::new(|| {
+    GaugeVec::new(
         Opts::new(
-            "metric_catalog_flow_source_total_lag_1_min_rolling_avg",
-            "1 min rolling average of source total lag",
+            "metric_catalog_flow_source_total_lag_rolling_avg",
+            "rolling average of source total lag",
         )
         .const_labels(proctor::metrics::CONST_LABELS.clone()),
+        &["window_secs"],
     )
     .expect("failed creating metric_catalog_flow_source_total_lag_1_min_rolling_avg")
 });
 
-pub static METRIC_CATALOG_FLOW_SOURCE_RELATIVE_LAG_CHANGE_RATE_1_MIN_ROLLING_AVG: Lazy<Gauge> =
+pub static METRIC_CATALOG_FLOW_SOURCE_RELATIVE_LAG_CHANGE_RATE_ROLLING_AVG: Lazy<GaugeVec> =
     Lazy::new(|| {
-        Gauge::with_opts(
+        GaugeVec::new(
             Opts::new(
-                "metric_catalog_flow_source_relative_lag_change_rate_1_min_rolling_avg",
-                "1 min rolling average of source relative lag change rate",
+                "metric_catalog_flow_source_relative_lag_change_rate_rolling_avg",
+                "rolling average of source relative lag change rate",
             )
             .const_labels(proctor::metrics::CONST_LABELS.clone()),
+            &["window_secs"],
         )
         .expect(
             "failed creating metric_catalog_flow_source_relative_lag_change_rate_1_min_rolling_avg",
         )
     });
 
-pub static METRIC_CATALOG_FLOW_SOURCE_BACK_PRESSURE_TIME_1_MIN_ROLLING_AVG: Lazy<Gauge> =
+pub static METRIC_CATALOG_FLOW_SOURCE_BACK_PRESSURE_TIME_ROLLING_AVG: Lazy<GaugeVec> =
     Lazy::new(|| {
-        Gauge::with_opts(
+        GaugeVec::new(
             Opts::new(
-                "metric_catalog_flow_source_back_pressure_time_1_min_rolling_avg",
-                "1 min rolling average of source back pressured rate",
+                "metric_catalog_flow_source_back_pressure_time_rolling_avg",
+                "rolling average of source back pressured rate",
             )
             .const_labels(proctor::metrics::CONST_LABELS.clone()),
+            &["window_secs"],
         )
         .expect("failed creating metric_catalog_flow_source_back_pressure_time_1_min_rolling_avg")
     });

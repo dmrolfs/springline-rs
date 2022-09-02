@@ -38,6 +38,7 @@ pub struct CollectMetricWindow<In, Out> {
     name: String,
     time_window: Duration,
     quorum_percentage: f64,
+    evaluation_duration: Option<Duration>,
     inlet: Inlet<In>,
     outlet: Outlet<Out>,
     tx_api: WindowApi,
@@ -50,20 +51,29 @@ impl<In, Out> Debug for CollectMetricWindow<In, Out> {
             .field("name", &self.name)
             .field("time_window", &self.time_window)
             .field("quorum_percentage", &self.quorum_percentage)
+            .field("evaluate_duration", &self.evaluation_duration)
             .finish()
     }
 }
 
 impl CollectMetricWindow<MetricCatalog, AppDataWindow<MetricCatalog>> {
-    pub fn new(name: impl Into<String>, settings: &EngineSettings) -> Self {
+    pub fn new(
+        name: impl Into<String>, evaluation_duration: Option<Duration>, settings: &EngineSettings,
+    ) -> Self {
         let name = name.into();
+
+        let time_window = settings.telemetry_window;
+        let quorum_percentage = settings.telemetry_window_quorum_percentage;
+
         let (tx_api, rx_api) = mpsc::unbounded_channel();
         let inlet = Inlet::new(&name, PORT_DATA);
         let outlet = Outlet::new(&name, PORT_DATA);
+
         Self {
             name,
-            time_window: settings.telemetry_window,
-            quorum_percentage: settings.telemetry_window_quorum_percentage,
+            time_window,
+            quorum_percentage,
+            evaluation_duration,
             inlet,
             outlet,
             tx_api,
@@ -140,12 +150,16 @@ where
                             }
 
                             let out = window.as_ref().cloned().unwrap();
-                            out.update_metrics();
+                            out.update_metrics(self.evaluation_duration);
 
                             tracing::debug!(
                                 "pushing metric catalog window looking back {:?}",
                                 out.window_interval().map(|i| i.duration())
                             );
+
+                            // let looking_back = out.window_interval().map(|i| i.duration());
+                            // out.update_metrics(looking_back);
+                            // tracing::debug!("pushing metric catalog window looking back {looking_back:?}");
 
                             self.outlet.send(out).await?;
                         }

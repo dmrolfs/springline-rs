@@ -1,3 +1,4 @@
+use std::fmt::Display;
 use std::time::Duration;
 
 use either::{Either, Left, Right};
@@ -25,6 +26,8 @@ pub trait ScaleActionPlan {
     fn correlation(&self) -> &CorrelationId;
     fn recv_timestamp(&self) -> Timestamp;
     fn direction(&self) -> ScaleDirection;
+    fn current_job_parallelism(&self) -> usize;
+    fn target_job_parallelism(&self) -> usize;
     fn current_replicas(&self) -> usize;
     fn target_replicas(&self) -> usize;
 }
@@ -40,6 +43,14 @@ impl ScaleActionPlan for ScalePlan {
 
     fn direction(&self) -> ScaleDirection {
         self.direction()
+    }
+
+    fn current_job_parallelism(&self) -> usize {
+        self.current_job_parallelism as usize
+    }
+
+    fn target_job_parallelism(&self) -> usize {
+        self.target_job_parallelism as usize
     }
 
     fn current_replicas(&self) -> usize {
@@ -198,23 +209,56 @@ pub(crate) static PIPELINE_CYCLE_TIME: Lazy<Histogram> = Lazy::new(|| {
     .expect("failed creating pipeline_cycle_time metric")
 });
 
-pub(crate) static ACT_PHASE_ERRORS: Lazy<IntCounterVec> = Lazy::new(|| {
+pub(crate) static PHASE_ACT_ERRORS: Lazy<IntCounterVec> = Lazy::new(|| {
     IntCounterVec::new(
-        Opts::new("act_phase_errors", "Count of errors executing scale plans")
+        Opts::new("phase_act_errors", "Count of errors executing scale plans")
             .const_labels(proctor::metrics::CONST_LABELS.clone()),
         &[
+            "action",
+            "error_type",
+            "disposition",
+            "current_job_parallelism",
+            "target_job_parallelism",
             "current_nr_task_managers",
             "target_nr_task_managers",
-            "error_type",
         ],
     )
-    .expect("failed creating act_phase_errors metric")
+    .expect("failed creating phase_act_errors metric")
 });
+
+#[derive(Debug, Display, Copy, Clone, PartialEq, Eq, Hash)]
+pub enum ActErrorDisposition {
+    Failed,
+    Recovered,
+    Ignored,
+}
+
+#[inline]
+pub(crate) fn track_act_errors<'p, E, P>(
+    action: &str, error: Option<&E>, disposition: ActErrorDisposition, plan: &'p P,
+) where
+    E: MetricLabel,
+    P: ScaleActionPlan,
+{
+    let error_type = error.map(|e| e.label()).unwrap_or_else(|| "other".to_string());
+
+    PHASE_ACT_ERRORS
+        .with_label_values(&[
+            action,
+            error_type.as_str(),
+            disposition.to_string().as_str(),
+            plan.current_job_parallelism().to_string().as_str(),
+            plan.target_job_parallelism().to_string().as_str(),
+            plan.current_replicas().to_string().as_str(),
+            plan.target_replicas().to_string().as_str(),
+        ])
+        .inc()
+}
 
 #[tracing::instrument(level = "trace")]
 pub fn make_logger_act_phase() -> Box<dyn SinkStage<GovernanceOutcome>> {
     Box::new(stage::Foreach::new(
-        "actlogging_act",
+        "logging_act",
         |plan: GovernanceOutcome| {
             ACT_SCALE_ACTION_COUNT
                 .with_label_values(&[

@@ -16,7 +16,7 @@ use crate::engine::service::{EngineCmd, EngineServiceApi, Health};
 use crate::engine::{PhaseFlag, PhaseFlags};
 use crate::flink;
 use crate::phases::act::{
-    ActEvent, ActMonitor, ActionOutcome, ACT_PHASE_ERRORS, ACT_SCALE_ACTION_COUNT,
+    ActEvent, ActMonitor, ActionOutcome, ACT_SCALE_ACTION_COUNT, PHASE_ACT_ERRORS,
     PIPELINE_CYCLE_TIME,
 };
 use crate::phases::decision::{
@@ -394,7 +394,7 @@ impl Monitor {
         plan: &ScalePlan, error_metric_label: &str, _now: Timestamp,
     ) -> ActionFeedback {
         tracing::warn!(%error_metric_label, ?plan, correlation=%plan.correlation(), "rescale action during act phase failed.");
-        ACT_PHASE_ERRORS
+        PHASE_ACT_ERRORS
             .with_label_values(&[
                 plan.current_nr_task_managers.to_string().as_str(),
                 plan.target_nr_task_managers.to_string().as_str(),

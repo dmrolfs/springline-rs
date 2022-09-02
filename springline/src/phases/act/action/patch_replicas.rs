@@ -11,7 +11,8 @@ use tracing_futures::Instrument;
 use super::{ActionSession, ScaleAction};
 use crate::flink::FlinkContext;
 use crate::kubernetes::{self, FlinkComponent, KubernetesContext, KubernetesError};
-use crate::phases::act::{ActError, ScaleActionPlan};
+use crate::phases::act;
+use crate::phases::act::{ActError, ActErrorDisposition, ScaleActionPlan};
 use crate::phases::plan::ScaleDirection;
 
 pub const ACTION_LABEL: &str = "patch_replicas";
@@ -144,8 +145,6 @@ where
             ));
         }
 
-        // self.do_let_patch_settle(correlation).await;
-
         Ok(())
     }
 
@@ -255,10 +254,6 @@ where
     fn do_count_running_pods(
         pods_by_status: &HashMap<String, Vec<Pod>>,
     ) -> (usize, HashMap<String, usize>) {
-        // if pods_by_status.is_empty() {
-        //     return (0, HashMap::new());
-        // }
-
         let pod_status_counts: HashMap<String, usize> = pods_by_status
             .iter()
             .map(|(status, pods)| (status.clone(), pods.len()))
@@ -294,6 +289,12 @@ where
         &self, error: KubernetesError, plan: &'s P, session: &'s mut ActionSession,
     ) -> Result<Option<i32>, KubernetesError> {
         tracing::error!(?error, ?plan, ?session, "error on patch replicas scale");
+        act::track_act_errors(
+            &format!("{}::patch_scale", self.label()),
+            Some(&error),
+            ActErrorDisposition::Failed,
+            plan,
+        );
         Err(error)
     }
 
@@ -302,14 +303,28 @@ where
         &self, error: ActError, plan: &'s P, session: &'s mut ActionSession,
     ) -> Result<(), ActError> {
         match error {
-            ActError::Timeout(duration, message) => {
+            ActError::Timeout(duration, ref message) => {
                 tracing::error!(
                     ?plan, ?session, patch_replicas_budget=?duration,
                     "{message} - moving on to next action."
                 );
+                act::track_act_errors(
+                    &format!("{}::patch_block", self.label()),
+                    Some(&error),
+                    ActErrorDisposition::Ignored,
+                    plan,
+                );
                 Ok(())
             },
-            other => Err(other),
+            other => {
+                act::track_act_errors(
+                    &format!("{}::patch_block", self.label()),
+                    Some(&other),
+                    ActErrorDisposition::Failed,
+                    plan,
+                );
+                Err(other)
+            },
         }
     }
 }

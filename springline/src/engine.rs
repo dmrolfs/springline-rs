@@ -234,16 +234,23 @@ impl AutoscaleEngine<Building> {
             settings.sensor.flink.metrics_interval,
         );
 
-        let collect_window =
-            crate::phases::CollectMetricWindow::new("collect_window", &settings.engine);
+        let evaluation_duration = settings.decision.template_data.as_ref().and_then(|td| {
+            td.evaluate_duration_secs.map(|secs| Duration::from_secs(u64::from(secs)))
+        });
+
+        let collect_window = crate::phases::CollectMetricWindow::new(
+            "collect_window",
+            evaluation_duration,
+            &settings.engine,
+        );
         let tx_collect_window_api = collect_window.tx_api();
 
         let reduce_window = proctor::graph::stage::FilterMap::new(
             "catalog_from_window",
             |decision_window: DecisionOutcome| match decision_window {
-                DecisionResult::ScaleUp(p) => p.head().cloned().map(DecisionResult::ScaleUp),
-                DecisionResult::ScaleDown(p) => p.head().cloned().map(DecisionResult::ScaleDown),
-                DecisionResult::NoAction(p) => p.head().cloned().map(DecisionResult::NoAction),
+                DecisionResult::ScaleUp(p) => p.latest().cloned().map(DecisionResult::ScaleUp),
+                DecisionResult::ScaleDown(p) => p.latest().cloned().map(DecisionResult::ScaleDown),
+                DecisionResult::NoAction(p) => p.latest().cloned().map(DecisionResult::NoAction),
             },
         );
         let reduce_window = reduce_window.with_block_logging();

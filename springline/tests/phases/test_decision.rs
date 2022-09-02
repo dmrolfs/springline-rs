@@ -89,7 +89,7 @@ where
 
         let engine_settings = EngineSettings::default();
         let collect =
-            springline::phases::CollectMetricWindow::new("collect_window", &engine_settings);
+            springline::phases::CollectMetricWindow::new("collect_window", None, &engine_settings);
         let mut sink = stage::Fold::<_, Out, _>::new("sink", Vec::new(), |mut acc, item| {
             acc.push(item);
             acc

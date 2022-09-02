@@ -18,7 +18,7 @@ use crate::flink::{
     self, FlinkContext, FlinkError, JarId, JobId, JobState, RestoreMode, SavepointLocation,
 };
 use crate::phases::act::action::{ActionSession, ScaleAction};
-use crate::phases::act::{ActError, ScaleActionPlan};
+use crate::phases::act::{self, ActError, ActErrorDisposition, ScaleActionPlan};
 use crate::settings::FlinkActionSettings;
 
 pub const ACTION_LABEL: &str = "restart_jobs";
@@ -209,6 +209,12 @@ where
                     "no successful restart found for jars, savepoint locations and parallelism - manual intervention may be necessary."
                 );
 
+                act::track_act_errors(
+                    &format!("{}::try_jar_restart::no_pairings", self.label()),
+                    Option::<&ActError>::None,
+                    ActErrorDisposition::Ignored,
+                    plan,
+                );
                 HashMap::default()
             },
             Ok(pairings) => {
@@ -551,6 +557,12 @@ where
             ?error, ?plan, ?session, correlation=?session.correlation(),
             "failure while trying to restart jobs -- may need manual intervention"
         );
+        act::track_act_errors(
+            &format!("{}::restart_requests", self.label()),
+            Some(&error),
+            ActErrorDisposition::Failed,
+            plan,
+        );
         Err(error)
     }
 
@@ -562,6 +574,12 @@ where
         tracing::error!(
             ?error, ?plan, ?session, correlation=?session.correlation(),
             "failure while waiting for all jobs to restart -- may need manual intervention"
+        );
+        act::track_act_errors(
+            &format!("{}::restart_confirm", self.label()),
+            Some(&error),
+            ActErrorDisposition::Failed,
+            plan,
         );
         Err(error)
     }
@@ -576,6 +594,12 @@ where
             "job failed after restart -- may need manual intervention"
         );
 
+        act::track_act_errors(
+            &format!("{}::failed_job_restart", self.label()),
+            Option::<&ActError>::None,
+            ActErrorDisposition::Failed,
+            plan,
+        );
         Err(ActError::FailedJob(job, location.clone()))
     }
 
@@ -593,6 +617,12 @@ where
         let mut errors = Vec::with_capacity(failures.len());
         let mut jar_savepoints = Vec::with_capacity(failures.len());
         for (j, s, e) in failures {
+            act::track_act_errors(
+                &format!("{}::remaining_restart_failure", self.label()),
+                Some(&e),
+                ActErrorDisposition::Failed,
+                plan,
+            );
             errors.push(e.into());
             jar_savepoints.push((j, s));
         }

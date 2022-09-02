@@ -16,7 +16,7 @@ use super::{ActionSession, ScaleAction};
 use crate::flink::{
     self, FlinkContext, FlinkError, JobId, JobSavepointReport, OperationStatus, SavepointStatus,
 };
-use crate::phases::act::{ActError, ScaleActionPlan};
+use crate::phases::act::{self, ActError, ActErrorDisposition, ScaleActionPlan};
 use crate::settings::FlinkActionSettings;
 use crate::CorrelationId;
 
@@ -115,6 +115,15 @@ where
         let triggers: HashSet<_> = job_triggers.into_iter().map(|jt| jt.0).collect();
         let remaining: HashSet<_> = triggers.difference(&cancelled).collect();
         if !remaining.is_empty() {
+            let action_label = format!("{}::unconfirmed_cancellation", self.label());
+            (0..remaining.len()).into_iter().for_each(|_| {
+                act::track_act_errors(
+                    &action_label,
+                    Option::<&ActError>::None,
+                    ActErrorDisposition::Ignored,
+                    plan,
+                )
+            });
             tracing::warn!(?remaining, "jobs not confirmed to be cancelled")
         }
 
@@ -487,6 +496,12 @@ where
             ?session,
             "error on wait for job cancellations"
         );
+        act::track_act_errors(
+            &format!("{}::wait_for_cancellations", self.label()),
+            Some(&error),
+            ActErrorDisposition::Failed,
+            plan,
+        );
         Err(error)
     }
 
@@ -495,6 +510,12 @@ where
         &self, error: ActError, plan: &'s P, session: &'s mut ActionSession,
     ) -> Result<Vec<(JobId, trigger::TriggerId)>, ActError> {
         tracing::error!(?error, ?plan, ?session, "error on trigger savepoint+cancel");
+        act::track_act_errors(
+            &format!("{}::trigger", self.label()),
+            Some(&error),
+            ActErrorDisposition::Failed,
+            plan,
+        );
         Err(error)
     }
 
@@ -509,6 +530,12 @@ where
             ?plan,
             ?session,
             "error on collect savepoint report"
+        );
+        act::track_act_errors(
+            &format!("{}::collect_savepoint", self.label()),
+            Some(&error),
+            ActErrorDisposition::Failed,
+            plan,
         );
         Err(error)
     }
