@@ -165,26 +165,27 @@ where
     /// likely be the new parallelism. In the case of a scale down, this will most likely be the
     /// current parallelism. Discrepancies between the two cases are due to rescaling the cluster
     /// partially completed within budgeted time.
-    fn parallelism_from_plan_session(plan: &P, session: &ActionSession) -> usize {
-        let mut parallelism = plan.target_replicas();
-
-        if let Some(nr_tm_confirmed) = session.nr_confirmed_rescaled_taskmanagers {
-            if parallelism != nr_tm_confirmed {
-                let effective_parallelism = usize::min(parallelism, nr_tm_confirmed);
-
-                tracing::warn!(
-                    nr_target_parallelism=%parallelism,
-                    nr_confirmed_rescaled_taskmanagers=?session.nr_confirmed_rescaled_taskmanagers,
-                    effective_parallelism=%effective_parallelism,
-                    correlation=?plan.correlation(),
-                    "Target parallelism does not match confirmed rescaled taskmanagers - setting parallelism to minimum of the two."
-                );
-
-                parallelism = effective_parallelism;
-            }
-        }
-
-        parallelism
+    fn parallelism_from_plan_session(plan: &P, _session: &ActionSession) -> usize {
+        plan.target_job_parallelism()
+        // let parallelism = plan.target_job_parallelism();
+        //
+        // if let Some(nr_tm_confirmed) = session.nr_confirmed_rescaled_taskmanagers {
+        //     if plan.target_replicas() != nr_tm_confirmed {
+        //         // let effective_parallelism = usize::min(parallelism, nr_tm_confirmed);
+        //
+        //         tracing::warn!(
+        //             nr_target_parallelism=%parallelism,
+        //             nr_confirmed_rescaled_taskmanagers=?session.nr_confirmed_rescaled_taskmanagers,
+        //             // effective_parallelism=%effective_parallelism,
+        //             correlation=?plan.correlation(),
+        //             "Target replicas does not match confirmed rescaled taskmanagers setting parallelism to minimum of the two."
+        //         );
+        //
+        //         parallelism = effective_parallelism;
+        //     }
+        // }
+        //
+        // parallelism
     }
 
     async fn try_jar_restarts_for_parallelism<'s>(
