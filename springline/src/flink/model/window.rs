@@ -15,7 +15,7 @@ use pretty_snowflake::Id;
 use proctor::elements::{Interval, PolicyContributor, Timestamp};
 use proctor::error::PolicyError;
 use proctor::{AppData, Correlation, ReceivedAt};
-use prometheus::{Gauge, Opts};
+use prometheus::{GaugeVec, Opts};
 use serde::de::{self, DeserializeOwned, MapAccess, Visitor};
 use serde::ser::SerializeStruct;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -35,7 +35,7 @@ pub trait Window: Sized {
 }
 
 pub trait UpdateWindowMetrics: Window {
-    fn update_metrics(&self);
+    fn update_metrics(&self, window: Option<Duration>);
 }
 
 #[derive(Debug)]
@@ -267,7 +267,10 @@ where
             .field("time_window", &self.time_window)
             .field("quorum_percentage", &self.quorum_percentage)
             .field("window_size", &self.data.len())
-            .field("head", &self.head().map(|c| c.recv_timestamp().to_string()))
+            .field(
+                "head",
+                &self.latest().map(|c| c.recv_timestamp().to_string()),
+            )
             .finish()
     }
 }
@@ -644,7 +647,7 @@ impl<T> AppDataWindow<T>
 where
     T: AppData + ReceivedAt,
 {
-    pub fn head(&self) -> Option<&T> {
+    pub fn latest(&self) -> Option<&T> {
         self.data.back()
     }
 
@@ -714,7 +717,7 @@ where
     where
         F: FnMut(&T) -> D,
     {
-        self.head().map_or_else(Vec::new, |h| {
+        self.latest().map_or_else(Vec::new, |h| {
             let head_ts = h.recv_timestamp();
             self.extract_in_interval(
                 Interval::new(head_ts - looking_back, head_ts).unwrap(),
@@ -746,10 +749,16 @@ where
         F: FnMut(R, &T) -> R,
         R: Copy + fmt::Debug,
     {
-        self.head()
-            .map(|h| {
-                let head_ts = h.recv_timestamp();
-                let interval = Interval::new(head_ts - looking_back, head_ts).unwrap();
+        tracing::error!(
+            timestamps=?self.data.iter().map(|d| d.recv_timestamp()).collect::<Vec<_>>(),
+            "DMR: recv_timestamps Head -> back"
+        );
+        self.latest()
+            .map(|latest| {
+                let latest_ts = latest.recv_timestamp();
+                let interval = Interval::new(latest_ts - looking_back, latest_ts);
+                tracing::error!(?latest_ts, ?looking_back, ?interval, "DMR: interval");
+                let interval = interval.unwrap();
                 let (_quorum_percentage, range_iter) = self.assess_coverage_of(interval);
                 range_iter.fold(init, f)
             })
@@ -779,7 +788,7 @@ where
     where
         F: FnMut(&T) -> bool,
     {
-        self.head().map_or(false, |h| {
+        self.latest().map_or(false, |h| {
             let head_ts = h.recv_timestamp();
             self.for_coverage_in_interval(
                 Interval::new(head_ts - looking_back, head_ts).unwrap(),
@@ -1038,16 +1047,27 @@ where
     }
 
     fn push(&mut self, data: Self::Item) {
-        // todo: assumes monotonically increasing recv_timestamp -- check if not true and insert accordingly
-        // or sort after push and before pop?
-        let oldest_allowed = data.recv_timestamp() - self.time_window;
+        // efficient push to back if monotonically increasing recv_timestamp; otherwise expensive resort
+        match self.data.back() {
+            Some(last) if data.recv_timestamp() < last.recv_timestamp() => {
+                tracing::warn!(
+                    data_recv_ts=?data.recv_timestamp(), window_last_ts=?last.recv_timestamp(),
+                    "data window works best if data items' recv_timestamps are monotonically increasing - performing expensive data resort."
+                );
+                self.data.push_back(data);
+                let mut my_data: Vec<_> = self.data.iter().collect();
+                my_data.sort_by_key(|item| item.recv_timestamp());
+                self.data = my_data.into_iter().cloned().collect();
+            },
+            _ => self.data.push_back(data),
+        }
 
-        self.data.push_back(data);
+        let allowed = self.data.back().map(|last| last.recv_timestamp() - self.time_window);
 
-        while let Some(metric) = self.data.front() {
-            if metric.recv_timestamp() < oldest_allowed {
-                let too_old = self.data.pop_front();
-                tracing::debug!(?too_old, %oldest_allowed, "popping metric outside of time window");
+        while let Some((item, oldest_allowed)) = self.data.front().zip(allowed) {
+            if item.recv_timestamp() < oldest_allowed {
+                let expiring = self.data.pop_front();
+                tracing::debug!(?expiring, %oldest_allowed, "expiring data item outside of time window");
             } else {
                 break;
             }
