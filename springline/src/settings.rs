@@ -434,6 +434,8 @@ mod tests {
                     ..GovernancePolicySettings::default()
                 },
                 rules: GovernanceRuleSettings {
+                    min_parallelism: 1,
+                    max_parallelism: 10,
                     min_cluster_size: 1,
                     max_cluster_size: 10,
                     min_scaling_step: 2,
@@ -618,6 +620,8 @@ mod tests {
                 PolicySource::from_complete_file("./resources/governance.polar")
             )),
             rules: GovernanceRuleSettings {
+                min_parallelism: 1,
+                max_parallelism: 20,
                 min_cluster_size: 1,
                 max_cluster_size: 20,
                 min_scaling_step: 2,

@@ -188,10 +188,12 @@ fn main() -> Result<()> {
 
 fn make_settings_sensor(settings: &Settings) -> BoxedTelemetrySource {
     let mut settings_telemetry: proctor::elements::telemetry::TableType = maplit::hashmap! {
-        "min_cluster_size".to_string() => settings.governance.rules.min_cluster_size.into(),
-        "max_cluster_size".to_string() => settings.governance.rules.max_cluster_size.into(),
+        "min_parallelism".to_string() => settings.governance.rules.min_parallelism.into(),
+        "max_parallelism".to_string() => settings.governance.rules.max_parallelism.into(),
         "min_scaling_step".to_string() => settings.governance.rules.min_scaling_step.into(),
         "max_scaling_step".to_string() => settings.governance.rules.max_scaling_step.into(),
+        "min_cluster_size".to_string() => settings.governance.rules.min_cluster_size.into(),
+        "max_cluster_size".to_string() => settings.governance.rules.max_cluster_size.into(),
     };
     settings_telemetry.extend(settings.governance.rules.custom.clone());
 

@@ -16,6 +16,8 @@ pub struct GovernanceSettings {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GovernanceRuleSettings {
+    pub min_parallelism: u32,
+    pub max_parallelism: u32,
     pub min_cluster_size: u32,
     pub max_cluster_size: u32,
     pub min_scaling_step: u32,
@@ -26,6 +28,8 @@ pub struct GovernanceRuleSettings {
 impl Default for GovernanceRuleSettings {
     fn default() -> Self {
         Self {
+            min_parallelism: 1,
+            max_parallelism: 10,
             min_cluster_size: 0,
             max_cluster_size: 10,
             min_scaling_step: 2,

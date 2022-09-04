@@ -133,10 +133,12 @@ application:
 
   governance:
     rules:
+      min_parallelism:
+      max_parallelism:
+      min_cluster_size:
+      max_cluster_size:
       min_scaling_step:
       max_scaling_step:
-      min_cluster_size4:
-      max_cluster_size:
 
   action:
     taskmanager:
