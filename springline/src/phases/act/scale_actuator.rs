@@ -177,6 +177,11 @@ where
         plan: &P, parameters: &MakeActionParameters,
     ) -> Box<dyn ScaleAction<Plan = P>> {
         match plan.direction() {
+            ScaleDirection::Up if plan.target_job_parallelism() <= plan.current_replicas() => {
+                // intentionally still want to follow up rescale plan to prevent expanding parallelism
+                // onto TMs destined to stop.
+                Self::do_make_rescale_up_action(plan, parameters)
+            },
             ScaleDirection::Up => Self::do_make_rescale_up_action(plan, parameters),
             ScaleDirection::Down => Self::do_make_rescale_down_action(plan, parameters),
             ScaleDirection::None => Box::new(action::NoAction::default()),
