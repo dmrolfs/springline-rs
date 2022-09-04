@@ -231,7 +231,7 @@ where
 fn get_tracing_subscriber(log_directives: impl AsRef<str>) -> impl Subscriber + Send + Send {
     use tracing_subscriber::layer::SubscriberExt;
 
-    let console = console_subscriber::ConsoleLayer::builder().spawn();
+    // let console = console_subscriber::Builder::spawn(); //console_subscriber::ConsoleLayer::builder().spawn();
     let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(log_directives.as_ref()));
     let bunyan_formatting = tracing_bunyan_formatter::BunyanFormattingLayer::new(
@@ -240,7 +240,7 @@ fn get_tracing_subscriber(log_directives: impl AsRef<str>) -> impl Subscriber + 
     );
 
     tracing_subscriber::registry::Registry::default()
-        .with(console)
+        // .with(console)
         // .with(tracing_subscriber::fmt::layer())
         .with(env_filter)
         .with(tracing_bunyan_formatter::JsonStorageLayer)
