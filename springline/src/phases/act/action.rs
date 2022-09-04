@@ -1,4 +1,5 @@
 use std::fmt::{self, Debug, Display};
+use std::marker::PhantomData;
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -34,6 +35,41 @@ pub trait ScaleAction: Debug + Send + Sync {
     async fn execute<'s>(
         &self, plan: &'s Self::Plan, session: &'s mut ActionSession,
     ) -> Result<(), ActError>;
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct NoAction<P> {
+    marker: PhantomData<P>,
+}
+
+impl<P> Default for NoAction<P> {
+    fn default() -> Self {
+        Self { marker: PhantomData }
+    }
+}
+
+pub const NO_ACTION_LABEL: &str = "no_action";
+
+#[async_trait]
+impl<P> ScaleAction for NoAction<P>
+where
+    P: AppData + ScaleActionPlan,
+{
+    type Plan = P;
+
+    fn label(&self) -> &str {
+        NO_ACTION_LABEL
+    }
+
+    fn check_preconditions(&self, _session: &ActionSession) -> Result<(), ActError> {
+        Ok(())
+    }
+
+    async fn execute<'s>(
+        &self, _plan: &'s Self::Plan, _session: &'s mut ActionSession,
+    ) -> Result<(), ActError> {
+        Ok(())
+    }
 }
 
 pub const ACTION_TOTAL_DURATION: &str = "total_duration";

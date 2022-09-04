@@ -16,6 +16,7 @@ use super::action::{self, ActionSession, ScaleAction};
 use super::{protocol, ActError, ActEvent, ScaleActionPlan};
 use crate::flink::FlinkContext;
 use crate::kubernetes::KubernetesContext;
+use crate::phases::plan::ScaleDirection;
 use crate::settings::{FlinkActionSettings, Settings};
 
 const STAGE_NAME: &str = "execute_scaling";
@@ -131,7 +132,7 @@ where
         let rescaling_lock = tokio::sync::Mutex::new(false);
 
         while let Some(plan) = inlet.recv().await {
-            let action = Self::make_rescale_up_action_plan(&plan, &self.parameters);
+            let action = Self::make_rescale_action_plan(&plan, &self.parameters);
             let mut is_rescaling = rescaling_lock.lock().await;
             if *is_rescaling {
                 tracing::info!("prior rescale in progress, skipping.");
@@ -171,7 +172,39 @@ where
         Ok(())
     }
 
-    fn make_rescale_up_action_plan(
+    #[tracing::instrument(level = "debug")]
+    fn make_rescale_action_plan(
+        plan: &P, parameters: &MakeActionParameters,
+    ) -> Box<dyn ScaleAction<Plan = P>> {
+        match plan.direction() {
+            ScaleDirection::Up => Self::do_make_rescale_up_action(plan, parameters),
+            ScaleDirection::Down => Self::do_make_rescale_down_action(plan, parameters),
+            ScaleDirection::None => Box::new(action::NoAction::default()),
+        }
+    }
+
+    #[tracing::instrument(level = "debug", skip(_plan, parameters))]
+    fn do_make_rescale_up_action(
+        _plan: &P, parameters: &MakeActionParameters,
+    ) -> Box<dyn ScaleAction<Plan = P>> {
+        let action = action::CompositeAction::default()
+            .add_action_step(action::PrepareData::default())
+            .add_action_step(action::PatchReplicas::from_settings(
+                parameters.taskmanager_register_timeout,
+                parameters.flink_action_settings.polling_interval,
+            ))
+            .add_action_step(action::CancelWithSavepoint::from_settings(
+                &parameters.flink_action_settings,
+            ))
+            .add_action_step(action::RestartJobs::from_settings(
+                &parameters.flink_action_settings,
+            ));
+
+        Box::new(action)
+    }
+
+    #[tracing::instrument(level = "debug", skip(_plan, parameters))]
+    fn do_make_rescale_down_action(
         _plan: &P, parameters: &MakeActionParameters,
     ) -> Box<dyn ScaleAction<Plan = P>> {
         let action = action::CompositeAction::default()
