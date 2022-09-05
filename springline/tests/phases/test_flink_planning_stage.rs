@@ -5,11 +5,12 @@ use claim::*;
 use fake::locales::EN;
 use fake::Fake;
 use pretty_assertions::assert_eq;
+use pretty_snowflake::Id;
 use proctor::elements::telemetry;
 use proctor::elements::Timestamp;
 use proctor::graph::stage::{self, WithApi, WithMonitor};
 use proctor::graph::{Connect, Graph, SinkShape, SourceShape};
-use proctor::phases::plan::{Plan, PlanEvent};
+use proctor::phases::plan::{Plan, PlanEvent, Planning};
 use proctor::ProctorResult;
 use springline::flink::{ClusterMetrics, FlowMetrics, JobHealthMetrics, MetricCatalog};
 use springline::phases::decision::DecisionResult;
@@ -442,15 +443,31 @@ async fn test_flink_planning_sine() {
         }
     ));
 
+    let min_scaling_step = 2;
     let mut planning = assert_ok!(
         TestPlanning::new(
             "test_planning_2",
-            2,
+            min_scaling_step,
             inputs,
             forecaster,
             performance_repository,
         )
         .await
+    );
+
+    let context = assert_ok!(
+        planning
+            .patch_context(PlanningContext {
+                correlation_id: Id::direct("planning_context", 123, "ctx"),
+                recv_timestamp: Timestamp::now(),
+                min_scaling_step: Some(min_scaling_step),
+                total_task_slots: 2,
+                free_task_slots: 0,
+                rescale_restart: None,
+                max_catch_up: None,
+                recovery_valid: None,
+            })
+            .await
     );
 
     let start: DateTime<Utc> = fake::faker::chrono::raw::DateTimeBefore(EN, Utc::now()).fake();
@@ -598,7 +615,8 @@ async fn test_flink_planning_context_change() {
     );
 
     let start: DateTime<Utc> = fake::faker::chrono::raw::DateTimeBefore(EN, Utc::now()).fake();
-    let data = make_test_data_series(start.into(), 2, 1000, |tick| {
+    let nr_taskmanagers = 2;
+    let data = make_test_data_series(start.into(), nr_taskmanagers, 1000, |tick| {
         75. * ((tick as f64) / 15.).sin()
     });
     let data_len = data.len();
@@ -680,7 +698,7 @@ async fn test_flink_planning_context_change() {
         flow.push_context(PlanningContext {
             correlation_id: CORRELATION_ID.relabel::<PlanningContext>(),
             recv_timestamp: Timestamp::now(),
-            total_task_slots: 0,
+            total_task_slots: nr_taskmanagers,
             free_task_slots: 0,
             min_scaling_step: Some(100),
             rescale_restart: Some(Duration::from_millis(1)),

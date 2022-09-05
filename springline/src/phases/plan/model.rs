@@ -16,15 +16,17 @@ use crate::CorrelationId;
 pub struct ScaleParameters {
     pub calculated_job_parallelism: Option<u32>,
     pub nr_taskmanagers: u32,
-    pub total_task_slots: u32,
-    pub free_task_slots: u32,
+    pub total_task_slots: Option<u32>,
+    pub free_task_slots: Option<u32>,
     pub min_scaling_step: u32,
 }
 
 impl ScaleParameters {
     #[inline]
     pub fn task_slots_per_taskmanager(&self) -> f64 {
-        f64::from(self.total_task_slots) / f64::from(self.nr_taskmanagers)
+        self.total_task_slots
+            .map(|task_slots| f64::from(task_slots) / f64::from(self.nr_taskmanagers))
+            .unwrap_or(1_f64)
     }
 }
 
@@ -184,7 +186,6 @@ mod tests {
     use crate::flink::{ClusterMetrics, FlowMetrics, JobHealthMetrics, MetricCatalog};
     use crate::phases::decision::DecisionResult;
     use crate::phases::plan::ScaleDirection;
-    use claim::*;
     use pretty_assertions::assert_eq;
 
     use pretty_snowflake::{Id, Label, Labeling};
@@ -260,8 +261,8 @@ mod tests {
             let parameters = ScaleParameters {
                 calculated_job_parallelism: calculated_parallelism,
                 nr_taskmanagers: current_nr_task_managers,
-                total_task_slots: current_nr_task_managers,
-                free_task_slots: 0,
+                total_task_slots: Some(current_nr_task_managers),
+                free_task_slots: Some(0),
                 min_scaling_step,
             };
             if let Some(actual) = ScalePlan::new(decision.clone(), parameters) {
@@ -382,8 +383,8 @@ mod tests {
         let parameters = ScaleParameters {
             calculated_job_parallelism: calculated_parallelism,
             nr_taskmanagers: current_nr_task_managers,
-            total_task_slots: current_nr_task_managers,
-            free_task_slots: 0,
+            total_task_slots: Some(current_nr_task_managers),
+            free_task_slots: None,
             min_scaling_step,
         };
         if let Some(actual) = ScalePlan::new(decision.clone(), parameters) {

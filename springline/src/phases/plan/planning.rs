@@ -41,8 +41,8 @@ pub enum FlinkPlanningEvent {
 pub struct FlinkPlanning<F: Forecaster> {
     name: String,
     min_scaling_step: u32,
-    total_task_slots: u32,
-    free_task_slots: u32,
+    total_task_slots: Option<u32>,
+    free_task_slots: Option<u32>,
     pub forecast_calculator: ForecastCalculator<F>,
     performance_history: PerformanceHistory,
     performance_repository: Box<dyn PerformanceRepository>,
@@ -83,8 +83,8 @@ impl<F: Forecaster> FlinkPlanning<F> {
         Ok(Self {
             name,
             min_scaling_step,
-            total_task_slots: 0,
-            free_task_slots: 0,
+            total_task_slots: None,
+            free_task_slots: None,
             forecast_calculator,
             performance_history,
             performance_repository,
@@ -263,11 +263,11 @@ impl<F: Forecaster> Planning for FlinkPlanning<F> {
         &mut self, context: Self::Context,
     ) -> Result<Option<PlanEvent<Self>>, PlanError> {
         context.patch_inputs(&mut self.forecast_calculator.inputs);
-        self.total_task_slots = context.total_task_slots;
-        self.free_task_slots = context.free_task_slots;
+        self.total_task_slots = Some(context.total_task_slots);
+        self.free_task_slots = Some(context.free_task_slots);
         tracing::info!(
             ?context, forecast_inputs=?self.forecast_calculator.inputs,
-            total_task_slots=%self.total_task_slots, free_task_slots=%self.free_task_slots,
+            total_task_slots=?self.total_task_slots, free_task_slots=?self.free_task_slots,
             "patched planning context inputs."
         );
         Ok(Some(PlanEvent::<Self>::ContextChanged(context)))
@@ -414,8 +414,8 @@ mod tests {
         let planning = FlinkPlanning {
             name: planning_name.to_string(),
             min_scaling_step: 2,
-            total_task_slots,
-            free_task_slots: 0,
+            total_task_slots: Some(total_task_slots),
+            free_task_slots: None,
             forecast_calculator: calc,
             performance_history: PerformanceHistory::default(),
             performance_repository: make_performance_repository(&PerformanceRepositorySettings {
@@ -641,8 +641,8 @@ mod tests {
             let event = assert_some!(assert_ok!(planning.patch_context(context.clone()).await));
             assert_eq!(event, PlanEvent::ContextChanged(context));
             assert_eq!(planning.forecast_calculator.inputs, expected);
-            assert_eq!(planning.total_task_slots, 11);
-            assert_eq!(planning.free_task_slots, 3);
+            assert_eq!(assert_some!(planning.total_task_slots), 11);
+            assert_eq!(assert_some!(planning.free_task_slots), 3);
         })
     }
 }
