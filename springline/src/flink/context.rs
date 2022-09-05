@@ -346,7 +346,7 @@ impl FlinkContextRef {
 
                             tms.map(|val| {
                                 let (total, free) = val.iter()
-                                    .map(|v| {
+                                    .filter_map(|v| {
                                         let slots = v["slotsNumber"].as_u64().and_then(|s| u32::try_from(s).ok());
                                         let free = v["freeSlots"].as_u64().and_then(|s| u32::try_from(s).ok());
                                         let result = slots.zip(free);
@@ -355,7 +355,6 @@ impl FlinkContextRef {
                                         }
                                         result
                                     })
-                                    .flatten()
                                     .fold(
                                         (0_u32, 0_u32),
                                         |(total, free), (v_slots, v_free)| {
@@ -369,7 +368,7 @@ impl FlinkContextRef {
                                     free_task_slots: free as usize,
                                 }
                             })
-                                .ok_or(FlinkError::Other(anyhow::Error::msg("slot info not available in taskmanager admin API response")))
+                                .ok_or_else(|| FlinkError::Other(anyhow::Error::msg("slot info not available in taskmanager admin API response")))
                             //.map(|tms| tms.len()).unwrap_or(0)
                         })
                 })

@@ -89,8 +89,7 @@ impl Correlation for PlanningContext {
 }
 
 impl PlanningContext {
-    #[inline]
-    pub fn default_total_task_slots() -> u32 {
+    pub const fn default_total_task_slots() -> u32 {
         0
     }
 
