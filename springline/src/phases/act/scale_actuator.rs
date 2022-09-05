@@ -257,7 +257,7 @@ where
 
         match self.tx_action_monitor.send(event) {
             Ok(nr_recipients) => tracing::debug!(
-                action_outcomes=?session.history,
+                action_outcomes=?session.history.iter().map(|o| o.to_string()).collect::<Vec<_>>(),
                 "published PlanExecuted event to {nr_recipients} recipients."
             ),
             Err(err) => tracing::warn!(error=?err, "failed to publish PlanExecuted event."),
