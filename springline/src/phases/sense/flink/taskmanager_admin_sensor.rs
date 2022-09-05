@@ -15,6 +15,7 @@ use super::{FlinkScope, Unpack};
 use crate::flink::CorrelationGenerator;
 use crate::flink::MC_CLUSTER__NR_TASK_MANAGERS;
 use crate::phases::sense::flink::FlinkContext;
+use crate::phases::plan::PLANNING__TASK_SLOTS_PER_TASKMANAGER;
 
 /// Load telemetry for a specify scope from the Flink Job Manager REST API; e.g., Job or
 /// Taskmanager. Note: cast_trait_object issues a conflicting impl error if no generic is specified
@@ -115,19 +116,26 @@ where
                     let _flink_timer = super::start_flink_sensor_timer(&SCOPE);
                     let result = self
                         .context
-                        .query_nr_taskmanagers(&correlation)
+                        .query_taskmanagers(&correlation)
                         .map_err(|err| {
-                            SenseError::Api("query_nr_taskmanagers".to_string(), err.into())
+                            SenseError::Api("query_taskmanagers".to_string(), err.into())
                         })
                         .instrument(tracing::debug_span!(
-                            "Flink REST API - taskmanager admin::nr_taskmanagers"
+                            "Flink REST API - taskmanager admin::taskmanagers"
                         ))
                         .await
-                        .and_then(|nr_taskmanagers| {
+                        .and_then(|tm_detail| {
                             let mut telemetry: telemetry::TableType = HashMap::default();
+
+                            //todo: only publish task slots once?
+                            telemetry.insert(
+                                PLANNING__TASK_SLOTS_PER_TASKMANAGER.into(),
+                                tm_detail.task_slots_per_taskmanager.into(),
+                            );
+
                             telemetry.insert(
                                 MC_CLUSTER__NR_TASK_MANAGERS.to_string(),
-                                nr_taskmanagers.into(),
+                                tm_detail.nr_taskmanagers.into(),
                             );
                             Out::unpack(telemetry.into()).map_err(|err| err.into())
                         });
@@ -337,8 +345,10 @@ mod tests {
                 let actual: Telemetry = assert_some!(rx_out.recv().await);
                 assert_eq!(
                     actual,
-                    maplit::hashmap! { MC_CLUSTER__NR_TASK_MANAGERS.to_string() => 2.into(), }
-                        .into()
+                    maplit::hashmap! {
+                        PLANNING__TASK_SLOTS_PER_TASKMANAGER.to_string() => 1.into(),
+                        MC_CLUSTER__NR_TASK_MANAGERS.to_string() => 2.into(),
+                    }.into()
                 );
             }
 

@@ -445,6 +445,12 @@ pub struct JobPlan {
     pub nodes: Vec<JobPlanItem>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TaskManagerDetail {
+    pub nr_taskmanagers: usize,
+    pub task_slots_per_taskmanager: usize,
+}
+
 fn deserialize_timestamp_millis<'de, D>(deserializer: D) -> Result<Timestamp, D::Error>
 where
     D: de::Deserializer<'de>,

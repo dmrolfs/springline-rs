@@ -217,9 +217,9 @@ where
         let mut nr_confirmed_taskmanagers = 0;
         let start = Instant::now();
         while Instant::now().duration_since(start) < self.taskmanager_register_timeout {
-            match flink.query_nr_taskmanagers(correlation).await {
-                Ok(nr_taskmanagers) => {
-                    nr_confirmed_taskmanagers = nr_taskmanagers;
+            match flink.query_taskmanagers(correlation).await {
+                Ok(tm_detail) => {
+                    nr_confirmed_taskmanagers = tm_detail.nr_taskmanagers;
                     if nr_confirmed_taskmanagers == nr_target_taskmanagers {
                         tracing::info!(
                             %nr_confirmed_taskmanagers, %nr_target_taskmanagers, ?correlation,

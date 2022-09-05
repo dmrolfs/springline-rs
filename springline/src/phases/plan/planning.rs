@@ -598,6 +598,7 @@ mod tests {
             let context = PlanningContext {
                 correlation_id: Id::direct("planning", 17, "ABS"),
                 recv_timestamp: Timestamp::now(),
+                task_slots_per_taskmanager: 1,
                 min_scaling_step: None,
                 rescale_restart: Some(expected.restart),
                 max_catch_up: None,

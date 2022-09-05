@@ -16,6 +16,7 @@ use serde_with::serde_as;
 use crate::metrics::UpdateMetrics;
 use crate::phases::plan::ForecastInputs;
 
+pub const PLANNING__TASK_SLOTS_PER_TASKMANAGER: &str = "cluster.task_slots_per_taskmanager";
 pub const PLANNING__RESCALE_RESTART: &str = "planning.rescale_restart_secs";
 
 #[serde_as]
@@ -28,6 +29,13 @@ pub struct PlanningContext {
     /// Allowed cluster size change in a rescaling action.
     #[serde(default, rename = "planning.min_scaling_step")]
     pub min_scaling_step: Option<u32>,
+
+    /// Observed task slots per task manager.
+    #[serde(
+        default = "PlanningContext::default_task_slots_per_taskmanager",
+        rename = "cluster.task_slots_per_taskmanager",
+    )]
+    pub task_slots_per_taskmanager: u32,
 
     /// Time expected to restart Flink when scaling. Baseline time is set via configuration, but as
     /// springline rescales, it measures the restart duration and updates planning accordingly.
@@ -55,6 +63,7 @@ impl Debug for PlanningContext {
             .field("correlation_id", &self.correlation_id)
             .field("recv_timestamp", &self.recv_timestamp.to_string())
             .field("min_scaling_step", &self.min_scaling_step)
+            .field("task_slots_per_taskmanager", &self.task_slots_per_taskmanager)
             .field("rescale_restart", &self.rescale_restart)
             .field("max_catch_up", &self.max_catch_up)
             .field("recovery_valid", &self.recovery_valid)
@@ -71,6 +80,9 @@ impl Correlation for PlanningContext {
 }
 
 impl PlanningContext {
+    #[inline]
+    pub fn default_task_slots_per_taskmanager() -> u32 { 1 }
+
     #[tracing::instrument(level = "trace")]
     pub fn patch_inputs(&self, inputs: &mut ForecastInputs) {
         if let Some(r) = self.rescale_restart {
@@ -93,6 +105,7 @@ impl PlanningContext {
 impl PartialEq for PlanningContext {
     fn eq(&self, other: &Self) -> bool {
         self.min_scaling_step == other.min_scaling_step
+            && self.task_slots_per_taskmanager == other.task_slots_per_taskmanager
             && self.rescale_restart == other.rescale_restart
             && self.max_catch_up == other.max_catch_up
             && self.recovery_valid == other.recovery_valid
@@ -107,6 +120,7 @@ impl SubscriptionRequirements for PlanningContext {
     fn optional_fields() -> HashSet<String> {
         maplit::hashset! {
             "planning.min_scaling_step".into(),
+            PLANNING__TASK_SLOTS_PER_TASKMANAGER.into(),
             PLANNING__RESCALE_RESTART.into(),
             "planning.max_catch_up".into(),
             "planning.recovery_valid".into(),
@@ -210,6 +224,7 @@ mod tests {
         let context = PlanningContext {
             recv_timestamp: now,
             correlation_id: corr.clone(),
+            task_slots_per_taskmanager: 1,
             min_scaling_step: None,
             rescale_restart: Some(Duration::from_secs(17)),
             max_catch_up: None,
@@ -219,7 +234,7 @@ mod tests {
         assert_tokens(
             &context,
             &vec![
-                Token::Struct { name: "PlanningContext", len: 6 },
+                Token::Struct { name: "PlanningContext", len: 7 },
                 Token::Str("correlation_id"),
                 Token::Struct { name: "Id", len: 2 },
                 Token::Str("snowflake"),
@@ -234,6 +249,8 @@ mod tests {
                 Token::TupleStructEnd,
                 Token::Str("planning.min_scaling_step"),
                 Token::None,
+                Token::Str("cluster.task_slots_per_taskmanager"),
+                Token::U32(1),
                 Token::Str("planning.rescale_restart"),
                 Token::Some,
                 Token::U64(17),

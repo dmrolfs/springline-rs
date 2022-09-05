@@ -11,10 +11,10 @@ use tracing::Instrument;
 use url::Url;
 
 use crate::flink::error::FlinkError;
-use crate::flink::model::JarSummary;
+use crate::flink::model::{JarSummary, TaskManagerDetail};
 use crate::flink::{self, model::JobSummary, JobDetail, JobId};
 use crate::settings::FlinkSettings;
-use crate::CorrelationId;
+use crate::{CorrelationId, math};
 
 #[derive(Debug, Clone)]
 pub struct FlinkContext {
@@ -115,10 +115,10 @@ impl FlinkContext {
     }
 
     #[tracing::instrument(level = "trace", skip(self))]
-    pub async fn query_nr_taskmanagers(
+    pub async fn query_taskmanagers(
         &self, correlation: &CorrelationId,
-    ) -> Result<usize, FlinkError> {
-        self.inner.query_nr_taskmanagers(correlation).await
+    ) -> Result<TaskManagerDetail, FlinkError> {
+        self.inner.query_taskmanagers(correlation).await
     }
 }
 
@@ -320,12 +320,12 @@ impl FlinkContextRef {
         )
     }
 
-    pub async fn query_nr_taskmanagers(
+    pub async fn query_taskmanagers(
         &self, correlation: &CorrelationId,
-    ) -> Result<usize, FlinkError> {
+    ) -> Result<TaskManagerDetail, FlinkError> {
         let _timer = flink::start_flink_query_taskmanager_admin_timer(self.cluster_label.as_str());
 
-        let result: Result<usize, FlinkError> = self
+        let result: Result<TaskManagerDetail, FlinkError> = self
             .client
             .request(Method::GET, self.tm_admin_endpoint.clone())
             .send()
@@ -339,8 +339,22 @@ impl FlinkContextRef {
                             tracing::debug!(body=%b, response=?result, "Flink taskmanager_admin response body");
                             result
                         })
-                        .map(|resp: serde_json::Value| {
-                            resp["taskmanagers"].as_array().map(|tms| tms.len()).unwrap_or(0)
+                        .and_then(|resp: serde_json::Value| {
+                            // resp["taskmanagers"].as_array().map(|tms| tms.len()).unwrap_or(0)
+                            let tms = resp["taskmanagers"].as_array();
+                            let nr_taskmanagers = tms.map(|v| v.len()).unwrap_or(0);
+                            let sum_task_slots: u64 = tms
+                                .map(|val| val.iter().flat_map(|v| v["slotsNumber"].as_u64()).sum())
+                                .unwrap_or(0);
+
+                            math::try_u64_to_f64(sum_task_slots)
+                                .and_then(|sum| math::try_f64_to_u32(sum / f64::from(nr_taskmanagers as u32)))
+                                .map(|task_slots_per_taskmanager| TaskManagerDetail {
+                                    nr_taskmanagers,
+                                    task_slots_per_taskmanager: task_slots_per_taskmanager as usize,
+                                })
+                                .map_err(|err| FlinkError::Other(err.into()))
+                            //.map(|tms| tms.len()).unwrap_or(0)
                         })
                 })
             })

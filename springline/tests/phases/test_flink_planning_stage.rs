@@ -680,6 +680,7 @@ async fn test_flink_planning_context_change() {
         flow.push_context(PlanningContext {
             correlation_id: CORRELATION_ID.relabel::<PlanningContext>(),
             recv_timestamp: Timestamp::now(),
+            task_slots_per_taskmanager: 1,
             min_scaling_step: Some(100),
             rescale_restart: Some(Duration::from_millis(1)),
             max_catch_up: Some(Duration::from_millis(2)),

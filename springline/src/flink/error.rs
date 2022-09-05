@@ -41,6 +41,9 @@ pub enum FlinkError {
     // RestartInitiation { jars: Vec<JarId>, locations: Vec<SavepointLocation>, },
     #[error("Flink API operation {0} failed to complete within timeout of {1:?}")]
     Timeout(String, std::time::Duration),
+
+    #[error("{0}")]
+    Other(#[from] anyhow::Error),
 }
 
 impl MetricLabel for FlinkError {
@@ -61,6 +64,7 @@ impl MetricLabel for FlinkError {
             Self::UnexpectedSavepointStatus(..) => Left("savepoint".into()),
             Self::Savepoint { .. } => Left("savepoint".into()),
             Self::Timeout(..) => Left("http::timeout".into()),
+            Self::Other(_) => Left("other".into()),
         }
     }
 }
