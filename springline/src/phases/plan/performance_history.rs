@@ -6,6 +6,7 @@ use proctor::elements::RecordsPerSecond;
 use serde::{Deserialize, Serialize};
 use splines::{Interpolation, Key, Spline};
 
+use crate::math;
 use crate::phases::plan::benchmark::{Benchmark, BenchmarkRange};
 use crate::phases::plan::MINIMAL_JOB_PARALLELISM;
 
@@ -122,17 +123,13 @@ impl BenchNeighbors {
         }
     }
 
-    fn try_f64_to_u32(value: f64) -> Result<u32, anyhow::Error> {
-        Ok(value.round().rem_euclid(2_f64.powi(32)) as u32)
-    }
-
     #[tracing::instrument(level = "debug")]
     fn extrapolate_lo(workload_rate: RecordsPerSecond, lo: &Benchmark) -> u32 {
         let workload_rate: f64 = workload_rate.into();
         let lo_rate: f64 = lo.records_out_per_sec.into();
 
         let ratio: f64 = (f64::from(lo.job_parallelism)) / lo_rate;
-        let calculated = Self::try_f64_to_u32((ratio * workload_rate).ceil())
+        let calculated = math::try_f64_to_u32((ratio * workload_rate).ceil())
             .unwrap_or_else(|err| {
                 tracing::error!(error=?err, "failed to convert calculated job parallelism into integer - using lo benchmark: {}", lo.job_parallelism);
                 lo.job_parallelism
@@ -154,7 +151,7 @@ impl BenchNeighbors {
         let hi_rate: f64 = hi.records_out_per_sec.into();
 
         let ratio: f64 = (f64::from(hi.job_parallelism)) / hi_rate;
-        let calculated = Self::try_f64_to_u32((ratio * workload_rate).ceil())
+        let calculated = math::try_f64_to_u32((ratio * workload_rate).ceil())
             .unwrap_or_else(|err| {
                 tracing::error!(error=?err, "failed to convert calculated job parallelism into integer - using hi benchmark: {}", hi.job_parallelism);
                 hi.job_parallelism
@@ -183,7 +180,7 @@ impl BenchNeighbors {
         let spline = Spline::from_vec(vec![start, end]);
         let sampled: f64 = spline.clamped_sample(workload_rate.into()).unwrap();
 
-        let job_parallelism = Self::try_f64_to_u32(sampled.ceil())
+        let job_parallelism = math::try_f64_to_u32(sampled.ceil())
             .expect("start-end are valid integers so in between must also be");
         tracing::debug!(%job_parallelism, interpolated_job_parallelism=?sampled, "interpolated job parallelism between neighbors.");
         job_parallelism
