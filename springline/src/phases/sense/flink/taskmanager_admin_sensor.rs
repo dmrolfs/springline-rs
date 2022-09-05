@@ -14,8 +14,8 @@ use tracing::Instrument;
 use super::{FlinkScope, Unpack};
 use crate::flink::CorrelationGenerator;
 use crate::flink::MC_CLUSTER__NR_TASK_MANAGERS;
+use crate::phases::plan::{PLANNING__FREE_TASK_SLOTS, PLANNING__TOTAL_TASK_SLOTS};
 use crate::phases::sense::flink::FlinkContext;
-use crate::phases::plan::PLANNING__TASK_SLOTS_PER_TASKMANAGER;
 
 /// Load telemetry for a specify scope from the Flink Job Manager REST API; e.g., Job or
 /// Taskmanager. Note: cast_trait_object issues a conflicting impl error if no generic is specified
@@ -129,8 +129,13 @@ where
 
                             //todo: only publish task slots once?
                             telemetry.insert(
-                                PLANNING__TASK_SLOTS_PER_TASKMANAGER.into(),
-                                tm_detail.task_slots_per_taskmanager.into(),
+                                PLANNING__TOTAL_TASK_SLOTS.into(),
+                                tm_detail.total_task_slots.into(),
+                            );
+
+                            telemetry.insert(
+                                PLANNING__FREE_TASK_SLOTS.into(),
+                                tm_detail.free_task_slots.into(),
                             );
 
                             telemetry.insert(
@@ -346,9 +351,11 @@ mod tests {
                 assert_eq!(
                     actual,
                     maplit::hashmap! {
-                        PLANNING__TASK_SLOTS_PER_TASKMANAGER.to_string() => 1.into(),
+                        PLANNING__TOTAL_TASK_SLOTS.to_string() => 2.into(),
+                        PLANNING__FREE_TASK_SLOTS.to_string() => 0.into(),
                         MC_CLUSTER__NR_TASK_MANAGERS.to_string() => 2.into(),
-                    }.into()
+                    }
+                    .into()
                 );
             }
 

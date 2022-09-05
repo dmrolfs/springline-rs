@@ -129,11 +129,11 @@ impl BenchNeighbors {
         let lo_rate: f64 = lo.records_out_per_sec.into();
 
         let ratio: f64 = (f64::from(lo.job_parallelism)) / lo_rate;
-        let calculated = math::try_f64_to_u32((ratio * workload_rate).ceil())
-            .unwrap_or_else(|err| {
-                tracing::error!(error=?err, "failed to convert calculated job parallelism into integer - using lo benchmark: {}", lo.job_parallelism);
-                lo.job_parallelism
-            });
+        let calculated = math::try_f64_to_u32((ratio * workload_rate).ceil());
+        // .unwrap_or_else(|err| {
+        //     tracing::error!(error=?err, "failed to convert calculated job parallelism into integer - using lo benchmark: {}", lo.job_parallelism);
+        //     lo.job_parallelism
+        // });
 
         tracing::debug!(%ratio, %calculated, "calculations: {} ceil:{}", ratio * workload_rate, (ratio * workload_rate).ceil());
 
@@ -151,11 +151,11 @@ impl BenchNeighbors {
         let hi_rate: f64 = hi.records_out_per_sec.into();
 
         let ratio: f64 = (f64::from(hi.job_parallelism)) / hi_rate;
-        let calculated = math::try_f64_to_u32((ratio * workload_rate).ceil())
-            .unwrap_or_else(|err| {
-                tracing::error!(error=?err, "failed to convert calculated job parallelism into integer - using hi benchmark: {}", hi.job_parallelism);
-                hi.job_parallelism
-            });
+        let calculated = math::try_f64_to_u32((ratio * workload_rate).ceil());
+        // .unwrap_or_else(|err| {
+        //     tracing::error!(error=?err, "failed to convert calculated job parallelism into integer - using hi benchmark: {}", hi.job_parallelism);
+        //     hi.job_parallelism
+        // });
 
         let hi_job_parallelism = cmp::max(
             hi.job_parallelism,
@@ -180,8 +180,8 @@ impl BenchNeighbors {
         let spline = Spline::from_vec(vec![start, end]);
         let sampled: f64 = spline.clamped_sample(workload_rate.into()).unwrap();
 
-        let job_parallelism = math::try_f64_to_u32(sampled.ceil())
-            .expect("start-end are valid integers so in between must also be");
+        let job_parallelism = math::try_f64_to_u32(sampled.ceil());
+        // .expect("start-end are valid integers so in between must also be");
         tracing::debug!(%job_parallelism, interpolated_job_parallelism=?sampled, "interpolated job parallelism between neighbors.");
         job_parallelism
     }

@@ -7,9 +7,26 @@ use proctor::Correlation;
 use serde::{Deserialize, Serialize};
 
 use crate::flink::MetricCatalog;
+use crate::math;
 use crate::phases::decision::DecisionResult;
 use crate::phases::plan::{ScaleDirection, MINIMAL_JOB_PARALLELISM};
 use crate::CorrelationId;
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct ScaleParameters {
+    pub calculated_job_parallelism: Option<u32>,
+    pub nr_taskmanagers: u32,
+    pub total_task_slots: u32,
+    pub free_task_slots: u32,
+    pub min_scaling_step: u32,
+}
+
+impl ScaleParameters {
+    #[inline]
+    pub fn task_slots_per_taskmanager(&self) -> f64 {
+        f64::from(self.total_task_slots) / f64::from(self.nr_taskmanagers)
+    }
+}
 
 #[derive(PolarClass, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ScalePlan {
@@ -63,47 +80,69 @@ impl Correlation for ScalePlan {
 }
 
 impl ScalePlan {
+    // fn taskmanagers_for_parallelism(p: u32, task_slots_per_taskmanager: u32) -> u32 {
+    //     let tms = f64::from(p) / f64::from(task_slots_per_taskmanager);
+    //     math::try_f64_to_u32(tms)
+    //
+    // }
+
     #[tracing::instrument(level = "trace", name = "ScalePlace::new", skip())]
     pub fn new(
-        decision: DecisionResult<MetricCatalog>, calculated_job_parallelism: Option<u32>,
-        min_scaling_step: u32,
+        decision: DecisionResult<MetricCatalog>, parameters: ScaleParameters,
     ) -> Option<Self> {
+        // let task_slots_per_taskmanager = parameters.task_slots_per_taskmanager();
+        let taskmanagers_for_parallelism =
+            |p: u32| math::try_f64_to_u32(f64::from(p) / parameters.task_slots_per_taskmanager());
+        // let calculated_task_managers = parameters.calculated_job_parallelism.map(|p| {
+        //     let tms = f64::from(p) / parameters.task_slots_per_taskmanager();
+        //     math::try_f64_to_u32(tms)
+        // });
+
         match decision.direction() {
             ScaleDirection::None => None,
             direction => {
                 let current_job_parallelism = decision.item().health.job_nonsource_max_parallelism;
-                let current_nr_task_managers = decision.item().cluster.nr_task_managers;
+                let current_nr_taskmanagers = decision.item().cluster.nr_task_managers;
 
                 let recv_timestamp = decision.item().recv_timestamp;
                 let correlation_id = decision.item().correlation_id.clone();
-
                 let (target_job_parallelism, target_nr_task_managers) = match direction {
                     ScaleDirection::Up => {
                         let min_target_parallelism =
-                            current_job_parallelism.saturating_add(min_scaling_step);
+                            current_job_parallelism.saturating_add(parameters.min_scaling_step);
 
-                        let p = calculated_job_parallelism
+                        let p = parameters
+                            .calculated_job_parallelism
                             .map_or(min_target_parallelism, |calculated_p| {
                                 u32::max(calculated_p, min_target_parallelism)
                             });
-                        let tms = u32::max(p, current_nr_task_managers);
-                        tracing::debug!(%min_target_parallelism, %p, %tms, "calculating UP ScalePlan");
+                        let tms_for_parallelism = taskmanagers_for_parallelism(p);
+                        let tms = u32::max(tms_for_parallelism, current_nr_taskmanagers);
+                        tracing::debug!(
+                            %min_target_parallelism, %p, %tms_for_parallelism, %current_nr_taskmanagers, %tms,
+                            "calculating UP ScalePlan"
+                        );
                         (p, tms)
                     },
                     ScaleDirection::Down => {
                         let max_target_parallelism =
-                            current_job_parallelism.saturating_sub(min_scaling_step);
+                            current_job_parallelism.saturating_sub(parameters.min_scaling_step);
 
-                        let p0 = calculated_job_parallelism
+                        let p0 = parameters
+                            .calculated_job_parallelism
                             .map_or(max_target_parallelism, |calculated_p| {
                                 u32::min(calculated_p, max_target_parallelism)
                             });
                         let p = u32::max(MINIMAL_JOB_PARALLELISM, p0);
-                        let tms = u32::min(p, current_nr_task_managers);
-                        tracing::debug!(%max_target_parallelism, %p0, %p, %tms, "calculating DOWN ScalePlan");
+                        let tms_for_parallelism = taskmanagers_for_parallelism(p);
+                        let tms = u32::min(tms_for_parallelism, current_nr_taskmanagers);
+                        tracing::debug!(
+                            %max_target_parallelism, %p0, %p, %tms_for_parallelism, %current_nr_taskmanagers, %tms,
+                            "calculating DOWN ScalePlan"
+                        );
                         (p, tms)
                     },
-                    ScaleDirection::None => (current_job_parallelism, current_nr_task_managers),
+                    ScaleDirection::None => (current_job_parallelism, current_nr_taskmanagers),
                 };
 
                 Some(Self {
@@ -111,7 +150,7 @@ impl ScalePlan {
                     recv_timestamp,
                     current_job_parallelism,
                     target_job_parallelism,
-                    current_nr_task_managers,
+                    current_nr_task_managers: current_nr_taskmanagers,
                     target_nr_task_managers,
                 })
             },
@@ -218,7 +257,14 @@ mod tests {
             prop_assert_eq!(current_job_parallelism, decision.item().health.job_nonsource_max_parallelism);
             prop_assert_eq!(current_nr_task_managers, decision.item().cluster.nr_task_managers);
 
-            if let Some(actual) = ScalePlan::new(decision.clone(), calculated_parallelism, min_scaling_step) {
+            let parameters = ScaleParameters {
+                calculated_job_parallelism: calculated_parallelism,
+                nr_taskmanagers: current_nr_task_managers,
+                total_task_slots: current_nr_task_managers,
+                free_task_slots: 0,
+                min_scaling_step,
+            };
+            if let Some(actual) = ScalePlan::new(decision.clone(), parameters) {
                 prop_assert_eq!(&actual.correlation_id, &decision.item().correlation_id);
                 prop_assert_eq!(actual.recv_timestamp, decision.item().recv_timestamp);
                 prop_assert_eq!(actual.current_job_parallelism, current_job_parallelism);
@@ -333,9 +379,14 @@ mod tests {
             decision.item().cluster.nr_task_managers
         );
 
-        if let Some(actual) =
-            ScalePlan::new(decision.clone(), calculated_parallelism, min_scaling_step)
-        {
+        let parameters = ScaleParameters {
+            calculated_job_parallelism: calculated_parallelism,
+            nr_taskmanagers: current_nr_task_managers,
+            total_task_slots: current_nr_task_managers,
+            free_task_slots: 0,
+            min_scaling_step,
+        };
+        if let Some(actual) = ScalePlan::new(decision.clone(), parameters) {
             assert_eq!(&actual.correlation_id, &decision.item().correlation_id);
             assert_eq!(actual.recv_timestamp, decision.item().recv_timestamp);
             assert_eq!(actual.current_job_parallelism, current_job_parallelism);

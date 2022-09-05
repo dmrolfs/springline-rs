@@ -14,7 +14,7 @@ use crate::flink::error::FlinkError;
 use crate::flink::model::{JarSummary, TaskManagerDetail};
 use crate::flink::{self, model::JobSummary, JobDetail, JobId};
 use crate::settings::FlinkSettings;
-use crate::{CorrelationId, math};
+use crate::CorrelationId;
 
 #[derive(Debug, Clone)]
 pub struct FlinkContext {
@@ -343,17 +343,33 @@ impl FlinkContextRef {
                             // resp["taskmanagers"].as_array().map(|tms| tms.len()).unwrap_or(0)
                             let tms = resp["taskmanagers"].as_array();
                             let nr_taskmanagers = tms.map(|v| v.len()).unwrap_or(0);
-                            let sum_task_slots: u64 = tms
-                                .map(|val| val.iter().flat_map(|v| v["slotsNumber"].as_u64()).sum())
-                                .unwrap_or(0);
 
-                            math::try_u64_to_f64(sum_task_slots)
-                                .and_then(|sum| math::try_f64_to_u32(sum / f64::from(nr_taskmanagers as u32)))
-                                .map(|task_slots_per_taskmanager| TaskManagerDetail {
+                            tms.map(|val| {
+                                let (total, free) = val.iter()
+                                    .map(|v| {
+                                        let slots = v["slotsNumber"].as_u64().and_then(|s| u32::try_from(s).ok());
+                                        let free = v["freeSlots"].as_u64().and_then(|s| u32::try_from(s).ok());
+                                        let result = slots.zip(free);
+                                        if result.is_none() {
+                                            tracing::warn!(taskmanager_info=?v, "slot info not available");
+                                        }
+                                        result
+                                    })
+                                    .flatten()
+                                    .fold(
+                                        (0_u32, 0_u32),
+                                        |(total, free), (v_slots, v_free)| {
+                                            (total + v_slots, free + v_free)
+                                        }
+                                    );
+
+                                TaskManagerDetail {
                                     nr_taskmanagers,
-                                    task_slots_per_taskmanager: task_slots_per_taskmanager as usize,
-                                })
-                                .map_err(|err| FlinkError::Other(err.into()))
+                                    total_task_slots: total as usize,
+                                    free_task_slots: free as usize,
+                                }
+                            })
+                                .ok_or(FlinkError::Other(anyhow::Error::msg("slot info not available in taskmanager admin API response")))
                             //.map(|tms| tms.len()).unwrap_or(0)
                         })
                 })

@@ -26,7 +26,10 @@ mod performance_repository;
 mod planning;
 
 pub use crate::phases::decision::ScaleDirection;
-pub use context::{PlanningContext, PLANNING__TASK_SLOTS_PER_TASKMANAGER, PLANNING__RESCALE_RESTART};
+pub use context::{
+    PlanningContext, PLANNING__FREE_TASK_SLOTS, PLANNING__RESCALE_RESTART,
+    PLANNING__TOTAL_TASK_SLOTS,
+};
 pub use context::{
     PLANNING_CTX_FORECASTING_MAX_CATCH_UP_SECS, PLANNING_CTX_FORECASTING_RECOVERY_VALID_SECS,
     PLANNING_CTX_FORECASTING_RESTART_SECS, PLANNING_CTX_MIN_SCALING_STEP,

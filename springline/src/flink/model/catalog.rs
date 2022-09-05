@@ -136,17 +136,17 @@ pub const MC_HEALTH__JOB_NONSOURCE_MAX_PARALLELISM: &str = "health.job_nonsource
 
 #[derive(PolarClass, Debug, Default, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub struct JobHealthMetrics {
-    /// Max parallelism found in Job. If this is below the number of task managers, then an up
+    /// Max parallelism found in Job. If this is below the number of task slots, then an up
     /// rescale plan may simply restart at an increased parallelism up to the number of task
-    /// managers.
+    /// slots.
     #[polar(attribute)]
     #[serde(default, rename = "health.job_max_parallelism")]
     pub job_max_parallelism: u32,
 
     /// Max parallelism for source vertices found in Job. Source vertices may be fixed around
     /// the number of input partitions, with the remainder of the job running at a lower
-    /// parallelism. If this is below the number of task managers, then an up rescale plan may
-    /// simply restart at an increased parallelism up to the number of task managers.
+    /// parallelism. If this is below the number of task slots, then an up rescale plan may
+    /// simply restart at an increased parallelism up to the number of task slots.
     #[polar(attribute)]
     #[serde(default, rename = "health.job_source_max_parallelism")]
     pub job_source_max_parallelism: u32,

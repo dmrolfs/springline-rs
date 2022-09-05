@@ -12,7 +12,7 @@ use crate::flink::MetricCatalog;
 use crate::phases::decision::DecisionResult;
 use crate::phases::plan::context::PlanningContext;
 use crate::phases::plan::forecast::{ForecastCalculator, ForecastInputs, Forecaster};
-use crate::phases::plan::model::ScalePlan;
+use crate::phases::plan::model::{ScaleParameters, ScalePlan};
 use crate::phases::plan::performance_history::PerformanceHistory;
 use crate::phases::plan::performance_repository::PerformanceRepository;
 use crate::phases::plan::{PlanningMeasurement, PLANNING_FORECASTED_WORKLOAD};
@@ -41,6 +41,8 @@ pub enum FlinkPlanningEvent {
 pub struct FlinkPlanning<F: Forecaster> {
     name: String,
     min_scaling_step: u32,
+    total_task_slots: u32,
+    free_task_slots: u32,
     pub forecast_calculator: ForecastCalculator<F>,
     performance_history: PerformanceHistory,
     performance_repository: Box<dyn PerformanceRepository>,
@@ -53,6 +55,8 @@ pub struct FlinkPlanning<F: Forecaster> {
 impl<F: Forecaster> PartialEq for FlinkPlanning<F> {
     fn eq(&self, other: &Self) -> bool {
         self.name == other.name
+            && self.total_task_slots == other.total_task_slots
+            && self.free_task_slots == other.free_task_slots
             && self.min_scaling_step == other.min_scaling_step
             && self.forecast_calculator.inputs == other.forecast_calculator.inputs
             && self.performance_history == other.performance_history
@@ -79,6 +83,8 @@ impl<F: Forecaster> FlinkPlanning<F> {
         Ok(Self {
             name,
             min_scaling_step,
+            total_task_slots: 0,
+            free_task_slots: 0,
             forecast_calculator,
             performance_history,
             performance_repository,
@@ -143,8 +149,8 @@ impl<F: Forecaster> FlinkPlanning<F> {
     ) -> Result<Option<ScalePlan>, PlanError> {
         let plan = if self.forecast_calculator.have_enough_data() {
             let history = &self.performance_history;
-            let current_job_parallelism = decision.item().health.job_nonsource_max_parallelism;
             let buffered_records = Self::buffered_lag_score(decision.item());
+            let current_job_parallelism = decision.item().health.job_nonsource_max_parallelism;
 
             let forecasted_workload = self
                 .forecast_calculator
@@ -154,9 +160,14 @@ impl<F: Forecaster> FlinkPlanning<F> {
             let required_job_parallelism =
                 history.job_parallelism_for_workload(forecasted_workload);
 
-            if let Some(plan) =
-                ScalePlan::new(decision, required_job_parallelism, self.min_scaling_step)
-            {
+            let params = ScaleParameters {
+                calculated_job_parallelism: required_job_parallelism,
+                nr_taskmanagers: decision.item().cluster.nr_task_managers,
+                total_task_slots: self.total_task_slots,
+                free_task_slots: self.free_task_slots,
+                min_scaling_step: self.min_scaling_step,
+            };
+            if let Some(plan) = ScalePlan::new(decision, params) {
                 if let Some(ref mut outlet) = self.outlet {
                     tracing::info!(?plan, "pushing scale plan.");
                     outlet.send(plan.clone()).await?;
@@ -166,8 +177,7 @@ impl<F: Forecaster> FlinkPlanning<F> {
                 Some(plan)
             } else {
                 tracing::warn!(
-                    ?required_job_parallelism,
-                    %current_job_parallelism,
+                    ?required_job_parallelism, %current_job_parallelism,
                     "planning performance history suggests no change in job parallelism needed in spite of decision."
                 );
                 // todo: should we clear some of the history????
@@ -253,7 +263,13 @@ impl<F: Forecaster> Planning for FlinkPlanning<F> {
         &mut self, context: Self::Context,
     ) -> Result<Option<PlanEvent<Self>>, PlanError> {
         context.patch_inputs(&mut self.forecast_calculator.inputs);
-        tracing::info!(?context, forecast_inputs=?self.forecast_calculator.inputs, "patched planning context inputs.");
+        self.total_task_slots = context.total_task_slots;
+        self.free_task_slots = context.free_task_slots;
+        tracing::info!(
+            ?context, forecast_inputs=?self.forecast_calculator.inputs,
+            total_task_slots=%self.total_task_slots, free_task_slots=%self.free_task_slots,
+            "patched planning context inputs."
+        );
         Ok(Some(PlanEvent::<Self>::ContextChanged(context)))
     }
 
@@ -346,6 +362,7 @@ mod tests {
 
     async fn setup_planning(
         planning_name: &str, outlet: Outlet<ScalePlan>, signal_type: SignalType,
+        total_task_slots: u32,
     ) -> anyhow::Result<TestPlanning> {
         let mut calc = ForecastCalculator::new(
             LeastSquaresWorkloadForecaster::new(
@@ -397,6 +414,8 @@ mod tests {
         let planning = FlinkPlanning {
             name: planning_name.to_string(),
             min_scaling_step: 2,
+            total_task_slots,
+            free_task_slots: 0,
             forecast_calculator: calc,
             performance_history: PerformanceHistory::default(),
             performance_repository: make_performance_repository(&PerformanceRepositorySettings {
@@ -448,7 +467,13 @@ mod tests {
         let recv_timestamp = METRICS.recv_timestamp;
         let block: anyhow::Result<()> = block_on(async move {
             let planning = Arc::new(Mutex::new(assert_ok!(
-                setup_planning("planning_1", outlet, SignalType::Linear).await
+                setup_planning(
+                    "planning_1",
+                    outlet,
+                    SignalType::Linear,
+                    METRICS.cluster.nr_task_managers
+                )
+                .await
             )));
             let min_step = planning.lock().await.min_scaling_step;
 
@@ -534,7 +559,13 @@ mod tests {
 
         let block: anyhow::Result<()> = block_on(async move {
             let planning = Arc::new(Mutex::new(assert_ok!(
-                setup_planning("planning_2", outlet, SignalType::Sine).await
+                setup_planning(
+                    "planning_2",
+                    outlet,
+                    SignalType::Sine,
+                    METRICS.cluster.nr_task_managers
+                )
+                .await
             )));
 
             let mut performance_history = PerformanceHistory::default();
@@ -577,7 +608,8 @@ mod tests {
                 setup_planning(
                     "patch",
                     Outlet::new("patch", graph::PORT_DATA),
-                    SignalType::Sine
+                    SignalType::Sine,
+                    METRICS.cluster.nr_task_managers
                 )
                 .await
             );
@@ -598,7 +630,8 @@ mod tests {
             let context = PlanningContext {
                 correlation_id: Id::direct("planning", 17, "ABS"),
                 recv_timestamp: Timestamp::now(),
-                task_slots_per_taskmanager: 1,
+                total_task_slots: 11,
+                free_task_slots: 3,
                 min_scaling_step: None,
                 rescale_restart: Some(expected.restart),
                 max_catch_up: None,
@@ -608,6 +641,8 @@ mod tests {
             let event = assert_some!(assert_ok!(planning.patch_context(context.clone()).await));
             assert_eq!(event, PlanEvent::ContextChanged(context));
             assert_eq!(planning.forecast_calculator.inputs, expected);
+            assert_eq!(planning.total_task_slots, 11);
+            assert_eq!(planning.free_task_slots, 3);
         })
     }
 }

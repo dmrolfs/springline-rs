@@ -87,7 +87,11 @@ pub struct ActionOutcome {
 
 impl Display for ActionOutcome {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "ActionOutcome {{ {}:{} {:?} }}", self.label, self.status, self.duration)
+        write!(
+            f,
+            "ActionOutcome {{ {}:{} {:?} }}",
+            self.label, self.status, self.duration
+        )
     }
 }
 
@@ -146,9 +150,10 @@ impl ActionSession {
 impl Debug for ActionSession {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut debug = f.debug_struct("ActionSession");
-        debug
-            .field("correlation", &format!("{}", self.correlation))
-            .field("history", &self.history.iter().map(|o| o.to_string()).collect::<Vec<_>>());
+        debug.field("correlation", &format!("{}", self.correlation)).field(
+            "history",
+            &self.history.iter().map(|o| o.to_string()).collect::<Vec<_>>(),
+        );
 
         if let Some(active_jobs) = &self.active_jobs {
             debug.field("active_jobs", &active_jobs);

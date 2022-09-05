@@ -10,6 +10,7 @@ use std::hash::Hash;
 use std::marker::PhantomData;
 use std::time::Duration;
 
+use crate::math;
 use either::Either;
 use pretty_snowflake::Id;
 use proctor::elements::telemetry::{TableType, TableValue};
@@ -448,7 +449,16 @@ pub struct JobPlan {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TaskManagerDetail {
     pub nr_taskmanagers: usize,
-    pub task_slots_per_taskmanager: usize,
+    pub total_task_slots: usize,
+    pub free_task_slots: usize,
+}
+
+impl TaskManagerDetail {
+    pub fn task_slots_per_taskmanager(&self) -> usize {
+        let total_task_slots = f64::from(self.total_task_slots as u32);
+        let nr_taskmanagers = f64::from(self.nr_taskmanagers as u32);
+        math::try_f64_to_u32(total_task_slots / nr_taskmanagers) as usize
+    }
 }
 
 fn deserialize_timestamp_millis<'de, D>(deserializer: D) -> Result<Timestamp, D::Error>
