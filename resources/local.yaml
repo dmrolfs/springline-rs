@@ -35,6 +35,15 @@ plan:
     storage: file
     storage_path: "./tmp"
 
+governance:
+  rules:
+    min_parallelism: 8
+    max_parallelism: 23
+    min_cluster_size: 8
+    max_cluster_size: 64
+    min_scaling_step: 2
+    max_scaling_step: 10
+
 action:
   action_timeout_secs: 60
   taskmanager:

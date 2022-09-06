@@ -97,7 +97,7 @@ data:
     governance:
       rules:
         min_parallelism: {{ .Values.application.governance.rules.min_parallelism }}
-        max_parallelsim: {{ .Values.application.governance.rules.max_parallelism }}
+        max_parallelism: {{ .Values.application.governance.rules.max_parallelism }}
         min_cluster_size: {{ .Values.application.governance.rules.min_cluster_size }}
         max_cluster_size: {{ .Values.application.governance.rules.max_cluster_size }}
         min_scaling_step: {{ .Values.application.governance.rules.min_scaling_step }}

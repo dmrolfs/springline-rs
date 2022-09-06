@@ -857,6 +857,18 @@ mod tests {
                         }),
                         ..SETTINGS.decision.clone()
                     },
+                    governance: GovernanceSettings {
+                        rules: GovernanceRuleSettings {
+                            min_parallelism: 8,
+                            max_parallelism: 23,
+                            min_cluster_size: 8,
+                            max_cluster_size: 64,
+                            min_scaling_step: 2,
+                            max_scaling_step: 10,
+                            ..SETTINGS.governance.rules.clone()
+                        },
+                        ..SETTINGS.governance.clone()
+                    },
                     action: ActionSettings {
                         action_timeout: Duration::from_secs(60),
                         taskmanager: TaskmanagerContext {

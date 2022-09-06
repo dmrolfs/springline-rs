@@ -5,7 +5,7 @@ use futures::{future::FutureExt, pin_mut};
 use once_cell::sync::Lazy;
 use proctor::graph::stage::{WithApi, WithMonitor};
 use prometheus::Registry;
-use settings_loader::SettingsLoader;
+use settings_loader::{SettingsLoader, LoadingOptions};
 use springline::engine::{Autoscaler, BoxedTelemetrySource, FeedbackSource};
 use springline::flink::FlinkContext;
 use springline::kubernetes::KubernetesContext;
@@ -25,6 +25,7 @@ fn main() -> Result<()> {
     proctor::tracing::init_subscriber(subscriber);
 
     let mut restarts_remaining = 3;
+    let app_environment = std::env::var(CliOptions::env_app_environment())?;
     let options = CliOptions::parse();
 
     let main_span = tracing::trace_span!("main");
@@ -34,7 +35,7 @@ fn main() -> Result<()> {
         start_pipeline(async move {
             while 0 <= restarts_remaining {
                 let settings = Settings::load(&options)?;
-                tracing::info!(?options, ?settings, "loaded settings via CLI options");
+                tracing::info!(?options, ?settings, %app_environment, "loaded settings via CLI options");
 
                 let sensor_flink = FlinkContext::from_settings("sensor", &FlinkSettings { max_retries: 0, ..settings.flink.clone() } )?;
                 sensor_flink.check().await?;
