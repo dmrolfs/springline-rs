@@ -85,7 +85,7 @@ pub enum ActError {
     #[error("Job failed during attempted restart.")]
     FailedJob(crate::flink::JobId, crate::flink::SavepointLocation),
 
-    #[error("failure restarting Flink savepoints for jars: {jar_savepoints:?}")]
+    #[error("failure restarting Flink savepoints for jars: {jar_savepoints:?}: {sources:?}")]
     JobRestart {
         sources: Vec<anyhow::Error>,
         jar_savepoints: Vec<(crate::flink::JarId, crate::flink::SavepointLocation)>,

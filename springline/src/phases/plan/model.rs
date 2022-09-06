@@ -88,7 +88,7 @@ impl ScalePlan {
     //
     // }
 
-    #[tracing::instrument(level = "trace", name = "ScalePlace::new", skip())]
+    #[tracing::instrument(level = "trace", name = "ScalePlan::new", skip())]
     pub fn new(
         decision: DecisionResult<MetricCatalog>, parameters: ScaleParameters,
     ) -> Option<Self> {
@@ -121,6 +121,7 @@ impl ScalePlan {
                         let tms_for_parallelism = taskmanagers_for_parallelism(p);
                         let tms = u32::max(tms_for_parallelism, current_nr_taskmanagers);
                         tracing::debug!(
+                            ?parameters,
                             %min_target_parallelism, %p, %tms_for_parallelism, %current_nr_taskmanagers, %tms,
                             "calculating UP ScalePlan"
                         );
@@ -139,6 +140,7 @@ impl ScalePlan {
                         let tms_for_parallelism = taskmanagers_for_parallelism(p);
                         let tms = u32::min(tms_for_parallelism, current_nr_taskmanagers);
                         tracing::debug!(
+                            ?parameters,
                             %max_target_parallelism, %p0, %p, %tms_for_parallelism, %current_nr_taskmanagers, %tms,
                             "calculating DOWN ScalePlan"
                         );

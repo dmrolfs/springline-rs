@@ -618,6 +618,10 @@ where
         let mut errors = Vec::with_capacity(failures.len());
         let mut jar_savepoints = Vec::with_capacity(failures.len());
         for (j, s, e) in failures {
+            tracing::error!(
+                error=?e, label=%self.label(), jar_id=?j, savepoint_location=?s,
+                "remaining restart failure"
+            );
             act::track_act_errors(
                 &format!("{}::remaining_restart_failure", self.label()),
                 Some(&e),
