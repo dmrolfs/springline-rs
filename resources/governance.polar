@@ -6,7 +6,7 @@ accept_scale_up(plan, context, adjusted_target_parallelism, adjusted_target_nr_t
     if not veto(plan, context)
     and scale_up(plan)
     and adjust_parallelism_step_up(plan, context, parallelism)
-    and adjust_nr_task_managers_step_up(plan, context, nr_task_managers)
+    and adjust_nr_task_managers_step(plan, context, nr_task_managers)
     and adjust_final_bounds(parallelism, context.min_parallelism, context.max_parallelism, adjusted_target_parallelism)
     and adjust_final_bounds(nr_task_managers, context.min_cluster_size, context.max_cluster_size, adjusted_target_nr_task_managers)
     and cut;
@@ -15,7 +15,7 @@ accept_scale_down(plan, context, adjusted_target_parallelism, adjusted_target_nr
     if not veto(plan, context)
     and scale_down(plan)
     and adjust_parallelism_step_down(plan, context, parallelism)
-    and adjust_nr_task_managers_step_down(plan, context, nr_task_managers)
+    and adjust_nr_task_managers_step(plan, context, nr_task_managers)
     and adjust_final_bounds(parallelism, context.min_parallelism, context.max_parallelism, adjusted_target_parallelism)
     and adjust_final_bounds(nr_task_managers, context.min_cluster_size, context.max_cluster_size, adjusted_target_nr_task_managers)
     and cut;
@@ -46,8 +46,9 @@ adjust_parallelism_step_down(plan, context, adjusted_target)
     );
 
 # nr task managers steps
-adjust_nr_task_managers_step_up(plan, context, adjusted_target)
-    if adjust_step_up(
+adjust_nr_task_managers_step(plan, context, adjusted_target)
+    if plan.current_nr_task_managers <= plan.target_nr_task_managers
+    and adjust_step_up(
         plan.current_nr_task_managers,
         plan.target_nr_task_managers,
         context.min_scaling_step,
@@ -55,14 +56,35 @@ adjust_nr_task_managers_step_up(plan, context, adjusted_target)
         adjusted_target
     );
 
-adjust_nr_task_managers_step_down(plan, context, adjusted_target)
-    if adjust_step_down(
+adjust_nr_task_managers_step(plan, context, adjusted_target)
+    if plan.target_nr_task_managers < plan.current_nr_task_managers
+    and adjust_step_down(
         plan.current_nr_task_managers,
         plan.target_nr_task_managers,
         context.min_scaling_step,
         context.max_scaling_step,
         adjusted_target
     );
+
+
+
+# adjust_nr_task_managers_step_up(plan, context, adjusted_target)
+#     if adjust_step_up(
+#         plan.current_nr_task_managers,
+#         plan.target_nr_task_managers,
+#         context.min_scaling_step,
+#         context.max_scaling_step,
+#         adjusted_target
+#     );
+
+# adjust_nr_task_managers_step_down(plan, context, adjusted_target)
+#     if adjust_step_down(
+#         plan.current_nr_task_managers,
+#         plan.target_nr_task_managers,
+#         context.min_scaling_step,
+#         context.max_scaling_step,
+#         adjusted_target
+#     );
 
 # steps
 adjust_step_up(current, target, min_step, max_step, adjusted_target)
