@@ -399,6 +399,10 @@ impl Monitor {
                 plan.current_nr_task_managers.to_string().as_str(),
                 plan.target_nr_task_managers.to_string().as_str(),
                 error_metric_label,
+                plan.current_job_parallelism.to_string().as_str(),
+                plan.target_job_parallelism.to_string().as_str(),
+                plan.current_nr_task_managers.to_string().as_str(),
+                plan.target_nr_task_managers.to_string().as_str(),
             ])
             .inc();
 
