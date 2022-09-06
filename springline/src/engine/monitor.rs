@@ -16,8 +16,8 @@ use crate::engine::service::{EngineCmd, EngineServiceApi, Health};
 use crate::engine::{PhaseFlag, PhaseFlags};
 use crate::flink;
 use crate::phases::act::{
-    ActEvent, ActMonitor, ActionOutcome, ACT_SCALE_ACTION_COUNT, PHASE_ACT_ERRORS,
-    PIPELINE_CYCLE_TIME,
+    ActErrorDisposition, ActEvent, ActMonitor, ActionOutcome, ACT_SCALE_ACTION_COUNT,
+    PHASE_ACT_ERRORS, PIPELINE_CYCLE_TIME,
 };
 use crate::phases::decision::{
     DecisionContext, DecisionEvent, DecisionMonitor, DecisionResult, ScaleDirection,
@@ -396,13 +396,13 @@ impl Monitor {
         tracing::warn!(%error_metric_label, ?plan, correlation=%plan.correlation(), "rescale action during act phase failed.");
         PHASE_ACT_ERRORS
             .with_label_values(&[
-                plan.current_nr_task_managers.to_string().as_str(),
-                plan.target_nr_task_managers.to_string().as_str(),
+                "monitor::act",
                 error_metric_label,
-                plan.current_job_parallelism.to_string().as_str(),
-                plan.target_job_parallelism.to_string().as_str(),
-                plan.current_nr_task_managers.to_string().as_str(),
-                plan.target_nr_task_managers.to_string().as_str(),
+                ActErrorDisposition::Failed.to_string().as_str(),
+                // plan.current_job_parallelism.to_string().as_str(),
+                // plan.target_job_parallelism.to_string().as_str(),
+                // plan.current_nr_task_managers.to_string().as_str(),
+                // plan.target_nr_task_managers.to_string().as_str(),
             ])
             .inc();
 

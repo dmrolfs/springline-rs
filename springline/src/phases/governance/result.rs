@@ -76,12 +76,14 @@ pub fn make_governance_transform(
                 None
             },
 
-            (Ok(Some(adjusted_parallelism)), _)
-                if adjusted_parallelism == plan.current_job_parallelism =>
+            (Ok(Some(adjusted_job_parallelism)), _)
+                if adjusted_job_parallelism == plan.current_job_parallelism =>
             {
-                tracing::warn!("final plan does not affect cluster change - dropping.");
+                tracing::warn!(%adjusted_job_parallelism, current_job_parallelism=%plan.current_job_parallelism,
+                    "final plan does not affect cluster change - dropping."
+                );
                 None
-            },
+            }
 
             (Ok(Some(adj_p)), Ok(Some(adj_tms)))
                 if adj_p != plan.target_job_parallelism

@@ -749,15 +749,10 @@ where
         F: FnMut(R, &T) -> R,
         R: Copy + fmt::Debug,
     {
-        tracing::error!(
-            timestamps=?self.data.iter().map(|d| d.recv_timestamp()).collect::<Vec<_>>(),
-            "DMR: recv_timestamps Head -> back"
-        );
         self.latest()
             .map(|latest| {
                 let latest_ts = latest.recv_timestamp();
                 let interval = Interval::new(latest_ts - looking_back, latest_ts);
-                tracing::error!(?latest_ts, ?looking_back, ?interval, "DMR: interval");
                 let interval = interval.unwrap();
                 let (_quorum_percentage, range_iter) = self.assess_coverage_of(interval);
                 range_iter.fold(init, f)
@@ -1092,18 +1087,11 @@ impl UpdateWindowMetrics for AppDataWindow<MetricCatalog> {
         let w_rep = window_secs.to_string();
         let labels = [w_rep.as_str()];
 
-        let span = tracing::error_span!("update_metrics", %window_secs, %w_rep, ?labels);
-        let _guard = span.enter();
-
         let total_lag = self.flow_source_total_lag_rolling_average(window_secs);
-        tracing::error!(?total_lag, "DMR: AAA");
         let utilization = self.flow_task_utilization_rolling_average(window_secs);
-        tracing::error!(?utilization, "DMR: BBB");
         let relative_lag_rate = self.flow_source_relative_lag_change_rate(window_secs);
-        tracing::error!(?relative_lag_rate, "DMR: CCC");
         let source_back_pressured_rate =
             self.flow_source_back_pressured_time_millis_per_sec_rolling_average(window_secs);
-        tracing::error!(?source_back_pressured_rate, "DMR: DDD");
 
         METRIC_CATALOG_FLOW_TASK_UTILIZATION_ROLLING_AVG
             .with_label_values(&labels)

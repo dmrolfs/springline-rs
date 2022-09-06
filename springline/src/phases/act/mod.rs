@@ -217,10 +217,10 @@ pub(crate) static PHASE_ACT_ERRORS: Lazy<IntCounterVec> = Lazy::new(|| {
             "action",
             "error_type",
             "disposition",
-            "current_job_parallelism",
-            "target_job_parallelism",
-            "current_nr_task_managers",
-            "target_nr_task_managers",
+            // "current_job_parallelism",
+            // "target_job_parallelism",
+            // "current_nr_task_managers",
+            // "target_nr_task_managers",
         ],
     )
     .expect("failed creating phase_act_errors metric")
@@ -235,7 +235,7 @@ pub enum ActErrorDisposition {
 
 #[inline]
 pub(crate) fn track_act_errors<'p, E, P>(
-    action: &str, error: Option<&E>, disposition: ActErrorDisposition, plan: &'p P,
+    action: &str, error: Option<&E>, disposition: ActErrorDisposition, _plan: &'p P,
 ) where
     E: MetricLabel,
     P: ScaleActionPlan,
@@ -247,10 +247,10 @@ pub(crate) fn track_act_errors<'p, E, P>(
             action,
             error_type.as_str(),
             disposition.to_string().as_str(),
-            plan.current_job_parallelism().to_string().as_str(),
-            plan.target_job_parallelism().to_string().as_str(),
-            plan.current_replicas().to_string().as_str(),
-            plan.target_replicas().to_string().as_str(),
+            // plan.current_job_parallelism().to_string().as_str(),
+            // plan.target_job_parallelism().to_string().as_str(),
+            // plan.current_replicas().to_string().as_str(),
+            // plan.target_replicas().to_string().as_str(),
         ])
         .inc()
 }
