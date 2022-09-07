@@ -30,6 +30,8 @@ pub trait ScaleActionPlan {
     fn target_job_parallelism(&self) -> usize;
     fn current_replicas(&self) -> usize;
     fn target_replicas(&self) -> usize;
+    fn parallelism_for_replicas(&self, nr_replicas: usize) -> Option<usize>;
+    fn replicas_for_parallelism(&self, parallelism: usize) -> Option<usize>;
 }
 
 impl ScaleActionPlan for ScalePlan {
@@ -59,6 +61,14 @@ impl ScaleActionPlan for ScalePlan {
 
     fn target_replicas(&self) -> usize {
         self.target_nr_taskmanagers as usize
+    }
+
+    fn parallelism_for_replicas(&self, nr_replicas: usize) -> Option<usize> {
+        Some(self.parallelism_for_taskmanagers(nr_replicas as u32) as usize)
+    }
+
+    fn replicas_for_parallelism(&self, parallelism: usize) -> Option<usize> {
+        Some(self.taskmanagers_for_parallelism(parallelism as u32) as usize)
     }
 }
 

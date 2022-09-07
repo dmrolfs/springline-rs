@@ -180,6 +180,10 @@ impl ScalePlan {
         target.saturating_sub(current)
     }
 
+    pub fn parallelism_for_taskmanagers(&self, nr_taskmanagers: u32) -> u32 {
+        math::try_f64_to_u32(self.task_slots_per_taskmanager * f64::from(nr_taskmanagers))
+    }
+
     pub fn taskmanagers_for_parallelism(&self, parallelism: u32) -> u32 {
         Self::calculate_taskmanagers(parallelism, self.task_slots_per_taskmanager)
     }

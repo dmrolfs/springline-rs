@@ -98,7 +98,7 @@ where
     async fn execute<'s>(
         &self, plan: &'s Self::Plan, session: &'s mut ActionSession,
     ) -> Result<(), ActError> {
-        let parallelism = Self::parallelism_from_plan_session(plan, session);
+        let parallelism = self.parallelism_from_plan_session(plan, session);
 
         let mut outcome = Ok(());
         if let Some(locations) = Self::locations_from(session) {
@@ -165,27 +165,35 @@ where
     /// likely be the new parallelism. In the case of a scale down, this will most likely be the
     /// current parallelism. Discrepancies between the two cases are due to rescaling the cluster
     /// partially completed within budgeted time.
-    fn parallelism_from_plan_session(plan: &P, _session: &ActionSession) -> usize {
-        plan.target_job_parallelism()
-        // let parallelism = plan.target_job_parallelism();
-        //
-        // if let Some(nr_tm_confirmed) = session.nr_confirmed_rescaled_taskmanagers {
-        //     if plan.target_replicas() != nr_tm_confirmed {
-        //         // let effective_parallelism = usize::min(parallelism, nr_tm_confirmed);
-        //
-        //         tracing::warn!(
-        //             nr_target_parallelism=%parallelism,
-        //             nr_confirmed_rescaled_taskmanagers=?session.nr_confirmed_rescaled_taskmanagers,
-        //             // effective_parallelism=%effective_parallelism,
-        //             correlation=?plan.correlation(),
-        //             "Target replicas does not match confirmed rescaled taskmanagers setting parallelism to minimum of the two."
-        //         );
-        //
-        //         parallelism = effective_parallelism;
-        //     }
-        // }
-        //
-        // parallelism
+    fn parallelism_from_plan_session(&self, plan: &P, session: &ActionSession) -> usize {
+        let mut parallelism = plan.target_job_parallelism();
+
+        if let Some(nr_tm_confirmed) = session.nr_confirmed_rescaled_taskmanagers {
+            if plan.target_replicas() != nr_tm_confirmed {
+                let confirmed_parallelism_capacity =
+                    plan.parallelism_for_replicas(nr_tm_confirmed).unwrap_or(nr_tm_confirmed);
+                let effective_parallelism = usize::min(parallelism, confirmed_parallelism_capacity);
+
+                tracing::warn!(
+                    ?plan,
+                    nr_target_parallelism=%parallelism,
+                    nr_confirmed_rescaled_taskmanagers=?nr_tm_confirmed,
+                    %effective_parallelism,
+                    correlation=?plan.correlation(),
+                    "Confirmed rescaled taskmanagers does not match target -- setting parallelism to minimum of the two."
+                );
+                act::track_act_errors(
+                    &format!("{}::try_jar_restart::confirmed_below_target", self.label()),
+                    Option::<&ActError>::None,
+                    ActErrorDisposition::Recovered,
+                    plan,
+                );
+
+                parallelism = effective_parallelism;
+            }
+        }
+
+        parallelism
     }
 
     async fn try_jar_restarts_for_parallelism<'s>(
