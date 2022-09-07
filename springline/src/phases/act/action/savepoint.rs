@@ -115,16 +115,16 @@ where
         let triggers: HashSet<_> = job_triggers.into_iter().map(|jt| jt.0).collect();
         let remaining: HashSet<_> = triggers.difference(&cancelled).collect();
         if !remaining.is_empty() {
-            let action_label = format!("{}::unconfirmed_cancellation", self.label());
+            let track = format!("{}::unconfirmed_cancellation", self.label());
+            tracing::warn!(?remaining, correlation=%session.correlation(), %track, "jobs not confirmed to be cancelled");
             (0..remaining.len()).into_iter().for_each(|_| {
                 act::track_act_errors(
-                    &action_label,
+                    &track,
                     Option::<&ActError>::None,
                     ActErrorDisposition::Ignored,
                     plan,
-                )
+                );
             });
-            tracing::warn!(?remaining, "jobs not confirmed to be cancelled")
         }
 
         session.savepoints = Some(savepoint_report);
@@ -489,19 +489,12 @@ where
         &self, error: ActError, job_triggers: &[(JobId, trigger::TriggerId)], plan: &'s P,
         session: &'s ActionSession,
     ) -> Result<HashSet<JobId>, ActError> {
+        let track = format!("{}::wait_for_cancellations", self.label());
         tracing::error!(
-            ?error,
-            ?job_triggers,
-            ?plan,
-            ?session,
+            ?error, ?job_triggers, ?plan, ?session, correlation=%session.correlation(), %track,
             "error on wait for job cancellations"
         );
-        act::track_act_errors(
-            &format!("{}::wait_for_cancellations", self.label()),
-            Some(&error),
-            ActErrorDisposition::Failed,
-            plan,
-        );
+        act::track_act_errors(&track, Some(&error), ActErrorDisposition::Failed, plan);
         Err(error)
     }
 
@@ -509,13 +502,12 @@ where
     async fn handle_error_on_trigger<'s>(
         &self, error: ActError, plan: &'s P, session: &'s mut ActionSession,
     ) -> Result<Vec<(JobId, trigger::TriggerId)>, ActError> {
-        tracing::error!(?error, ?plan, ?session, "error on trigger savepoint+cancel");
-        act::track_act_errors(
-            &format!("{}::trigger", self.label()),
-            Some(&error),
-            ActErrorDisposition::Failed,
-            plan,
+        let track = format!("{}::trigger", self.label());
+        tracing::error!(
+            ?error, ?plan, ?session, correlation=%session.correlation(), %track,
+            "error on trigger savepoint+cancel"
         );
+        act::track_act_errors(&track, Some(&error), ActErrorDisposition::Failed, plan);
         Err(error)
     }
 
@@ -524,19 +516,12 @@ where
         &self, error: ActError, job_triggers: &[(JobId, trigger::TriggerId)], plan: &'s P,
         session: &'s ActionSession,
     ) -> Result<JobSavepointReport, ActError> {
+        let track = format!("{}::collect_savepoint", self.label());
         tracing::error!(
-            ?error,
-            ?job_triggers,
-            ?plan,
-            ?session,
+            ?error, ?job_triggers, ?plan, ?session, correlation=%session.correlation(), %track,
             "error on collect savepoint report"
         );
-        act::track_act_errors(
-            &format!("{}::collect_savepoint", self.label()),
-            Some(&error),
-            ActErrorDisposition::Failed,
-            plan,
-        );
+        act::track_act_errors(&track, Some(&error), ActErrorDisposition::Failed, plan);
         Err(error)
     }
 }

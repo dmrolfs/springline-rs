@@ -109,16 +109,12 @@ where
     async fn handle_error_on_execute<'s>(
         &self, action: &str, error: ActError, plan: &'s P, session: &'s mut ActionSession,
     ) -> Result<(), ActError> {
+        let track = format!("{}::execute::{action}", self.label());
         tracing::error!(
-            ?error, ?plan, ?session, correlation=?session.correlation(),
+            ?error, ?plan, ?session, correlation=?session.correlation(), %track,
             "unrecoverable error during composite execute action: {action}"
         );
-        act::track_act_errors(
-            &format!("{}::execute::{action}", self.label()),
-            Some(&error),
-            ActErrorDisposition::Failed,
-            plan,
-        );
+        act::track_act_errors(&track, Some(&error), ActErrorDisposition::Failed, plan);
         Err(error)
     }
 }

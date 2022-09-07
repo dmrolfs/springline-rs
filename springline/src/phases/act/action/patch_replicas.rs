@@ -288,13 +288,12 @@ where
     async fn handle_error_on_patch_scale<'s>(
         &self, error: KubernetesError, plan: &'s P, session: &'s mut ActionSession,
     ) -> Result<Option<i32>, KubernetesError> {
-        tracing::error!(?error, ?plan, ?session, "error on patch replicas scale");
-        act::track_act_errors(
-            &format!("{}::patch_scale", self.label()),
-            Some(&error),
-            ActErrorDisposition::Failed,
-            plan,
+        let track = format!("{}::patch_scale", self.label());
+        tracing::error!(
+            ?error, ?plan, ?session, correlation=%session.correlation(), %track,
+            "error on patch replicas scale"
         );
+        act::track_act_errors(&track, Some(&error), ActErrorDisposition::Failed, plan);
         Err(error)
     }
 
@@ -302,27 +301,22 @@ where
     async fn handle_error_on_patch_block<'s>(
         &self, error: ActError, plan: &'s P, session: &'s mut ActionSession,
     ) -> Result<(), ActError> {
+        let track = format!("{}::patch_block", self.label());
         match error {
             ActError::Timeout(duration, ref message) => {
                 tracing::error!(
-                    ?plan, ?session, patch_replicas_budget=?duration,
+                    ?plan, ?session, patch_replicas_budget=?duration, correlation=%session.correlation(), %track,
                     "{message} - moving on to next action."
                 );
-                act::track_act_errors(
-                    &format!("{}::patch_block", self.label()),
-                    Some(&error),
-                    ActErrorDisposition::Ignored,
-                    plan,
-                );
+                act::track_act_errors(&track, Some(&error), ActErrorDisposition::Ignored, plan);
                 Ok(())
             },
             other => {
-                act::track_act_errors(
-                    &format!("{}::patch_block", self.label()),
-                    Some(&other),
-                    ActErrorDisposition::Failed,
-                    plan,
+                tracing::error!(
+                    error=?other, ?plan, ?session, correlation=%session.correlation(), %track,
+                    "patch_block error"
                 );
+                act::track_act_errors(&track, Some(&other), ActErrorDisposition::Failed, plan);
                 Err(other)
             },
         }

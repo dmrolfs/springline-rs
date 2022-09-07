@@ -174,16 +174,18 @@ where
                     plan.parallelism_for_replicas(nr_tm_confirmed).unwrap_or(nr_tm_confirmed);
                 let effective_parallelism = usize::min(parallelism, confirmed_parallelism_capacity);
 
+                let track = format!("{}::try_jar_restart::confirmed_below_target", self.label());
                 tracing::warn!(
                     ?plan,
                     nr_target_parallelism=%parallelism,
                     nr_confirmed_rescaled_taskmanagers=?nr_tm_confirmed,
                     %effective_parallelism,
                     correlation=?plan.correlation(),
+                    %track,
                     "Confirmed rescaled taskmanagers does not match target -- setting parallelism to minimum of the two."
                 );
                 act::track_act_errors(
-                    &format!("{}::try_jar_restart::confirmed_below_target", self.label()),
+                    &track,
                     Option::<&ActError>::None,
                     ActErrorDisposition::Recovered,
                     plan,
@@ -213,13 +215,14 @@ where
 
         let job_sources: HashMap<JobId, (JarId, SavepointLocation)> = match jar_restarts {
             Ok(pairings) if pairings.is_empty() => {
+                let track = format!("{}::try_jar_restart::no_pairings", self.label());
                 tracing::warn!(
-                    %parallelism, jar_ids=?jars, savepoint_location=?locations,
+                    %parallelism, jar_ids=?jars, savepoint_location=?locations, %track,
                     "no successful restart found for jars, savepoint locations and parallelism - manual intervention may be necessary."
                 );
 
                 act::track_act_errors(
-                    &format!("{}::try_jar_restart::no_pairings", self.label()),
+                    &track,
                     Option::<&ActError>::None,
                     ActErrorDisposition::Ignored,
                     plan,
@@ -562,16 +565,12 @@ where
         &self, error: FlinkError, plan: &'s P, session: &'s ActionSession,
     ) -> Result<HashMap<JobId, (JarId, SavepointLocation)>, FlinkError> {
         flink::track_flink_errors("restart_jobs::restart", &error);
+        let track = format!("{}::restart_requests", self.label());
         tracing::error!(
-            ?error, ?plan, ?session, correlation=?session.correlation(),
+            ?error, ?plan, ?session, correlation=?session.correlation(), %track,
             "failure while trying to restart jobs -- may need manual intervention"
         );
-        act::track_act_errors(
-            &format!("{}::restart_requests", self.label()),
-            Some(&error),
-            ActErrorDisposition::Failed,
-            plan,
-        );
+        act::track_act_errors(&track, Some(&error), ActErrorDisposition::Failed, plan);
         Err(error)
     }
 
@@ -580,16 +579,12 @@ where
         &self, error: FlinkError, plan: &'s P, session: &'s ActionSession,
     ) -> Result<(), FlinkError> {
         flink::track_flink_errors("restart_jobs::confirm", &error);
+        let track = format!("{}::restart_confirm", self.label());
         tracing::error!(
-            ?error, ?plan, ?session, correlation=?session.correlation(),
+            ?error, ?plan, ?session, correlation=?session.correlation(), %track,
             "failure while waiting for all jobs to restart -- may need manual intervention"
         );
-        act::track_act_errors(
-            &format!("{}::restart_confirm", self.label()),
-            Some(&error),
-            ActErrorDisposition::Failed,
-            plan,
-        );
+        act::track_act_errors(&track, Some(&error), ActErrorDisposition::Failed, plan);
         Err(error)
     }
 
@@ -598,13 +593,14 @@ where
         &self, job: JobId, location: &SavepointLocation, job_state: JobState, plan: &'s P,
         session: &'s ActionSession,
     ) -> Result<(), ActError> {
+        let track = format!("{}::failed_job_restart", self.label());
         tracing::error!(
-            %job, %job_state, ?plan, ?session, correlation=?session.correlation(),
+            %job, %job_state, ?plan, ?session, correlation=?session.correlation(), %track,
             "job failed after restart -- may need manual intervention"
         );
 
         act::track_act_errors(
-            &format!("{}::failed_job_restart", self.label()),
+            &track,
             Option::<&ActError>::None,
             ActErrorDisposition::Failed,
             plan,
@@ -625,17 +621,13 @@ where
 
         let mut errors = Vec::with_capacity(failures.len());
         let mut jar_savepoints = Vec::with_capacity(failures.len());
+        let track = format!("{}::remaining_restart_failure", self.label());
         for (j, s, e) in failures {
             tracing::error!(
-                error=?e, label=%self.label(), jar_id=?j, savepoint_location=?s,
-                "remaining restart failure"
+                error=?e, label=%self.label(), jar_id=?j, savepoint_location=?s, %track,
+                "remaining_restart_failure"
             );
-            act::track_act_errors(
-                &format!("{}::remaining_restart_failure", self.label()),
-                Some(&e),
-                ActErrorDisposition::Failed,
-                plan,
-            );
+            act::track_act_errors(&track, Some(&e), ActErrorDisposition::Failed, plan);
             errors.push(e.into());
             jar_savepoints.push((j, s));
         }

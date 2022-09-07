@@ -85,13 +85,12 @@ where
     async fn handle_error_on_query_active_jobs<'s>(
         &self, error: FlinkError, plan: &'s P, session: &'s mut ActionSession,
     ) -> Result<Vec<JobId>, FlinkError> {
-        tracing::error!(?error, ?plan, ?session, correlation=%session.correlation(), "error on query active jobs");
-        act::track_act_errors(
-            &format!("{}::query_active_jobs", self.label()),
-            Some(&error),
-            ActErrorDisposition::Failed,
-            plan,
+        let track = format!("{}::query_active_jobs", self.label());
+        tracing::error!(
+            ?error, ?plan, ?session, correlation=%session.correlation(), %track,
+            "error on query active jobs"
         );
+        act::track_act_errors(&track, Some(&error), ActErrorDisposition::Failed, plan);
         Err(error)
     }
 
@@ -99,13 +98,12 @@ where
     async fn handle_error_on_query_uploaded_jars<'s>(
         &self, error: FlinkError, plan: &'s P, session: &'s mut ActionSession,
     ) -> Result<Vec<JarId>, FlinkError> {
-        tracing::error!(?error, ?plan, ?session, correlation=%session.correlation(), "error on query uploaded jars");
-        act::track_act_errors(
-            &format!("{}::query_uploaded_jars", self.label()),
-            Some(&error),
-            ActErrorDisposition::Failed,
-            plan,
+        let track = format!("{}::query_uploaded_jars", self.label());
+        tracing::error!(
+            ?error, ?plan, ?session, correlation=%session.correlation(), %track,
+            "error on query uploaded jars"
         );
+        act::track_act_errors(&track, Some(&error), ActErrorDisposition::Failed, plan);
         Err(error)
     }
 }
