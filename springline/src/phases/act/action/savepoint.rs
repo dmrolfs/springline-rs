@@ -275,7 +275,7 @@ where
                 let job_detail =
                     session.flink.query_job_details(&job, &session.correlation()).await;
                 match job_detail {
-                    Ok(details) if !details.state.is_active() => {
+                    Ok(details) if details.state.is_stopped() => {
                         tracing::info!(job_status=%details.state, "job {job} is not active.");
                         break;
                     },
