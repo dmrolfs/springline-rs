@@ -9,7 +9,6 @@ use tokio::time::Instant;
 use tracing_futures::Instrument;
 
 use super::{ActionSession, ScaleAction};
-use crate::flink::FlinkContext;
 use crate::kubernetes::{self, FlinkComponent, KubernetesContext, KubernetesError};
 use crate::phases::act;
 use crate::phases::act::{ActError, ActErrorDisposition, ScaleActionPlan};
@@ -81,10 +80,6 @@ where
             Err(err) => self.handle_error_on_patch_block(err, plan, session).await,
             done => done,
         }?;
-
-        let confirmed_nr_taskmanagers =
-            self.block_for_rescaled_taskmanagers(plan, &session.flink).await;
-        session.nr_confirmed_rescaled_taskmanagers = Some(confirmed_nr_taskmanagers);
 
         Ok(())
     }
@@ -195,60 +190,6 @@ where
         );
 
         Ok((pods_by_status, is_satisfied))
-    }
-
-    #[tracing::instrument(
-    level = "info",
-    name = "patch_replicas::block_for_rescaled_taskmanagers"
-        skip(self, plan, flink)
-    )]
-    async fn block_for_rescaled_taskmanagers(
-        &self, plan: &<Self as ScaleAction>::Plan, flink: &FlinkContext,
-    ) -> usize {
-        let correlation = plan.correlation();
-        let nr_target_taskmanagers = plan.target_replicas();
-
-        tracing::debug!(
-            ?correlation,
-            "budgeting {:?} for Flink rescaled taskmanagers to register with job manager.",
-            self.taskmanager_register_timeout
-        );
-
-        let mut nr_confirmed_taskmanagers = 0;
-        let start = Instant::now();
-        while Instant::now().duration_since(start) < self.taskmanager_register_timeout {
-            match flink.query_taskmanagers(correlation).await {
-                Ok(tm_detail) => {
-                    nr_confirmed_taskmanagers = tm_detail.nr_taskmanagers;
-                    if nr_confirmed_taskmanagers == nr_target_taskmanagers {
-                        tracing::info!(
-                            %nr_confirmed_taskmanagers, %nr_target_taskmanagers, ?correlation,
-                            "confirmed rescaled taskmanagers connected with Flink JobManager"
-                        );
-                        break;
-                    }
-                },
-                Err(err) => {
-                    tracing::error!(
-                        error=?err, ?correlation,
-                        "failed to query number of taskmanagers - retrying in {:?}", self.flink_polling_interval
-                    );
-                    break;
-                },
-            }
-
-            tokio::time::sleep(self.flink_polling_interval).await;
-        }
-
-        if nr_confirmed_taskmanagers != nr_target_taskmanagers {
-            tracing::error!(
-                %nr_confirmed_taskmanagers, %nr_target_taskmanagers, ?correlation,
-                "could not confirm rescaled taskmanager connected with Flink JobManager within {:?} settle timeout - continuing with next action.",
-                self.taskmanager_register_timeout
-            );
-        }
-
-        nr_confirmed_taskmanagers
     }
 
     fn do_count_running_pods(

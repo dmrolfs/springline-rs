@@ -192,15 +192,22 @@ where
     fn do_make_rescale_up_action(
         _plan: &P, parameters: &MakeActionParameters,
     ) -> Box<dyn ScaleAction<Plan = P>> {
+        let settle = action::SettleRescaledReplicas::from_settings(
+            parameters.taskmanager_register_timeout,
+            parameters.flink_action_settings.polling_interval,
+        );
+
         let action = action::CompositeAction::default()
             .add_action_step(action::PrepareData::default())
             .add_action_step(action::PatchReplicas::from_settings(
                 parameters.taskmanager_register_timeout,
                 parameters.flink_action_settings.polling_interval,
             ))
+            .add_action_step(settle.with_sub_label("after_rescale"))
             .add_action_step(action::CancelWithSavepoint::from_settings(
                 &parameters.flink_action_settings,
             ))
+            .add_action_step(settle.with_sub_label("after_job_cancel"))
             .add_action_step(action::RestartJobs::from_settings(
                 &parameters.flink_action_settings,
             ));
@@ -212,6 +219,11 @@ where
     fn do_make_rescale_down_action(
         _plan: &P, parameters: &MakeActionParameters,
     ) -> Box<dyn ScaleAction<Plan = P>> {
+        let settle = action::SettleRescaledReplicas::from_settings(
+            parameters.taskmanager_register_timeout,
+            parameters.flink_action_settings.polling_interval,
+        );
+
         let action = action::CompositeAction::default()
             .add_action_step(action::PrepareData::default())
             .add_action_step(action::CancelWithSavepoint::from_settings(
@@ -221,6 +233,7 @@ where
                 parameters.taskmanager_register_timeout,
                 parameters.flink_action_settings.polling_interval,
             ))
+            .add_action_step(settle.with_sub_label("after_patch"))
             .add_action_step(action::RestartJobs::from_settings(
                 &parameters.flink_action_settings,
             ));
