@@ -83,11 +83,11 @@ pub fn make_governance_transform(
                     "final plan does not affect cluster change - dropping."
                 );
                 None
-            }
+            },
 
             (Ok(Some(adj_p)), Ok(Some(adj_tms)))
                 if adj_p != plan.target_job_parallelism
-                    || adj_tms != plan.target_nr_task_managers =>
+                    || adj_tms != plan.target_nr_taskmanagers =>
             {
                 tracing::info!(
                     ?plan, adjusted_job_parallelism=%adj_p, adjusted_nr_task_managers=%adj_tms,
@@ -95,7 +95,7 @@ pub fn make_governance_transform(
                 );
                 Some(ScalePlan {
                     target_job_parallelism: adj_p,
-                    target_nr_task_managers: adj_tms,
+                    target_nr_taskmanagers: adj_tms,
                     ..outcome.item
                 })
             },

@@ -5,7 +5,7 @@ use futures::{future::FutureExt, pin_mut};
 use once_cell::sync::Lazy;
 use proctor::graph::stage::{WithApi, WithMonitor};
 use prometheus::Registry;
-use settings_loader::{SettingsLoader, LoadingOptions};
+use settings_loader::{LoadingOptions, SettingsLoader};
 use springline::engine::{Autoscaler, BoxedTelemetrySource, FeedbackSource};
 use springline::flink::FlinkContext;
 use springline::kubernetes::KubernetesContext;

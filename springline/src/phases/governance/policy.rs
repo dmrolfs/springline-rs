@@ -76,6 +76,15 @@ impl QueryPolicy for GovernancePolicy {
         MetricCatalog::register_with_policy_engine(engine)?;
 
         engine.register_class(
+            ScalePlan::get_polar_class_builder()
+                .add_method(
+                    "taskmanagers_for_parallelism",
+                    ScalePlan::taskmanagers_for_parallelism,
+                )
+                .build(),
+        )?;
+
+        engine.register_class(
             GovernanceContext::get_polar_class_builder()
                 .add_method("custom", ProctorContext::custom)
                 .build(),

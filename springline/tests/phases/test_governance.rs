@@ -322,16 +322,18 @@ async fn test_flink_governance_flow_simple_and_happy() -> anyhow::Result<()> {
                 correlation_id: CORRELATION_ID.clone(),
                 current_job_parallelism: 4,
                 target_job_parallelism: 8,
-                current_nr_task_managers: 4,
-                target_nr_task_managers: 8,
+                current_nr_taskmanagers: 4,
+                target_nr_taskmanagers: 8,
+                task_slots_per_taskmanager: 1_f64,
             },
             vec![ScalePlan {
                 recv_timestamp: timestamp,
                 correlation_id: CORRELATION_ID.clone(),
                 current_job_parallelism: 4,
                 target_job_parallelism: 8,
-                current_nr_task_managers: 4,
-                target_nr_task_managers: 8,
+                current_nr_taskmanagers: 4,
+                target_nr_taskmanagers: 8,
+                task_slots_per_taskmanager: 1_f64,
             }]
         )
         .await
@@ -390,16 +392,18 @@ async fn test_flink_governance_flow_simple_below_min_cluster_size() -> anyhow::R
                 correlation_id: CORRELATION_ID.clone(),
                 current_job_parallelism: 4,
                 target_job_parallelism: 0,
-                current_nr_task_managers: 4,
-                target_nr_task_managers: 0,
+                current_nr_taskmanagers: 4,
+                target_nr_taskmanagers: 0,
+                task_slots_per_taskmanager: 1_f64,
             },
             vec![ScalePlan {
                 recv_timestamp: timestamp,
                 correlation_id: CORRELATION_ID.clone(),
                 current_job_parallelism: 4,
                 target_job_parallelism: min_parallelism,
-                current_nr_task_managers: 4,
-                target_nr_task_managers: min_cluster_size,
+                current_nr_taskmanagers: 4,
+                target_nr_taskmanagers: min_cluster_size,
+                task_slots_per_taskmanager: 1_f64,
             }]
         )
         .await
@@ -458,16 +462,18 @@ async fn test_flink_governance_flow_simple_above_max_cluster_size() -> anyhow::R
                 correlation_id: CORRELATION_ID.clone(),
                 current_job_parallelism: 6,
                 target_job_parallelism: 999,
-                current_nr_task_managers: 6,
-                target_nr_task_managers: 999,
+                current_nr_taskmanagers: 6,
+                target_nr_taskmanagers: 999,
+                task_slots_per_taskmanager: 1_f64,
             },
             vec![ScalePlan {
                 recv_timestamp: timestamp,
                 correlation_id: CORRELATION_ID.clone(),
                 current_job_parallelism: 6,
                 target_job_parallelism: 6 + max_scaling_step,
-                current_nr_task_managers: 6,
-                target_nr_task_managers: max_cluster_size,
+                current_nr_taskmanagers: 6,
+                target_nr_taskmanagers: max_cluster_size,
+                task_slots_per_taskmanager: 1_f64,
             }]
         )
         .await
@@ -526,16 +532,18 @@ async fn test_flink_governance_flow_simple_step_up_too_big() -> anyhow::Result<(
                 correlation_id: CORRELATION_ID.clone(),
                 current_job_parallelism: 0,
                 target_job_parallelism: 9,
-                current_nr_task_managers: 0,
-                target_nr_task_managers: 9,
+                current_nr_taskmanagers: 0,
+                target_nr_taskmanagers: 9,
+                task_slots_per_taskmanager: 1_f64,
             },
             vec![ScalePlan {
                 recv_timestamp: timestamp,
                 correlation_id: CORRELATION_ID.clone(),
                 current_job_parallelism: 0,
                 target_job_parallelism: max_scaling_step,
-                current_nr_task_managers: 0,
-                target_nr_task_managers: max_scaling_step,
+                current_nr_taskmanagers: 0,
+                target_nr_taskmanagers: max_scaling_step,
+                task_slots_per_taskmanager: 1_f64,
             }]
         )
         .await
@@ -594,16 +602,18 @@ async fn test_flink_governance_flow_simple_step_down_too_big() -> anyhow::Result
                 correlation_id: CORRELATION_ID.clone(),
                 current_job_parallelism: max_cluster_size,
                 target_job_parallelism: min_cluster_size,
-                current_nr_task_managers: max_cluster_size,
-                target_nr_task_managers: min_cluster_size,
+                current_nr_taskmanagers: max_cluster_size,
+                target_nr_taskmanagers: min_cluster_size,
+                task_slots_per_taskmanager: 1_f64,
             },
             vec![ScalePlan {
                 recv_timestamp: timestamp,
                 correlation_id: CORRELATION_ID.clone(),
                 current_job_parallelism: max_cluster_size,
                 target_job_parallelism: max_cluster_size - max_scaling_step,
-                current_nr_task_managers: max_cluster_size,
-                target_nr_task_managers: max_cluster_size - max_scaling_step,
+                current_nr_taskmanagers: max_cluster_size,
+                target_nr_taskmanagers: max_cluster_size - max_scaling_step,
+                task_slots_per_taskmanager: 1_f64,
             }]
         )
         .await
@@ -665,16 +675,18 @@ async fn test_flink_governance_flow_simple_step_up_before_max() -> anyhow::Resul
                 correlation_id: CORRELATION_ID.clone(),
                 current_job_parallelism: 0,
                 target_job_parallelism: 999,
-                current_nr_task_managers: 0,
-                target_nr_task_managers: 999,
+                current_nr_taskmanagers: 0,
+                target_nr_taskmanagers: 999,
+                task_slots_per_taskmanager: 1_f64,
             },
             vec![ScalePlan {
                 recv_timestamp: timestamp,
                 correlation_id: CORRELATION_ID.clone(),
                 current_job_parallelism: 0,
                 target_job_parallelism: max_scaling_step,
-                current_nr_task_managers: 0,
-                target_nr_task_managers: max_scaling_step,
+                current_nr_taskmanagers: 0,
+                target_nr_taskmanagers: max_scaling_step,
+                task_slots_per_taskmanager: 1_f64,
             }]
         )
         .await
@@ -733,16 +745,18 @@ async fn test_flink_governance_flow_simple_step_down_before_min() -> anyhow::Res
                 correlation_id: CORRELATION_ID.clone(),
                 current_job_parallelism: max_cluster_size,
                 target_job_parallelism: 0,
-                current_nr_task_managers: max_cluster_size,
-                target_nr_task_managers: 0,
+                current_nr_taskmanagers: max_cluster_size,
+                target_nr_taskmanagers: 0,
+                task_slots_per_taskmanager: 1_f64,
             },
             vec![ScalePlan {
                 recv_timestamp: timestamp,
                 correlation_id: CORRELATION_ID.clone(),
                 current_job_parallelism: max_cluster_size,
                 target_job_parallelism: max_cluster_size - max_scaling_step,
-                current_nr_task_managers: max_cluster_size,
-                target_nr_task_managers: max_cluster_size - max_scaling_step,
+                current_nr_taskmanagers: max_cluster_size,
+                target_nr_taskmanagers: max_cluster_size - max_scaling_step,
+                task_slots_per_taskmanager: 1_f64,
             }]
         )
         .await

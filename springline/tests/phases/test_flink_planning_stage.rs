@@ -396,8 +396,9 @@ async fn test_flink_planning_linear() {
                 correlation_id: correlation_id.clone(),
                 current_job_parallelism: 2,
                 target_job_parallelism: 6,
-                current_nr_task_managers: 2,
-                target_nr_task_managers: 6, // todo: also allow 5???
+                current_nr_taskmanagers: 2,
+                target_nr_taskmanagers: 6, // todo: also allow 5???
+                task_slots_per_taskmanager: 1_f64,
             }]
         )
     });
@@ -410,8 +411,9 @@ async fn test_flink_planning_linear() {
                 correlation_id,
                 current_job_parallelism: 2,
                 target_job_parallelism: 5,
-                current_nr_task_managers: 2,
-                target_nr_task_managers: 5,
+                current_nr_taskmanagers: 2,
+                target_nr_taskmanagers: 5,
+                task_slots_per_taskmanager: 1_f64,
             }]
         )
     }
@@ -455,7 +457,7 @@ async fn test_flink_planning_sine() {
         .await
     );
 
-    let context = assert_ok!(
+    let _context = assert_ok!(
         planning
             .patch_context(PlanningContext {
                 correlation_id: Id::direct("planning_context", 123, "ctx"),
@@ -560,8 +562,9 @@ async fn test_flink_planning_sine() {
                 correlation_id: CORRELATION_ID.clone(),
                 current_job_parallelism: 2,
                 target_job_parallelism: 8,
-                current_nr_task_managers: 2,
-                target_nr_task_managers: 8,
+                current_nr_taskmanagers: 2,
+                target_nr_taskmanagers: 8,
+                task_slots_per_taskmanager: 1_f64,
             }]
         )
     }) {
@@ -573,8 +576,9 @@ async fn test_flink_planning_sine() {
                 correlation_id: CORRELATION_ID.clone(),
                 current_job_parallelism: 2,
                 target_job_parallelism: 9,
-                current_nr_task_managers: 2,
-                target_nr_task_managers: 9,
+                current_nr_taskmanagers: 2,
+                target_nr_taskmanagers: 9,
+                task_slots_per_taskmanager: 1_f64,
             }]
         )
     }
@@ -741,8 +745,9 @@ async fn test_flink_planning_context_change() {
                 correlation_id: CORRELATION_ID.clone(),
                 current_job_parallelism: 2,
                 target_job_parallelism: 8,
-                current_nr_task_managers: 2,
-                target_nr_task_managers: 8,
+                current_nr_taskmanagers: 2,
+                target_nr_taskmanagers: 8,
+                task_slots_per_taskmanager: 1_f64,
             },
         )
     }) {
@@ -755,8 +760,9 @@ async fn test_flink_planning_context_change() {
                     correlation_id: CORRELATION_ID.clone(),
                     current_job_parallelism: 2,
                     target_job_parallelism: 9,
-                    current_nr_task_managers: 2,
-                    target_nr_task_managers: 9,
+                    current_nr_taskmanagers: 2,
+                    target_nr_taskmanagers: 9,
+                    task_slots_per_taskmanager: 1_f64,
                 },
             )
         }) {
@@ -768,15 +774,16 @@ async fn test_flink_planning_context_change() {
                     correlation_id: CORRELATION_ID.clone(),
                     current_job_parallelism: 2,
                     target_job_parallelism: 7,
-                    current_nr_task_managers: 2,
-                    target_nr_task_managers: 7,
+                    current_nr_taskmanagers: 2,
+                    target_nr_taskmanagers: 7,
+                    task_slots_per_taskmanager: 1_f64,
                 },
             )
         }
     }
 
     assert_gt!(
-        actual[1].target_nr_task_managers,
-        1000 * actual[0].target_nr_task_managers
+        actual[1].target_nr_taskmanagers,
+        1000 * actual[0].target_nr_taskmanagers
     );
 }

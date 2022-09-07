@@ -54,11 +54,11 @@ impl ScaleActionPlan for ScalePlan {
     }
 
     fn current_replicas(&self) -> usize {
-        self.current_nr_task_managers as usize
+        self.current_nr_taskmanagers as usize
     }
 
     fn target_replicas(&self) -> usize {
-        self.target_nr_task_managers as usize
+        self.target_nr_taskmanagers as usize
     }
 }
 
@@ -262,8 +262,8 @@ pub fn make_logger_act_phase() -> Box<dyn SinkStage<GovernanceOutcome>> {
         |plan: GovernanceOutcome| {
             ACT_SCALE_ACTION_COUNT
                 .with_label_values(&[
-                    plan.current_nr_task_managers.to_string().as_str(),
-                    plan.target_nr_task_managers.to_string().as_str(),
+                    plan.current_nr_taskmanagers.to_string().as_str(),
+                    plan.target_nr_taskmanagers.to_string().as_str(),
                 ])
                 .inc();
         },

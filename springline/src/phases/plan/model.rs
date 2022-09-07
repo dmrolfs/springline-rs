@@ -30,7 +30,7 @@ impl ScaleParameters {
     }
 }
 
-#[derive(PolarClass, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(PolarClass, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ScalePlan {
     pub correlation_id: CorrelationId,
 
@@ -44,10 +44,12 @@ pub struct ScalePlan {
     pub target_job_parallelism: u32,
 
     #[polar(attribute)]
-    pub current_nr_task_managers: u32,
+    pub current_nr_taskmanagers: u32,
 
     #[polar(attribute)]
-    pub target_nr_task_managers: u32,
+    pub target_nr_taskmanagers: u32,
+
+    pub task_slots_per_taskmanager: f64,
 }
 
 impl fmt::Debug for ScalePlan {
@@ -63,11 +65,15 @@ impl fmt::Debug for ScalePlan {
                 ),
             )
             .field(
-                "nr_task_managers_plan",
+                "nr_taskmanagers_plan",
                 &format!(
                     "{}->{}",
-                    self.current_nr_task_managers, self.target_nr_task_managers
+                    self.current_nr_taskmanagers, self.target_nr_taskmanagers
                 ),
+            )
+            .field(
+                "task_slots_per_taskmanager",
+                &self.task_slots_per_taskmanager,
             )
             .finish()
     }
@@ -82,23 +88,13 @@ impl Correlation for ScalePlan {
 }
 
 impl ScalePlan {
-    // fn taskmanagers_for_parallelism(p: u32, task_slots_per_taskmanager: u32) -> u32 {
-    //     let tms = f64::from(p) / f64::from(task_slots_per_taskmanager);
-    //     math::try_f64_to_u32(tms)
-    //
-    // }
-
     #[tracing::instrument(level = "trace", name = "ScalePlan::new", skip())]
     pub fn new(
         decision: DecisionResult<MetricCatalog>, parameters: ScaleParameters,
     ) -> Option<Self> {
-        // let task_slots_per_taskmanager = parameters.task_slots_per_taskmanager();
+        let task_slots_per_taskmanager = parameters.task_slots_per_taskmanager();
         let taskmanagers_for_parallelism =
-            |p: u32| math::try_f64_to_u32(f64::from(p) / parameters.task_slots_per_taskmanager());
-        // let calculated_task_managers = parameters.calculated_job_parallelism.map(|p| {
-        //     let tms = f64::from(p) / parameters.task_slots_per_taskmanager();
-        //     math::try_f64_to_u32(tms)
-        // });
+            |p: u32| Self::calculate_taskmanagers(p, task_slots_per_taskmanager);
 
         match decision.direction() {
             ScaleDirection::None => None,
@@ -108,7 +104,7 @@ impl ScalePlan {
 
                 let recv_timestamp = decision.item().recv_timestamp;
                 let correlation_id = decision.item().correlation_id.clone();
-                let (target_job_parallelism, target_nr_task_managers) = match direction {
+                let (target_job_parallelism, target_nr_taskmanagers) = match direction {
                     ScaleDirection::Up => {
                         let min_target_parallelism =
                             current_job_parallelism.saturating_add(parameters.min_scaling_step);
@@ -156,8 +152,9 @@ impl ScalePlan {
                     recv_timestamp,
                     current_job_parallelism,
                     target_job_parallelism,
-                    current_nr_task_managers: current_nr_taskmanagers,
-                    target_nr_task_managers,
+                    current_nr_taskmanagers,
+                    target_nr_taskmanagers,
+                    task_slots_per_taskmanager,
                 })
             },
         }
@@ -178,9 +175,17 @@ impl ScalePlan {
     }
 
     pub fn nr_task_managers_difference(&self) -> i64 {
-        let current = i64::from(self.current_nr_task_managers);
-        let target = i64::from(self.target_nr_task_managers);
+        let current = i64::from(self.current_nr_taskmanagers);
+        let target = i64::from(self.target_nr_taskmanagers);
         target.saturating_sub(current)
+    }
+
+    pub fn taskmanagers_for_parallelism(&self, parallelism: u32) -> u32 {
+        Self::calculate_taskmanagers(parallelism, self.task_slots_per_taskmanager)
+    }
+
+    fn calculate_taskmanagers(parallelism: u32, task_slots_per_taskmanager: f64) -> u32 {
+        math::try_f64_to_u32(f64::from(parallelism) / task_slots_per_taskmanager)
     }
 }
 
@@ -273,7 +278,7 @@ mod tests {
                 prop_assert_eq!(&actual.correlation_id, &decision.item().correlation_id);
                 prop_assert_eq!(actual.recv_timestamp, decision.item().recv_timestamp);
                 prop_assert_eq!(actual.current_job_parallelism, current_job_parallelism);
-                prop_assert_eq!(actual.current_nr_task_managers, current_nr_task_managers);
+                prop_assert_eq!(actual.current_nr_taskmanagers, current_nr_task_managers);
 
                 let calculated_target = match direction {
                     ScaleDirection::Up => u32::max(current_job_parallelism, calculated_parallelism.unwrap_or(current_job_parallelism)),
@@ -303,13 +308,13 @@ mod tests {
 
                     ScaleDirection::None => {
                         prop_assert_eq!(actual.target_job_parallelism, actual.current_job_parallelism);
-                        prop_assert_eq!(actual.target_nr_task_managers, actual.current_nr_task_managers);
+                        prop_assert_eq!(actual.target_nr_taskmanagers, actual.current_nr_taskmanagers);
                     },
                 }
 
                 // finer check
                 let expected_tms = math::try_f64_to_u32(f64::from(actual.target_job_parallelism) / parameters.task_slots_per_taskmanager());
-                prop_assert_eq!(actual.target_nr_task_managers, expected_tms);
+                prop_assert_eq!(actual.target_nr_taskmanagers, expected_tms);
                 match direction {
                     ScaleDirection::Up if up_min_adj_parallelism < current_nr_task_managers && parallelism_diff.abs() <= min_scaling_step as i64 => {
                         prop_assert_eq!(actual.target_job_parallelism, u32::max(calculated_target, up_min_adj_parallelism));
@@ -399,7 +404,7 @@ mod tests {
             assert_eq!(&actual.correlation_id, &decision.item().correlation_id);
             assert_eq!(actual.recv_timestamp, decision.item().recv_timestamp);
             assert_eq!(actual.current_job_parallelism, current_job_parallelism);
-            assert_eq!(actual.current_nr_task_managers, current_nr_task_managers);
+            assert_eq!(actual.current_nr_taskmanagers, current_nr_task_managers);
 
             let calculated_target = match direction {
                 ScaleDirection::Up => u32::max(
@@ -451,8 +456,8 @@ mod tests {
                         actual.current_job_parallelism
                     );
                     assert_eq!(
-                        actual.target_nr_task_managers,
-                        actual.current_nr_task_managers
+                        actual.target_nr_taskmanagers,
+                        actual.current_nr_taskmanagers
                     );
                 },
             }
@@ -460,7 +465,7 @@ mod tests {
             let expected_tms = math::try_f64_to_u32(
                 f64::from(actual.target_job_parallelism) / parameters.task_slots_per_taskmanager(),
             );
-            assert_eq!(actual.target_nr_task_managers, expected_tms);
+            assert_eq!(actual.target_nr_taskmanagers, expected_tms);
             match direction {
                 ScaleDirection::Up
                     if up_min_adj_parallelism < current_nr_task_managers

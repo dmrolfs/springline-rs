@@ -489,8 +489,9 @@ mod tests {
                         current_job_parallelism: METRICS.health.job_nonsource_max_parallelism,
                         target_job_parallelism: min_step
                             + METRICS.health.job_nonsource_max_parallelism,
-                        target_nr_task_managers: min_step + METRICS.cluster.nr_task_managers,
-                        current_nr_task_managers: METRICS.cluster.nr_task_managers,
+                        target_nr_taskmanagers: min_step + METRICS.cluster.nr_task_managers,
+                        current_nr_taskmanagers: METRICS.cluster.nr_task_managers,
+                        task_slots_per_taskmanager: 1.0,
                     },
                 )
                 .await
@@ -508,8 +509,9 @@ mod tests {
                         current_job_parallelism: METRICS.health.job_nonsource_max_parallelism,
                         target_job_parallelism: METRICS.health.job_nonsource_max_parallelism
                             - min_step,
-                        target_nr_task_managers: METRICS.cluster.nr_task_managers - min_step,
-                        current_nr_task_managers: METRICS.cluster.nr_task_managers,
+                        target_nr_taskmanagers: METRICS.cluster.nr_task_managers - min_step,
+                        current_nr_taskmanagers: METRICS.cluster.nr_task_managers,
+                        task_slots_per_taskmanager: 1.0
                     },
                 )
                 .await
@@ -529,8 +531,9 @@ mod tests {
                         correlation_id: CORRELATION.clone(),
                         current_job_parallelism: METRICS.health.job_nonsource_max_parallelism,
                         target_job_parallelism: MINIMAL_JOB_PARALLELISM,
-                        target_nr_task_managers: MINIMAL_JOB_PARALLELISM,
-                        current_nr_task_managers: METRICS.cluster.nr_task_managers,
+                        target_nr_taskmanagers: MINIMAL_JOB_PARALLELISM,
+                        current_nr_taskmanagers: METRICS.cluster.nr_task_managers,
+                        task_slots_per_taskmanager: 1.0,
                     },
                 )
                 .await
@@ -586,8 +589,9 @@ mod tests {
                         correlation_id: CORRELATION.clone(),
                         current_job_parallelism: METRICS.health.job_nonsource_max_parallelism,
                         target_job_parallelism: 16,
-                        target_nr_task_managers: 16,
-                        current_nr_task_managers: METRICS.cluster.nr_task_managers,
+                        target_nr_taskmanagers: 16,
+                        current_nr_taskmanagers: METRICS.cluster.nr_task_managers,
+                        task_slots_per_taskmanager: 1.0,
                     },
                 )
                 .await

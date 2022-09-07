@@ -252,9 +252,8 @@ impl Monitor {
             PlanEvent::DecisionPlanned(decision, plan) => match decision {
                 DecisionResult::ScaleUp(_) | DecisionResult::ScaleDown(_) => {
                     tracing::info!(?event, correlation=%decision.item().correlation(), "planning for scaling decision");
-                    DECISION_PLAN_CURRENT_NR_TASK_MANAGERS
-                        .set(plan.current_nr_task_managers as i64);
-                    PLAN_TARGET_NR_TASK_MANAGERS.set(plan.target_nr_task_managers as i64);
+                    DECISION_PLAN_CURRENT_NR_TASK_MANAGERS.set(plan.current_nr_taskmanagers as i64);
+                    PLAN_TARGET_NR_TASK_MANAGERS.set(plan.target_nr_taskmanagers as i64);
                 },
                 _no_action => {
                     tracing::debug!(?event, correlation=%decision.item().correlation(), "no planning action by decision");
@@ -366,8 +365,8 @@ impl Monitor {
         tracing::info!(%now, ?plan, correlation=%plan.correlation(), ?outcomes, "rescale executed");
         ACT_SCALE_ACTION_COUNT
             .with_label_values(&[
-                plan.current_nr_task_managers.to_string().as_str(),
-                plan.target_nr_task_managers.to_string().as_str(),
+                plan.current_nr_taskmanagers.to_string().as_str(),
+                plan.target_nr_taskmanagers.to_string().as_str(),
             ])
             .inc();
 
