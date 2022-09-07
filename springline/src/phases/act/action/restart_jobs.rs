@@ -121,14 +121,16 @@ where
                         "Flink restart failures occurred - attempting to restart at original parallelism"
                     );
 
-                    let mut jars = Vec::with_capacity(remaining_sources.len());
-                    let mut savepoints = HashSet::with_capacity(remaining_sources.len());
-                    for (j, s, _e) in remaining_sources {
-                        jars.push(j);
+                    let nr_initial_failures = remaining_sources.len();
+                    let mut savepoints = HashSet::with_capacity(nr_initial_failures);
+                    let mut initial_failures = HashMap::with_capacity(nr_initial_failures);
+                    for (j, s, e) in remaining_sources {
+                        initial_failures.insert(j, e);
                         savepoints.insert(s);
                     }
 
-                    let failures = self
+                    let jars: Vec<_> = initial_failures.keys().cloned().collect();
+                    let repeat_failures = self
                         .try_jar_restarts_for_parallelism(
                             plan.current_replicas(),
                             &jars,
@@ -138,9 +140,15 @@ where
                         )
                         .await;
 
-                    if !failures.is_empty() {
-                        outcome =
-                            self.handle_remaining_restart_failures(failures, plan, session).await;
+                    if !repeat_failures.is_empty() {
+                        outcome = self
+                            .handle_remaining_restart_failures(
+                                repeat_failures,
+                                initial_failures,
+                                plan,
+                                session,
+                            )
+                            .await;
                     }
                 }
             } else {
@@ -471,7 +479,7 @@ where
                     },
                     Ok(detail) if detail.state == JS::Failed => {
                         // tracing::error!(?detail, "job failed after restart -- may need manual intervention");
-                        tracing::debug!(?detail, "job {} - restart is unsuccessful", detail.state);
+                        tracing::warn!(?detail, "job {} - restart is unsuccessful", detail.state);
                         break detail.state;
                     },
                     Ok(detail) if detail.state.is_stopped() => {
@@ -610,29 +618,53 @@ where
 
     #[tracing::instrument(level = "warn", skip(self, plan, session))]
     async fn handle_remaining_restart_failures<'s>(
-        &self, failures: Vec<(JarId, SavepointLocation, ActError)>, plan: &'s P,
-        session: &'s ActionSession,
+        &self, repeat_failures: Vec<(JarId, SavepointLocation, ActError)>,
+        initial_failures: HashMap<JarId, ActError>, plan: &'s P, session: &'s ActionSession,
     ) -> Result<(), ActError> {
+        use ActError as ActE;
+
+        let repeat_failures: Vec<_> = repeat_failures
+            .into_iter()
+            .map(|(j, s, e2)| {
+                let e1 = initial_failures.get(&j);
+                (j, s, e1, e2)
+            })
+            .collect();
+
         tracing::error!(
-            nr_restart_failures=%failures.len(), ?failures,
+            nr_restart_failures=%repeat_failures.len(), ?repeat_failures,
             ?plan, ?session, correlation=?session.correlation(),
             "Job restart failures remain after multiple attempts."
         );
 
-        let mut errors = Vec::with_capacity(failures.len());
-        let mut jar_savepoints = Vec::with_capacity(failures.len());
+        let mut errors = Vec::with_capacity(repeat_failures.len());
+        let mut jar_savepoints = Vec::with_capacity(repeat_failures.len());
+        let mut possible_depleted_taskmanagers = false;
+
         let track = format!("{}::remaining_restart_failure", self.label());
-        for (j, s, e) in failures {
+        for (j, s, e1, e2) in repeat_failures {
+            if let (Some(ActE::FailedJob(_, _)), ActE::FailedJob(job_id, location)) = (e1, &e2) {
+                tracing::warn!(
+                    ?job_id, jar_id=?j, ?location, error=?e2, initial_error=?e1,
+                    "repeated FailedJob restart suggests possible depleted taskmanager(s)."
+                );
+                possible_depleted_taskmanagers = true;
+            }
+
             tracing::error!(
-                error=?e, label=%self.label(), jar_id=?j, savepoint_location=?s, %track,
+                error=?e2, initial_error=?e1, label=%self.label(), jar_id=?j, savepoint_location=?s, %track,
                 "remaining_restart_failure"
             );
-            act::track_act_errors(&track, Some(&e), ActErrorDisposition::Failed, plan);
-            errors.push(e.into());
+            act::track_act_errors(&track, Some(&e2), ActErrorDisposition::Failed, plan);
+            errors.push(e2.into());
             jar_savepoints.push((j, s));
         }
 
-        Err(ActError::JobRestart { sources: errors, jar_savepoints })
+        Err(ActE::JobRestart {
+            sources: errors,
+            jar_savepoints,
+            possible_depleted_taskmanagers,
+        })
     }
 }
 

@@ -99,6 +99,7 @@ pub enum ActError {
     JobRestart {
         sources: Vec<anyhow::Error>,
         jar_savepoints: Vec<(crate::flink::JarId, crate::flink::SavepointLocation)>,
+        possible_depleted_taskmanagers: bool,
     },
 
     #[error("failure occurred in the PatchReplicas inlet port: {0}")]
