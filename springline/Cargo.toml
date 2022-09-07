@@ -30,7 +30,7 @@ proctor = { git = "https://github.com/dmrolfs/proctor-rs", branch = "main" }
 settings_loader = { git = "https://github.com/dmrolfs/settings-loader-rs", features = ["http"] }
 #settings_loader = { path = "../../settings-loader-rs", features = ["http"] }
 
-anyhow = "1.0.63"
+anyhow = "1.0.64"
 approx = "0.5.1"
 async-trait = "0.1.57"
 axum = "0.5.15"
@@ -81,7 +81,7 @@ serde_repr = "0.1.9"
 serde_with = { version = "2.0.0", features = ["chrono", "json", "macros"] }
 splines = "4.1.1"
 tailcall = "0.1.6"
-thiserror = "1.0.33"
+thiserror = "1.0.34"
 tokio = { version = "1.21.0", features = ["full", "tracing"] }
 tower = { version = "0.4.13", features = ["timeout", "limit"] }
 tower-http = { version = "0.3.4", features = ["trace"] }
