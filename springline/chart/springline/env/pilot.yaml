@@ -42,7 +42,7 @@ application:
       kubernetes_api:
         api_timeout_secs: 450
     flink:
-      polling_interval_secs: 15
+      polling_interval_secs: 3
       restart:
         operation_timeout_secs: 300
 

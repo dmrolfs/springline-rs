@@ -256,8 +256,8 @@ action:
       polling_interval_secs: 5
 
   flink:
-    # Interval in which Flink asynchronous API status is polled. Defaults to 1 second.
-    polling_interval_secs: 1
+    # Interval in which Flink asynchronous API status is polled. Defaults to 3 second.
+    polling_interval_secs: 3
 
 #    savepoint:
       # Time allowed for a savepoint to complete. Defaults to 10 minutes.

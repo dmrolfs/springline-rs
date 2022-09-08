@@ -66,7 +66,7 @@ impl Default for FlinkActionSettings {
 
 impl FlinkActionSettings {
     pub const fn default_polling_interval() -> Duration {
-        Duration::from_secs(1)
+        Duration::from_secs(3)
     }
 }
 
