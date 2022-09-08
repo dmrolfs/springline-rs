@@ -20,6 +20,22 @@ scale_down(item, _context, reason) if
     and reason = "low_utilization_and_zero_lag";
 {{/if}}
 
+{{#if max_healthy_relative_lag_velocity}}
+{{#if min_task_utilization}}
+scale_down(item, _context, reason) if
+    item.flow.source_records_lag_max == nil
+    and item.flow.source_assigned_partitions == nil
+    and evaluation_window(window)
+    and utilization = item.flow_task_utilization_rolling_average(window)
+    and utilization < {{min_task_utilization}}
+    and back_pressure = item.flow_source_back_pressured_time_millis_per_sec_rolling_average(window)
+    and back_pressure < 10.0
+    and recs_in_per_sec = item.flow_records_in_per_sec_rolling_average(window)
+    and recs_in_per_sec < 1.0
+    and reason = "low_utilization_and_idle_telemetry";
+{{/if}}
+{{/if}}
+
 evaluation_window(window) if window = {{#if evaluate_duration_secs}}{{evaluate_duration_secs}}{{else}}60{{/if}};
 
 {{#if max_healthy_lag}}

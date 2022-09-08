@@ -558,6 +558,14 @@ impl PolicyContributor for AppDataWindow<MetricCatalog> {
                     Self::flow_source_millis_behind_latest_above_threshold,
                 )
                 .add_method(
+                    "flow_records_in_per_sec_rolling_average",
+                    Self::flow_records_in_per_sec_rolling_average,
+                )
+                .add_method(
+                    "flow_records_in_per_sec_rolling_change_per_sec",
+                    Self::flow_records_in_per_sec_rolling_change_per_sec,
+                )
+                .add_method(
                     "flow_records_out_per_sec_rolling_average",
                     Self::flow_records_out_per_sec_rolling_average,
                 )
@@ -980,6 +988,7 @@ impl AppDataWindow<MetricCatalog> {
         flow_source_back_pressured_time_millis_per_sec = |m: &MetricCatalog| Some(m.flow.source_back_pressured_time_millis_per_sec)
         flow_source_back_pressure_percentage = |m: &MetricCatalog| Some(m.flow.source_back_pressure_percentage())
         flow_source_records_consumed_rate = |m: &MetricCatalog| m.flow.source_records_consumed_rate
+        flow_records_in_per_sec = |m: &MetricCatalog| Some(m.flow.records_in_per_sec)
         flow_records_out_per_sec = |m: &MetricCatalog| Some(m.flow.records_out_per_sec)
         cluster_task_cpu_load = |m: &MetricCatalog| Some(m.cluster.task_cpu_load)
         cluster_task_heap_memory_used = |m: &MetricCatalog| Some(m.cluster.task_heap_memory_used)
