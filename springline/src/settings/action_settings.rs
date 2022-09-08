@@ -207,7 +207,7 @@ mod tests {
                 Token::Str("flink"),
                 Token::Struct { name: "FlinkActionSettings", len: 3 },
                 Token::Str("polling_interval_secs"),
-                Token::U64(1),
+                Token::U64(3),
                 Token::Str("savepoint"),
                 Token::Struct { name: "SavepointSettings", len: 2 },
                 Token::Str("directory"),
@@ -271,7 +271,7 @@ mod tests {
         assert_eq!(
             json,
             format!(
-                r##"{{"action_timeout_secs":777,"taskmanager":{{"label_selector":"app=flink,component=taskmanager","deploy_resource":{},"kubernetes_api":{{"api_timeout_secs":275,"polling_interval_secs":7}}}},"flink":{{"polling_interval_secs":1,"savepoint":{{"directory":"/service_namespace_port/v1/jobs/flink_job_id/savepoints","operation_timeout_secs":600}},"restart":{{"operation_timeout_secs":33,"allow_non_restored_state":false,"program_args":["--foo=13","--bar=3"]}}}}}}"##,
+                r##"{{"action_timeout_secs":777,"taskmanager":{{"label_selector":"app=flink,component=taskmanager","deploy_resource":{},"kubernetes_api":{{"api_timeout_secs":275,"polling_interval_secs":7}}}},"flink":{{"polling_interval_secs":3,"savepoint":{{"directory":"/service_namespace_port/v1/jobs/flink_job_id/savepoints","operation_timeout_secs":600}},"restart":{{"operation_timeout_secs":33,"allow_non_restored_state":false,"program_args":["--foo=13","--bar=3"]}}}}}}"##,
                 EXPECTED_REP
             )
         );
@@ -280,7 +280,7 @@ mod tests {
         assert_eq!(
             ron,
             format!(
-                r##"(action_timeout_secs:777,taskmanager:(label_selector:"app=flink,component=taskmanager",deploy_resource:{},kubernetes_api:(api_timeout_secs:275,polling_interval_secs:7)),flink:(polling_interval_secs:1,savepoint:(directory:Some("/service_namespace_port/v1/jobs/flink_job_id/savepoints"),operation_timeout_secs:600),restart:(operation_timeout_secs:33,allow_non_restored_state:Some(false),program_args:Some(["--foo=13","--bar=3"]))))"##,
+                r##"(action_timeout_secs:777,taskmanager:(label_selector:"app=flink,component=taskmanager",deploy_resource:{},kubernetes_api:(api_timeout_secs:275,polling_interval_secs:7)),flink:(polling_interval_secs:3,savepoint:(directory:Some("/service_namespace_port/v1/jobs/flink_job_id/savepoints"),operation_timeout_secs:600),restart:(operation_timeout_secs:33,allow_non_restored_state:Some(false),program_args:Some(["--foo=13","--bar=3"]))))"##,
                 EXPECTED_REP
             )
         );
