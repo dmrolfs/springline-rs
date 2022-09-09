@@ -1,9 +1,11 @@
+use either::{Either, Left, Right};
 use std::fmt::{self, Display};
 use std::sync::Arc;
 use std::time::Duration;
 
 use k8s_openapi::api::core::v1::Pod;
-use kube::api::ListParams;
+use kube::api::{DeleteParams, ListParams};
+use kube::core::Status;
 use kube::{Api, Client};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
@@ -65,7 +67,6 @@ pub enum FlinkComponent {
 #[derive(Debug, Clone)]
 pub struct TaskmanagerContext {
     pub deploy: DeployApi,
-    // pub pods: Api<Pod>,
     pub params: ListParams,
     pub spec: TaskmanagerSpec,
 }
@@ -141,6 +142,13 @@ impl KubernetesContext {
             .instrument(tracing::info_span!("kube::list_pods_for_fields", label=%self.label, ?params, %field_selector))
             .await
     }
+
+    pub async fn delete_pod(&self, name: &str) -> Result<Either<Pod, Status>, KubernetesError> {
+        self.inner
+            .delete_pod(name, &Default::default())
+            .instrument(tracing::debug_span!("kube::delete_pod", label=%self.label, %name))
+            .await
+    }
 }
 
 #[derive(Clone)]
@@ -212,5 +220,16 @@ impl KubernetesContextRef {
             ..params.clone()
         };
         self.list_pods(&ps).await
+    }
+
+    pub async fn delete_pod(
+        &self, name: &str, params: &DeleteParams,
+    ) -> Result<Either<Pod, Status>, KubernetesError> {
+        let result = self.pods.delete(name, params).await?;
+        match &result {
+            Left(pod) => tracing::info!(?pod, "deleting taskmanager pod: {name}"),
+            Right(status) => tracing::info!(?status, "deleted taskmanager pod: {name}"),
+        }
+        Ok(result)
     }
 }

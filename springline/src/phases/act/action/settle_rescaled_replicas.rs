@@ -59,7 +59,7 @@ where
 
     #[tracing::instrument(level = "info", name = "SettleRescaledReplicas::execute", skip(self))]
     async fn execute<'s>(
-        &self, plan: &'s Self::Plan, session: &'s mut ActionSession,
+        &mut self, plan: &'s Self::Plan, session: &'s mut ActionSession,
     ) -> Result<(), ActError> {
         let confirmed_nr_taskmanagers =
             self.block_for_rescaled_taskmanagers(plan, &session.flink).await;

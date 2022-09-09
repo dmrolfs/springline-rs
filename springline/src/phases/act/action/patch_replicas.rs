@@ -52,7 +52,7 @@ where
 
     #[tracing::instrument(level = "info", name = "PatchReplicas::execute", skip(self))]
     async fn execute<'s>(
-        &self, plan: &'s Self::Plan, session: &'s mut ActionSession,
+        &mut self, plan: &'s Self::Plan, session: &'s mut ActionSession,
     ) -> Result<(), ActError> {
         let correlation = session.correlation();
         let nr_target_taskmanagers = plan.target_replicas();

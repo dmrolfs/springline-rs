@@ -38,7 +38,7 @@ where
 
     #[tracing::instrument(level = "info", name = "PrepareData::execute", skip(self, plan))]
     async fn execute<'s>(
-        &self, plan: &'s Self::Plan, session: &'s mut ActionSession,
+        &mut self, plan: &'s Self::Plan, session: &'s mut ActionSession,
     ) -> Result<(), ActError> {
         let correlation = session.correlation();
 

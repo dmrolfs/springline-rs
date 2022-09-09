@@ -12,6 +12,7 @@ use crate::phases::act::ActError;
 use crate::CorrelationId;
 
 mod composite;
+mod cull_taskmanagers;
 mod patch_replicas;
 mod prepare_data;
 mod restart_jobs;
@@ -19,6 +20,7 @@ mod savepoint;
 mod settle_rescaled_replicas;
 
 pub use composite::CompositeAction;
+pub use cull_taskmanagers::CullTaskmanagers;
 pub use patch_replicas::PatchReplicas;
 pub use prepare_data::PrepareData;
 pub use restart_jobs::RestartJobs;
@@ -35,7 +37,7 @@ pub trait ScaleAction: Debug + Send + Sync {
     fn check_preconditions(&self, session: &ActionSession) -> Result<(), ActError>;
 
     async fn execute<'s>(
-        &self, plan: &'s Self::Plan, session: &'s mut ActionSession,
+        &mut self, plan: &'s Self::Plan, session: &'s mut ActionSession,
     ) -> Result<(), ActError>;
 }
 
@@ -68,7 +70,7 @@ where
     }
 
     async fn execute<'s>(
-        &self, _plan: &'s Self::Plan, _session: &'s mut ActionSession,
+        &mut self, _plan: &'s Self::Plan, _session: &'s mut ActionSession,
     ) -> Result<(), ActError> {
         Ok(())
     }

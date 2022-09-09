@@ -132,7 +132,7 @@ where
         let rescaling_lock = tokio::sync::Mutex::new(false);
 
         while let Some(plan) = inlet.recv().await {
-            let action = Self::make_rescale_action_plan(&plan, &self.parameters);
+            let mut action = Self::make_rescale_action_plan(&plan, &self.parameters);
             let mut is_rescaling = rescaling_lock.lock().await;
             if *is_rescaling {
                 tracing::info!("prior rescale in progress, skipping.");
@@ -207,7 +207,8 @@ where
             .add_action_step(action::CancelWithSavepoint::from_settings(
                 &parameters.flink_action_settings,
             ))
-            .add_action_step(settle.with_sub_label("after_job_cancel"))
+            .add_action_step(action::CullTaskmanagers::default()) // cannot affect active tms during savepoint
+            .add_action_step(settle.with_sub_label("after_job_cancel_and_culling_taskmanagers"))
             .add_action_step(action::RestartJobs::from_settings(
                 &parameters.flink_action_settings,
             ));
@@ -229,6 +230,7 @@ where
             .add_action_step(action::CancelWithSavepoint::from_settings(
                 &parameters.flink_action_settings,
             ))
+            .add_action_step(action::CullTaskmanagers::default())
             .add_action_step(action::PatchReplicas::from_settings(
                 parameters.taskmanager_register_timeout,
                 parameters.flink_action_settings.polling_interval,

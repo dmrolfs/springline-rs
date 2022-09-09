@@ -86,7 +86,7 @@ where
         skip(self, plan, session)
     )]
     async fn execute<'s>(
-        &self, plan: &'s Self::Plan, session: &'s mut ActionSession,
+        &mut self, plan: &'s Self::Plan, session: &'s mut ActionSession,
     ) -> Result<(), ActError> {
         let active_jobs = session.active_jobs.clone().unwrap_or_default();
 

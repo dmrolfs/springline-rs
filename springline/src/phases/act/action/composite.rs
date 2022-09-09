@@ -48,28 +48,32 @@ where
 
     #[tracing::instrument(level = "info", name = "CompositeAction::execute", skip(self))]
     async fn execute<'s>(
-        &self, plan: &'s Self::Plan, session: &'s mut ActionSession,
+        &mut self, plan: &'s Self::Plan, session: &'s mut ActionSession,
     ) -> Result<(), ActError> {
         let timer =
             act::start_scale_action_timer(session.cluster_label(), super::ACTION_TOTAL_DURATION);
 
-        for action in self.actions.iter() {
+        let label = self.label().to_string();
+        for action in self.actions.iter_mut() {
             let mut status = ActionStatus::Failure;
             if let Err(err) = action.check_preconditions(session) {
                 session.mark_completion(action.label(), status, Duration::ZERO);
                 return Err(err);
             }
 
-            let timer = act::start_scale_action_timer(session.cluster_label(), action.label());
+            let action_label = action.label().to_string();
+            let timer = act::start_scale_action_timer(session.cluster_label(), &action_label);
 
             let execute_outcome = action
                 .execute(plan, session)
-                .instrument(tracing::info_span!("act::action::composite", action=%action.label()))
+                .instrument(tracing::info_span!("act::action::composite", action=%action_label))
                 .await;
 
             let outcome = match execute_outcome {
                 Err(err) => {
-                    let o = self.handle_error_on_execute(action.label(), err, plan, session).await;
+                    let o =
+                        Self::handle_error_on_execute(&label, &action_label, err, plan, session)
+                            .await;
 
                     status = o
                         .as_ref()
@@ -105,11 +109,11 @@ impl<P> CompositeAction<P>
 where
     P: AppData + ScaleActionPlan,
 {
-    #[tracing::instrument(level = "warn", skip(self, plan, session))]
+    #[tracing::instrument(level = "warn", skip(plan, session))]
     async fn handle_error_on_execute<'s>(
-        &self, action: &str, error: ActError, plan: &'s P, session: &'s mut ActionSession,
+        label: &str, action: &str, error: ActError, plan: &'s P, session: &'s mut ActionSession,
     ) -> Result<(), ActError> {
-        let track = format!("{}::execute::{action}", self.label());
+        let track = format!("{label}::execute::{action}");
         tracing::error!(
             ?error, ?plan, ?session, correlation=?session.correlation(), %track,
             "unrecoverable error during composite execute action: {action}"

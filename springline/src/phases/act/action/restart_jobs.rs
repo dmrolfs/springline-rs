@@ -96,7 +96,7 @@ where
         skip(self)
     )]
     async fn execute<'s>(
-        &self, plan: &'s Self::Plan, session: &'s mut ActionSession,
+        &mut self, plan: &'s Self::Plan, session: &'s mut ActionSession,
     ) -> Result<(), ActError> {
         let parallelism = self.parallelism_from_plan_session(plan, session);
 
