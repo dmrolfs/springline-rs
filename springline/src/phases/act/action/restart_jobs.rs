@@ -93,7 +93,7 @@ where
     #[tracing::instrument(
         level = "info",
         name = "RestartFlinkWithNewParallelism::execute",
-        skip(self)
+        skip(self, plan,)
     )]
     async fn execute<'s>(
         &mut self, plan: &'s Self::Plan, session: &'s mut ActionSession,

@@ -50,7 +50,7 @@ where
         Ok(())
     }
 
-    #[tracing::instrument(level = "info", name = "PatchReplicas::execute", skip(self))]
+    #[tracing::instrument(level = "info", name = "PatchReplicas::execute", skip(self, plan))]
     async fn execute<'s>(
         &mut self, plan: &'s Self::Plan, session: &'s mut ActionSession,
     ) -> Result<(), ActError> {

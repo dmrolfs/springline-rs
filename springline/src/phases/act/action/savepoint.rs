@@ -83,7 +83,7 @@ where
     #[tracing::instrument(
         level = "info",
         name = "StopFlinkWithSavepoint::execute",
-        skip(self, plan, session)
+        skip(self, plan)
     )]
     async fn execute<'s>(
         &mut self, plan: &'s Self::Plan, session: &'s mut ActionSession,

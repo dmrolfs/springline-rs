@@ -52,7 +52,7 @@ where
             })
     }
 
-    #[tracing::instrument(level = "info", name = "CullTaskmanagers::execute", skip(self))]
+    #[tracing::instrument(level = "info", name = "CullTaskmanagers::execute", skip(self, plan))]
     async fn execute<'s>(
         &mut self, plan: &'s Self::Plan, session: &'s mut ActionSession,
     ) -> Result<(), ActError> {
