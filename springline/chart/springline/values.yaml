@@ -128,7 +128,7 @@ application:
   decision:
     template_data:
       max_healthy_relative_lag_velocity: 3.0
-      max_healthy_lag: 1000000
+      max_healthy_lag: 2500000
       min_task_utilization: 0.6
       evaluate_duration_secs: 120
 
