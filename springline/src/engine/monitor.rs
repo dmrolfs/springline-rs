@@ -269,7 +269,7 @@ impl Monitor {
                 self.update_health(loaded).await;
             },
             PlanEvent::ContextChanged(context) => {
-                tracing::info!(?context, correlation=%context.correlation(), "Flink Planning context changed.");
+                tracing::trace!(?context, correlation=%context.correlation(), "Flink Planning context changed.");
             },
         }
     }

@@ -265,7 +265,7 @@ impl<F: Forecaster> Planning for FlinkPlanning<F> {
         context.patch_inputs(&mut self.forecast_calculator.inputs);
         self.total_task_slots = Some(context.total_task_slots);
         self.free_task_slots = Some(context.free_task_slots);
-        tracing::info!(
+        tracing::debug!(
             ?context, forecast_inputs=?self.forecast_calculator.inputs,
             total_task_slots=?self.total_task_slots, free_task_slots=?self.free_task_slots,
             "patched planning context inputs."

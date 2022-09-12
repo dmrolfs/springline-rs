@@ -108,7 +108,7 @@ where
     let (telemetry, derivatives_satisfied) =
         sense_flink::apply_derivative_orders(telemetry, position_candidate, derivative_orders);
     if !derivatives_satisfied.is_empty() {
-        tracing::info!(
+        tracing::debug!(
             ?position_candidate,
             "derivative orders added: {derivatives_satisfied:?}"
         );

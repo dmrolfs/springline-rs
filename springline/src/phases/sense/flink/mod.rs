@@ -287,9 +287,9 @@ pub fn apply_derivative_orders<'o>(
                         combinator.combine(lhs, rhs).and_then(|c| telemetry_type.cast_telemetry(c));
                     match result {
                         Ok(value) => {
-                            tracing::info!(
+                            tracing::debug!(
                                 ?lhs_term, ?rhs_term, derived_metric=?(telemetry_path, &value),
-                                "DMR: adding calculated derivative order to telemetry"
+                                "adding calculated derivative order to telemetry"
                             );
                             let _ = telemetry.insert(telemetry_path.clone(), value);
                         },

@@ -212,7 +212,7 @@ impl FlinkContextRef {
                     })
                 })
             })
-            .instrument(tracing::info_span!(
+            .instrument(tracing::debug_span!(
                 "query Flink REST API - uploaded jars",
                 ?correlation, jars_endpoint=?self.jars_endpoint,
             ))
@@ -250,7 +250,7 @@ impl FlinkContextRef {
                     })
                 })
             })
-            .instrument(tracing::info_span!("query Flink REST API - active jobs", ?correlation))
+            .instrument(tracing::debug_span!("query Flink REST API - active jobs", ?correlation))
             .await
             .and_then(|jobs_json_value: serde_json::Value| {
                 let result = jobs_json_value
@@ -309,7 +309,7 @@ impl FlinkContextRef {
                     })
                 })
             })
-            .instrument(tracing::info_span!("query FLink REST API - job detail"))
+            .instrument(tracing::debug_span!("query FLink REST API - job detail"))
             .await;
 
         flink::track_result(
@@ -373,7 +373,7 @@ impl FlinkContextRef {
                         })
                 })
             })
-            .instrument(tracing::info_span!(
+            .instrument(tracing::debug_span!(
                 "query Flink REST API - taskmanager admin telemetry",
                 ?correlation
             ))
