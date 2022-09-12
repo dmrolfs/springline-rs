@@ -1,4 +1,5 @@
 use either::{Either, Left, Right};
+use std::collections::HashMap;
 use std::fmt::{self, Display};
 use std::sync::Arc;
 use std::time::Duration;
@@ -148,6 +149,23 @@ impl KubernetesContext {
             .delete_pod(name, &Default::default())
             .instrument(tracing::debug_span!("kube::delete_pod", label=%self.label, %name))
             .await
+    }
+
+    pub fn group_pods_by_status(pods: &[Pod]) -> HashMap<String, Vec<Pod>> {
+        let mut result = HashMap::new();
+
+        for p in pods {
+            let status = p
+                .status
+                .as_ref()
+                .and_then(|ps| ps.phase.clone())
+                .unwrap_or_else(|| super::UNKNOWN_STATUS.to_string());
+
+            let pods_entry = result.entry(status).or_insert_with(Vec::new);
+            pods_entry.push(p.clone());
+        }
+
+        result
     }
 }
 

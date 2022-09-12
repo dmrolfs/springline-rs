@@ -155,7 +155,7 @@ where
         let target_nr_task_managers = plan.target_replicas();
         let kube_constraints = kube.api_constraints();
         let task_managers = kube.list_pods(FlinkComponent::TaskManager).await?;
-        let pods_by_status = Self::group_pods_by_status(&task_managers);
+        let pods_by_status = KubernetesContext::group_pods_by_status(&task_managers);
 
         let (nr_running, pod_status_counts) = Self::do_count_running_pods(&pods_by_status);
 
@@ -206,23 +206,6 @@ where
             .unwrap_or(0);
 
         (nr_running, pod_status_counts)
-    }
-
-    fn group_pods_by_status(pods: &[Pod]) -> HashMap<String, Vec<Pod>> {
-        let mut result = HashMap::new();
-
-        for p in pods {
-            let status = p
-                .status
-                .as_ref()
-                .and_then(|ps| ps.phase.clone())
-                .unwrap_or_else(|| kubernetes::UNKNOWN_STATUS.to_string());
-
-            let pods_entry = result.entry(status).or_insert_with(Vec::new);
-            pods_entry.push(p.clone());
-        }
-
-        result
     }
 
     #[tracing::instrument(level = "warn", skip(self, plan, session))]

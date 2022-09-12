@@ -925,8 +925,9 @@ macro_rules! window_opt_float_ops_for {
                     );
                     let (sum, size) = sum_size;
 
-                    tracing::debug!("{} rolling average[{size}]: {sum:?}", stringify!($name));
-                    if size == 0 { 0.0 } else { sum.map(|value| { value / size as f64 }).unwrap_or(0.0) }
+                    let average = if size == 0 { 0.0 } else { sum.map(|value| { value / size as f64 }).unwrap_or(0.0) };
+                    tracing::debug!("{} rolling average[{sum:?} / {size}]: {average:?}", stringify!($name));
+                    average
                 }
 
                 pub fn [<$name _rolling_change_per_sec>](&self, looking_back_secs: u32) -> f64 {
@@ -948,8 +949,9 @@ macro_rules! window_opt_float_ops_for {
                                 let duration_secs = (last.0 - first.0).as_secs_f64();
                                 let last_val: f64 = last.1.into();
                                 let first_val: f64 = first.1.into();
-                                tracing::debug!("{} rolling rate change last_val[{last_val}] - first_val[{first_val}]", stringify!($name));
-                                Some((last_val - first_val) / duration_secs)
+                                let change_rate = Some((last_val - first_val) / duration_secs);
+                                tracing::debug!("{} rolling rate change last_val[{last_val}] - first_val[{first_val}] => change_rate = {change_rate:?}", stringify!($name));
+                                change_rate
                             }
                         })
                         .unwrap_or(0.0)
