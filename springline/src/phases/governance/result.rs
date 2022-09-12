@@ -38,7 +38,7 @@ pub fn make_governance_transform(
                 },
             );
 
-        let transform_span = tracing::info_span!(
+        let transform_span = tracing::debug_span!(
             "apply governance adjustments",
             scale_plan=?outcome.item, policy_results=?outcome.policy_results, ?adjusted_target_parallelism, ?adjusted_target_nr_task_managers
         );
@@ -79,7 +79,7 @@ pub fn make_governance_transform(
             (Ok(Some(adjusted_job_parallelism)), _)
                 if adjusted_job_parallelism == plan.current_job_parallelism =>
             {
-                tracing::warn!(%adjusted_job_parallelism, current_job_parallelism=%plan.current_job_parallelism,
+                tracing::info!(%adjusted_job_parallelism, current_job_parallelism=%plan.current_job_parallelism,
                     "final plan does not affect cluster change - dropping."
                 );
                 None

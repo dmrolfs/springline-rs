@@ -140,7 +140,7 @@ impl<F: Forecaster> FlinkPlanning<F> {
     }
 
     #[tracing::instrument(
-        level = "info",
+        level = "debug",
         skip(self, decision),
         fields(planning_name=%self.name, ?decision),
     )]

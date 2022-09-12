@@ -119,7 +119,7 @@ where
 
     let unfulfilled: HashSet<_> = all.difference(&satisfied).collect();
     if !unfulfilled.is_empty() {
-        tracing::warn!(
+        tracing::info!(
             ?position_candidate,
             ?unfulfilled,
             "some metric orders were not fulfilled."
