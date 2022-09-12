@@ -87,6 +87,7 @@ data:
       template_data:
         basis: chart_decision_basis
         max_healthy_relative_lag_velocity: {{ .Values.application.decision.template_data.max_healthy_relative_lag_velocity }}
+        max_healthy_lag: {{ .Values.application.decision.template_data.max_healthy_lag }}
         min_task_utilization: {{ .Values.application.decision.template_data.min_task_utilization }}
         evaluate_duration_secs: {{ .Values.application.decision.template_data.evaluate_duration_secs }}
 
@@ -107,7 +108,7 @@ data:
       taskmanager:
         # temp hard code until we can directly embed autoscaler into runtime ns
         label_selector: "component=taskmanager,release={{ include "pipeline.jobName" . }}"
-        max_cull_ratio: {{ .Values.application.action.taskmanager.max_cull_ratio }}
+        cull_ratio: {{ .Values.application.action.taskmanager.cull_ratio }}
         deploy_resource: {{ default "statefulset" .Values.deployment.taskManagerDeployment }}/{{ include "pipeline.jobName" . }}{{ .Values.global.convention.taskManagerSuffix }}
         kubernetes_api:
           api_timeout_secs: {{ .Values.application.action.taskmanager.kubernetes_api.api_timeout_secs }}

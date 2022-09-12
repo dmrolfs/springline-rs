@@ -33,7 +33,7 @@ pub struct TaskmanagerContext {
     /// under Reactive Flink, which does not restart jobs to affect rescaling.
     /// Left unset, taskmanager culling is disabled.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub max_cull_ratio: Option<f64>,
+    pub cull_ratio: Option<f64>,
 
     /// Resource name of the deployment resource used to deploy taskmanagers; e.g.
     /// "statefulset/my-taskmanager".
@@ -41,12 +41,6 @@ pub struct TaskmanagerContext {
 
     /// Constraints used when using the kubernetes API to scale the taskmanagers.
     pub kubernetes_api: KubernetesApiConstraints,
-}
-
-impl TaskmanagerContext {
-    pub const fn default_max_cull_ratio() -> f64 {
-        0.0
-    }
 }
 
 #[serde_as]
@@ -175,7 +169,7 @@ mod tests {
             action_timeout: Duration::from_secs(700),
             taskmanager: TaskmanagerContext {
                 label_selector: "app=flink,component=taskmanager".to_string(),
-                max_cull_ratio: None,
+                cull_ratio: None,
                 deploy_resource: KubernetesDeployResource::StatefulSet {
                     name: "springline".to_string(),
                 },
@@ -256,7 +250,7 @@ mod tests {
             action_timeout: Duration::from_secs(777),
             taskmanager: TaskmanagerContext {
                 label_selector: "app=flink,component=taskmanager".to_string(),
-                max_cull_ratio: Some(0.75),
+                cull_ratio: Some(0.75),
                 deploy_resource: KubernetesDeployResource::StatefulSet {
                     name: "springline".to_string(),
                 },
@@ -286,7 +280,7 @@ mod tests {
         assert_eq!(
             json,
             format!(
-                r##"{{"action_timeout_secs":777,"taskmanager":{{"label_selector":"app=flink,component=taskmanager","max_cull_ratio":0.75,"deploy_resource":{},"kubernetes_api":{{"api_timeout_secs":275,"polling_interval_secs":7}}}},"flink":{{"polling_interval_secs":3,"savepoint":{{"directory":"/service_namespace_port/v1/jobs/flink_job_id/savepoints","operation_timeout_secs":600}},"restart":{{"operation_timeout_secs":33,"allow_non_restored_state":false,"program_args":["--foo=13","--bar=3"]}}}}}}"##,
+                r##"{{"action_timeout_secs":777,"taskmanager":{{"label_selector":"app=flink,component=taskmanager","cull_ratio":0.75,"deploy_resource":{},"kubernetes_api":{{"api_timeout_secs":275,"polling_interval_secs":7}}}},"flink":{{"polling_interval_secs":3,"savepoint":{{"directory":"/service_namespace_port/v1/jobs/flink_job_id/savepoints","operation_timeout_secs":600}},"restart":{{"operation_timeout_secs":33,"allow_non_restored_state":false,"program_args":["--foo=13","--bar=3"]}}}}}}"##,
                 EXPECTED_REP
             )
         );
@@ -295,7 +289,7 @@ mod tests {
         assert_eq!(
             ron,
             format!(
-                r##"(action_timeout_secs:777,taskmanager:(label_selector:"app=flink,component=taskmanager",max_cull_ratio:Some(0.75),deploy_resource:{},kubernetes_api:(api_timeout_secs:275,polling_interval_secs:7)),flink:(polling_interval_secs:3,savepoint:(directory:Some("/service_namespace_port/v1/jobs/flink_job_id/savepoints"),operation_timeout_secs:600),restart:(operation_timeout_secs:33,allow_non_restored_state:Some(false),program_args:Some(["--foo=13","--bar=3"]))))"##,
+                r##"(action_timeout_secs:777,taskmanager:(label_selector:"app=flink,component=taskmanager",cull_ratio:Some(0.75),deploy_resource:{},kubernetes_api:(api_timeout_secs:275,polling_interval_secs:7)),flink:(polling_interval_secs:3,savepoint:(directory:Some("/service_namespace_port/v1/jobs/flink_job_id/savepoints"),operation_timeout_secs:600),restart:(operation_timeout_secs:33,allow_non_restored_state:Some(false),program_args:Some(["--foo=13","--bar=3"]))))"##,
                 EXPECTED_REP
             )
         );

@@ -23,7 +23,7 @@ const STAGE_NAME: &str = "execute_scaling";
 
 #[derive(Debug, Clone, PartialEq)]
 struct MakeActionParameters {
-    pub max_cull_ratio: Option<f64>,
+    pub cull_ratio: Option<f64>,
     pub taskmanager_register_timeout: Duration,
     pub flink_action_settings: FlinkActionSettings,
     pub kubernetes_action_settings: KubernetesApiConstraints,
@@ -46,7 +46,7 @@ where
     pub fn new(kube: KubernetesContext, flink: FlinkContext, settings: &Settings) -> Self {
         let (tx_action_monitor, _) = broadcast::channel(num_cpus::get());
         let parameters = MakeActionParameters {
-            max_cull_ratio: settings.action.taskmanager.max_cull_ratio,
+            cull_ratio: settings.action.taskmanager.cull_ratio,
             taskmanager_register_timeout: settings.kubernetes.patch_settle_timeout,
             flink_action_settings: settings.action.flink.clone(),
             kubernetes_action_settings: settings.action.taskmanager.kubernetes_api,
@@ -216,9 +216,9 @@ where
             ));
         // .add_action_step(flink_settle.with_sub_label("after_rescale"))
 
-        if let Some(max_cull_ratio) = parameters.max_cull_ratio {
+        if let Some(cull_ratio) = parameters.cull_ratio {
             action = action
-                .add_action_step(action::CullTaskmanagers::new(max_cull_ratio))
+                .add_action_step(action::CullTaskmanagers::new(cull_ratio))
                 .add_action_step(k8s_settle.with_sub_label("after_culling_taskmanagers"));
             // cannot affect active tms during savepoint
         }
@@ -255,9 +255,9 @@ where
                 parameters.flink_action_settings.polling_interval,
             ));
 
-        if let Some(max_cull_ratio) = parameters.max_cull_ratio {
+        if let Some(cull_ratio) = parameters.cull_ratio {
             action = action
-                .add_action_step(action::CullTaskmanagers::new(max_cull_ratio))
+                .add_action_step(action::CullTaskmanagers::new(cull_ratio))
                 .add_action_step(k8s_settle.with_sub_label("after_culling_taskmanagers"));
         }
 

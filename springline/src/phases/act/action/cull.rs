@@ -10,7 +10,6 @@ use itertools::Itertools;
 use k8s_openapi::api::core::v1::Pod;
 use kube::ResourceExt;
 use proctor::AppData;
-use rand::Rng;
 use std::marker::PhantomData;
 use tracing::Instrument;
 
@@ -18,14 +17,14 @@ pub const ACTION_LABEL: &str = "cull_taskmanagers";
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CullTaskmanagers<P> {
-    max_cull_ratio: f64,
+    cull_ratio: f64,
     marker: PhantomData<P>,
 }
 
 impl<P> CullTaskmanagers<P> {
-    pub fn new(max_cull_ratio: f64) -> Self {
-        let max_cull_ratio = f64::max(0.0, f64::min(1.0, max_cull_ratio));
-        Self { max_cull_ratio, marker: PhantomData }
+    pub fn new(cull_ratio: f64) -> Self {
+        let cull_ratio = f64::max(0.0, f64::min(1.0, cull_ratio));
+        Self { cull_ratio, marker: PhantomData }
     }
 }
 
@@ -66,16 +65,15 @@ where
 
         let nr_taskmanagers = math::try_u64_to_f64(plan.current_replicas() as u64)
             .map_err(|err| ActError::Stage(err.into()))?;
-        let max_core_culled = math::try_f64_to_u32(self.max_cull_ratio * nr_taskmanagers) as usize;
-        // let nr_to_cull = surplus + rand::thread_rng().gen_range(1..=max_core_culled);
-        let nr_to_cull = surplus + max_core_culled;
+        let core_culled = math::try_f64_to_u32(self.cull_ratio * nr_taskmanagers) as usize;
+
+        let nr_to_cull = surplus + core_culled;
         let nr_to_cull = usize::min(plan.current_replicas(), nr_to_cull);
         tracing::debug!(
-            %nr_to_cull, %surplus, %max_core_culled,
+            %nr_to_cull, %surplus, %core_culled,
             "calculated number of taskmanagers to cull before restart."
         );
 
-        session.nr_target_replicas = Some(plan.current_replicas() - nr_to_cull);
         // if plan.current_replicas() <= nr_to_cull {
         //     self.do_complete_culling(plan, session).await
         // } else {
@@ -88,28 +86,6 @@ impl<P> CullTaskmanagers<P>
 where
     P: AppData + ScaleActionPlan,
 {
-    #[tracing::instrument(level = "info", skip(self, _plan, session))]
-    async fn do_complete_culling<'s>(
-        &mut self, _plan: &'s <Self as ScaleAction>::Plan, session: &'s mut ActionSession,
-    ) -> Result<(), ActError> {
-        let patched_scale = session
-            .kube
-            .taskmanager()
-            .deploy
-            .patch_scale(0, &session.correlation)
-            .instrument(tracing::info_span!(
-                "complete_culling::patch_replicas",
-                correlation=?session.correlation,
-            ))
-            .await?;
-
-        tracing::debug!(
-            ?patched_scale,
-            "complete culling patched taskmanager replicas"
-        );
-        Ok(())
-    }
-
     #[tracing::instrument(level = "info", skip(self, plan, session))]
     async fn do_individual_culling<'s>(
         &mut self, nr_to_cull: usize, plan: &'s <Self as ScaleAction>::Plan,
@@ -135,7 +111,7 @@ where
 
         tracing::debug!(
             %nr_to_cull,
-            culling_taskmanagers=?tms.iter().map(|(p, ts)| format!("{}_@_{ts}", p.name_any())).collect::<Vec<_>>(),
+            culling_taskmanagers=?tms.iter().map(|(p, ts)| format!("{}::@::{ts}", p.name_any())).collect::<Vec<_>>(),
             "identified list of taskmanagers to cull before restart."
         );
 
@@ -159,6 +135,31 @@ where
             }
         }
 
+        session.nr_target_replicas = Some(plan.target_replicas());
         Ok(())
     }
+
+    // #[tracing::instrument(level = "info", skip(self, _plan, session))]
+    // async fn do_complete_culling<'s>(
+    //     &mut self, _plan: &'s <Self as ScaleAction>::Plan, session: &'s mut ActionSession,
+    // ) -> Result<(), ActError> {
+    //     let patched_scale = session
+    //         .kube
+    //         .taskmanager()
+    //         .deploy
+    //         .patch_scale(0, &session.correlation)
+    //         .instrument(tracing::info_span!(
+    //             "complete_culling::patch_replicas",
+    //             correlation=?session.correlation,
+    //         ))
+    //         .await?;
+    //
+    //     tracing::debug!(
+    //         ?patched_scale,
+    //         "complete culling patched taskmanager replicas"
+    //     );
+    //
+    //     session.nr_target_replicas = Some(0);
+    //     Ok(())
+    // }
 }

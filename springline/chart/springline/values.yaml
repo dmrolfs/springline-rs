@@ -128,6 +128,7 @@ application:
   decision:
     template_data:
       max_healthy_relative_lag_velocity: 3.0
+      max_healthy_lag: 1000000
       min_task_utilization: 0.6
       evaluate_duration_secs: 120
 
@@ -142,7 +143,7 @@ application:
 
   action:
     taskmanager:
-      max_cull_ratio: 0.75
+      cull_ratio: 0.75
       kubernetes_api:
         api_timeout_secs: 290
     flink:
