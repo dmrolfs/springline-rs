@@ -12,21 +12,23 @@ use crate::phases::act::ActError;
 use crate::CorrelationId;
 
 mod composite;
-mod cull_taskmanagers;
+mod cull;
+mod flink_settlement;
+mod kubernetes_settlement;
 mod patch_replicas;
 mod prepare_data;
 mod restart_jobs;
 mod savepoint;
-mod settle_rescaled_replicas;
 
 pub use composite::CompositeAction;
-pub use cull_taskmanagers::CullTaskmanagers;
+pub use cull::CullTaskmanagers;
+pub use flink_settlement::FlinkSettlement;
+pub use kubernetes_settlement::KubernetesSettlement;
 pub use patch_replicas::PatchReplicas;
 pub use prepare_data::PrepareData;
 pub use restart_jobs::RestartJobs;
 pub use restart_jobs::FLINK_MISSED_JAR_RESTARTS;
 pub use savepoint::CancelWithSavepoint;
-pub use settle_rescaled_replicas::SettleRescaledReplicas;
 
 #[async_trait]
 pub trait ScaleAction: Debug + Send + Sync {
@@ -112,6 +114,7 @@ pub struct ActionSession {
     pub history: Vec<ActionOutcome>,
     pub kube: KubernetesContext,
     pub flink: FlinkContext,
+    pub nr_target_replicas: Option<usize>,
     pub nr_confirmed_rescaled_taskmanagers: Option<usize>,
     pub active_jobs: Option<Vec<JobId>>,
     pub uploaded_jars: Option<Vec<JarId>>,
@@ -125,6 +128,7 @@ impl ActionSession {
             history: Default::default(),
             kube,
             flink,
+            nr_target_replicas: None,
             nr_confirmed_rescaled_taskmanagers: None,
             active_jobs: None,
             uploaded_jars: None,
@@ -169,6 +173,10 @@ impl Debug for ActionSession {
 
         if let Some(savepoints) = &self.savepoints {
             debug.field("savepoints", &savepoints);
+        }
+
+        if let Some(nr_target_replicas) = &self.nr_target_replicas {
+            debug.field("nr_target_replicas", &nr_target_replicas);
         }
 
         if let Some(nr_confirmed_rescaled_taskmanagers) = &self.nr_confirmed_rescaled_taskmanagers {

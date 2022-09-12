@@ -241,6 +241,12 @@ action:
     # "component=taskmanager"
     label_selector: "component=taskmanager,release=dr-springline"
 
+    # An optional value of how much to cull taskmanagers during rescaling in order to prevent
+    # taskmanager resource leaks from impacting job stability across restarts. This action is unnecessary
+    # under Reactive Flink, which does not restart jobs to affect rescaling.
+    # If unset (the default), taskmanager culling is disabled.
+    max_cull_ratio: 1.0
+
     # Resource name of the deployment resource used to deploy taskmanagers; e.g. "statefulset/my-taskmanager".
     deploy_resource: statefulset/dr-springline-tm
 

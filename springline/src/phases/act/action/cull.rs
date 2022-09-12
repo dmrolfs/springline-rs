@@ -1,4 +1,5 @@
 use crate::kubernetes::FlinkComponent;
+use crate::math;
 use crate::phases::act;
 use crate::phases::act::action::{ActionSession, ScaleAction};
 use crate::phases::act::{ActError, ActErrorDisposition, ScaleActionPlan};
@@ -12,18 +13,19 @@ use proctor::AppData;
 use rand::Rng;
 use std::marker::PhantomData;
 use tracing::Instrument;
-use crate::math;
 
 pub const ACTION_LABEL: &str = "cull_taskmanagers";
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct CullTaskmanagers<P> {
+    max_cull_ratio: f64,
     marker: PhantomData<P>,
 }
 
-impl<P> Default for CullTaskmanagers<P> {
-    fn default() -> Self {
-        Self { marker: PhantomData }
+impl<P> CullTaskmanagers<P> {
+    pub fn new(max_cull_ratio: f64) -> Self {
+        let max_cull_ratio = f64::max(0.0, f64::min(1.0, max_cull_ratio));
+        Self { max_cull_ratio, marker: PhantomData }
     }
 }
 
@@ -56,15 +58,63 @@ where
     async fn execute<'s>(
         &mut self, plan: &'s Self::Plan, session: &'s mut ActionSession,
     ) -> Result<(), ActError> {
-        let nr_to_kill = if plan.target_replicas() < plan.current_replicas() {
+        let surplus = if plan.target_replicas() < plan.current_replicas() {
             plan.current_replicas() - plan.target_replicas()
         } else {
-            let nr_taskmanagers = math::try_u64_to_f64(plan.current_replicas() as u64)
-                .map_err(|err| ActError::Stage(err.into()))?;
-            let max_culled = math::try_f64_to_u32(0.2 * nr_taskmanagers) as usize;
-            rand::thread_rng().gen_range(1..=max_culled)
+            0
         };
 
+        let nr_taskmanagers = math::try_u64_to_f64(plan.current_replicas() as u64)
+            .map_err(|err| ActError::Stage(err.into()))?;
+        let max_core_culled = math::try_f64_to_u32(self.max_cull_ratio * nr_taskmanagers) as usize;
+        // let nr_to_cull = surplus + rand::thread_rng().gen_range(1..=max_core_culled);
+        let nr_to_cull = surplus + max_core_culled;
+        let nr_to_cull = usize::min(plan.current_replicas(), nr_to_cull);
+        tracing::debug!(
+            %nr_to_cull, %surplus, %max_core_culled,
+            "calculated number of taskmanagers to cull before restart."
+        );
+
+        session.nr_target_replicas = Some(plan.current_replicas() - nr_to_cull);
+        // if plan.current_replicas() <= nr_to_cull {
+        //     self.do_complete_culling(plan, session).await
+        // } else {
+        self.do_individual_culling(nr_to_cull, plan, session).await
+        // }
+    }
+}
+
+impl<P> CullTaskmanagers<P>
+where
+    P: AppData + ScaleActionPlan,
+{
+    #[tracing::instrument(level = "info", skip(self, _plan, session))]
+    async fn do_complete_culling<'s>(
+        &mut self, _plan: &'s <Self as ScaleAction>::Plan, session: &'s mut ActionSession,
+    ) -> Result<(), ActError> {
+        let patched_scale = session
+            .kube
+            .taskmanager()
+            .deploy
+            .patch_scale(0, &session.correlation)
+            .instrument(tracing::info_span!(
+                "complete_culling::patch_replicas",
+                correlation=?session.correlation,
+            ))
+            .await?;
+
+        tracing::debug!(
+            ?patched_scale,
+            "complete culling patched taskmanager replicas"
+        );
+        Ok(())
+    }
+
+    #[tracing::instrument(level = "info", skip(self, plan, session))]
+    async fn do_individual_culling<'s>(
+        &mut self, nr_to_cull: usize, plan: &'s <Self as ScaleAction>::Plan,
+        session: &'s mut ActionSession,
+    ) -> Result<(), ActError> {
         // focus on culling oldest taskmanagers
         let tms: Vec<(Pod, DateTime<Utc>)> = session
             .kube
@@ -80,8 +130,14 @@ where
                     .map(|ts| (p, ts))
             })
             .sorted_by_key(|(_, ts)| ts.timestamp())
-            .take(nr_to_kill)
+            .take(nr_to_cull)
             .collect();
+
+        tracing::debug!(
+            %nr_to_cull,
+            culling_taskmanagers=?tms.iter().map(|(p, ts)| format!("{}_@_{ts}", p.name_any())).collect::<Vec<_>>(),
+            "identified list of taskmanagers to cull before restart."
+        );
 
         for (tm, created_ts) in tms {
             let tm_name = tm.name_any();

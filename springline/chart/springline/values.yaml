@@ -142,6 +142,7 @@ application:
 
   action:
     taskmanager:
+      max_cull_ratio: 0.75
       kubernetes_api:
         api_timeout_secs: 290
     flink:

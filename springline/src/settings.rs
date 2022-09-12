@@ -447,6 +447,7 @@ mod tests {
                 action_timeout: Duration::from_secs(600),
                 taskmanager: TaskmanagerContext {
                     label_selector: "app=flink,component=taskmanager".to_string(),
+                    max_cull_ratio: None,
                     deploy_resource: KubernetesDeployResource::StatefulSet {
                         name: "dr-springline-tm".to_string(),
                     },
@@ -633,6 +634,7 @@ mod tests {
             action_timeout: Duration::from_secs(600),
             taskmanager: TaskmanagerContext {
                 label_selector: "component=taskmanager,release=dr-springline".to_string(),
+                max_cull_ratio: Some(1.0),
                 deploy_resource: KubernetesDeployResource::StatefulSet {
                     name: "dr-springline-tm".to_string(),
                 },
