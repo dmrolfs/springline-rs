@@ -995,6 +995,8 @@ impl AppDataWindow<MetricCatalog> {
         cluster_task_cpu_load = |m: &MetricCatalog| Some(m.cluster.task_cpu_load)
         cluster_task_heap_memory_used = |m: &MetricCatalog| Some(m.cluster.task_heap_memory_used)
         cluster_task_heap_memory_load = |m: &MetricCatalog| Some(m.cluster.task_heap_memory_load())
+        cluster_task_network_input_utilization = |m: &MetricCatalog| Some(m.cluster.task_network_input_utilization())
+        cluster_task_network_output_utilization = |m: &MetricCatalog| Some(m.cluster.task_network_output_utilization())
     );
 
     window_opt_integer_ops_for!(

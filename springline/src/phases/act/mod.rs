@@ -188,7 +188,9 @@ pub(crate) static ACT_SCALE_ACTION_TIME: Lazy<HistogramVec> = Lazy::new(|| {
             "Time spent during the entire scale action",
         )
         .const_labels(proctor::metrics::CONST_LABELS.clone())
-        .buckets(vec![1., 1.5, 2., 3., 4., 5., 10.0, 25., 50., 75., 100.]),
+        .buckets(vec![
+            0.25, 1.0, 2., 10., 30., 60., 120.0, 180., 300., 450., 600.,
+        ]),
         &["label", "action"],
     )
     .expect("failed creating act_scale_action_time_seconds histogram metric")

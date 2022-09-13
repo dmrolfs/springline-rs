@@ -10,7 +10,7 @@ use crate::kubernetes::{FlinkComponent, KubernetesContext, RUNNING_STATUS};
 use crate::phases::act;
 use crate::phases::act::{ActError, ActErrorDisposition, ScaleActionPlan};
 
-pub const ACTION_LABEL: &str = "flink_settlement";
+pub const ACTION_LABEL: &str = "kubernetes_settlement";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct KubernetesSettlement<P> {

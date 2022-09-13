@@ -32,6 +32,8 @@ pub fn make_decision_transform(
             );
             let _guard = transform_span.enter();
 
+            log_outcome_with_common_criteria(&outcome, window);
+
             let (result, reason): (DecisionResult<DecisionData>, Option<String>) = if outcome
                 .passed()
             {
@@ -74,18 +76,18 @@ pub fn make_decision_transform(
     )
 }
 
+fn get_outcome_reason(results: &QueryResult) -> String {
+    results
+        .bindings
+        .get(REASON)
+        .and_then(|rs| rs.first())
+        .map(|r| r.to_string())
+        .unwrap_or_else(|| UNSPECIFIED.to_string())
+}
+
 pub fn get_direction_and_reason(
     query_results: &QueryResult,
 ) -> Result<(ScaleDirection, Option<String>), DecisionError> {
-    fn get_reason(results: &QueryResult) -> String {
-        results
-            .bindings
-            .get(REASON)
-            .and_then(|rs| rs.first())
-            .map(|r| r.to_string())
-            .unwrap_or_else(|| UNSPECIFIED.to_string())
-    }
-
     let directions = query_results
         .binding(DECISION_DIRECTION)
         .map_err(|err| DecisionError::Stage(err.into()))?;
@@ -95,8 +97,11 @@ pub fn get_direction_and_reason(
 
     match tally.first() {
         Some((direction, _)) => match direction.as_str() {
-            SCALE_UP => Ok((ScaleDirection::Up, Some(get_reason(query_results)))),
-            SCALE_DOWN => Ok((ScaleDirection::Down, Some(get_reason(query_results)))),
+            SCALE_UP => Ok((ScaleDirection::Up, Some(get_outcome_reason(query_results)))),
+            SCALE_DOWN => Ok((
+                ScaleDirection::Down,
+                Some(get_outcome_reason(query_results)),
+            )),
             rep => Err(DecisionError::Binding {
                 key: DECISION_DIRECTION.to_string(),
                 value: rep.to_string(),
@@ -126,8 +131,45 @@ fn do_tally_binding_voted(ballots: Vec<String>) -> Vec<(String, usize)> {
     grouped
 }
 
+fn log_outcome_with_common_criteria(
+    outcome: &PolicyOutcome<DecisionData, DecisionContext>, window: u32,
+) {
+    let item = &outcome.item;
+
+    let source_records_lag_max = item.flow_source_records_lag_max_rolling_average(window);
+    let source_assigned_partitions = item.flow_source_assigned_partitions_rolling_average(window);
+    let total_lag = item.flow_source_total_lag_rolling_average(window);
+    let relative_lag_velocity = item.flow_source_relative_lag_change_rate(window);
+
+    let nonsource_utilization = item.flow_task_utilization_rolling_average(window);
+    let source_back_pressure =
+        item.flow_source_back_pressured_time_millis_per_sec_rolling_average(window);
+
+    let cluster_task_cpu = item.cluster_task_cpu_load_rolling_average(window);
+    let cluster_task_heap_memory_load = item.cluster_task_heap_memory_load_rolling_average(window);
+    let cluster_task_network_input_utilization =
+        item.cluster_task_network_input_utilization_rolling_average(window);
+    let cluster_task_network_output_utilization =
+        item.cluster_task_network_output_utilization_rolling_average(window);
+
+    let decision_passed = outcome.policy_results.passed;
+    let decision_bindings = &outcome.policy_results.bindings;
+    let decision_reason = get_outcome_reason(&outcome.policy_results);
+
+    tracing::info!(
+        correlation=%item.correlation(),
+        %decision_passed, ?decision_bindings, %decision_reason,
+        %source_records_lag_max, %source_assigned_partitions, %total_lag, %relative_lag_velocity,
+        %nonsource_utilization, %source_back_pressure,
+        %cluster_task_cpu, %cluster_task_heap_memory_load,
+        %cluster_task_network_input_utilization, %cluster_task_network_output_utilization,
+        "decision outcome with common telemetry"
+    )
+}
+
 const RELATIVE_LAG_VELOCITY: &str = "relative_lag_velocity";
 const LOW_UTILIZATION_AND_ZERO_LAG: &str = "low_utilization_and_zero_lag";
+const LOW_UTILIZATION_AND_IDLE_TELEMETRY: &str = "low_utilization_and_idle_telemetry";
 const TOTAL_LAG: &str = "total_lag";
 const SOURCE_BACKPRESSURE: &str = "source_backpressure";
 const NO_REASON: &str = "no_reason_given";
@@ -167,6 +209,19 @@ fn log_data_for_reason(
             tracing::info!(
                 correlation=%item.correlation(),
                 %window, ?source_records_lag_max, ?source_assigned_partitions, %nonsource_utilization, %total_lag,
+                message
+            );
+        },
+
+        (_, Some(LOW_UTILIZATION_AND_IDLE_TELEMETRY)) => {
+            let source_records_lag_max = item.flow.source_total_lag;
+            let nonsource_utilization = item.flow_task_utilization_rolling_average(window);
+            let source_back_pressure =
+                item.flow_source_back_pressured_time_millis_per_sec_rolling_average(window);
+
+            tracing::info!(
+                correlation=%item.correlation(),
+                %window, ?source_records_lag_max, %nonsource_utilization, %source_back_pressure,
                 message
             );
         },
