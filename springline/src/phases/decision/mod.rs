@@ -79,6 +79,7 @@ pub fn log_outcome_with_common_criteria(
     let source_records_lag_max = item.flow_source_records_lag_max_rolling_average(window);
     let source_assigned_partitions = item.flow_source_assigned_partitions_rolling_average(window);
     let total_lag = item.flow_source_total_lag_rolling_average(window);
+    let records_consumed_rate = item.flow_source_records_consumed_rate_rolling_average(window);
     let relative_lag_velocity = item.flow_source_relative_lag_change_rate(window);
 
     let nonsource_utilization = item.flow_task_utilization_rolling_average(window);
@@ -101,7 +102,7 @@ pub fn log_outcome_with_common_criteria(
     tracing::info!(
         correlation=%item.correlation(),
         ?decision_passed, ?decision_bindings, %decision_reason,
-        %source_records_lag_max, %source_assigned_partitions, %total_lag, %relative_lag_velocity,
+        %source_records_lag_max, %source_assigned_partitions, %total_lag, %records_consumed_rate, %relative_lag_velocity,
         %nonsource_utilization, %source_back_pressure,
         %cluster_task_cpu, %cluster_task_heap_memory_load,
         %cluster_task_network_input_utilization, %cluster_task_network_output_utilization,

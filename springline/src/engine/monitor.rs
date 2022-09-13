@@ -219,7 +219,7 @@ impl Monitor {
         match &*event {
             DecisionEvent::ItemPassed(item, query_result) => {
                 decision::log_outcome_with_common_criteria(
-                    "passed",
+                    "PASSED",
                     item,
                     Some(query_result),
                     self.decision_window,
