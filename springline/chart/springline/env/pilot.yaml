@@ -25,17 +25,21 @@ application:
     template_data:
       basis: chart_decision_basis
       max_healthy_relative_lag_velocity: 3.0
-      min_task_utilization: 0.6
+      max_health_lag: 2500000
+      min_task_utilization: 0.5
+      max_healthy_cpu_load: 0.8
+      max_healthy_heap_memory_load: 0.8
+      max_healthy_network_io_utilization: 0.8
       evaluate_duration_secs: 120
 
   governance:
     rules:
       min_parallelism: 1
-      max_parallelism: 32
+      max_parallelism: 64
       min_cluster_size: 1
       max_cluster_size: 64
-      min_scaling_step: 2
-      max_scaling_step: 50
+      min_scaling_step: 1
+      max_scaling_step: 6
 
   action:
     taskmanager:

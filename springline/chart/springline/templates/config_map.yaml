@@ -89,6 +89,9 @@ data:
         max_healthy_relative_lag_velocity: {{ .Values.application.decision.template_data.max_healthy_relative_lag_velocity }}
         max_healthy_lag: {{ .Values.application.decision.template_data.max_healthy_lag }}
         min_task_utilization: {{ .Values.application.decision.template_data.min_task_utilization }}
+        max_healthy_cpu_load: {{ .Values.application.decision.template_data.max_healthy_cpu_load }}
+        max_healthy_heap_memory_load: {{ .Values.application.decision.template_data.max_healthy_heap_memory_load }}
+        max_healthy_network_io_utilization: {{ .Values.application.decision.template_data.max_healthy_network_io_utilization }}
         evaluate_duration_secs: {{ .Values.application.decision.template_data.evaluate_duration_secs }}
 
     plan:

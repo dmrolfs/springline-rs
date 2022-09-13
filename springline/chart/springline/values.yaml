@@ -132,6 +132,9 @@ application:
       max_healthy_relative_lag_velocity: 3.0
       max_healthy_lag: 2500000
       min_task_utilization: 0.6
+      max_healthy_cpu_load: 0.8
+      max_healthy_heap_memory_load: 0.8
+      max_healthy_network_io_utilization: 0.8
       evaluate_duration_secs: 120
 
   governance:
