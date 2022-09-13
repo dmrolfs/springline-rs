@@ -40,6 +40,8 @@ deployment:
   enableProbes: true
   nodeGroup: "nonresilient"
   taskManagerdeployment: "statefulset"
+  log:
+    polar: "info"
 
 serviceAccount:
   # Specifies whether a service account should be created
