@@ -3,9 +3,10 @@ use crate::phases;
 use crate::phases::eligibility::EligibilityOutcome;
 use crate::settings::DecisionSettings;
 use crate::Result;
-use proctor::elements::PolicySubscription;
+use proctor::elements::{PolicySubscription, QueryResult};
 use proctor::phases::policy_phase::PolicyPhase;
 use proctor::phases::sense::{ClearinghouseSubscriptionAgent, SubscriptionChannel};
+use proctor::Correlation;
 use std::fmt::Display;
 
 #[cfg(test)]
@@ -16,6 +17,7 @@ mod context;
 mod policy;
 mod result;
 
+use crate::phases::UNSPECIFIED;
 pub use context::DecisionContext;
 pub(crate) use policy::DECISION_SCALING_DECISION_COUNT_METRIC;
 pub use policy::{DecisionPolicy, DecisionTemplateData};
@@ -69,4 +71,40 @@ pub enum ScaleDirection {
     Up,
     Down,
     None,
+}
+
+pub fn log_outcome_with_common_criteria(
+    message: &str, item: &DecisionData, query_result: Option<&QueryResult>, window: u32,
+) {
+    let source_records_lag_max = item.flow_source_records_lag_max_rolling_average(window);
+    let source_assigned_partitions = item.flow_source_assigned_partitions_rolling_average(window);
+    let total_lag = item.flow_source_total_lag_rolling_average(window);
+    let relative_lag_velocity = item.flow_source_relative_lag_change_rate(window);
+
+    let nonsource_utilization = item.flow_task_utilization_rolling_average(window);
+    let source_back_pressure =
+        item.flow_source_back_pressured_time_millis_per_sec_rolling_average(window);
+
+    let cluster_task_cpu = item.cluster_task_cpu_load_rolling_average(window);
+    let cluster_task_heap_memory_load = item.cluster_task_heap_memory_load_rolling_average(window);
+    let cluster_task_network_input_utilization =
+        item.cluster_task_network_input_utilization_rolling_average(window);
+    let cluster_task_network_output_utilization =
+        item.cluster_task_network_output_utilization_rolling_average(window);
+
+    let decision_passed = query_result.as_ref().map(|qr| qr.passed);
+    let decision_bindings = query_result.as_ref().map(|qr| &qr.bindings);
+    let decision_reason = query_result
+        .map(phases::get_outcome_reason)
+        .unwrap_or_else(|| UNSPECIFIED.to_string());
+
+    tracing::info!(
+        correlation=%item.correlation(),
+        ?decision_passed, ?decision_bindings, %decision_reason,
+        %source_records_lag_max, %source_assigned_partitions, %total_lag, %relative_lag_velocity,
+        %nonsource_utilization, %source_back_pressure,
+        %cluster_task_cpu, %cluster_task_heap_memory_load,
+        %cluster_task_network_input_utilization, %cluster_task_network_output_utilization,
+        "decision outcome: {message}"
+    )
 }

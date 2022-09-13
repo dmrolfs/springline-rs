@@ -296,6 +296,13 @@ impl AutoscaleEngine<Building> {
         graph.push_back(governance_phase).await;
         graph.push_back(act.dyn_upcast()).await;
 
+        let decision_window = settings
+            .decision
+            .template_data
+            .as_ref()
+            .and_then(|td| td.evaluate_duration_secs)
+            .unwrap_or(60);
+
         Ok(AutoscaleEngine {
             inner: Ready {
                 graph,
@@ -310,6 +317,7 @@ impl AutoscaleEngine<Building> {
                     tx_engine: tx_service_api.clone(),
                     tx_clearinghouse_api,
                     tx_collect_window_api,
+                    decision_window,
                 },
                 metrics_registry: self.inner.metrics_registry,
                 service_handle,

@@ -117,6 +117,7 @@ pub struct Monitor {
     pub tx_engine: EngineServiceApi,
     pub tx_clearinghouse_api: ClearinghouseApi,
     pub tx_collect_window_api: WindowApi,
+    pub decision_window: u32,
 }
 
 impl Monitor {
@@ -217,7 +218,13 @@ impl Monitor {
     ) {
         match &*event {
             DecisionEvent::ItemPassed(item, query_result) => {
-                tracing::info!(?event, ?query_result, correlation=%item.correlation(), "data item passed scaling decision");
+                decision::log_outcome_with_common_criteria(
+                    "passed",
+                    item,
+                    Some(query_result),
+                    self.decision_window,
+                );
+
                 match decision::get_direction_and_reason(query_result) {
                     Ok((direction, _reason)) => DECISION_RESCALE_DECISION.set(direction.into()),
                     Err(error) => {
@@ -230,7 +237,12 @@ impl Monitor {
                 }
             },
             DecisionEvent::ItemBlocked(item, query_result) => {
-                tracing::debug!(?event, ?query_result, correlation=%item.correlation(), "data item blocked by scaling decision");
+                decision::log_outcome_with_common_criteria(
+                    "blocked",
+                    item,
+                    query_result.as_ref(),
+                    self.decision_window,
+                );
                 DECISION_RESCALE_DECISION.set(ScaleDirection::None.into());
             },
             DecisionEvent::ContextChanged(Some(ctx)) if !loaded.contains(PhaseFlag::Decision) => {

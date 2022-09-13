@@ -1,3 +1,4 @@
+use proctor::elements::QueryResult;
 use proctor::graph::{Connect, SourceShape};
 use proctor::phases::policy_phase::PolicyPhase;
 use proctor::phases::sense::{
@@ -25,6 +26,16 @@ pub mod sense;
 pub use collect_window::{CollectMetricWindow, WindowApi, WindowCmd};
 
 pub const REASON: &str = "reason";
+pub const UNSPECIFIED: &str = "unspecified";
+
+pub fn get_outcome_reason(results: &QueryResult) -> String {
+    results
+        .bindings
+        .get(REASON)
+        .and_then(|rs| rs.first())
+        .map(|r| r.to_string())
+        .unwrap_or_else(|| UNSPECIFIED.to_string())
+}
 
 #[tracing::instrument(level = "trace", skip(agent))]
 pub async fn subscribe_policy_phase<In, Out, C, D, A>(

@@ -2,6 +2,7 @@ use std::cmp::Ordering;
 use std::convert::TryFrom;
 use std::fmt::{self, Debug};
 
+use crate::phases;
 use itertools::Itertools;
 use pretty_snowflake::Id;
 use proctor::elements::{PolicyOutcome, QueryResult, TelemetryType, TelemetryValue, ToTelemetry};
@@ -12,13 +13,12 @@ use proctor::Correlation;
 use crate::phases::decision::{
     DecisionContext, DecisionData, ScaleDirection, DECISION_SCALING_DECISION_COUNT_METRIC,
 };
-use crate::phases::REASON;
+use crate::phases::UNSPECIFIED;
 
 pub const DECISION_DIRECTION: &str = "direction";
 pub const SCALE_UP: &str = "up";
 pub const SCALE_DOWN: &str = "down";
 pub const NO_ACTION: &str = "no action";
-pub const UNSPECIFIED: &str = "unspecified";
 
 pub fn make_decision_transform(
     name: impl Into<String>, window: u32,
@@ -31,8 +31,6 @@ pub fn make_decision_transform(
                 item=?outcome.item, policy_results=?outcome.policy_results,
             );
             let _guard = transform_span.enter();
-
-            log_outcome_with_common_criteria(&outcome, window);
 
             let (result, reason): (DecisionResult<DecisionData>, Option<String>) = if outcome
                 .passed()
@@ -76,15 +74,6 @@ pub fn make_decision_transform(
     )
 }
 
-fn get_outcome_reason(results: &QueryResult) -> String {
-    results
-        .bindings
-        .get(REASON)
-        .and_then(|rs| rs.first())
-        .map(|r| r.to_string())
-        .unwrap_or_else(|| UNSPECIFIED.to_string())
-}
-
 pub fn get_direction_and_reason(
     query_results: &QueryResult,
 ) -> Result<(ScaleDirection, Option<String>), DecisionError> {
@@ -97,10 +86,13 @@ pub fn get_direction_and_reason(
 
     match tally.first() {
         Some((direction, _)) => match direction.as_str() {
-            SCALE_UP => Ok((ScaleDirection::Up, Some(get_outcome_reason(query_results)))),
+            SCALE_UP => Ok((
+                ScaleDirection::Up,
+                Some(phases::get_outcome_reason(query_results)),
+            )),
             SCALE_DOWN => Ok((
                 ScaleDirection::Down,
-                Some(get_outcome_reason(query_results)),
+                Some(phases::get_outcome_reason(query_results)),
             )),
             rep => Err(DecisionError::Binding {
                 key: DECISION_DIRECTION.to_string(),
@@ -129,42 +121,6 @@ fn do_tally_binding_voted(ballots: Vec<String>) -> Vec<(String, usize)> {
     });
 
     grouped
-}
-
-fn log_outcome_with_common_criteria(
-    outcome: &PolicyOutcome<DecisionData, DecisionContext>, window: u32,
-) {
-    let item = &outcome.item;
-
-    let source_records_lag_max = item.flow_source_records_lag_max_rolling_average(window);
-    let source_assigned_partitions = item.flow_source_assigned_partitions_rolling_average(window);
-    let total_lag = item.flow_source_total_lag_rolling_average(window);
-    let relative_lag_velocity = item.flow_source_relative_lag_change_rate(window);
-
-    let nonsource_utilization = item.flow_task_utilization_rolling_average(window);
-    let source_back_pressure =
-        item.flow_source_back_pressured_time_millis_per_sec_rolling_average(window);
-
-    let cluster_task_cpu = item.cluster_task_cpu_load_rolling_average(window);
-    let cluster_task_heap_memory_load = item.cluster_task_heap_memory_load_rolling_average(window);
-    let cluster_task_network_input_utilization =
-        item.cluster_task_network_input_utilization_rolling_average(window);
-    let cluster_task_network_output_utilization =
-        item.cluster_task_network_output_utilization_rolling_average(window);
-
-    let decision_passed = outcome.policy_results.passed;
-    let decision_bindings = &outcome.policy_results.bindings;
-    let decision_reason = get_outcome_reason(&outcome.policy_results);
-
-    tracing::info!(
-        correlation=%item.correlation(),
-        %decision_passed, ?decision_bindings, %decision_reason,
-        %source_records_lag_max, %source_assigned_partitions, %total_lag, %relative_lag_velocity,
-        %nonsource_utilization, %source_back_pressure,
-        %cluster_task_cpu, %cluster_task_heap_memory_load,
-        %cluster_task_network_input_utilization, %cluster_task_network_output_utilization,
-        "decision outcome with common telemetry"
-    )
 }
 
 const RELATIVE_LAG_VELOCITY: &str = "relative_lag_velocity";
