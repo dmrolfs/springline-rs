@@ -7,7 +7,15 @@ engine:
   # rule, but it is not required. If a policy rule exceeds this configured span, then coverage of
   # the portfolio must be more than half, otherwise the condition is not met.
   # The default is 10 minutes.
-  telemetry_portfolio_window_secs: 600
+  telemetry_window_secs: 600
+
+  # Optional tuning of the coverage percentage required before metric window thresholds are
+  # met. This parameter enables "sufficient" quorum coverage of a threshold window to be tripped.
+  # This parameter enables policy rules to act on a sufficient telemetry level and enable policy
+  # decisions in the event of flapping telemetry. The default value is 0.8, which means at least
+  # only 80% of the telemetry data within the window needs to exceed the threshold before the
+  # rule is triggered. Values MUST be with (0.0, 1.0] and the default percentile is 0.8.
+  telemetry_window_quorum_percentile: 0.8
 
 prometheus:
   # The address the Prometheus server should bind to. Default is "9898".

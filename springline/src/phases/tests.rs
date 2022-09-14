@@ -76,7 +76,7 @@ mod window {
 
         let engine_settings = EngineSettings {
             telemetry_window: Duration::from_secs(3),
-            telemetry_window_quorum_percentage: 0.5,
+            telemetry_window_quorum_percentile: 0.5,
             ..EngineSettings::default()
         };
         let mut stage =
@@ -155,7 +155,7 @@ mod window {
 
         let engine_settings = EngineSettings {
             telemetry_window: Duration::from_secs(3),
-            telemetry_window_quorum_percentage: 0.5,
+            telemetry_window_quorum_percentile: 0.5,
             ..EngineSettings::default()
         };
         let mut stage = CollectMetricWindow::new("test_window", None, &engine_settings);
@@ -240,7 +240,7 @@ mod window {
 
         let engine_settings = EngineSettings {
             telemetry_window: Duration::from_secs(3),
-            telemetry_window_quorum_percentage: 0.5,
+            telemetry_window_quorum_percentile: 0.5,
             ..EngineSettings::default()
         };
         let mut stage = CollectMetricWindow::new("test_window", None, &engine_settings);
@@ -403,7 +403,7 @@ mod window {
 
         let engine_settings = EngineSettings {
             telemetry_window: Duration::from_secs(3),
-            telemetry_window_quorum_percentage: 0.5,
+            telemetry_window_quorum_percentile: 0.5,
             ..EngineSettings::default()
         };
         let mut collect_stage =

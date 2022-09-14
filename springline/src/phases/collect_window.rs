@@ -37,7 +37,7 @@ impl WindowCmd {
 pub struct CollectMetricWindow<In, Out> {
     name: String,
     time_window: Duration,
-    quorum_percentage: f64,
+    quorum_percentile: f64,
     evaluation_duration: Option<Duration>,
     inlet: Inlet<In>,
     outlet: Outlet<Out>,
@@ -50,7 +50,7 @@ impl<In, Out> Debug for CollectMetricWindow<In, Out> {
         f.debug_struct("CollectMetricWindow")
             .field("name", &self.name)
             .field("time_window", &self.time_window)
-            .field("quorum_percentage", &self.quorum_percentage)
+            .field("quorum_percentage", &self.quorum_percentile)
             .field("evaluate_duration", &self.evaluation_duration)
             .finish()
     }
@@ -63,7 +63,7 @@ impl CollectMetricWindow<MetricCatalog, AppDataWindow<MetricCatalog>> {
         let name = name.into();
 
         let time_window = settings.telemetry_window;
-        let quorum_percentage = settings.telemetry_window_quorum_percentage;
+        let quorum_percentage = settings.telemetry_window_quorum_percentile;
 
         let (tx_api, rx_api) = mpsc::unbounded_channel();
         let inlet = Inlet::new(&name, PORT_DATA);
@@ -72,7 +72,7 @@ impl CollectMetricWindow<MetricCatalog, AppDataWindow<MetricCatalog>> {
         Self {
             name,
             time_window,
-            quorum_percentage,
+            quorum_percentile: quorum_percentage,
             evaluation_duration,
             inlet,
             outlet,
@@ -207,7 +207,7 @@ where
     Out: Window<Item = In>,
 {
     fn make_window(&self, data: In) -> ProctorResult<Out> {
-        Out::from_item(data, self.time_window, self.quorum_percentage)
+        Out::from_item(data, self.time_window, self.quorum_percentile)
             .map_err(|err| ProctorError::Phase(err.into()))
     }
 }

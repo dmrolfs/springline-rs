@@ -275,10 +275,10 @@ where
     }
 }
 
-pub const DEFAULT_QUORUM_PERCENTAGE: f64 = 0.8;
+pub const DEFAULT_QUORUM_PERCENTILE: f64 = 0.8;
 
-pub const fn default_quorum_percentage() -> f64 {
-    DEFAULT_QUORUM_PERCENTAGE
+pub const fn default_quorum_percentile() -> f64 {
+    DEFAULT_QUORUM_PERCENTILE
 }
 
 impl<T> AppDataWindow<T>
@@ -314,7 +314,7 @@ where
         let result = Self {
             data: window,
             time_window,
-            quorum_percentage: DEFAULT_QUORUM_PERCENTAGE,
+            quorum_percentage: DEFAULT_QUORUM_PERCENTILE,
         };
         result.validate().expect("window parameters are not valid");
         result
@@ -326,7 +326,7 @@ where
         let result = Self {
             data: window,
             time_window,
-            quorum_percentage: DEFAULT_QUORUM_PERCENTAGE,
+            quorum_percentage: DEFAULT_QUORUM_PERCENTILE,
         };
         result.validate().expect("window parameters are not valid");
         result
@@ -1500,7 +1500,7 @@ where
         let result = AppDataWindow {
             data: window.into_iter().collect(),
             time_window: self.time_window.expect("must supply time window before final build"),
-            quorum_percentage: self.quorum_percentage.unwrap_or(DEFAULT_QUORUM_PERCENTAGE),
+            quorum_percentage: self.quorum_percentage.unwrap_or(DEFAULT_QUORUM_PERCENTILE),
         };
         result.validate()?;
         Ok(result)

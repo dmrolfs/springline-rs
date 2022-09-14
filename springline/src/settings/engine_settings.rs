@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use crate::flink::{default_quorum_percentage, DEFAULT_QUORUM_PERCENTAGE};
+use crate::flink::{default_quorum_percentile, DEFAULT_QUORUM_PERCENTILE};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 
@@ -36,9 +36,9 @@ pub struct EngineSettings {
     /// This parameter enables policy rules to act on a sufficient telemetry level and enable policy
     /// decisions in the event of flapping telemetry. The default value is 0.8, which means at least
     /// only 80% of the telemetry data within the window needs to exceed the threshold before the
-    /// rule is triggered. Values MUST be with (0.0, 1.0].
-    #[serde(default = "default_quorum_percentage")]
-    pub telemetry_window_quorum_percentage: f64,
+    /// rule is triggered. Values MUST be with (0.0, 1.0], and the default percentile is 0.8.
+    #[serde(default = "default_quorum_percentile")]
+    pub telemetry_window_quorum_percentile: f64,
 }
 
 impl Default for EngineSettings {
@@ -47,7 +47,7 @@ impl Default for EngineSettings {
             machine_id: 1,
             node_id: 1,
             telemetry_window: Self::default_telemetry_window(),
-            telemetry_window_quorum_percentage: DEFAULT_QUORUM_PERCENTAGE,
+            telemetry_window_quorum_percentile: DEFAULT_QUORUM_PERCENTILE,
         }
     }
 }

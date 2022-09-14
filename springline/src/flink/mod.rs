@@ -37,8 +37,8 @@ pub(crate) use model::window::{
 };
 
 pub use model::window::{
-    default_quorum_percentage, AppDataWindow, AppDataWindowBuilder, UpdateWindowMetrics, Window,
-    DEFAULT_QUORUM_PERCENTAGE,
+    default_quorum_percentile, AppDataWindow, AppDataWindowBuilder, UpdateWindowMetrics, Window,
+    DEFAULT_QUORUM_PERCENTILE,
 };
 pub use model::{
     CorrelationGenerator, CorrelationId, FailureCause, JobSavepointReport, OperationStatus,
