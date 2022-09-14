@@ -136,10 +136,6 @@ impl ActionSession {
         }
     }
 
-    pub fn cluster_label(&self) -> &str {
-        self.flink.label()
-    }
-
     pub fn correlation(&self) -> CorrelationId {
         self.correlation.clone()
     }
