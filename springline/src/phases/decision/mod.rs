@@ -80,7 +80,7 @@ pub fn log_outcome_with_common_criteria(
     let source_assigned_partitions = item.flow_source_assigned_partitions_rolling_average(window);
     let total_lag = item.flow_source_total_lag_rolling_average(window);
     let records_consumed_rate = item.flow_source_records_consumed_rate_rolling_average(window);
-    let relative_lag_velocity = item.flow_source_relative_lag_change_rate(window);
+    let relative_lag_velocity = item.flow_source_relative_lag_velocity(window);
 
     let nonsource_utilization = item.flow_task_utilization_rolling_average(window);
     let source_back_pressure =

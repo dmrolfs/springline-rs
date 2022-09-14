@@ -42,8 +42,7 @@ pub struct DecisionTemplateData {
     /// define a cap to `total_lag` as a supplemental rule to the
     /// relative lag velocity.
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[validate(range(min = 0.0))]
-    pub max_healthy_lag: Option<f64>,
+    pub max_healthy_lag: Option<u32>,
 
     /// Optional threshold on the target task utilization, which is
     /// calculated based on the `idle_time_millis_per_sec`. This value
@@ -233,7 +232,7 @@ mod tests {
         let data = DecisionTemplateData {
             basis: "decision_basis".to_string(),
             max_healthy_relative_lag_velocity: Some(-1.25),
-            max_healthy_lag: Some(133_f64),
+            max_healthy_lag: Some(133),
             max_healthy_cpu_load: Some(0.7),
             ..DecisionTemplateData::default()
         };
@@ -249,7 +248,7 @@ mod tests {
                 Token::F64(-1.25_f64),
                 Token::Str("max_healthy_lag"),
                 Token::Some,
-                Token::F64(133_f64),
+                Token::U32(133),
                 Token::Str("max_healthy_cpu_load"),
                 Token::Some,
                 Token::F64(0.7),
@@ -277,7 +276,7 @@ mod tests {
     fn test_decision_data_ron_serde() {
         let data = DecisionTemplateData {
             basis: "decision_basis".to_string(),
-            max_healthy_lag: Some(133_f64),
+            max_healthy_lag: Some(133),
             max_healthy_relative_lag_velocity: Some(1_f64),
             max_healthy_cpu_load: Some(0.7),
             custom: maplit::hashmap! { "foo".to_string() => "zed".to_string(), },
@@ -291,7 +290,7 @@ mod tests {
         let expected_rep = r##"|{
         |    "basis": "decision_basis",
         |    "max_healthy_relative_lag_velocity": Some(1.0),
-        |    "max_healthy_lag": Some(133.0),
+        |    "max_healthy_lag": Some(133),
         |    "max_healthy_cpu_load": Some(0.7),
         |    "foo": "zed",
         |}"##

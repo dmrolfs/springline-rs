@@ -146,7 +146,7 @@ fn log_data_for_reason(
             let source_records_lag_max = item.flow_source_records_lag_max_rolling_average(window);
             let source_assigned_partitions =
                 item.flow_source_assigned_partitions_rolling_average(window);
-            let relative_lag_velocity = item.flow_source_relative_lag_change_rate(window);
+            let relative_lag_velocity = item.flow_source_relative_lag_velocity(window);
 
             tracing::info!(
                 correlation=%item.correlation(),

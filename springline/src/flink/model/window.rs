@@ -538,8 +538,8 @@ impl PolicyContributor for AppDataWindow<MetricCatalog> {
                     Self::flow_source_records_consumed_rate_above_threshold,
                 )
                 .add_method(
-                    "flow_source_relative_lag_change_rate",
-                    Self::flow_source_relative_lag_change_rate,
+                    "flow_source_relative_lag_velocity",
+                    Self::flow_source_relative_lag_velocity,
                 )
                 .add_method(
                     "flow_source_millis_behind_latest_rolling_average",
@@ -620,6 +620,38 @@ impl PolicyContributor for AppDataWindow<MetricCatalog> {
                 .add_method(
                     "cluster_task_heap_memory_load_above_threshold",
                     Self::cluster_task_heap_memory_load_above_threshold,
+                )
+                .add_method(
+                    "cluster_task_network_input_utilization_rolling_average",
+                    Self::cluster_task_network_input_utilization_rolling_average,
+                )
+                .add_method(
+                    "cluster_task_network_input_utilization_rolling_change_per_sec",
+                    Self::cluster_task_network_input_utilization_rolling_change_per_sec,
+                )
+                .add_method(
+                    "cluster_task_network_input_utilization_below_threshold",
+                    Self::cluster_task_network_input_utilization_below_threshold,
+                )
+                .add_method(
+                    "cluster_task_network_input_utilization_above_threshold",
+                    Self::cluster_task_network_input_utilization_above_threshold,
+                )
+                .add_method(
+                    "cluster_task_network_output_utilization_rolling_average",
+                    Self::cluster_task_network_output_utilization_rolling_average,
+                )
+                .add_method(
+                    "cluster_task_network_output_utilization_rolling_change_per_sec",
+                    Self::cluster_task_network_output_utilization_rolling_change_per_sec,
+                )
+                .add_method(
+                    "cluster_task_network_output_utilization_below_threshold",
+                    Self::cluster_task_network_output_utilization_below_threshold,
+                )
+                .add_method(
+                    "cluster_task_network_output_utilization_above_threshold",
+                    Self::cluster_task_network_output_utilization_above_threshold,
                 )
                 .build(),
         )?;
@@ -1020,7 +1052,7 @@ impl AppDataWindow<MetricCatalog> {
     /// (see B. Varga, M. Balassi, A. Kiss, Towards autoscaling of Apache Flink jobs,
     /// April 2021Acta Universitatis Sapientiae, Informatica 13(1):1-21)
     #[tracing::instrument(level = "trace")]
-    pub fn flow_source_relative_lag_change_rate(&self, looking_back_secs: u32) -> f64 {
+    pub fn flow_source_relative_lag_velocity(&self, looking_back_secs: u32) -> f64 {
         let deriv_total_lag = self.flow_source_total_lag_rolling_change_per_sec(looking_back_secs);
         let total_rate = self.flow_source_records_consumed_rate_rolling_average(looking_back_secs);
         let result = if total_rate == 0.0 { 0.0 } else { deriv_total_lag / total_rate };
@@ -1102,7 +1134,7 @@ impl UpdateWindowMetrics for AppDataWindow<MetricCatalog> {
 
         let total_lag = self.flow_source_total_lag_rolling_average(window_secs);
         let utilization = self.flow_task_utilization_rolling_average(window_secs);
-        let relative_lag_rate = self.flow_source_relative_lag_change_rate(window_secs);
+        let relative_lag_velocity = self.flow_source_relative_lag_velocity(window_secs);
         let source_back_pressured_rate =
             self.flow_source_back_pressured_time_millis_per_sec_rolling_average(window_secs);
 
@@ -1112,14 +1144,14 @@ impl UpdateWindowMetrics for AppDataWindow<MetricCatalog> {
         METRIC_CATALOG_FLOW_SOURCE_TOTAL_LAG_ROLLING_AVG
             .with_label_values(&labels)
             .set(total_lag);
-        METRIC_CATALOG_FLOW_SOURCE_RELATIVE_LAG_CHANGE_RATE_ROLLING_AVG
+        METRIC_CATALOG_FLOW_SOURCE_RELATIVE_LAG_VELOCITY_ROLLING_AVG
             .with_label_values(&labels)
-            .set(relative_lag_rate);
+            .set(relative_lag_velocity);
         METRIC_CATALOG_FLOW_SOURCE_BACK_PRESSURE_TIME_ROLLING_AVG
             .with_label_values(&labels)
             .set(source_back_pressured_rate);
         tracing::debug!(
-            ?window, %window_secs, %utilization, %total_lag, %relative_lag_rate, %source_back_pressured_rate,
+            ?window, %window_secs, %utilization, %total_lag, %relative_lag_velocity, %source_back_pressured_rate,
             "updated metric catalog window metrics."
         );
     }
@@ -1499,18 +1531,18 @@ pub static METRIC_CATALOG_FLOW_SOURCE_TOTAL_LAG_ROLLING_AVG: Lazy<GaugeVec> = La
     .expect("failed creating metric_catalog_flow_source_total_lag_1_min_rolling_avg")
 });
 
-pub static METRIC_CATALOG_FLOW_SOURCE_RELATIVE_LAG_CHANGE_RATE_ROLLING_AVG: Lazy<GaugeVec> =
+pub static METRIC_CATALOG_FLOW_SOURCE_RELATIVE_LAG_VELOCITY_ROLLING_AVG: Lazy<GaugeVec> =
     Lazy::new(|| {
         GaugeVec::new(
             Opts::new(
-                "metric_catalog_flow_source_relative_lag_change_rate_rolling_avg",
+                "metric_catalog_flow_source_relative_lag_velocity_rolling_avg",
                 "rolling average of source relative lag change rate",
             )
             .const_labels(proctor::metrics::CONST_LABELS.clone()),
             &["window_secs"],
         )
         .expect(
-            "failed creating metric_catalog_flow_source_relative_lag_change_rate_1_min_rolling_avg",
+            "failed creating metric_catalog_flow_source_relative_lag_velocity_1_min_rolling_avg",
         )
     });
 

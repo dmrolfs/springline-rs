@@ -5,7 +5,7 @@ use validator::Validate;
 pub struct DecisionTemplateDataStrategyBuilder {
     basis: Option<String>,
     max_healthy_relative_lag_velocity: Option<BoxedStrategy<Option<f64>>>,
-    max_healthy_lag: Option<BoxedStrategy<Option<f64>>>,
+    max_healthy_lag: Option<BoxedStrategy<Option<u32>>>,
     min_task_utilization: Option<BoxedStrategy<Option<f64>>>,
     max_healthy_cpu_load: Option<BoxedStrategy<Option<f64>>>,
     max_healthy_heap_memory_load: Option<BoxedStrategy<Option<f64>>>,
@@ -40,14 +40,14 @@ impl DecisionTemplateDataStrategyBuilder {
     }
 
     pub fn max_healthy_lag(
-        self, max_healthy_lag: impl Strategy<Value = Option<f64>> + 'static,
+        self, max_healthy_lag: impl Strategy<Value = Option<u32>> + 'static,
     ) -> Self {
         let mut new = self;
         new.max_healthy_lag = Some(max_healthy_lag.boxed());
         new
     }
 
-    pub fn just_max_healthy_lag(self, max_healthy_lag: impl Into<Option<f64>>) -> Self {
+    pub fn just_max_healthy_lag(self, max_healthy_lag: impl Into<Option<u32>>) -> Self {
         self.max_healthy_lag(Just(max_healthy_lag.into()))
     }
 
@@ -124,7 +124,7 @@ impl DecisionTemplateDataStrategyBuilder {
             .max_healthy_relative_lag_velocity
             .unwrap_or(prop::option::of(-1e10_f64..=1e10).boxed());
         let max_healthy_lag =
-            self.max_healthy_lag.unwrap_or(prop::option::of(-10_f64..=1e10).boxed());
+            self.max_healthy_lag.unwrap_or(prop::option::of(any::<u32>()).boxed());
         let min_task_utilization = self
             .min_task_utilization
             .unwrap_or(prop::option::of(-10_f64..=1e10).boxed());

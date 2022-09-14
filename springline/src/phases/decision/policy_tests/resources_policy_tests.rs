@@ -62,7 +62,7 @@ proptest! {
                 max_relative_lag if !result.passed => {
                     tracing::error!(
                         ?max_relative_lag,
-                        actual=?scenario.item.flow_source_relative_lag_change_rate(eval_secs),
+                        actual=?scenario.item.flow_source_relative_lag_velocity(eval_secs),
                         %eval_secs,
                         total_lag=?scenario.item.flow.source_total_lag,
                         rec_lag_max=?scenario.item.flow.source_records_lag_max,
@@ -77,10 +77,10 @@ proptest! {
                     let reasons = assert_some!(result.bindings.get(REASON));
                     prop_assert!(!reasons.into_iter().contains(&TelemetryValue::from(RELATIVE_LAG_VELOCITY)));
                 },
-                Some(max_relative_lag) if max_relative_lag < scenario.item.flow_source_relative_lag_change_rate(eval_secs) => {
+                Some(max_relative_lag) if max_relative_lag < scenario.item.flow_source_relative_lag_velocity(eval_secs) => {
                     tracing::error!(
                         ?max_relative_lag,
-                        actual_rel_lag=?scenario.item.flow_source_relative_lag_change_rate(eval_secs),
+                        actual_rel_lag=?scenario.item.flow_source_relative_lag_velocity(eval_secs),
                         %eval_secs,
                         "DMR - AAA decision:yes:  unhealthy rel lag"
                     );

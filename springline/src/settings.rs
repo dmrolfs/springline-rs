@@ -402,7 +402,7 @@ mod tests {
                 ],
                 template_data: Some(DecisionTemplateData {
                     basis: "decision_basis".to_string(),
-                    max_healthy_lag: Some(133.),
+                    max_healthy_lag: Some(133),
                     max_healthy_relative_lag_velocity: Some(1.75),
                     max_healthy_cpu_load: Some(0.7),
                     ..DecisionTemplateData::default()
@@ -852,7 +852,7 @@ mod tests {
                     decision: DecisionSettings {
                         template_data: Some(DecisionTemplateData {
                             max_healthy_relative_lag_velocity: Some(3.3),
-                            max_healthy_lag: Some(133_f64),
+                            max_healthy_lag: Some(133),
                             max_healthy_cpu_load: Some(0.0006),
                             // max_healthy_heap_memory_load: Some(0.5),
                             ..SETTINGS.decision.template_data.clone().unwrap()

@@ -59,7 +59,7 @@ pub fn register_metrics(registry: &Registry) -> Result<()> {
         flink::METRIC_CATALOG_FLOW_SOURCE_TOTAL_LAG_ROLLING_AVG.clone(),
     ))?;
     registry.register(Box::new(
-        flink::METRIC_CATALOG_FLOW_SOURCE_RELATIVE_LAG_CHANGE_RATE_ROLLING_AVG.clone(),
+        flink::METRIC_CATALOG_FLOW_SOURCE_RELATIVE_LAG_VELOCITY_ROLLING_AVG.clone(),
     ))?;
     registry.register(Box::new(
         flink::METRIC_CATALOG_FLOW_SOURCE_BACK_PRESSURE_TIME_ROLLING_AVG.clone(),
