@@ -6,7 +6,7 @@ imagePullSecrets:
 deployment:
   log:
     level: "info,springline::phases::act=debug"
-    polar: "trace"
+    polar: "info"
     backtrace: "1"
 
 application:
