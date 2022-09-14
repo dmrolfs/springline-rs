@@ -16,7 +16,7 @@ use crate::engine::service::{EngineCmd, EngineServiceApi, Health};
 use crate::engine::{PhaseFlag, PhaseFlags};
 use crate::flink;
 use crate::phases::act::{
-    ActErrorDisposition, ActEvent, ActMonitor, ActionOutcome, ACT_SCALE_ACTION_COUNT,
+    ActErrorDisposition, ActEvent, ActMonitor, ActionOutcome, ACT_RESCALE_ACTION_COUNT,
     PHASE_ACT_ERRORS, PIPELINE_CYCLE_TIME,
 };
 use crate::phases::decision::{
@@ -375,7 +375,7 @@ impl Monitor {
         &self, plan: &ScalePlan, outcomes: &Vec<ActionOutcome>, now: Timestamp,
     ) -> ActionFeedback {
         tracing::info!(%now, ?plan, correlation=%plan.correlation(), ?outcomes, "rescale executed");
-        ACT_SCALE_ACTION_COUNT
+        ACT_RESCALE_ACTION_COUNT
             .with_label_values(&[
                 plan.current_nr_taskmanagers.to_string().as_str(),
                 plan.target_nr_taskmanagers.to_string().as_str(),

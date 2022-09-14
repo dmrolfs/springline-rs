@@ -175,37 +175,35 @@ mod protocol {
 }
 
 #[inline]
-fn start_scale_action_timer(cluster_label: &str, action: &str) -> HistogramTimer {
-    ACT_SCALE_ACTION_TIME
-        .with_label_values(&[cluster_label, action])
-        .start_timer()
+fn start_rescale_timer(action: &str) -> HistogramTimer {
+    ACT_RESCALE_ACTION_TIME.with_label_values(&[action]).start_timer()
 }
 
-pub(crate) static ACT_SCALE_ACTION_TIME: Lazy<HistogramVec> = Lazy::new(|| {
+pub(crate) static ACT_RESCALE_ACTION_TIME: Lazy<HistogramVec> = Lazy::new(|| {
     HistogramVec::new(
         HistogramOpts::new(
-            "act_scale_action_time_seconds",
-            "Time spent during the entire scale action",
+            "act_rescale_action_time_seconds",
+            "Time spent during the entire rescale action",
         )
         .const_labels(proctor::metrics::CONST_LABELS.clone())
         .buckets(vec![
             0.25, 1.0, 2., 10., 30., 60., 120.0, 180., 300., 450., 600.,
         ]),
-        &["label", "action"],
+        &["action"],
     )
-    .expect("failed creating act_scale_action_time_seconds histogram metric")
+    .expect("failed creating act_rescale_action_time_seconds histogram metric")
 });
 
-pub(crate) static ACT_SCALE_ACTION_COUNT: Lazy<IntCounterVec> = Lazy::new(|| {
+pub(crate) static ACT_RESCALE_ACTION_COUNT: Lazy<IntCounterVec> = Lazy::new(|| {
     IntCounterVec::new(
         Opts::new(
-            "act_scale_action_count",
-            "Count of action taken to target sizes",
+            "act_rescale_action_count",
+            "Count of action taken to rescale to target size",
         )
         .const_labels(proctor::metrics::CONST_LABELS.clone()),
         &["current_nr_task_managers", "target_nr_task_managers"],
     )
-    .expect("failed creating act_scale_action_count metric")
+    .expect("failed creating act_rescale_action_count metric")
 });
 
 pub(crate) static PIPELINE_CYCLE_TIME: Lazy<Histogram> = Lazy::new(|| {
@@ -273,7 +271,7 @@ pub fn make_logger_act_phase() -> Box<dyn SinkStage<GovernanceOutcome>> {
     Box::new(stage::Foreach::new(
         "logging_act",
         |plan: GovernanceOutcome| {
-            ACT_SCALE_ACTION_COUNT
+            ACT_RESCALE_ACTION_COUNT
                 .with_label_values(&[
                     plan.current_nr_taskmanagers.to_string().as_str(),
                     plan.target_nr_taskmanagers.to_string().as_str(),

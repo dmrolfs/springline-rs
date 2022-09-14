@@ -50,8 +50,7 @@ where
     async fn execute<'s>(
         &mut self, plan: &'s Self::Plan, session: &'s mut ActionSession,
     ) -> Result<(), ActError> {
-        let timer =
-            act::start_scale_action_timer(session.cluster_label(), super::ACTION_TOTAL_DURATION);
+        let timer = act::start_rescale_timer(super::ACTION_TOTAL_DURATION);
 
         let label = self.label().to_string();
         for action in self.actions.iter_mut() {
@@ -62,7 +61,7 @@ where
             }
 
             let action_label = action.label().to_string();
-            let timer = act::start_scale_action_timer(session.cluster_label(), &action_label);
+            let timer = act::start_rescale_timer(&action_label);
 
             let execute_outcome = action
                 .execute(plan, session)
