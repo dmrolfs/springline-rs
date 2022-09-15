@@ -21,18 +21,11 @@ scale_down(item, _context, reason) if
     idle_source_telemetry(item)
     and evaluation_window(window)
     and item.flow_task_utilization_below_threshold(window, {{min_task_utilization}})
-    and item.flow_source_back_pressured_time_millis_per_sec_below_threshold(window, 100.0)
+    and item.flow_source_back_pressured_time_millis_per_sec_below_threshold(window, 200.0)
     and total_lag_avg = item.flow_source_total_lag_rolling_average(window)
     and total_lag_avg == 0.0
     and reason = "low_utilization_and_idle_telemetry";
 {{/if}}
-
-evaluation_window(window) if window = {{#if evaluate_duration_secs}}{{evaluate_duration_secs}}{{else}}60{{/if}};
-
-idle_source_telemetry(item) if
-    item.flow.source_total_lag == nil
-    or item.flow.source_records_lag_max == nil
-    or item.flow.source_assigned_partitions == nil;
 
 {{#if max_healthy_lag}}
 scale_up(item, _context, reason) if
@@ -46,6 +39,7 @@ scale_up(item, _context, reason) if
 {{#if max_healthy_cpu_load}}
 scale_up(item, _context, reason) if
     evaluation_window(window)
+    and lag_increasing(item, _)
     and item.cluster_task_cpu_load_above_threshold(window, {{max_healthy_cpu_load}})
     and reason = "cpu_load";
 {{/if}}
@@ -53,6 +47,7 @@ scale_up(item, _context, reason) if
 {{#if max_healthy_heap_memory_load}}
 scale_up(item, _context, reason) if
     evaluation_window(window)
+    and lag_increasing(item, _)
     and item.cluster_task_heap_memory_load_above_threshold(window, {{max_healthy_heap_memory_load}})
     and reason = "heap_memory_load";
 {{/if}}
@@ -61,11 +56,13 @@ scale_up(item, _context, reason) if
 {{#if max_healthy_network_io_utilization}}
 scale_up(item, _context, reason) if
     evaluation_window(window)
+    and lag_increasing(item, _)
     and item.cluster_task_network_input_utilization_above_threshold(window, {{max_healthy_network_io_utilization}})
     and reason = "input_network_io";
 
 scale_up(item, _context, reason) if
     evaluation_window(window)
+    and lag_increasing(item, _)
     and item.cluster_task_network_output_utilization_above_threshold(window, {{max_healthy_network_io_utilization}})
     and reason = "output_network_io";
 {{/if}}
