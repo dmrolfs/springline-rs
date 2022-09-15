@@ -1,7 +1,6 @@
 {{#if max_healthy_relative_lag_velocity}}
 scale_up(item, _context, reason) if
-    not item.flow.source_records_lag_max == nil
-    and not item.flow.source_assigned_partitions == nil
+    not idle_source_telemetry(item)
     and evaluation_window(window)
     and {{max_healthy_relative_lag_velocity}} < item.flow_source_relative_lag_velocity(window)
     and reason = "relative_lag_velocity";
@@ -10,8 +9,7 @@ scale_up(item, _context, reason) if
 
 {{#if min_task_utilization}}
 scale_down(item, _context, reason) if
-    not item.flow.source_records_lag_max == nil
-    and not item.flow.source_assigned_partitions == nil
+    not idle_source_telemetry(item)
     and evaluation_window(window)
     and item.flow_task_utilization_below_threshold(window, {{min_task_utilization}})
     and item.flow_source_total_lag_rolling_average(window) == 0.0
@@ -20,13 +18,10 @@ scale_down(item, _context, reason) if
 
 {{#if min_task_utilization}}
 scale_down(item, _context, reason) if
-    item.flow.source_total_lag == nil
-    and item.flow.source_records_consumed_rate == nil
-    and item.flow.source_records_lag_max == nil
-    and item.flow.source_assigned_partitions == nil
+    idle_source_telemetry(item)
     and evaluation_window(window)
     and item.flow_task_utilization_below_threshold(window, {{min_task_utilization}})
-    and item.flow_source_back_pressured_time_millis_per_sec_below_threshold(window, 50.0)
+    and item.flow_source_back_pressured_time_millis_per_sec_below_threshold(window, 100.0)
     and total_lag_avg = item.flow_source_total_lag_rolling_average(window)
     and total_lag_avg == 0.0
     and reason = "low_utilization_and_idle_telemetry";
@@ -34,10 +29,14 @@ scale_down(item, _context, reason) if
 
 evaluation_window(window) if window = {{#if evaluate_duration_secs}}{{evaluate_duration_secs}}{{else}}60{{/if}};
 
+idle_source_telemetry(item) if
+    item.flow.source_total_lag == nil
+    or item.flow.source_records_lag_max == nil
+    or item.flow.source_assigned_partitions == nil;
+
 {{#if max_healthy_lag}}
 scale_up(item, _context, reason) if
-    not item.flow.source_records_lag_max == nil
-    and not item.flow.source_assigned_partitions == nil
+    not idle_source_telemetry(item)
     and evaluation_window(window)
     and item.flow_source_total_lag_above_threshold(window, {{max_healthy_lag}})
     and 0.0 <= item.flow_source_relative_lag_velocity(window)
