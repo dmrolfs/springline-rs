@@ -40,6 +40,7 @@ scale_up(item, _context, reason) if
     and not item.flow.source_assigned_partitions == nil
     and evaluation_window(window)
     and item.flow_source_total_lag_above_threshold(window, {{max_healthy_lag}})
+    and 0.0 <= item.flow_source_relative_lag_velocity(window)
     and reason = "total_lag";
 {{/if}}
 
