@@ -118,6 +118,7 @@ where
         );
 
         let mut nr_confirmed_taskmanagers = 0;
+        tokio::time::sleep(self.polling_interval).await;
         let start = Instant::now();
         while Instant::now().duration_since(start) < self.timeout {
             match session.kube.list_pods(FlinkComponent::TaskManager).await {
