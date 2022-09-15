@@ -594,7 +594,7 @@ mod window {
     ) -> (AppDataWindow<MetricCatalog>, Vec<MetricCatalog>) {
         let mut window = AppDataWindow::builder()
             .with_size_and_interval(limit, interval)
-            .with_quorum_percentage(0.5);
+            .with_quorum_percentile(0.5);
         let mut used = Vec::new();
         let mut remaining = Vec::new();
         for c in catalogs {
@@ -617,34 +617,34 @@ mod window {
     fn test_window_invariants() {
         let window = AppDataWindow::<MetricCatalog>::builder()
             .with_time_window(Duration::from_secs(1))
-            .with_quorum_percentage(0.5)
+            .with_quorum_percentile(0.5)
             .build();
         assert_err!(window, "window is empty");
 
         let window = AppDataWindow::<MetricCatalog>::builder()
             .with_time_window(Duration::from_secs(1))
-            .with_quorum_percentage(0.0)
+            .with_quorum_percentile(0.0)
             .with_item(MetricCatalog::empty())
             .build();
         assert_err!(window, "zero sufficient coverage");
 
         let window = AppDataWindow::<MetricCatalog>::builder()
             .with_time_window(Duration::from_secs(1))
-            .with_quorum_percentage(1.0)
+            .with_quorum_percentile(1.0)
             .with_item(MetricCatalog::empty())
             .build();
         assert_ok!(window);
 
         let window = AppDataWindow::<MetricCatalog>::builder()
             .with_time_window(Duration::from_secs(1))
-            .with_quorum_percentage(-0.07)
+            .with_quorum_percentile(-0.07)
             .with_item(MetricCatalog::empty())
             .build();
         assert_err!(window, "negative coverage");
 
         let window = AppDataWindow::<MetricCatalog>::builder()
             .with_time_window(Duration::from_secs(1))
-            .with_quorum_percentage(1.00003)
+            .with_quorum_percentile(1.00003)
             .with_item(MetricCatalog::empty())
             .build();
         assert_err!(window, "impossible sufficient coverage required");

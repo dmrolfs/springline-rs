@@ -60,7 +60,7 @@ where
 
     window.prop_flat_map(move |window| {
         let builder = AppDataWindowBuilder::default()
-            .with_quorum_percentage(0.6)
+            .with_quorum_percentile(0.6)
             .with_time_window(window);
         let acc_start = Just((builder, Some((start, window))));
         do_arb_metric_catalog_window_loop(acc_start, interval.clone(), make_data_strategy.clone())

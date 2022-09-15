@@ -1120,7 +1120,7 @@ where
         Self::builder()
             .with_item(item)
             .with_time_window(time_window)
-            .with_quorum_percentage(quorum_percentage)
+            .with_quorum_percentile(quorum_percentage)
             .build()
     }
 }
@@ -1403,7 +1403,7 @@ where
 
                 AppDataWindow::builder()
                     .with_time_window(time_window)
-                    .with_quorum_percentage(quorum_percentage)
+                    .with_quorum_percentile(quorum_percentage)
                     .with_items(data)
                     .build()
                     .map_err(|err| {
@@ -1426,8 +1426,8 @@ where
 {
     data: Option<VecDeque<T>>,
     time_window: Option<Duration>,
-    #[validate(custom = "AppDataWindow::<T>::check_quorum_percentage")]
-    quorum_percentage: Option<f64>,
+    #[validate(custom = "AppDataWindow::<T>::check_quorum_percentile")]
+    quorum_percentile: Option<f64>,
 }
 
 impl<T> Default for AppDataWindowBuilder<T>
@@ -1438,7 +1438,7 @@ where
         Self {
             data: None,
             time_window: None,
-            quorum_percentage: None,
+            quorum_percentile: None,
         }
     }
 }
@@ -1469,8 +1469,8 @@ where
         self
     }
 
-    pub const fn with_quorum_percentage(mut self, quorum_percentage: f64) -> Self {
-        self.quorum_percentage = Some(quorum_percentage);
+    pub const fn with_quorum_percentile(mut self, quorum_percentile: f64) -> Self {
+        self.quorum_percentile = Some(quorum_percentile);
         self
     }
 
@@ -1500,7 +1500,7 @@ where
         let result = AppDataWindow {
             data: window.into_iter().collect(),
             time_window: self.time_window.expect("must supply time window before final build"),
-            quorum_percentile: self.quorum_percentage.unwrap_or(DEFAULT_QUORUM_PERCENTILE),
+            quorum_percentile: self.quorum_percentile.unwrap_or(DEFAULT_QUORUM_PERCENTILE),
         };
         result.validate()?;
         Ok(result)
@@ -1581,7 +1581,7 @@ mod tests {
     fn test_app_data_window_serde_tokens() {
         let data_window = assert_ok!(AppDataWindow::builder()
             .with_time_window(Duration::from_secs(10))
-            .with_quorum_percentage(0.67)
+            .with_quorum_percentile(0.67)
             .with_items(vec![
                 TestData(1),
                 TestData(2),
@@ -1626,7 +1626,7 @@ mod tests {
     fn test_app_data_window_serde_json() {
         let expected: AppDataWindow<TestData> = assert_ok!(AppDataWindow::builder()
             .with_time_window(Duration::from_secs(10))
-            .with_quorum_percentage(0.67)
+            .with_quorum_percentile(0.67)
             .with_items(vec![
                 TestData(1),
                 TestData(2),
