@@ -219,7 +219,7 @@ where
 {
     data: VecDeque<T>,
     pub time_window: Duration,
-    pub quorum_percentage: f64,
+    pub quorum_percentile: f64,
 }
 
 impl<T> Validate for AppDataWindow<T>
@@ -228,7 +228,7 @@ where
 {
     fn validate(&self) -> Result<(), ValidationErrors> {
         let checks = vec![
-            Self::check_quorum_percentage(self.quorum_percentage)
+            Self::check_quorum_percentile(self.quorum_percentile)
                 .map_err(|err| ("insufficient quorum", err)),
             Self::check_nonempty(&self.data).map_err(|err| ("empty window", err)),
         ];
@@ -265,7 +265,7 @@ where
                 &self.window_interval().map(|w| w.duration()),
             )
             .field("time_window", &self.time_window)
-            .field("quorum_percentage", &self.quorum_percentage)
+            .field("quorum_percentile", &self.quorum_percentile)
             .field("window_size", &self.data.len())
             .field(
                 "head",
@@ -285,12 +285,12 @@ impl<T> AppDataWindow<T>
 where
     T: AppData + ReceivedAt,
 {
-    fn check_quorum_percentage(percentage: f64) -> Result<(), ValidationError> {
-        if percentage <= 0.0 {
+    fn check_quorum_percentile(percentile: f64) -> Result<(), ValidationError> {
+        if percentile <= 0.0 {
             Err(ValidationError::new(
                 "not enough window quorum coverage to be meaningful.",
             ))
-        } else if 1.0 < percentage {
+        } else if 1.0 < percentile {
             Err(ValidationError::new(
                 "impossible for telemetry window to meet quorum coverage requirement.",
             ))
@@ -314,7 +314,7 @@ where
         let result = Self {
             data: window,
             time_window,
-            quorum_percentage: DEFAULT_QUORUM_PERCENTILE,
+            quorum_percentile: DEFAULT_QUORUM_PERCENTILE,
         };
         result.validate().expect("window parameters are not valid");
         result
@@ -326,7 +326,7 @@ where
         let result = Self {
             data: window,
             time_window,
-            quorum_percentage: DEFAULT_QUORUM_PERCENTILE,
+            quorum_percentile: DEFAULT_QUORUM_PERCENTILE,
         };
         result.validate().expect("window parameters are not valid");
         result
@@ -710,7 +710,7 @@ where
     }
 
     pub fn has_quorum(&self, interval: Interval) -> bool {
-        self.quorum_percentage <= self.assess_coverage_of(interval).0
+        self.quorum_percentile <= self.assess_coverage_of(interval).0
     }
 
     pub fn assess_coverage_of(&self, interval: Interval) -> (f64, impl Iterator<Item = &T>) {
@@ -847,7 +847,7 @@ where
             tracing::debug!(window=?self.window_interval(), ?interval, "Checking for interval");
 
             let (coverage, range_iter) = self.assess_coverage_of(interval);
-            if coverage < self.quorum_percentage {
+            if coverage < self.quorum_percentile {
                 tracing::debug!(
                     ?interval,
                     interval_duration=?interval.duration(),
@@ -1197,11 +1197,11 @@ where
 {
     fn combine(&self, other: &Self) -> Self {
         let book = Self::do_ordered_combine(self, other);
-        let required_coverage = self.quorum_percentage.max(other.quorum_percentage);
+        let required_coverage = self.quorum_percentile.max(other.quorum_percentile);
         Self {
             data: book,
             time_window: self.time_window,
-            quorum_percentage: required_coverage,
+            quorum_percentile: required_coverage,
         }
     }
 }
@@ -1293,7 +1293,7 @@ where
     {
         let mut state = serializer.serialize_struct("AppDataWindow", 3)?;
         state.serialize_field("time_window", &self.time_window)?;
-        state.serialize_field("quorum_percentage", &self.quorum_percentage)?;
+        state.serialize_field("quorum_percentage", &self.quorum_percentile)?;
         state.serialize_field("data", &self.data)?;
         state.end()
     }
@@ -1500,7 +1500,7 @@ where
         let result = AppDataWindow {
             data: window.into_iter().collect(),
             time_window: self.time_window.expect("must supply time window before final build"),
-            quorum_percentage: self.quorum_percentage.unwrap_or(DEFAULT_QUORUM_PERCENTILE),
+            quorum_percentile: self.quorum_percentage.unwrap_or(DEFAULT_QUORUM_PERCENTILE),
         };
         result.validate()?;
         Ok(result)
