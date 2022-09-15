@@ -99,10 +99,16 @@ pub fn log_outcome_with_common_criteria(
         .map(phases::get_outcome_reason)
         .unwrap_or_else(|| UNSPECIFIED.to_string());
 
+    let idle_total_lag = item.flow.source_total_lag.is_none();
+    let idle_records_lag_max = item.flow.source_records_lag_max.is_none();
+    let idle_assigned_partitions = item.flow.source_assigned_partitions.is_none();
+    let idle_source_telemetry = idle_total_lag || idle_records_lag_max || idle_assigned_partitions;
+
     tracing::info!(
         correlation=%item.correlation(),
         ?decision_passed, ?decision_bindings, %decision_reason,
         %source_records_lag_max, %source_assigned_partitions, %total_lag, %records_consumed_rate, %relative_lag_velocity,
+        %idle_source_telemetry, %idle_records_lag_max, %idle_assigned_partitions, %idle_total_lag,
         %nonsource_utilization, %source_back_pressure,
         %cluster_task_cpu, %cluster_task_heap_memory_load,
         %cluster_task_network_input_utilization, %cluster_task_network_output_utilization,
