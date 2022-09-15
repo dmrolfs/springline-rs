@@ -581,7 +581,7 @@ mod tests {
             )))
             .with_template_data(EligibilityTemplateData {
                 policy_extension: Some("eligibility_ext".to_string()),
-                cooling_secs: Some(5 * 60),
+                cooling_secs: Some(10 * 60),
                 stable_secs: Some(5 * 60),
                 custom: HashMap::default(),
             }),
@@ -724,7 +724,7 @@ mod tests {
                     },
                     eligibility: EligibilitySettings {
                         template_data: Some(EligibilityTemplateData {
-                            cooling_secs: Some(300),
+                            cooling_secs: Some(600),
                             ..SETTINGS.eligibility.template_data.clone().unwrap()
                         }),
                         ..SETTINGS.eligibility.clone()
