@@ -159,9 +159,6 @@ pub fn register_metrics(registry: &Registry) -> Result<()> {
     ))?;
     registry.register(Box::new(engine::DECISION_RESCALE_DECISION.clone()))?;
     registry.register(Box::new(engine::PLAN_OBSERVATION_COUNT.clone()))?;
-    registry.register(Box::new(
-        engine::DECISION_PLAN_CURRENT_NR_TASK_MANAGERS.clone(),
-    ))?;
     registry.register(Box::new(engine::PLAN_TARGET_NR_TASK_MANAGERS.clone()))?;
     registry.register(Box::new(engine::GOVERNANCE_PLAN_ACCEPTED.clone()))?;
 

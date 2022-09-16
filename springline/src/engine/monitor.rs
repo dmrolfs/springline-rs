@@ -264,7 +264,6 @@ impl Monitor {
             PlanEvent::DecisionPlanned(decision, plan) => match decision {
                 DecisionResult::ScaleUp(_) | DecisionResult::ScaleDown(_) => {
                     tracing::info!(?event, correlation=%decision.item().correlation(), "planning for scaling decision");
-                    DECISION_PLAN_CURRENT_NR_TASK_MANAGERS.set(plan.current_nr_taskmanagers as i64);
                     PLAN_TARGET_NR_TASK_MANAGERS.set(plan.target_nr_taskmanagers as i64);
                 },
                 _no_action => {
@@ -460,17 +459,6 @@ pub static PLAN_OBSERVATION_COUNT: Lazy<IntCounter> = Lazy::new(|| {
         .const_labels(proctor::metrics::CONST_LABELS.clone()),
     )
     .expect("failed creating plan_observation_count metric")
-});
-
-pub static DECISION_PLAN_CURRENT_NR_TASK_MANAGERS: Lazy<IntGauge> = Lazy::new(|| {
-    IntGauge::with_opts(
-        Opts::new(
-            "decision_plan_current_nr_task_managers",
-            "Number of task managers currently known to Decision and Planning",
-        )
-        .const_labels(proctor::metrics::CONST_LABELS.clone()),
-    )
-    .expect("failed creating decision_plan_current_nr_task_managers metric")
 });
 
 pub static PLAN_TARGET_NR_TASK_MANAGERS: Lazy<IntGauge> = Lazy::new(|| {
