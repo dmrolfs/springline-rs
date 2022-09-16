@@ -77,11 +77,11 @@ ingress:
 
 resources:
   requests:
-    cpu: 100m
-    memory: 50Mi
+    cpu: 5m
+    memory: 20Mi
   limits:
-    cpu: 100m
-    memory: 50Mi
+    cpu: 10m
+    memory: 250Mi
 
 #tolerations:
 #  - key: workload
