@@ -83,7 +83,7 @@ fn main() -> Result<()> {
                     engine_result = engine_handle => {
                         match engine_result {
                             Ok(true) => {
-                                tracing::info!("restarting Autoscale engine...");
+                                tracing::warn!("restarting Autoscale engine...");
                                 restarts_remaining += 1;
                             },
                             Ok(false) => {
@@ -99,7 +99,7 @@ fn main() -> Result<()> {
                     api_result = api_handle => {
                         match api_result {
                             Ok(Ok(())) => {
-                                tracing::info!("Autoscale management server API stopped");
+                                tracing::warn!("Autoscale management server API stopped");
                                 break;
                             },
                             Ok(Err(err)) => {
@@ -114,7 +114,7 @@ fn main() -> Result<()> {
                     exporter_result = exporter_handle => {
                         match exporter_result {
                             Ok(Ok(())) => {
-                                tracing::info!("Autoscale metrics exporter stopped");
+                                tracing::warn!("Autoscale metrics exporter stopped");
                                 break;
                             },
                             Ok(Err(err)) => {
