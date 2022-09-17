@@ -3,10 +3,6 @@ mod policy;
 mod result;
 
 pub use context::GovernanceContext;
-pub(crate) use context::{
-    GOVERNANCE_CTX_MAX_CLUSTER_SIZE, GOVERNANCE_CTX_MAX_SCALING_STEP,
-    GOVERNANCE_CTX_MIN_CLUSTER_SIZE,
-};
 pub use policy::{GovernancePolicy, GovernanceTemplateData};
 use proctor::elements::{PolicyFilterEvent, PolicySubscription};
 use proctor::phases::policy_phase::PolicyPhase;

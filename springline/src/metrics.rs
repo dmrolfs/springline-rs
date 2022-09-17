@@ -1,7 +1,7 @@
 use proctor::elements::telemetry::UpdateMetricsFn;
 use prometheus::Registry;
 
-use crate::phases::{act, decision, eligibility, governance, plan, sense};
+use crate::phases::{act, decision, eligibility, plan, sense};
 use crate::{engine, flink, Result};
 
 pub trait UpdateMetrics {
@@ -143,16 +143,6 @@ pub fn register_metrics(registry: &Registry) -> Result<()> {
     registry.register(Box::new(plan::PLANNING_FORECASTED_WORKLOAD.clone()))?;
     registry.register(Box::new(plan::PLANNING_RECOVERY_WORKLOAD_RATE.clone()))?;
     registry.register(Box::new(plan::PLANNING_VALID_WORKLOAD_RATE.clone()))?;
-
-    registry.register(Box::new(
-        governance::GOVERNANCE_CTX_MIN_CLUSTER_SIZE.clone(),
-    ))?;
-    registry.register(Box::new(
-        governance::GOVERNANCE_CTX_MAX_CLUSTER_SIZE.clone(),
-    ))?;
-    registry.register(Box::new(
-        governance::GOVERNANCE_CTX_MAX_SCALING_STEP.clone(),
-    ))?;
 
     registry.register(Box::new(
         engine::ELIGIBILITY_IS_ELIGIBLE_FOR_SCALING.clone(),

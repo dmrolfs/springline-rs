@@ -1,7 +1,6 @@
 use std::collections::HashSet;
 use std::fmt::{self, Debug};
 
-use once_cell::sync::Lazy;
 use oso::PolarClass;
 use pretty_snowflake::{Id, Label};
 use proctor::elements::telemetry::UpdateMetricsFn;
@@ -9,7 +8,6 @@ use proctor::elements::{telemetry, Telemetry, Timestamp};
 use proctor::error::GovernanceError;
 use proctor::phases::sense::SubscriptionRequirements;
 use proctor::{Correlation, ProctorContext};
-use prometheus::{IntGauge, Opts};
 use serde::{Deserialize, Serialize};
 
 use crate::metrics::UpdateMetrics;
@@ -126,9 +124,9 @@ impl UpdateMetrics for GovernanceContext {
             .try_into::<Self>()
         {
             Ok(ctx) => {
-                GOVERNANCE_CTX_MIN_CLUSTER_SIZE.set(ctx.min_cluster_size as i64);
-                GOVERNANCE_CTX_MAX_CLUSTER_SIZE.set(ctx.max_cluster_size as i64);
-                GOVERNANCE_CTX_MAX_SCALING_STEP.set(ctx.max_scaling_step as i64);
+                // GOVERNANCE_CTX_MIN_CLUSTER_SIZE.set(ctx.min_cluster_size as i64);
+                // GOVERNANCE_CTX_MAX_CLUSTER_SIZE.set(ctx.max_cluster_size as i64);
+                // GOVERNANCE_CTX_MAX_SCALING_STEP.set(ctx.max_scaling_step as i64);
             },
 
             Err(err) => {
@@ -143,39 +141,6 @@ impl UpdateMetrics for GovernanceContext {
         Box::new(update_fn)
     }
 }
-
-pub static GOVERNANCE_CTX_MIN_CLUSTER_SIZE: Lazy<IntGauge> = Lazy::new(|| {
-    IntGauge::with_opts(
-        Opts::new(
-            "governance_ctx_min_cluster_size",
-            "Minimum cluster size allowed",
-        )
-        .const_labels(proctor::metrics::CONST_LABELS.clone()),
-    )
-    .expect("failed creating governance_ctx_min_cluster_size metric")
-});
-
-pub static GOVERNANCE_CTX_MAX_CLUSTER_SIZE: Lazy<IntGauge> = Lazy::new(|| {
-    IntGauge::with_opts(
-        Opts::new(
-            "governance_ctx_max_cluster_size",
-            "Maximum cluster size allowed",
-        )
-        .const_labels(proctor::metrics::CONST_LABELS.clone()),
-    )
-    .expect("failed creating governance_ctx_max_cluster_size metric")
-});
-
-pub static GOVERNANCE_CTX_MAX_SCALING_STEP: Lazy<IntGauge> = Lazy::new(|| {
-    IntGauge::with_opts(
-        Opts::new(
-            "governance_ctx_max_scaling_step",
-            "Maximum change in cluster size allowed.",
-        )
-        .const_labels(proctor::metrics::CONST_LABELS.clone()),
-    )
-    .expect("failed creating governance_ctx_max_scaling_step metric")
-});
 
 #[cfg(test)]
 mod tests {
