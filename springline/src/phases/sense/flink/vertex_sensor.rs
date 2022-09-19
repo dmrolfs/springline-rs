@@ -530,7 +530,7 @@ pub static FLINK_VERTEX_SENSOR_TIME: Lazy<HistogramVec> = Lazy::new(|| {
         )
         .const_labels(proctor::metrics::CONST_LABELS.clone())
         .buckets(vec![
-            0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0, 5.0,
+            0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.3, 0.5, 1.0,
         ]),
         &["flink_scope"],
     )
@@ -550,7 +550,7 @@ pub static FLINK_VERTEX_SENSOR_METRIC_PICKLIST_TIME: Lazy<HistogramVec> = Lazy::
         )
         .const_labels(proctor::metrics::CONST_LABELS.clone())
         .buckets(vec![
-            0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.75, 1.0, 2.5, 5.0,
+            0.050, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 1.0,
         ]),
         &["flink_scope"],
     )
@@ -572,7 +572,7 @@ pub static FLINK_VERTEX_SENSOR_AVAIL_TELEMETRY_TIME: Lazy<HistogramVec> = Lazy::
         )
         .const_labels(proctor::metrics::CONST_LABELS.clone())
         .buckets(vec![
-            0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.75, 1.0, 2.5, 5.0,
+            0.050, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 1.0,
         ]),
         &["flink_scope"],
     )
