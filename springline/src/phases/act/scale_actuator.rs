@@ -196,16 +196,7 @@ where
     fn do_make_rescale_up_action(
         _plan: &P, parameters: &MakeActionParameters,
     ) -> Box<dyn ScaleAction<Plan = P>> {
-        let flink_settle = action::FlinkSettlement::from_settings(
-            parameters.taskmanager_register_timeout,
-            parameters.flink_action_settings.polling_interval,
-        );
-        let k8s_settle = action::KubernetesSettlement::from_settings(
-            parameters.kubernetes_action_settings.api_timeout,
-            parameters.kubernetes_action_settings.polling_interval,
-        );
-
-        let mut action = action::CompositeAction::default()
+        let mut action = action::CompositeAction::new("rescale_up")
             .add_action_step(action::PrepareData::default())
             .add_action_step(action::CancelWithSavepoint::from_settings(
                 &parameters.flink_action_settings,
@@ -217,17 +208,33 @@ where
         // .add_action_step(flink_settle.with_sub_label("after_rescale"))
 
         if let Some(cull_ratio) = parameters.cull_ratio {
-            action = action
+            let culling = action::CompositeAction::new("culling")
                 .add_action_step(action::CullTaskmanagers::new(cull_ratio))
-                .add_action_step(k8s_settle.with_sub_label("after_culling_taskmanagers"));
+                .add_action_step(
+                    action::KubernetesSettlement::from_settings(
+                        parameters.kubernetes_action_settings.api_timeout,
+                        parameters.kubernetes_action_settings.polling_interval,
+                    )
+                    .with_sub_label("after_culling_taskmanagers"),
+                );
+
+            action = action.add_action_step(culling);
             // cannot affect active tms during savepoint
         }
 
-        action = action
-            .add_action_step(flink_settle.with_sub_label("before_restart"))
+        let restart = action::CompositeAction::new("restart")
+            .add_action_step(
+                action::FlinkSettlement::from_settings(
+                    parameters.taskmanager_register_timeout,
+                    parameters.flink_action_settings.polling_interval,
+                )
+                .with_sub_label("before_restart"),
+            )
             .add_action_step(action::RestartJobs::from_settings(
                 &parameters.flink_action_settings,
             ));
+
+        action = action.add_action_step(restart);
 
         Box::new(action)
     }
@@ -236,16 +243,7 @@ where
     fn do_make_rescale_down_action(
         _plan: &P, parameters: &MakeActionParameters,
     ) -> Box<dyn ScaleAction<Plan = P>> {
-        let flink_settle = action::FlinkSettlement::from_settings(
-            parameters.taskmanager_register_timeout,
-            parameters.flink_action_settings.polling_interval,
-        );
-        let k8s_settle = action::KubernetesSettlement::from_settings(
-            parameters.kubernetes_action_settings.api_timeout,
-            parameters.kubernetes_action_settings.polling_interval,
-        );
-
-        let mut action = action::CompositeAction::default()
+        let mut action = action::CompositeAction::new("rescale_down")
             .add_action_step(action::PrepareData::default())
             .add_action_step(action::CancelWithSavepoint::from_settings(
                 &parameters.flink_action_settings,
@@ -256,17 +254,33 @@ where
             ));
 
         if let Some(cull_ratio) = parameters.cull_ratio {
-            action = action
+            let culling = action::CompositeAction::new("culling")
                 .add_action_step(action::CullTaskmanagers::new(cull_ratio))
-                .add_action_step(k8s_settle.with_sub_label("after_culling_taskmanagers"));
+                .add_action_step(
+                    action::KubernetesSettlement::from_settings(
+                        parameters.kubernetes_action_settings.api_timeout,
+                        parameters.kubernetes_action_settings.polling_interval,
+                    )
+                    .with_sub_label("after_culling_taskmanagers"),
+                );
+
+            action = action.add_action_step(culling);
         }
 
         // maybe add a settle step here?
-        action = action
-            .add_action_step(flink_settle.with_sub_label("before_restart"))
+        let restart = action::CompositeAction::new("restart")
+            .add_action_step(
+                action::FlinkSettlement::from_settings(
+                    parameters.taskmanager_register_timeout,
+                    parameters.flink_action_settings.polling_interval,
+                )
+                .with_sub_label("before_restart"),
+            )
             .add_action_step(action::RestartJobs::from_settings(
                 &parameters.flink_action_settings,
             ));
+
+        action = action.add_action_step(restart);
 
         Box::new(action)
     }
