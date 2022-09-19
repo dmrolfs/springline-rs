@@ -6,7 +6,7 @@ use once_cell::sync::Lazy;
 use proctor::elements::Timestamp;
 use proctor::error::MetricLabel;
 use proctor::graph::stage::{self, SinkStage};
-use prometheus::{Histogram, HistogramOpts, HistogramTimer, HistogramVec, IntCounterVec, Opts};
+use prometheus::{HistogramOpts, HistogramTimer, HistogramVec, IntCounterVec, Opts};
 pub use protocol::{ActEvent, ActMonitor};
 use thiserror::Error;
 
@@ -204,20 +204,6 @@ pub(crate) static ACT_RESCALE_ACTION_COUNT: Lazy<IntCounterVec> = Lazy::new(|| {
         &["current_nr_task_managers", "target_nr_task_managers"],
     )
     .expect("failed creating act_rescale_action_count metric")
-});
-
-pub(crate) static PIPELINE_CYCLE_TIME: Lazy<Histogram> = Lazy::new(|| {
-    Histogram::with_opts(
-        HistogramOpts::new(
-            "pipeline_cycle_time",
-            "cycle time processing for act actions taken on telemetry from receipt in seconds",
-        )
-        .const_labels(proctor::metrics::CONST_LABELS.clone())
-        .buckets(vec![
-            0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.75, 1.0,
-        ]),
-    )
-    .expect("failed creating pipeline_cycle_time metric")
 });
 
 pub(crate) static PHASE_ACT_ERRORS: Lazy<IntCounterVec> = Lazy::new(|| {

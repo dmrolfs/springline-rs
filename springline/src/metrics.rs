@@ -154,7 +154,6 @@ pub fn register_metrics(registry: &Registry) -> Result<()> {
 
     registry.register(Box::new(act::ACT_RESCALE_ACTION_TIME.clone()))?;
     registry.register(Box::new(act::ACT_RESCALE_ACTION_COUNT.clone()))?;
-    registry.register(Box::new(act::PIPELINE_CYCLE_TIME.clone()))?;
     registry.register(Box::new(act::PHASE_ACT_ERRORS.clone()))?;
     registry.register(Box::new(act::FLINK_MISSED_JAR_RESTARTS.clone()))?;
 

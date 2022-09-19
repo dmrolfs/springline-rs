@@ -17,7 +17,7 @@ use crate::engine::{PhaseFlag, PhaseFlags};
 use crate::flink;
 use crate::phases::act::{
     ActErrorDisposition, ActEvent, ActMonitor, ActionOutcome, ACT_RESCALE_ACTION_COUNT,
-    PHASE_ACT_ERRORS, PIPELINE_CYCLE_TIME,
+    PHASE_ACT_ERRORS,
 };
 use crate::phases::decision::{
     DecisionContext, DecisionEvent, DecisionMonitor, DecisionResult, ScaleDirection,
@@ -380,10 +380,6 @@ impl Monitor {
                 plan.target_nr_taskmanagers.to_string().as_str(),
             ])
             .inc();
-
-        let start = plan.recv_timestamp;
-        let cycle_time_seconds = now.as_secs_f64() - start.as_secs_f64();
-        PIPELINE_CYCLE_TIME.observe(cycle_time_seconds);
 
         if let Err(err) = ClearinghouseCmd::clear(&self.tx_clearinghouse_api).await {
             tracing::warn!(error=?err, correlation=%plan.correlation(), "failed to clear clearinghouse on rescaling.");

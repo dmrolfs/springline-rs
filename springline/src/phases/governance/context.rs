@@ -123,7 +123,7 @@ impl UpdateMetrics for GovernanceContext {
             .clone()
             .try_into::<Self>()
         {
-            Ok(ctx) => {
+            Ok(_ctx) => {
                 // GOVERNANCE_CTX_MIN_CLUSTER_SIZE.set(ctx.min_cluster_size as i64);
                 // GOVERNANCE_CTX_MAX_CLUSTER_SIZE.set(ctx.max_cluster_size as i64);
                 // GOVERNANCE_CTX_MAX_SCALING_STEP.set(ctx.max_scaling_step as i64);
