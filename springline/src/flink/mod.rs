@@ -74,7 +74,7 @@ pub static FLINK_UPLOADED_JARS_TIME: Lazy<HistogramVec> = Lazy::new(|| {
         )
         .const_labels(proctor::metrics::CONST_LABELS.clone())
         .buckets(vec![
-            0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 1.0, 2.5, 5.0, 7.5, 10.0,
+            0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.5, 0.75, 1.0,
         ]),
         &["action"],
     )
@@ -94,7 +94,7 @@ pub static FLINK_ACTIVE_JOBS_TIME: Lazy<HistogramVec> = Lazy::new(|| {
         )
         .const_labels(proctor::metrics::CONST_LABELS.clone())
         .buckets(vec![
-            0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 1.0, 2.5, 5.0, 7.5, 10.0,
+            0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.5, 0.75, 1.0,
         ]),
         &["action"],
     )
@@ -114,7 +114,7 @@ pub static FLINK_QUERY_JOB_DETAIL_TIME: Lazy<HistogramVec> = Lazy::new(|| {
         )
         .const_labels(proctor::metrics::CONST_LABELS.clone())
         .buckets(vec![
-            0.2, 0.225, 0.25, 0.275, 0.3, 0.35, 0.4, 0.45, 0.5, 0.75, 1.0,
+            0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.5, 0.75, 1.0,
         ]),
         &["action"],
     )
@@ -134,7 +134,7 @@ pub static FLINK_QUERY_TASKMANAGER_ADMIN_TIME: Lazy<HistogramVec> = Lazy::new(||
         )
         .const_labels(proctor::metrics::CONST_LABELS.clone())
         .buckets(vec![
-            0.2, 0.225, 0.25, 0.275, 0.3, 0.35, 0.4, 0.45, 0.5, 0.75, 1.0,
+            0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.5, 0.75, 1.0,
         ]),
         &["action"],
     )
