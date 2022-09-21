@@ -1516,7 +1516,7 @@ pub static METRIC_CATALOG_FLOW_TASK_UTILIZATION_ROLLING_AVG: Lazy<GaugeVec> = La
         .const_labels(proctor::metrics::CONST_LABELS.clone()),
         &["window_secs"],
     )
-    .expect("failed creating metric_catalog_flow_task_utilization_1_min_rolling_avg")
+    .expect("failed creating metric_catalog_flow_task_utilization_rolling_avg")
 });
 
 pub static METRIC_CATALOG_FLOW_SOURCE_TOTAL_LAG_ROLLING_AVG: Lazy<GaugeVec> = Lazy::new(|| {
@@ -1528,7 +1528,7 @@ pub static METRIC_CATALOG_FLOW_SOURCE_TOTAL_LAG_ROLLING_AVG: Lazy<GaugeVec> = La
         .const_labels(proctor::metrics::CONST_LABELS.clone()),
         &["window_secs"],
     )
-    .expect("failed creating metric_catalog_flow_source_total_lag_1_min_rolling_avg")
+    .expect("failed creating metric_catalog_flow_source_total_lag_rolling_avg")
 });
 
 pub static METRIC_CATALOG_FLOW_SOURCE_RELATIVE_LAG_VELOCITY_ROLLING_AVG: Lazy<GaugeVec> =
@@ -1541,9 +1541,7 @@ pub static METRIC_CATALOG_FLOW_SOURCE_RELATIVE_LAG_VELOCITY_ROLLING_AVG: Lazy<Ga
             .const_labels(proctor::metrics::CONST_LABELS.clone()),
             &["window_secs"],
         )
-        .expect(
-            "failed creating metric_catalog_flow_source_relative_lag_velocity_1_min_rolling_avg",
-        )
+        .expect("failed creating metric_catalog_flow_source_relative_lag_velocity_rolling_avg")
     });
 
 pub static METRIC_CATALOG_FLOW_SOURCE_BACK_PRESSURE_TIME_ROLLING_AVG: Lazy<GaugeVec> =
@@ -1556,7 +1554,7 @@ pub static METRIC_CATALOG_FLOW_SOURCE_BACK_PRESSURE_TIME_ROLLING_AVG: Lazy<Gauge
             .const_labels(proctor::metrics::CONST_LABELS.clone()),
             &["window_secs"],
         )
-        .expect("failed creating metric_catalog_flow_source_back_pressure_time_1_min_rolling_avg")
+        .expect("failed creating metric_catalog_flow_source_back_pressure_time_rolling_avg")
     });
 
 #[cfg(test)]
