@@ -114,9 +114,9 @@ fn do_tally_binding_voted(ballots: Vec<String>) -> Vec<(String, usize)> {
         if cmp != Ordering::Equal {
             cmp
         } else if lhs.0 == SCALE_UP {
-            Ordering::Greater
-        } else {
             Ordering::Less
+        } else {
+            Ordering::Greater
         }
     });
 
