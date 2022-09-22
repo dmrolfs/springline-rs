@@ -160,11 +160,16 @@ impl ScalePlan {
         }
     }
 
-    pub const fn direction(&self) -> ScaleDirection {
-        match (self.current_job_parallelism, self.target_job_parallelism) {
-            (current, target) if current < target => ScaleDirection::Up,
-            (current, target) if target < current => ScaleDirection::Down,
-            (..) => ScaleDirection::None,
+    pub fn direction(&self) -> ScaleDirection {
+        match (
+            self.job_parallelism_difference(),
+            self.nr_task_managers_difference(),
+        ) {
+            (p_diff, _) if 0 < p_diff => ScaleDirection::Up,
+            (p_diff, _) if p_diff < 0 => ScaleDirection::Down,
+            (_, tm_diff) if 0 < tm_diff => ScaleDirection::Up,
+            (_, tm_diff) if tm_diff < 0 => ScaleDirection::Down,
+            _ => ScaleDirection::None,
         }
     }
 

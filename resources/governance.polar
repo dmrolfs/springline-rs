@@ -102,13 +102,16 @@ adjust_step_down(current, target, min_step, max_step, adjusted_target)
 
 # identify direction
 no_change(plan)
-    if plan.current_job_parallelism == plan.target_job_parallelism;
+    if plan.current_job_parallelism == plan.target_job_parallelism
+    and plan.current_nr_taskmanagers == plan.target_nr_taskmanagers;
 
 scale_up(plan)
-    if plan.current_job_parallelism < plan.target_job_parallelism;
+    if plan.current_job_parallelism < plan.target_job_parallelism
+    or plan.current_nr_taskmanagers < plan.target_nr_taskmanagers;
 
 scale_down(plan)
-    if plan.target_job_parallelism < plan.current_job_parallelism;
+    if plan.target_job_parallelism < plan.current_job_parallelism
+    or plan.target_nr_taskmanagers < plan.current_nr_taskmanagers;
 
 # one form of veto
 veto(plan, _context) if no_change(plan);
