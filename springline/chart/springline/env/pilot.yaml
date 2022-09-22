@@ -19,13 +19,13 @@ application:
 
   eligibility:
     template_data:
-      cooling_secs: 600
+      cooling_secs: 900
 
   decision:
     template_data:
       basis: chart_decision_basis
-      max_healthy_relative_lag_velocity: 3.0
-      max_health_lag: 2500000
+      max_healthy_relative_lag_velocity: 10.0
+      max_health_lag: 5000000
       min_task_utilization: 0.5
       max_healthy_cpu_load: 0.9
       max_healthy_heap_memory_load: 0.85

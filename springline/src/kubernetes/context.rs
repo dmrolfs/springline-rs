@@ -245,9 +245,7 @@ impl KubernetesContextRef {
     ) -> Result<Either<Pod, Status>, KubernetesError> {
         let result = self.pods.delete(name, params).await?;
         match &result {
-            Left(pod) => {
-                tracing::info!(pod_metadata=?pod.metadata, pod_status=?pod.status, "deleting taskmanager pod: {name}");
-            },
+            Left(pod) => tracing::info!(pod_status=?pod.status, "deleting taskmanager pod: {name}"),
             Right(status) => tracing::info!(?status, "deleted taskmanager pod: {name}"),
         }
         Ok(result)
