@@ -219,6 +219,7 @@ fn make_test_data(
         cluster: ClusterMetrics {
             nr_active_jobs: 1,
             nr_task_managers: parallelism,
+            free_task_slots: 0,
             task_cpu_load: 0.65,
             task_heap_memory_used: 92_987_f64,
             task_heap_memory_committed: 103_929_920_f64,

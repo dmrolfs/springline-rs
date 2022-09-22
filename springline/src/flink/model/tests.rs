@@ -202,8 +202,12 @@ mod catalog {
             TelemetryValue::Float(0.0),
         );
         telemetry.insert(
-            "cluster.nr_task_managers".to_string(),
+            MC_CLUSTER__NR_TASK_MANAGERS.to_string(),
             TelemetryValue::Integer(5),
+        );
+        telemetry.insert(
+            MC_CLUSTER__FREE_TASK_SLOTS.to_string(),
+            TelemetryValue::Integer(0),
         );
         telemetry.insert(
             "correlation_id".to_string(),
@@ -256,6 +260,7 @@ mod catalog {
                 cluster: ClusterMetrics {
                     nr_active_jobs: 0,
                     nr_task_managers: 5,
+                    free_task_slots: 0,
                     task_cpu_load: 0.025,
                     task_heap_memory_used: 2511508464.0,
                     task_heap_memory_committed: 3623878656.0,
@@ -360,6 +365,7 @@ mod catalog {
             cluster: ClusterMetrics {
                 nr_active_jobs: 1,
                 nr_task_managers: 4,
+                free_task_slots: 7,
                 task_cpu_load: 0.65,
                 task_heap_memory_used: 92_987_f64,
                 task_heap_memory_committed: 103_929_920_f64,
@@ -437,6 +443,8 @@ mod catalog {
                 Token::U32(1),
                 Token::Str(MC_CLUSTER__NR_TASK_MANAGERS),
                 Token::U32(4),
+                Token::Str(MC_CLUSTER__FREE_TASK_SLOTS),
+                Token::U32(7),
                 Token::Str("cluster.task_cpu_load"),
                 Token::F64(0.65),
                 Token::Str("cluster.task_heap_memory_used"),
@@ -496,6 +504,7 @@ mod catalog {
             cluster: ClusterMetrics {
                 nr_active_jobs: 1,
                 nr_task_managers: 4,
+                free_task_slots: 11,
                 task_cpu_load: 0.65,
                 task_heap_memory_used: 92_987_f64,
                 task_heap_memory_committed: 103_929_920_f64,
@@ -538,6 +547,7 @@ mod catalog {
 
                 MC_CLUSTER__NR_ACTIVE_JOBS.to_string() => 1.to_telemetry(),
                 MC_CLUSTER__NR_TASK_MANAGERS.to_string() => 4.to_telemetry(),
+                MC_CLUSTER__FREE_TASK_SLOTS.to_string() => 11.to_telemetry(),
                 "cluster.task_cpu_load".to_string() => (0.65).to_telemetry(),
                 "cluster.task_heap_memory_used".to_string() => (92_987.).to_telemetry(),
                 "cluster.task_heap_memory_committed".to_string() => (103_929_920.).to_telemetry(),

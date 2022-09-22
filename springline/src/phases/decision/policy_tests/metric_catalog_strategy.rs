@@ -617,6 +617,7 @@ pub fn arb_cluster_metrics() -> impl Strategy<Value = ClusterMetrics> {
 pub struct ClusterMetricsStrategyBuilder {
     nr_active_jobs: Option<BoxedStrategy<u32>>,
     nr_task_managers: Option<BoxedStrategy<u32>>,
+    free_task_slots: Option<BoxedStrategy<u32>>,
     task_cpu_load: Option<BoxedStrategy<f64>>,
     task_heap_memory_used: Option<BoxedStrategy<f64>>,
     task_heap_memory_committed: Option<BoxedStrategy<f64>>,
@@ -655,6 +656,16 @@ impl ClusterMetricsStrategyBuilder {
 
     pub fn just_nr_task_managers(self, nr_task_managers: impl Into<u32>) -> Self {
         self.nr_task_managers(Just(nr_task_managers.into()))
+    }
+
+    pub fn free_task_slots(self, free_task_slots: impl Strategy<Value = u32> + 'static) -> Self {
+        let mut new = self;
+        new.free_task_slots = Some(free_task_slots.boxed());
+        new
+    }
+
+    pub fn just_free_task_slots(self, free_task_slots: impl Into<u32>) -> Self {
+        self.free_task_slots(Just(free_task_slots.into()))
     }
 
     pub fn task_cpu_load(self, task_cpu_load: impl Strategy<Value = f64> + 'static) -> Self {
@@ -748,6 +759,7 @@ impl ClusterMetricsStrategyBuilder {
     pub fn finish(self) -> impl Strategy<Value = ClusterMetrics> {
         let nr_active_jobs = self.nr_active_jobs.unwrap_or(any::<u32>().boxed());
         let nr_task_managers = self.nr_task_managers.unwrap_or(any::<u32>().boxed());
+        let free_task_slots = self.free_task_slots.unwrap_or(any::<u32>().boxed());
         let task_cpu_load = self.task_cpu_load.unwrap_or(any::<f64>().boxed());
         let task_heap_memory_used = self.task_heap_memory_used.unwrap_or(any::<f64>().boxed());
         let task_heap_memory_committed =
@@ -765,6 +777,7 @@ impl ClusterMetricsStrategyBuilder {
         (
             nr_active_jobs,
             nr_task_managers,
+            free_task_slots,
             task_cpu_load,
             task_heap_memory_used,
             task_heap_memory_committed,
@@ -778,6 +791,7 @@ impl ClusterMetricsStrategyBuilder {
                 |(
                     nr_active_jobs,
                     nr_task_managers,
+                    free_task_slots,
                     task_cpu_load,
                     task_heap_memory_used,
                     task_heap_memory_committed,
@@ -790,6 +804,7 @@ impl ClusterMetricsStrategyBuilder {
                     ClusterMetrics {
                         nr_active_jobs,
                         nr_task_managers,
+                        free_task_slots,
                         task_cpu_load,
                         task_heap_memory_used,
                         task_heap_memory_committed,

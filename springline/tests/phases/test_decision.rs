@@ -14,7 +14,8 @@ use proctor::phases::sense::clearinghouse::TelemetryCacheSettings;
 use proctor::phases::sense::{self, Sense, SubscriptionRequirements, TelemetrySubscription};
 use proctor::{AppData, ProctorContext};
 use springline::flink::{
-    AppDataWindow, MetricCatalog, MC_CLUSTER__NR_ACTIVE_JOBS, MC_CLUSTER__NR_TASK_MANAGERS,
+    AppDataWindow, MetricCatalog, MC_CLUSTER__FREE_TASK_SLOTS, MC_CLUSTER__NR_ACTIVE_JOBS,
+    MC_CLUSTER__NR_TASK_MANAGERS,
 };
 use springline::phases::decision::{make_decision_transform, DecisionResult, DECISION_DIRECTION};
 use springline::phases::decision::{DecisionContext, DecisionPolicy, DecisionTemplateData};
@@ -291,6 +292,7 @@ async fn test_decision_carry_policy_result() -> anyhow::Result<()> {
         "all_sinks_healthy" => true.to_telemetry(),
         MC_CLUSTER__NR_ACTIVE_JOBS => 1.to_telemetry(),
         MC_CLUSTER__NR_TASK_MANAGERS => 4.to_telemetry(),
+        MC_CLUSTER__FREE_TASK_SLOTS => 0.to_telemetry(),
     })
     .await?;
 
@@ -423,6 +425,7 @@ async fn test_decision_common() -> anyhow::Result<()> {
         "all_sinks_healthy" => true.to_telemetry(),
         MC_CLUSTER__NR_ACTIVE_JOBS => 1.to_telemetry(),
         MC_CLUSTER__NR_TASK_MANAGERS => 4.to_telemetry(),
+        MC_CLUSTER__FREE_TASK_SLOTS => 0.to_telemetry(),
     })
     .await?;
 

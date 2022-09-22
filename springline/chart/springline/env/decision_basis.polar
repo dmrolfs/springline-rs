@@ -6,6 +6,11 @@ scale_up(item, _context, reason) if
     and reason = "relative_lag_velocity";
 {{/if}}
 
+# may result in chronic decision trigger if free_task_slots out of phase with scaling step -
+# possible replication of planning min_scaling_step in decision template data.
+scale_down(item, _context, reason) if
+    0 < item.cluster.free_task_slots
+    and reason = "free_task_slots";
 
 {{#if min_task_utilization}}
 scale_down(item, _context, reason) if

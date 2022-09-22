@@ -13,8 +13,8 @@ use tracing::Instrument;
 
 use super::{FlinkScope, Unpack};
 use crate::flink::CorrelationGenerator;
-use crate::flink::MC_CLUSTER__NR_TASK_MANAGERS;
-use crate::phases::plan::{PLANNING__FREE_TASK_SLOTS, PLANNING__TOTAL_TASK_SLOTS};
+use crate::flink::{MC_CLUSTER__FREE_TASK_SLOTS, MC_CLUSTER__NR_TASK_MANAGERS};
+use crate::phases::plan::PLANNING__TOTAL_TASK_SLOTS;
 use crate::phases::sense::flink::FlinkContext;
 
 /// Load telemetry for a specify scope from the Flink Job Manager REST API; e.g., Job or
@@ -134,14 +134,15 @@ where
                             );
 
                             telemetry.insert(
-                                PLANNING__FREE_TASK_SLOTS.into(),
-                                tm_detail.free_task_slots.into(),
-                            );
-
-                            telemetry.insert(
                                 MC_CLUSTER__NR_TASK_MANAGERS.to_string(),
                                 tm_detail.nr_taskmanagers.into(),
                             );
+
+                            telemetry.insert(
+                                MC_CLUSTER__FREE_TASK_SLOTS.into(),
+                                tm_detail.free_task_slots.into(),
+                            );
+
                             Out::unpack(telemetry.into()).map_err(|err| err.into())
                         });
 
@@ -352,8 +353,8 @@ mod tests {
                     actual,
                     maplit::hashmap! {
                         PLANNING__TOTAL_TASK_SLOTS.to_string() => 2.into(),
-                        PLANNING__FREE_TASK_SLOTS.to_string() => 0.into(),
                         MC_CLUSTER__NR_TASK_MANAGERS.to_string() => 2.into(),
+                        MC_CLUSTER__FREE_TASK_SLOTS.to_string() => 0.into(),
                     }
                     .into()
                 );

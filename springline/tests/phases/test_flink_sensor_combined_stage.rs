@@ -16,7 +16,8 @@ use springline::flink::{
     FlinkContext, JobId, JobState, TaskState, VertexId, JOB_STATES, TASK_STATES,
 };
 use springline::flink::{
-    MC_CLUSTER__NR_ACTIVE_JOBS, MC_CLUSTER__NR_TASK_MANAGERS, MC_FLOW__RECORDS_IN_PER_SEC,
+    MC_CLUSTER__FREE_TASK_SLOTS, MC_CLUSTER__NR_ACTIVE_JOBS, MC_CLUSTER__NR_TASK_MANAGERS,
+    MC_FLOW__RECORDS_IN_PER_SEC,
 };
 use springline::phases::sense::flink::{
     make_sensor, Aggregation, FlinkSensorSpecification, MetricOrder, MetricSpec, PlanPositionSpec,
@@ -239,6 +240,7 @@ fn make_expected_telemetry(
         "cluster.task_nr_threads".to_string() => expected_tm.nr_threads.into(),
         MC_CLUSTER__NR_ACTIVE_JOBS.to_string() => expected_job_states.nr_active_jobs().into(),
         MC_CLUSTER__NR_TASK_MANAGERS.to_string() => expected_tm_admin.nr_task_managers.into(),
+        MC_CLUSTER__FREE_TASK_SLOTS.to_string() => expected_tm_admin.nr_task_managers.into(),
     };
 
     let expected_max_records_in_per_sec = expected_vertex_metrics
@@ -505,10 +507,13 @@ impl MockFlinkTaskmanagerAdminMetrics {
     async fn mount_mock(server: &MockServer, expect: impl Into<Times>) -> Self {
         let nr_task_managers = (0..9).fake();
         tracing::info!("nr_task_managers: {nr_task_managers}");
+
+        // may need to expand this to consider frre task slots per tm
         let tms_bodies = (0..nr_task_managers)
             .into_iter()
             .map(Self::generate_task_manager_body)
             .collect();
+
         let body = json!({ "taskmanagers": serde_json::Value::Array(tms_bodies) });
         let response = ResponseTemplate::new(200).set_body_json(body);
         Mock::given(method("GET"))

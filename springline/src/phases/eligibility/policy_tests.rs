@@ -77,6 +77,7 @@ fn make_metric_catalog(nr_active_jobs: u32) -> MetricCatalog {
         cluster: ClusterMetrics {
             nr_active_jobs,
             nr_task_managers: Faker.fake(),
+            free_task_slots: Faker.fake(),
             task_cpu_load: Faker.fake(),
             task_heap_memory_used: Faker.fake(),
             task_heap_memory_committed: Faker.fake(),

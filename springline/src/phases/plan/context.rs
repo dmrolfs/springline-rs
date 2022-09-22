@@ -2,6 +2,7 @@ use std::collections::HashSet;
 use std::fmt::{self, Debug};
 use std::time::Duration;
 
+use crate::flink::MC_CLUSTER__FREE_TASK_SLOTS;
 use once_cell::sync::Lazy;
 use pretty_snowflake::{Id, Label};
 use proctor::elements::telemetry::UpdateMetricsFn;
@@ -17,7 +18,7 @@ use crate::metrics::UpdateMetrics;
 use crate::phases::plan::ForecastInputs;
 
 pub const PLANNING__TOTAL_TASK_SLOTS: &str = "cluster.total_task_slots";
-pub const PLANNING__FREE_TASK_SLOTS: &str = "cluster.free_task_slots";
+pub const PLANNING__FREE_TASK_SLOTS: &str = MC_CLUSTER__FREE_TASK_SLOTS;
 pub const PLANNING__RESCALE_RESTART: &str = "planning.rescale_restart_secs";
 
 #[serde_as]

@@ -400,6 +400,7 @@ impl Semigroup for FlowMetrics {
 
 pub const MC_CLUSTER__NR_ACTIVE_JOBS: &str = "cluster.nr_active_jobs";
 pub const MC_CLUSTER__NR_TASK_MANAGERS: &str = "cluster.nr_task_managers";
+pub const MC_CLUSTER__FREE_TASK_SLOTS: &str = "cluster.free_task_slots";
 
 #[derive(PolarClass, Default, PartialEq, Clone, Serialize, Deserialize)]
 pub struct ClusterMetrics {
@@ -412,6 +413,11 @@ pub struct ClusterMetrics {
     #[polar(attribute)]
     #[serde(rename = "cluster.nr_task_managers")]
     pub nr_task_managers: u32,
+
+    /// Observed free task slots
+    #[polar(attribute)]
+    #[serde(rename = "cluster.free_task_slots")]
+    pub free_task_slots: u32,
 
     /// The recent CPU usage of the JVM for all taskmanagers.
     /// - Flink REST API /taskmanagers/metrics?get=Status.JVM.CPU.LOAD&agg=max
@@ -490,6 +496,7 @@ impl fmt::Debug for ClusterMetrics {
         f.debug_struct("ClusterMetrics")
             .field("nr_active_jobs", &self.nr_active_jobs)
             .field("nr_task_managers", &self.nr_task_managers)
+            .field("free_task_slots", &self.free_task_slots)
             .field("task_cpu_load", &self.task_cpu_load)
             .field("task_heap_memory_used", &self.task_heap_memory_used)
             .field(
@@ -531,6 +538,7 @@ impl Monoid for ClusterMetrics {
         Self {
             nr_active_jobs: 0,
             nr_task_managers: 0,
+            free_task_slots: 0,
             task_cpu_load: -1.0,
             task_heap_memory_used: -1.0,
             task_heap_memory_committed: -1.0,
@@ -590,6 +598,7 @@ impl SubscriptionRequirements for MetricCatalog {
             // ClusterMetrics
             MC_CLUSTER__NR_ACTIVE_JOBS.into(),
             MC_CLUSTER__NR_TASK_MANAGERS.into(),
+            MC_CLUSTER__FREE_TASK_SLOTS.into(),
             "cluster.task_cpu_load".into(),
             "cluster.task_heap_memory_used".into(),
             "cluster.task_heap_memory_committed".into(),
