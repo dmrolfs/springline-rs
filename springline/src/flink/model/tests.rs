@@ -534,7 +534,7 @@ mod catalog {
                 "flow.source_total_lag".to_string() => 1_042.to_telemetry(),
                 "flow.source_records_consumed_rate".to_string() => 521_f64.to_telemetry(),
                 "flow.idle_time_millis_per_sec".to_string() => 333.3.to_telemetry(),
-                "flow.source_back_pressured_time_millis_per_sec".to_string() => 928.0.to_telemetry(),
+                "flow.source_back_pressured_time_millis_per_sec".to_string() => 928_f64.to_telemetry(),
 
                 MC_CLUSTER__NR_ACTIVE_JOBS.to_string() => 1.to_telemetry(),
                 MC_CLUSTER__NR_TASK_MANAGERS.to_string() => 4.to_telemetry(),

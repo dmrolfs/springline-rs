@@ -30,6 +30,7 @@ application:
       max_healthy_cpu_load: 0.9
       max_healthy_heap_memory_load: 0.85
       max_healthy_network_io_utilization: 0.8
+      min_idle_source_back_pressured_time_millis_per_sec: 200.0
       evaluate_duration_secs: 120
 
   governance:

@@ -203,6 +203,10 @@ decision:
     #which scaling up may help.
     # max_healthy_network_io_utilization:
 
+    # Optional threshold, among possibly others, that may indicate an application is idle. If this value
+    # or min_task_utilization are not set, then rescale down for low utilization and idle telemetry is
+    # disabled.
+    min_idle_source_back_pressured_time_millis_per_sec: 200.0
 
     # Many of the rules look at the rolling average of the values to reduce the affects of
     # short-term spikes. This optional value sets the common evaluation window for these range

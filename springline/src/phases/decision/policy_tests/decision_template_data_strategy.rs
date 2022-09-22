@@ -10,6 +10,7 @@ pub struct DecisionTemplateDataStrategyBuilder {
     max_healthy_cpu_load: Option<BoxedStrategy<Option<f64>>>,
     max_healthy_heap_memory_load: Option<BoxedStrategy<Option<f64>>>,
     max_healthy_network_io_utilization: Option<BoxedStrategy<Option<f64>>>,
+    min_idle_source_back_pressured_time_millis_per_sec: Option<BoxedStrategy<Option<f64>>>,
     evaluate_duration_secs: Option<BoxedStrategy<Option<u32>>>,
 }
 
@@ -103,6 +104,24 @@ impl DecisionTemplateDataStrategyBuilder {
         self.max_healthy_network_io_utilization(Just(max_healthy_network_io_utilization.into()))
     }
 
+    pub fn min_idle_source_back_pressured_time_millis_per_sec(
+        self,
+        min_idle_source_back_pressured_time_millis_per_sec: impl Strategy<Value = Option<f64>> + 'static,
+    ) -> Self {
+        let mut new = self;
+        new.min_idle_source_back_pressured_time_millis_per_sec =
+            Some(min_idle_source_back_pressured_time_millis_per_sec.boxed());
+        new
+    }
+
+    pub fn just_min_idle_source_back_pressured_time_millis_per_sec(
+        self, min_idle_source_back_pressured_time_millis_per_sec: impl Into<Option<f64>>,
+    ) -> Self {
+        self.min_idle_source_back_pressured_time_millis_per_sec(Just(
+            min_idle_source_back_pressured_time_millis_per_sec.into(),
+        ))
+    }
+
     pub fn evaluate_duration_secs(
         self, evaluate_duration_secs: impl Strategy<Value = Option<u32>> + 'static,
     ) -> Self {
@@ -137,6 +156,9 @@ impl DecisionTemplateDataStrategyBuilder {
         let max_healthy_network_io_utilization = self
             .max_healthy_network_io_utilization
             .unwrap_or(prop::option::of(-10_f64..=1e10).boxed());
+        let min_idle_source_back_pressured_time_millis_per_sec = self
+            .min_idle_source_back_pressured_time_millis_per_sec
+            .unwrap_or(prop::option::of(-10_f64..=1e10).boxed());
         let evaluate_duration_secs = self
             .evaluate_duration_secs
             .unwrap_or(prop::option::of(any::<u32>()).boxed());
@@ -149,6 +171,7 @@ impl DecisionTemplateDataStrategyBuilder {
             max_healthy_cpu_load,
             max_healthy_heap_memory_load,
             max_healthy_network_io_utilization,
+            min_idle_source_back_pressured_time_millis_per_sec,
             evaluate_duration_secs,
         )
             .prop_filter_map(
@@ -161,6 +184,7 @@ impl DecisionTemplateDataStrategyBuilder {
                     max_healthy_cpu_load,
                     max_healthy_heap_memory_load,
                     max_healthy_network_io_utilization,
+                    min_idle_source_back_pressured_time_millis_per_sec,
                     evaluate_duration_secs,
                 )| {
                     tracing::info!(
@@ -171,6 +195,7 @@ impl DecisionTemplateDataStrategyBuilder {
                         ?max_healthy_cpu_load,
                         ?max_healthy_heap_memory_load,
                         ?max_healthy_network_io_utilization,
+                        ?min_idle_source_back_pressured_time_millis_per_sec,
                         ?evaluate_duration_secs,
                         "making DecisionTemplateData..."
                     );
@@ -183,6 +208,7 @@ impl DecisionTemplateDataStrategyBuilder {
                         max_healthy_cpu_load,
                         max_healthy_heap_memory_load,
                         max_healthy_network_io_utilization,
+                        min_idle_source_back_pressured_time_millis_per_sec,
                         evaluate_duration_secs,
                         custom: Default::default(),
                     };

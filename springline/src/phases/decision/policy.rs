@@ -74,6 +74,13 @@ pub struct DecisionTemplateData {
     #[validate(range(min = 0.0))]
     pub max_healthy_network_io_utilization: Option<f64>,
 
+    /// Optional threshold, among possibly others, that may indicate an application is idle. If this value
+    /// or min_task_utilization are not set, then rescale down for low utilization and idle telemetry is
+    /// disabled.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[validate(range(min = 0.0, max = 1000.0))]
+    pub min_idle_source_back_pressured_time_millis_per_sec: Option<f64>,
+
     /// Many of the rules look at the rolling average of the values to reduce the
     /// affects of short-term spikes. This optional value sets the common evaluation
     /// window for these range metric forms. Duration may range from 0 (always single item) to 600
@@ -97,6 +104,7 @@ impl Default for DecisionTemplateData {
             max_healthy_cpu_load: None,
             max_healthy_heap_memory_load: None,
             max_healthy_network_io_utilization: None,
+            min_idle_source_back_pressured_time_millis_per_sec: None,
             evaluate_duration_secs: None,
             custom: HashMap::default(),
         }
