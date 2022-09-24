@@ -270,6 +270,9 @@ impl<F: Forecaster> Planning for FlinkPlanning<F> {
             total_task_slots=?self.total_task_slots, free_task_slots=?self.free_task_slots,
             "patched planning context inputs."
         );
+
+        self.update_metrics();
+
         Ok(Some(PlanEvent::<Self>::ContextChanged(context)))
     }
 

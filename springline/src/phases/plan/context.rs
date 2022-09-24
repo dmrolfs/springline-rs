@@ -10,7 +10,8 @@ use proctor::elements::{Telemetry, Timestamp};
 use proctor::error::ProctorError;
 use proctor::phases::sense::SubscriptionRequirements;
 use proctor::Correlation;
-use prometheus::{IntGauge, Opts};
+use prometheus::core::{AtomicU64, GenericGauge};
+use prometheus::Opts;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 
@@ -20,6 +21,8 @@ use crate::phases::plan::ForecastInputs;
 pub const PLANNING__TOTAL_TASK_SLOTS: &str = "cluster.total_task_slots";
 pub const PLANNING__FREE_TASK_SLOTS: &str = MC_CLUSTER__FREE_TASK_SLOTS;
 pub const PLANNING__RESCALE_RESTART: &str = "planning.rescale_restart_secs";
+pub const PLANNING__MAX_CATCH_UP: &str = "planning.max_catch_up_secs";
+pub const PLANNING__RECOVERY_VALID: &str = "planning.recovery_valid_secs";
 
 #[serde_as]
 #[derive(Label, Clone, Serialize, Deserialize)]
@@ -48,7 +51,7 @@ pub struct PlanningContext {
 
     /// Time expected to restart Flink when scaling. Baseline time is set via configuration, but as
     /// springline rescales, it measures the restart duration and updates planning accordingly.
-    #[serde(default, rename = "planning.rescale_restart")]
+    #[serde(default, rename = "planning.rescale_restart_secs")]
     #[serde_as(as = "Option<serde_with::DurationSeconds<u64>>")]
     pub rescale_restart: Option<Duration>,
 
@@ -56,12 +59,12 @@ pub struct PlanningContext {
     /// rescaling action. If the tolerating a longer catch-up time, allows the target cluster size
     /// to closely match that required for the predicted target workload. A shorter allowed catch
     /// up time may result in over-provisioning the cluster.
-    #[serde(default, rename = "planning.max_catch_up")]
+    #[serde(default, rename = "planning.max_catch_up_secs")]
     #[serde_as(as = "Option<serde_with::DurationSeconds<u64>>")]
     pub max_catch_up: Option<Duration>,
 
     /// The time after recovery allowed to settle the cluster.
-    #[serde(default, rename = "planning.recovery_valid")]
+    #[serde(default, rename = "planning.recovery_valid_secs")]
     #[serde_as(as = "Option<serde_with::DurationSeconds<u64>>")]
     pub recovery_valid: Option<Duration>,
 }
@@ -135,8 +138,8 @@ impl SubscriptionRequirements for PlanningContext {
             PLANNING__TOTAL_TASK_SLOTS.into(),
             PLANNING__FREE_TASK_SLOTS.into(),
             PLANNING__RESCALE_RESTART.into(),
-            "planning.max_catch_up".into(),
-            "planning.recovery_valid".into(),
+            "planning.max_catch_up_secs".into(),
+            "planning.recovery_valid_secs".into(),
         }
     }
 }
@@ -150,20 +153,19 @@ impl UpdateMetrics for PlanningContext {
         {
             Ok(ctx) => {
                 if let Some(min_scaling_step) = ctx.min_scaling_step {
-                    PLANNING_CTX_MIN_SCALING_STEP.set(min_scaling_step as i64);
+                    PLANNING_CTX_MIN_SCALING_STEP.set(u64::from(min_scaling_step));
                 }
 
                 if let Some(restart) = ctx.rescale_restart {
-                    PLANNING_CTX_FORECASTING_RESTART_SECS.set(restart.as_secs() as i64);
+                    PLANNING_CTX_FORECASTING_RESTART_SECS.set(restart.as_secs());
                 }
 
                 if let Some(max_catch_up) = ctx.max_catch_up {
-                    PLANNING_CTX_FORECASTING_MAX_CATCH_UP_SECS.set(max_catch_up.as_secs() as i64);
+                    PLANNING_CTX_FORECASTING_MAX_CATCH_UP_SECS.set(max_catch_up.as_secs());
                 }
 
                 if let Some(recovery_valid) = ctx.recovery_valid {
-                    PLANNING_CTX_FORECASTING_RECOVERY_VALID_SECS
-                        .set(recovery_valid.as_secs() as i64);
+                    PLANNING_CTX_FORECASTING_RECOVERY_VALID_SECS.set(recovery_valid.as_secs());
                 }
             },
 
@@ -180,8 +182,8 @@ impl UpdateMetrics for PlanningContext {
     }
 }
 
-pub static PLANNING_CTX_MIN_SCALING_STEP: Lazy<IntGauge> = Lazy::new(|| {
-    IntGauge::with_opts(
+pub static PLANNING_CTX_MIN_SCALING_STEP: Lazy<GenericGauge<AtomicU64>> = Lazy::new(|| {
+    GenericGauge::with_opts(
         Opts::new(
             "planning_ctx_min_scaling_step",
             "Minimum step when rescaling the cluster",
@@ -191,8 +193,8 @@ pub static PLANNING_CTX_MIN_SCALING_STEP: Lazy<IntGauge> = Lazy::new(|| {
     .expect("failed creating planning_ctx_min_scaling_step metric")
 });
 
-pub static PLANNING_CTX_FORECASTING_RESTART_SECS: Lazy<IntGauge> = Lazy::new(|| {
-    IntGauge::with_opts(
+pub static PLANNING_CTX_FORECASTING_RESTART_SECS: Lazy<GenericGauge<AtomicU64>> = Lazy::new(|| {
+    GenericGauge::with_opts(
         Opts::new(
             "planning_ctx_forecasting_restart_secs",
             "expected restart duration in secs used for forecasting",
@@ -202,27 +204,29 @@ pub static PLANNING_CTX_FORECASTING_RESTART_SECS: Lazy<IntGauge> = Lazy::new(|| 
     .expect("failed creating planning_ctx_forecasting_restart_secs metric")
 });
 
-pub static PLANNING_CTX_FORECASTING_MAX_CATCH_UP_SECS: Lazy<IntGauge> = Lazy::new(|| {
-    IntGauge::with_opts(
-        Opts::new(
-            "planning_ctx_forecasting_max_catch_up_secs",
-            "expected max catch-up duration in secs used for forecasting",
+pub static PLANNING_CTX_FORECASTING_MAX_CATCH_UP_SECS: Lazy<GenericGauge<AtomicU64>> =
+    Lazy::new(|| {
+        GenericGauge::with_opts(
+            Opts::new(
+                "planning_ctx_forecasting_max_catch_up_secs",
+                "expected max catch-up duration in secs used for forecasting",
+            )
+            .const_labels(proctor::metrics::CONST_LABELS.clone()),
         )
-        .const_labels(proctor::metrics::CONST_LABELS.clone()),
-    )
-    .expect("failed creating planning_ctx_forecasting_max_catch_up_secs metric")
-});
+        .expect("failed creating planning_ctx_forecasting_max_catch_up_secs metric")
+    });
 
-pub static PLANNING_CTX_FORECASTING_RECOVERY_VALID_SECS: Lazy<IntGauge> = Lazy::new(|| {
-    IntGauge::with_opts(
-        Opts::new(
-            "planning_ctx_forecasting_recovery_valid_secs",
-            "expected duration in secs until the recovery is valid - used for forecasting",
+pub static PLANNING_CTX_FORECASTING_RECOVERY_VALID_SECS: Lazy<GenericGauge<AtomicU64>> =
+    Lazy::new(|| {
+        GenericGauge::with_opts(
+            Opts::new(
+                "planning_ctx_forecasting_recovery_valid_secs",
+                "expected duration in secs until the recovery is valid - used for forecasting",
+            )
+            .const_labels(proctor::metrics::CONST_LABELS.clone()),
         )
-        .const_labels(proctor::metrics::CONST_LABELS.clone()),
-    )
-    .expect("failed creating planning_ctx_forecasting_recovery_valid_secs metric")
-});
+        .expect("failed creating planning_ctx_forecasting_recovery_valid_secs metric")
+    });
 
 #[cfg(test)]
 mod tests {
@@ -267,12 +271,12 @@ mod tests {
                 Token::U32(1),
                 Token::Str("cluster.free_task_slots"),
                 Token::U32(0),
-                Token::Str("planning.rescale_restart"),
+                Token::Str("planning.rescale_restart_secs"),
                 Token::Some,
                 Token::U64(17),
-                Token::Str("planning.max_catch_up"),
+                Token::Str("planning.max_catch_up_secs"),
                 Token::None,
-                Token::Str("planning.recovery_valid"),
+                Token::Str("planning.recovery_valid_secs"),
                 Token::Some,
                 Token::U64(22),
                 Token::StructEnd,

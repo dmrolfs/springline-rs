@@ -10,6 +10,9 @@ use springline::engine::{Autoscaler, BoxedTelemetrySource, FeedbackSource};
 use springline::flink::FlinkContext;
 use springline::kubernetes::KubernetesContext;
 use springline::phases::act::ScaleActuator;
+use springline::phases::plan::{
+    PLANNING__MAX_CATCH_UP, PLANNING__RECOVERY_VALID, PLANNING__RESCALE_RESTART,
+};
 use springline::settings::{CliOptions, FlinkSettings, Settings};
 use springline::{engine, Result};
 use tokio::signal::unix::{self, SignalKind};
@@ -197,6 +200,18 @@ fn make_settings_sensor(settings: &Settings) -> BoxedTelemetrySource {
         "max_cluster_size".to_string() => settings.governance.rules.max_cluster_size.into(),
     };
     settings_telemetry.extend(settings.governance.rules.custom.clone());
+
+    // todo: consider planning context telemetry
+    let rescale_restart = u32::try_from(settings.plan.restart.as_secs()).unwrap_or(u32::MAX);
+    let max_catch_up = u32::try_from(settings.plan.max_catch_up.as_secs()).unwrap_or(u32::MAX);
+    let recovery_valid = u32::try_from(settings.plan.recovery_valid.as_secs()).unwrap_or(u32::MAX);
+
+    settings_telemetry.extend(maplit::hashmap! {
+        "planning.min_scaling_step".to_string() => settings.plan.min_scaling_step.into(),
+        PLANNING__RESCALE_RESTART.to_string() => rescale_restart.into(),
+        PLANNING__MAX_CATCH_UP.to_string() => max_catch_up.into(),
+        PLANNING__RECOVERY_VALID.to_string() => recovery_valid.into(),
+    });
 
     // todo: remove with proper eligibility context telemetry - see EligibilityContext
     settings_telemetry.extend(maplit::hashmap! {
