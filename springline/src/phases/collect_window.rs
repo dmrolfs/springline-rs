@@ -1,12 +1,18 @@
 use std::fmt::{self, Debug};
 use std::time::Duration;
 
+use crate::engine::{
+    ENGINE_PROCESS_MEMORY, ENGINE_SYSTEM_AVAILABLE_MEMORY, ENGINE_SYSTEM_FREE_MEMORY,
+    ENGINE_SYSTEM_FREE_SWAP, ENGINE_SYSTEM_TOTAL_MEMORY, ENGINE_SYSTEM_TOTAL_SWAP,
+    ENGINE_SYSTEM_USED_MEMORY, ENGINE_SYSTEM_USED_SWAP,
+};
 use async_trait::async_trait;
 use cast_trait_object::dyn_upcast;
 use proctor::error::ProctorError;
 use proctor::graph::stage::{Stage, WithApi};
 use proctor::graph::{stage, Inlet, Outlet, Port, SinkShape, SourceShape, PORT_DATA};
 use proctor::{Ack, AppData, ProctorResult, ReceivedAt};
+use sysinfo::{ProcessExt, ProcessRefreshKind, System, SystemExt};
 use tokio::sync::{mpsc, oneshot};
 
 use crate::flink::{AppDataWindow, MetricCatalog, UpdateWindowMetrics, Window};
@@ -39,6 +45,7 @@ pub struct CollectMetricWindow<In, Out> {
     time_window: Duration,
     quorum_percentile: f64,
     evaluation_duration: Option<Duration>,
+    system: Option<System>,
     inlet: Inlet<In>,
     outlet: Outlet<Out>,
     tx_api: WindowApi,
@@ -52,6 +59,7 @@ impl<In, Out> Debug for CollectMetricWindow<In, Out> {
             .field("time_window", &self.time_window)
             .field("quorum_percentage", &self.quorum_percentile)
             .field("evaluate_duration", &self.evaluation_duration)
+            .field("system", &self.system)
             .finish()
     }
 }
@@ -59,6 +67,7 @@ impl<In, Out> Debug for CollectMetricWindow<In, Out> {
 impl CollectMetricWindow<MetricCatalog, AppDataWindow<MetricCatalog>> {
     pub fn new(
         name: impl Into<String>, evaluation_duration: Option<Duration>, settings: &EngineSettings,
+        system: Option<System>,
     ) -> Self {
         let name = name.into();
 
@@ -74,6 +83,7 @@ impl CollectMetricWindow<MetricCatalog, AppDataWindow<MetricCatalog>> {
             time_window,
             quorum_percentile: quorum_percentage,
             evaluation_duration,
+            system,
             inlet,
             outlet,
             tx_api,
@@ -160,6 +170,7 @@ where
                             // let looking_back = out.window_interval().map(|i| i.duration());
                             // out.update_metrics(looking_back);
                             // tracing::debug!("pushing metric catalog window looking back {looking_back:?}");
+                            self.update_system_metrics();
 
                             self.outlet.send(out).await?;
                         }
@@ -209,5 +220,28 @@ where
     fn make_window(&self, data: In) -> ProctorResult<Out> {
         Out::from_item(data, self.time_window, self.quorum_percentile)
             .map_err(|err| ProctorError::Phase(err.into()))
+    }
+
+    fn update_system_metrics(&mut self) {
+        if let Some(ref mut sys) = self.system {
+            sys.refresh_memory();
+            sys.refresh_processes_specifics(
+                ProcessRefreshKind::new().without_disk_usage().without_user(),
+            );
+
+            for (pid, process) in sys.processes() {
+                let pid_label = pid.to_string();
+                let labels = [pid_label.as_str(), process.name()];
+                ENGINE_PROCESS_MEMORY.with_label_values(&labels).set(process.memory());
+            }
+
+            ENGINE_SYSTEM_TOTAL_MEMORY.set(sys.total_memory());
+            ENGINE_SYSTEM_FREE_MEMORY.set(sys.free_memory());
+            ENGINE_SYSTEM_AVAILABLE_MEMORY.set(sys.available_memory());
+            ENGINE_SYSTEM_USED_MEMORY.set(sys.used_memory());
+            ENGINE_SYSTEM_TOTAL_SWAP.set(sys.total_swap());
+            ENGINE_SYSTEM_FREE_SWAP.set(sys.free_swap());
+            ENGINE_SYSTEM_USED_SWAP.set(sys.used_swap());
+        }
     }
 }

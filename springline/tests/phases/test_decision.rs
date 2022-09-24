@@ -89,8 +89,12 @@ where
         let sense = builder.build_for_out_subscription(sensor_out_subscription).await?;
 
         let engine_settings = EngineSettings::default();
-        let collect =
-            springline::phases::CollectMetricWindow::new("collect_window", None, &engine_settings);
+        let collect = springline::phases::CollectMetricWindow::new(
+            "collect_window",
+            None,
+            &engine_settings,
+            None,
+        );
         let mut sink = stage::Fold::<_, Out, _>::new("sink", Vec::new(), |mut acc, item| {
             acc.push(item);
             acc

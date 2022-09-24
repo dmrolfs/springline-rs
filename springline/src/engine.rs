@@ -11,13 +11,16 @@ use cast_trait_object::DynCastExt;
 use enumflags2::{bitflags, BitFlags};
 use futures::{future::FutureExt, pin_mut};
 use monitor::Monitor;
+use once_cell::sync::Lazy;
 use pretty_snowflake::MachineNode;
 use proctor::elements::Telemetry;
 use proctor::graph::stage::{ActorSourceApi, SinkStage, SourceStage, WithApi, WithMonitor};
 use proctor::graph::{Connect, Graph, SinkShape, SourceShape};
 use proctor::ProctorResult;
-use prometheus::Registry;
+use prometheus::core::{AtomicU64, GenericGauge, GenericGaugeVec};
+use prometheus::{Opts, Registry};
 pub use service::EngineApiError;
+use sysinfo::SystemExt;
 use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
 
@@ -168,11 +171,17 @@ impl AutoscaleEngine<Building> {
         }
     }
 
+    fn tap_system() -> sysinfo::System {
+        sysinfo::System::new_with_specifics(sysinfo::RefreshKind::new().with_memory())
+    }
+
     #[tracing::instrument(level = "trace", skip(self, settings))]
     pub async fn finish(
         self, sensor_flink: FlinkContext, settings: &Settings,
     ) -> Result<AutoscaleEngine<Ready>> {
         let machine_node = MachineNode::new(settings.engine.machine_id, settings.engine.node_id)?;
+
+        let system = Self::tap_system();
 
         let mut sensors = self
             .inner
@@ -443,3 +452,89 @@ impl AutoscaleEngine<Running> {
         }
     }
 }
+
+pub static ENGINE_PROCESS_MEMORY: Lazy<GenericGaugeVec<AtomicU64>> = Lazy::new(|| {
+    GenericGaugeVec::new(
+        Opts::new("engine_process_memory", "The process memory")
+            .const_labels(proctor::metrics::CONST_LABELS.clone()),
+        &["pid", "name"],
+    )
+    .expect("failed creating engine_process_memory metric")
+});
+
+pub static ENGINE_SYSTEM_TOTAL_MEMORY: Lazy<GenericGauge<AtomicU64>> = Lazy::new(|| {
+    GenericGauge::with_opts(
+        Opts::new(
+            "engine_system_total_memory",
+            "The amount of total RAM in bytes for the system",
+        )
+        .const_labels(proctor::metrics::CONST_LABELS.clone()),
+    )
+    .expect("failed creating engine_system_total_memory metric")
+});
+
+pub static ENGINE_SYSTEM_FREE_MEMORY: Lazy<GenericGauge<AtomicU64>> = Lazy::new(|| {
+    GenericGauge::with_opts(
+        Opts::new(
+            "engine_system_free_memory",
+            r##"The amount of free RAM in bytes for the system. Generally, "free" memory refers to unallocated memory whereas "available" memory refers to memory that is available for (re)use."##,
+        )
+            .const_labels(proctor::metrics::CONST_LABELS.clone()),
+    )
+        .expect("failed creating engine_system_free_memory metric")
+});
+
+pub static ENGINE_SYSTEM_AVAILABLE_MEMORY: Lazy<GenericGauge<AtomicU64>> = Lazy::new(|| {
+    GenericGauge::with_opts(
+        Opts::new(
+            "engine_system_available_memory",
+            r##"The amount of available RAM in bytes for the system. Generally, "free" memory refers to unallocated memory whereas "available" memory refers to memory that is available for (re)use."##,
+        )
+            .const_labels(proctor::metrics::CONST_LABELS.clone()),
+    )
+        .expect("failed creating engine_system_available_memory metric")
+});
+
+pub static ENGINE_SYSTEM_USED_MEMORY: Lazy<GenericGauge<AtomicU64>> = Lazy::new(|| {
+    GenericGauge::with_opts(
+        Opts::new(
+            "engine_system_used_memory",
+            "The amount of used RAM in bytes for the system",
+        )
+        .const_labels(proctor::metrics::CONST_LABELS.clone()),
+    )
+    .expect("failed creating engine_system_used_memory metric")
+});
+
+pub static ENGINE_SYSTEM_TOTAL_SWAP: Lazy<GenericGauge<AtomicU64>> = Lazy::new(|| {
+    GenericGauge::with_opts(
+        Opts::new(
+            "engine_system_total_swap",
+            "The SWAP size in bytes for the system",
+        )
+        .const_labels(proctor::metrics::CONST_LABELS.clone()),
+    )
+    .expect("failed creating engine_system_total_swap metric")
+});
+
+pub static ENGINE_SYSTEM_FREE_SWAP: Lazy<GenericGauge<AtomicU64>> = Lazy::new(|| {
+    GenericGauge::with_opts(
+        Opts::new(
+            "engine_system_free_swap",
+            "The amount of free SWAP in bytes for the system",
+        )
+        .const_labels(proctor::metrics::CONST_LABELS.clone()),
+    )
+    .expect("failed creating engine_system_free_swap metric")
+});
+
+pub static ENGINE_SYSTEM_USED_SWAP: Lazy<GenericGauge<AtomicU64>> = Lazy::new(|| {
+    GenericGauge::with_opts(
+        Opts::new(
+            "engine_system_used_swap",
+            "The amount of used SWAP in bytes for the system",
+        )
+        .const_labels(proctor::metrics::CONST_LABELS.clone()),
+    )
+    .expect("failed creating engine_system_used_swap metric")
+});

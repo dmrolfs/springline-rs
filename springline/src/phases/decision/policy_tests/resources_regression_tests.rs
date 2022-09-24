@@ -1,6 +1,5 @@
 use super::*;
 use claim::*;
-use itertools::Itertools;
 
 #[test]
 fn test_decision_policy_doesnt_crash_f13c99a6955() {

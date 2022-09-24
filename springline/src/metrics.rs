@@ -12,6 +12,15 @@ pub trait UpdateMetrics {
 pub fn register_metrics(registry: &Registry) -> Result<()> {
     proctor::metrics::register_proctor_metrics(registry)?;
 
+    registry.register(Box::new(engine::ENGINE_PROCESS_MEMORY.clone()))?;
+    registry.register(Box::new(engine::ENGINE_SYSTEM_TOTAL_MEMORY.clone()))?;
+    registry.register(Box::new(engine::ENGINE_SYSTEM_FREE_MEMORY.clone()))?;
+    registry.register(Box::new(engine::ENGINE_SYSTEM_AVAILABLE_MEMORY.clone()))?;
+    registry.register(Box::new(engine::ENGINE_SYSTEM_USED_MEMORY.clone()))?;
+    registry.register(Box::new(engine::ENGINE_SYSTEM_TOTAL_SWAP.clone()))?;
+    registry.register(Box::new(engine::ENGINE_SYSTEM_FREE_SWAP.clone()))?;
+    registry.register(Box::new(engine::ENGINE_SYSTEM_USED_SWAP.clone()))?;
+
     registry.register(Box::new(flink::METRIC_CATALOG_TIMESTAMP.clone()))?;
 
     registry.register(Box::new(flink::METRIC_CATALOG_JOB_HEALTH_UPTIME.clone()))?;
