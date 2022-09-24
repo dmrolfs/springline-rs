@@ -36,6 +36,10 @@ pub trait ScaleAction: Debug + Send + Sync {
 
     fn label(&self) -> &str;
 
+    fn is_leaf(&self) -> bool {
+        true
+    }
+
     fn check_preconditions(&self, session: &ActionSession) -> Result<(), ActError>;
 
     async fn execute<'s>(
@@ -89,6 +93,7 @@ pub struct ActionOutcome {
     pub label: String,
     pub status: ActionStatus,
     pub duration: Duration,
+    pub is_leaf: bool,
 }
 
 impl Display for ActionOutcome {
@@ -141,12 +146,13 @@ impl ActionSession {
     }
 
     pub fn mark_completion(
-        &mut self, label: impl AsRef<str>, status: ActionStatus, duration: Duration,
+        &mut self, label: impl AsRef<str>, status: ActionStatus, duration: Duration, is_leaf: bool,
     ) {
         self.history.push(ActionOutcome {
             label: label.as_ref().to_string(),
             status,
             duration,
+            is_leaf,
         })
     }
 }

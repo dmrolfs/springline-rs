@@ -16,6 +16,8 @@ use super::action::{self, ActionSession, ScaleAction};
 use super::{protocol, ActError, ActEvent, ScaleActionPlan};
 use crate::flink::FlinkContext;
 use crate::kubernetes::{KubernetesApiConstraints, KubernetesContext};
+use crate::phases::act::action::ActionStatus;
+use crate::phases::act::ACTION_TOTAL_DURATION;
 use crate::phases::plan::ScaleDirection;
 use crate::settings::{FlinkActionSettings, Settings};
 
@@ -136,6 +138,8 @@ where
         let rescaling_lock = tokio::sync::Mutex::new(false);
 
         while let Some(plan) = inlet.recv().await {
+            let action_timer = super::start_rescale_timer(ACTION_TOTAL_DURATION);
+
             let mut action = Self::make_rescale_action_plan(&plan, &self.parameters);
             let mut is_rescaling = rescaling_lock.lock().await;
             if *is_rescaling {
@@ -162,10 +166,25 @@ where
                 Err(err) => Err(err),
             };
 
+            let action_duration = Duration::from_secs_f64(action_timer.stop_and_record());
             match outcome {
-                Ok(_) => self.notify_action_succeeded(plan, session),
+                Ok(_) => {
+                    session.mark_completion(
+                        ACTION_TOTAL_DURATION,
+                        ActionStatus::Success,
+                        action_duration,
+                        action.is_leaf(),
+                    );
+                    self.notify_action_succeeded(plan, session);
+                },
                 Err(err) => {
                     tracing::error!(error=?err, ?session, "failure in scale action.");
+                    session.mark_completion(
+                        ACTION_TOTAL_DURATION,
+                        ActionStatus::Failure,
+                        action_duration,
+                        action.is_leaf(),
+                    );
                     self.notify_action_failed(plan, session, err);
                 },
             }

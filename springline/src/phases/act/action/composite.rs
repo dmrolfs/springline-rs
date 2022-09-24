@@ -39,6 +39,10 @@ where
         self.label.as_str()
     }
 
+    fn is_leaf(&self) -> bool {
+        false
+    }
+
     fn check_preconditions(&self, _session: &ActionSession) -> Result<(), ActError> {
         Ok(())
     }
@@ -48,18 +52,19 @@ where
         &mut self, plan: &'s Self::Plan, session: &'s mut ActionSession,
     ) -> Result<(), ActError> {
         let composite_label = self.label().to_string();
-        let timer = act::start_rescale_timer(&composite_label);
+        let composite_timer = act::start_rescale_timer(&composite_label);
+        let mut composite_outcome = ActionStatus::Failure;
 
         for action in self.actions.iter_mut() {
             let action_label = format!("{}::{}", composite_label, action.label());
 
             let mut status = ActionStatus::Failure;
             if let Err(err) = action.check_preconditions(session) {
-                session.mark_completion(action_label, status, Duration::ZERO);
+                session.mark_completion(action_label, status, Duration::ZERO, action.is_leaf());
                 return Err(err);
             }
 
-            let timer = act::start_rescale_timer(&action_label);
+            let action_step_timer = act::start_rescale_timer(&action_label);
 
             let execute_outcome = action
                 .execute(plan, session)
@@ -89,19 +94,34 @@ where
                 },
             };
 
-            let duration = Duration::from_secs_f64(timer.stop_and_record());
-            session.mark_completion(action_label, status, duration);
+            let action_step_duration = Duration::from_secs_f64(action_step_timer.stop_and_record());
+            session.mark_completion(
+                &action_label,
+                status,
+                action_step_duration,
+                action.is_leaf(),
+            );
 
-            if let Err(err) = outcome {
-                return Err(err);
+            match outcome {
+                Ok(_) => {
+                    composite_outcome = status;
+                },
+                Err(err) => {
+                    composite_outcome = ActionStatus::Failure;
+                    let track = format!("{}::action_step", self.label());
+                    tracing::warn!(error=?err, %track, "failed in composite step: {}", action_label);
+                    act::track_act_errors(&track, Some(&err), ActErrorDisposition::Failed, plan);
+                    break;
+                },
             }
         }
 
-        let total_duration = Duration::from_secs_f64(timer.stop_and_record());
+        let composite_duration = Duration::from_secs_f64(composite_timer.stop_and_record());
         session.mark_completion(
-            super::ACTION_TOTAL_DURATION,
-            ActionStatus::Success,
-            total_duration,
+            composite_label,
+            composite_outcome,
+            composite_duration,
+            self.is_leaf(),
         );
         Ok(())
     }

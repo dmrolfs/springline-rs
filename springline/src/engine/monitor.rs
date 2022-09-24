@@ -3,7 +3,6 @@ use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 use enumflags2::BitFlags;
-use itertools::Itertools;
 use once_cell::sync::Lazy;
 use proctor::elements::{RecordsPerSecond, Telemetry, Timestamp, FORMAT};
 use proctor::graph::stage::{ActorSourceApi, ActorSourceCmd};
@@ -16,8 +15,8 @@ use crate::engine::service::{EngineCmd, EngineServiceApi, Health};
 use crate::engine::{PhaseFlag, PhaseFlags};
 use crate::flink;
 use crate::phases::act::{
-    ActErrorDisposition, ActEvent, ActMonitor, ActionOutcome, ACT_RESCALE_ACTION_COUNT,
-    PHASE_ACT_ERRORS,
+    ActErrorDisposition, ActEvent, ActMonitor, ActionOutcome, ACTION_TOTAL_DURATION,
+    ACT_RESCALE_ACTION_COUNT, PHASE_ACT_ERRORS,
 };
 use crate::phases::decision::{
     DecisionContext, DecisionEvent, DecisionMonitor, DecisionResult, ScaleDirection,
@@ -371,7 +370,7 @@ impl Monitor {
     }
 
     async fn do_handle_rescale_executed(
-        &self, plan: &ScalePlan, outcomes: &Vec<ActionOutcome>, now: Timestamp,
+        &self, plan: &ScalePlan, outcomes: &[ActionOutcome], now: Timestamp,
     ) -> ActionFeedback {
         tracing::info!(%now, ?plan, correlation=%plan.correlation(), ?outcomes, "rescale executed");
         ACT_RESCALE_ACTION_COUNT
@@ -389,10 +388,38 @@ impl Monitor {
             tracing::warn!(error=?err, correlation=%plan.correlation(), "failed to clear window on rescaling.");
         }
 
+        let rescale_restart = outcomes
+            .iter()
+            .find_map(|o| {
+                if o.label == ACTION_TOTAL_DURATION {
+                    Some(Some(o.duration))
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_else(|| {
+                if !outcomes.is_empty() {
+                    let leaf_outcomes: Vec<&ActionOutcome> =
+                        outcomes.iter().filter(|o| o.is_leaf).collect();
+                    let leaf_total = leaf_outcomes.iter().map(|o| o.duration).sum();
+                    tracing::debug!(
+                        ?leaf_outcomes,
+                        "summing duration of leaf steps: {leaf_total:?}"
+                    );
+                    Some(leaf_total)
+                } else {
+                    tracing::warn!(
+                        ?outcomes,
+                        "cannot update restart time since no outcomes were recorded."
+                    );
+                    None
+                }
+            });
+
         ActionFeedback {
             is_rescaling: false,
             last_deployment: Some(now.as_utc()),
-            rescale_restart: outcomes.iter().map(|o| o.duration).sum1(),
+            rescale_restart,
         }
     }
 
