@@ -603,7 +603,7 @@ mod tests {
         plan: PlanSettings {
             min_cluster_size: 1,
             min_scaling_step: 2,
-            restart: Duration::from_secs(2 * 60),
+            restart: Duration::from_secs(5 * 60),
             max_catch_up: Duration::from_secs(10 * 60),
             recovery_valid: Duration::from_secs(5 * 60),
             performance_repository: PerformanceRepositorySettings {

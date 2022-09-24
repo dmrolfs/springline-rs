@@ -69,11 +69,20 @@ pub enum LoadKubeConfig {
     /// receives a default value.
     /// Most likely you want to use Infer to infer the config from the environment.
     LocalUrl(Url),
+    /// Load an in-cluster config using the API server at
+    /// `https://kubernetes.default.svc`.
+    ///
+    /// A service account's token must be available in
+    /// `/var/run/secrets/kubernetes.io/serviceaccount/`.
+    ///
+    /// This behavior does not match that of the official Kubernetes clients,
+    /// but this approach is compatible with the `rustls-tls` feature.
+    InClusterDns,
     /// Create configuration from the cluster's environment variables.
     /// This follows the standard API Access from a Pod  and relies on you having the service
     /// account's token mounted, as well as having given the service account rbac access to do what
     /// you need.
-    ClusterEnv,
+    InClusterEnv,
     /// Create configuration from the default local config file
     /// This will respect the $KUBECONFIG evar, but otherwise default to ~/.kube/config. You can
     /// also customize what context/cluster/user you want to use here, but it will default to the

@@ -36,12 +36,16 @@ async fn make_client(settings: &KubernetesSettings) -> Result<kube::Client, Kube
             );
             KubeUrl(url.clone()).try_into().map(kube::Config::new)?
         },
-        LoadKubeConfig::ClusterEnv => {
+        LoadKubeConfig::InClusterDns => {
+            tracing::info!("loading kubernetes client using the API server at `https://kubernetes.default.svc`.");
+            kube::Config::incluster_dns()?
+        },
+        LoadKubeConfig::InClusterEnv => {
             tracing::info!(
                 "configuring kubernetes client from cluster's environment variables, following the standard API \
                  Access from a Pod."
             );
-            kube::Config::from_cluster_env()?
+            kube::Config::incluster_env()?
         },
         LoadKubeConfig::KubeConfig(options) => {
             tracing::info!(
@@ -60,8 +64,8 @@ async fn make_client(settings: &KubernetesSettings) -> Result<kube::Client, Kube
 
     tracing::info!(
         k8s_cluster_url=%config.cluster_url, default_namespace=%config.default_namespace,
-        timeout=?config.timeout, accept_invalid_certs=%config.accept_invalid_certs,
-        proxy_url=?config.proxy_url,
+        k8s_connect_timeout=?config.connect_timeout, k8s_read_timeout=?config.read_timeout, k8s_write_timeout=?config.write_timeout,
+        accept_invalid_certs=%config.accept_invalid_certs, proxy_url=?config.proxy_url,
         "making kubernetes client using config..."
     );
     kube::Client::try_from(config).map_err(|err| {

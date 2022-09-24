@@ -43,10 +43,12 @@ kubernetes:
   # setting.
   # - `local_url`: Constructs client where only the cluster_url is set and everything else is
   # set to default values.
-  # - `cluster_env`: Creates configuration from the cluster's environment variables following
+  # - 'in_cluster_dns': Load an in-cluster config using the API server at `https://kubernetes.default.svc`.
+  # A service account's token must be available in `/var/run/secrets/kubernetes.io/serviceaccount/`.
+  # - `in_cluster_env`: Creates configuration from the cluster's environment variables following
   # the standard API Access from a Pod and relies on you having the service account's token
   # mounted, as well as having given the service account rbac access to what you need.
-  # - `kube_config`: Create configuration from the default local configu file, respecting the
+  # - `kube_config`: Create configuration from the default local config file, respecting the
   # `$KUBECONFIG` evar, but otherwise default to ~/.kube/config. You can also customize what
   # context/cluster/user you want to use here, but it will default to the current-context.
   # - `custom_kube_config`: Create configuration from a Kubeconfig struct. This bypasses the n
@@ -219,7 +221,7 @@ plan:
     storage: memory
   min_cluster_size: 1
   min_scaling_step: 2
-  restart_secs: 120
+  restart_secs: 300
   max_catch_up_secs: 600
   recovery_valid_secs: 300
   window: 20
