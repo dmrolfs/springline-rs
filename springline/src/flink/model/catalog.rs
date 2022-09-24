@@ -11,6 +11,7 @@ use proctor::elements::{telemetry, PolicyContributor, Telemetry, Timestamp};
 use proctor::error::{PolicyError, ProctorError};
 use proctor::phases::sense::SubscriptionRequirements;
 use proctor::{Correlation, ReceivedAt};
+use prometheus::core::{AtomicU64, GenericGauge};
 use prometheus::{Gauge, IntGauge, Opts};
 use serde::{Deserialize, Serialize};
 
@@ -671,6 +672,16 @@ impl UpdateMetrics for MetricCatalog {
                     METRIC_CATALOG_FLOW_SOURCE_RECORDS_CONSUMED_RATE.set(total_rate);
                 }
 
+                let is_consumer_telemetry_empty = catalog.flow.source_records_lag_max.is_none()
+                    || catalog.flow.source_total_lag.is_none()
+                    || catalog.flow.source_records_consumed_rate.is_none();
+
+                if is_consumer_telemetry_empty {
+                    METRIC_CATALOG_FLOW_SOURCE_IS_CONSUMER_TELEMETRY_POPULATED.set(0);
+                } else {
+                    METRIC_CATALOG_FLOW_SOURCE_IS_CONSUMER_TELEMETRY_POPULATED.set(1);
+                }
+
                 if let Some(lag) = catalog.flow.source_millis_behind_latest {
                     METRIC_CATALOG_FLOW_SOURCE_MILLIS_BEHIND_LATEST.set(lag.into());
                 }
@@ -859,6 +870,19 @@ pub static METRIC_CATALOG_FLOW_SOURCE_RECORDS_CONSUMED_RATE: Lazy<Gauge> = Lazy:
         .const_labels(proctor::metrics::CONST_LABELS.clone()),
     )
     .expect("failed creating metric_catalog_flow_source_records_consumed_rate metric")
+});
+
+pub static METRIC_CATALOG_FLOW_SOURCE_IS_CONSUMER_TELEMETRY_POPULATED: Lazy<
+    GenericGauge<AtomicU64>,
+> = Lazy::new(|| {
+    GenericGauge::with_opts(
+        Opts::new(
+            "metric_catalog_flow_source_is_consumer_telemetry_populated",
+            "flag indicating whether telemetry was received from source consumer (1 = received; 0 = empty)",
+        )
+            .const_labels(proctor::metrics::CONST_LABELS.clone()),
+        )
+        .expect("failed creating metric_catalog_flow_source_is_consumer_telemetry_populated metric")
 });
 
 pub static METRIC_CATALOG_FLOW_SOURCE_MILLIS_BEHIND_LATEST: Lazy<IntGauge> = Lazy::new(|| {

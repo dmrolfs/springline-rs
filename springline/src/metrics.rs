@@ -59,6 +59,9 @@ pub fn register_metrics(registry: &Registry) -> Result<()> {
         flink::METRIC_CATALOG_FLOW_SOURCE_RECORDS_CONSUMED_RATE.clone(),
     ))?;
     registry.register(Box::new(
+        flink::METRIC_CATALOG_FLOW_SOURCE_IS_CONSUMER_TELEMETRY_POPULATED.clone(),
+    ))?;
+    registry.register(Box::new(
         flink::METRIC_CATALOG_FLOW_SOURCE_MILLIS_BEHIND_LATEST.clone(),
     ))?;
     registry.register(Box::new(
