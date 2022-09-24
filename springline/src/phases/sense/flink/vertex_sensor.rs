@@ -238,7 +238,7 @@ where
                         "adding vertex sensor job_detail telemetry."
                     );
                     let mut groups = metric_telemetry.lock().await;
-                    super::merge_into_metric_groups(&mut *groups, job_detail_telemetry);
+                    super::merge_into_metric_groups(&mut groups, job_detail_telemetry);
                 }
 
                 for vertex in detail.vertices.into_iter().filter(|v| v.status.is_active()) {
@@ -247,7 +247,7 @@ where
                     {
                         tracing::debug!(job_id=?job.id, vertex_id=?vertex.id, ?vertex_telemetry, "adding vertex sensor telemetry.");
                         let mut groups = metric_telemetry.lock().await;
-                        super::merge_into_metric_groups(&mut *groups, vertex_telemetry);
+                        super::merge_into_metric_groups(&mut groups, vertex_telemetry);
                     }
                 }
             },

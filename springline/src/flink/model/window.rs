@@ -267,10 +267,7 @@ where
             .field("time_window", &self.time_window)
             .field("quorum_percentile", &self.quorum_percentile)
             .field("window_size", &self.data.len())
-            .field(
-                "head",
-                &self.latest().map(|c| c.recv_timestamp().to_string()),
-            )
+            .field("latest", &self.latest().recv_timestamp().to_string())
             .finish()
     }
 }
@@ -687,18 +684,20 @@ impl<T> AppDataWindow<T>
 where
     T: AppData + ReceivedAt,
 {
-    pub fn latest(&self) -> Option<&T> {
-        self.data.back()
+    #[inline]
+    pub fn latest(&self) -> &T {
+        self.data.back().unwrap()
     }
 
     pub fn history(&self) -> impl Iterator<Item = &T> {
         self.data.iter().rev()
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.data.is_empty()
+    pub const fn is_empty(&self) -> bool {
+        false
     }
 
+    #[inline]
     pub fn len(&self) -> usize {
         self.data.len()
     }
@@ -757,14 +756,12 @@ where
     where
         F: FnMut(&T) -> D,
     {
-        self.latest().map_or_else(Vec::new, |h| {
-            let head_ts = h.recv_timestamp();
-            self.extract_in_interval(
-                Interval::new(head_ts - looking_back, head_ts).unwrap(),
-                extractor,
-            )
-            .collect()
-        })
+        let head_ts = self.latest().recv_timestamp();
+        self.extract_in_interval(
+            Interval::new(head_ts - looking_back, head_ts).unwrap(),
+            extractor,
+        )
+        .collect()
     }
 
     /// Extracts metric properties from the end of the interval (i.e., the youngest catalog
@@ -789,15 +786,11 @@ where
         F: FnMut(R, &T) -> R,
         R: Copy + fmt::Debug,
     {
-        self.latest()
-            .map(|latest| {
-                let latest_ts = latest.recv_timestamp();
-                let interval = Interval::new(latest_ts - looking_back, latest_ts);
-                let interval = interval.unwrap();
-                let (_quorum_percentage, range_iter) = self.assess_coverage_of(interval);
-                range_iter.fold(init, f)
-            })
-            .unwrap_or(init)
+        let latest_ts = self.latest().recv_timestamp();
+        let interval = Interval::new(latest_ts - looking_back, latest_ts);
+        let interval = interval.unwrap();
+        let (_quorum_percentage, range_iter) = self.assess_coverage_of(interval);
+        range_iter.fold(init, f)
     }
 
     #[tracing::instrument(level = "trace", skip(self, f))]
@@ -823,13 +816,8 @@ where
     where
         F: FnMut(&T) -> bool,
     {
-        self.latest().map_or(false, |h| {
-            let head_ts = h.recv_timestamp();
-            self.for_coverage_in_interval(
-                Interval::new(head_ts - looking_back, head_ts).unwrap(),
-                f,
-            )
-        })
+        let head_ts = self.latest().recv_timestamp();
+        self.for_coverage_in_interval(Interval::new(head_ts - looking_back, head_ts).unwrap(), f)
     }
 
     #[tracing::instrument(level = "trace", skip(self, f))]
@@ -1164,7 +1152,7 @@ where
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        self.latest().expect("failed nonempty AppDataWindow invariant")
+        self.latest()
     }
 }
 

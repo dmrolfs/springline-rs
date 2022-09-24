@@ -1,6 +1,7 @@
 use std::cmp::Ordering;
 use std::convert::TryFrom;
 use std::fmt;
+use std::time::Duration;
 
 use ::serde_with::serde_as;
 use approx::{AbsDiffEq, RelativeEq};
@@ -8,7 +9,7 @@ use proctor::elements::{RecordsPerSecond, TelemetryType, TelemetryValue};
 use proctor::error::{PlanError, TelemetryError};
 use serde::{Deserialize, Serialize};
 
-use crate::flink::MetricCatalog;
+use crate::flink::{AppDataWindow, MetricCatalog};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct BenchmarkRange {
@@ -186,6 +187,13 @@ impl fmt::Display for Benchmark {
 
 impl Benchmark {
     pub const fn new(job_parallelism: u32, records_out_per_sec: RecordsPerSecond) -> Self {
+        Self { job_parallelism, records_out_per_sec }
+    }
+
+    pub fn from_window(data: &AppDataWindow<MetricCatalog>, window: Duration) -> Self {
+        let job_parallelism = data.health.job_max_parallelism;
+        let window_secs = u32::try_from(window.as_secs()).unwrap_or(u32::MAX);
+        let records_out_per_sec = data.flow_records_out_per_sec_rolling_average(window_secs).into();
         Self { job_parallelism, records_out_per_sec }
     }
 }

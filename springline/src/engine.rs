@@ -214,7 +214,7 @@ impl AutoscaleEngine<Building> {
             decision::make_decision_phase(&settings.decision, &mut sense_builder).await?;
         let rx_decision_monitor = decision_phase.rx_monitor();
 
-        let planning_phase = plan::make_plan_phase(&settings.plan, &mut sense_builder).await?;
+        let planning_phase = plan::make_plan_phase(settings, &mut sense_builder).await?;
         let rx_plan_monitor = planning_phase.phase.rx_monitor();
         let rx_flink_planning_monitor = planning_phase.rx_flink_planning_monitor;
 
@@ -250,18 +250,20 @@ impl AutoscaleEngine<Building> {
             "collect_window",
             evaluation_duration,
             &settings.engine,
+            Some(system),
         );
         let tx_collect_window_api = collect_window.tx_api();
 
-        let reduce_window = proctor::graph::stage::FilterMap::new(
+        //todo: maybe place this between governance and action?
+        let _reduce_window = proctor::graph::stage::Map::new(
             "catalog_from_window",
             |decision_window: DecisionOutcome| match decision_window {
-                DecisionResult::ScaleUp(p) => p.latest().cloned().map(DecisionResult::ScaleUp),
-                DecisionResult::ScaleDown(p) => p.latest().cloned().map(DecisionResult::ScaleDown),
-                DecisionResult::NoAction(p) => p.latest().cloned().map(DecisionResult::NoAction),
+                DecisionResult::ScaleUp(p) => DecisionResult::ScaleUp(p.latest().clone()),
+                DecisionResult::ScaleDown(p) => DecisionResult::ScaleDown(p.latest().clone()),
+                DecisionResult::NoAction(p) => DecisionResult::NoAction(p.latest().clone()),
             },
         );
-        let reduce_window = reduce_window.with_block_logging();
+        // let reduce_window = reduce_window.with_block_logging();
 
         let tx_clearinghouse_api = sense.tx_api();
 
@@ -278,13 +280,21 @@ impl AutoscaleEngine<Building> {
         (data_throttle.outlet(), collect_window.inlet()).connect().await;
         (collect_window.outlet(), eligibility_phase.inlet()).connect().await;
         (eligibility_phase.outlet(), decision_phase.inlet()).connect().await;
-        (decision_phase.outlet(), reduce_window.inlet()).connect().await;
+
+        // (decision_phase.outlet(), reduce_window.inlet()).connect().await;
+        // (
+        //     reduce_window.outlet(),
+        //     planning_phase.phase.decision_inlet(),
+        // )
+        //     .connect()
+        //     .await;
         (
-            reduce_window.outlet(),
+            decision_phase.outlet(),
             planning_phase.phase.decision_inlet(),
         )
             .connect()
             .await;
+
         (planning_phase.phase.outlet(), governance_phase.inlet()).connect().await;
         (governance_phase.outlet(), act.inlet()).connect().await;
 
@@ -294,7 +304,7 @@ impl AutoscaleEngine<Building> {
         graph.push_back(Box::new(collect_window)).await;
         graph.push_back(Box::new(eligibility_channel)).await;
         graph.push_back(Box::new(decision_channel)).await;
-        graph.push_back(Box::new(reduce_window)).await;
+        // graph.push_back(Box::new(reduce_window)).await;
         graph.push_back(Box::new(planning_phase.data_channel)).await;
         graph.push_back(Box::new(planning_phase.context_channel)).await;
         graph.push_back(Box::new(governance_channel)).await;

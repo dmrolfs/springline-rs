@@ -9,12 +9,12 @@ use proctor::phases::sense::{
     ClearinghouseSubscriptionAgent, SubscriptionChannel, SubscriptionRequirements,
     TelemetrySubscription,
 };
-use proctor::AppData;
+use proctor::{AppData, Correlation, ReceivedAt};
 use prometheus::{Gauge, Opts};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
-use crate::settings::PlanSettings;
+use crate::settings::Settings;
 use crate::Result;
 
 mod benchmark;
@@ -27,8 +27,8 @@ mod planning;
 
 pub use crate::phases::decision::ScaleDirection;
 pub use context::{
-    PlanningContext, PLANNING__FREE_TASK_SLOTS, PLANNING__RESCALE_RESTART,
-    PLANNING__TOTAL_TASK_SLOTS,
+    PlanningContext, PLANNING__FREE_TASK_SLOTS, PLANNING__MAX_CATCH_UP, PLANNING__RECOVERY_VALID,
+    PLANNING__RESCALE_RESTART, PLANNING__TOTAL_TASK_SLOTS,
 };
 pub use context::{
     PLANNING_CTX_FORECASTING_MAX_CATCH_UP_SECS, PLANNING_CTX_FORECASTING_RECOVERY_VALID_SECS,
@@ -41,9 +41,12 @@ pub use model::ScalePlan;
 pub use performance_history::PerformanceHistory;
 pub use performance_repository::make_performance_repository;
 pub use performance_repository::{PerformanceRepositorySettings, PerformanceRepositoryType};
-pub use planning::{FlinkPlanning, FlinkPlanningEvent, FlinkPlanningMonitor};
+pub use planning::{
+    FlinkPlanning, FlinkPlanningEvent, FlinkPlanningMonitor, PlanningParameters,
+    PLANNING_PERFORMANCE_HISTORY_ENTRY_COUNT,
+};
 
-use crate::flink::{MetricCatalog, MC_FLOW__RECORDS_IN_PER_SEC};
+use crate::flink::{AppDataWindow, MetricCatalog, MC_FLOW__RECORDS_IN_PER_SEC};
 
 const MINIMAL_JOB_PARALLELISM: u32 = 1;
 
@@ -75,6 +78,16 @@ impl From<MetricCatalog> for PlanningMeasurement {
     }
 }
 
+impl From<AppDataWindow<MetricCatalog>> for PlanningMeasurement {
+    fn from(data: AppDataWindow<MetricCatalog>) -> Self {
+        Self {
+            correlation_id: data.correlation().relabel(),
+            recv_timestamp: data.recv_timestamp(),
+            records_in_per_sec: data.flow.records_out_per_sec.into(),
+        }
+    }
+}
+
 impl SubscriptionRequirements for PlanningMeasurement {
     fn required_fields() -> HashSet<String> {
         maplit::hashset! {
@@ -84,7 +97,7 @@ impl SubscriptionRequirements for PlanningMeasurement {
 }
 
 #[tracing::instrument(level = "trace", skip(settings, agent))]
-pub async fn make_plan_phase<A>(settings: &PlanSettings, agent: &mut A) -> Result<PlanningPhase>
+pub async fn make_plan_phase<A>(settings: &Settings, agent: &mut A) -> Result<PlanningPhase>
 where
     A: ClearinghouseSubscriptionAgent,
 {
@@ -151,21 +164,12 @@ where
 }
 
 #[tracing::instrument(level = "trace")]
-async fn do_make_planning_strategy(
-    name: &str, plan_settings: &PlanSettings,
-) -> Result<PlanningStrategy> {
-    let inputs = ForecastInputs::from_settings(plan_settings)?;
-    let forecaster = LeastSquaresWorkloadForecaster::new(plan_settings.window, plan_settings.spike);
+async fn do_make_planning_strategy(name: &str, settings: &Settings) -> Result<PlanningStrategy> {
+    let forecaster = LeastSquaresWorkloadForecaster::new(settings.plan.window, settings.plan.spike);
     let repository =
-        performance_repository::make_performance_repository(&plan_settings.performance_repository)?;
+        performance_repository::make_performance_repository(&settings.plan.performance_repository)?;
 
-    let planning = PlanningStrategy::new(
-        name,
-        plan_settings.min_scaling_step,
-        inputs,
-        forecaster,
-        repository,
-    )
-    .await?;
+    let params = PlanningParameters::from_settings(settings)?;
+    let planning = PlanningStrategy::new(name, forecaster, repository, params).await?;
     Ok(planning)
 }

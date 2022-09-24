@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::flink::MetricCatalog;
 use crate::math;
-use crate::phases::decision::DecisionResult;
+use crate::phases::decision::DecisionOutcome;
 use crate::phases::plan::{ScaleDirection, MINIMAL_JOB_PARALLELISM};
 use crate::CorrelationId;
 
@@ -89,9 +89,7 @@ impl Correlation for ScalePlan {
 
 impl ScalePlan {
     #[tracing::instrument(level = "trace", name = "ScalePlan::new", skip())]
-    pub fn new(
-        decision: DecisionResult<MetricCatalog>, parameters: ScaleParameters,
-    ) -> Option<Self> {
+    pub fn new(decision: DecisionOutcome, parameters: ScaleParameters) -> Option<Self> {
         let task_slots_per_taskmanager = parameters.task_slots_per_taskmanager();
         let taskmanagers_for_parallelism =
             |p: u32| Self::calculate_taskmanagers(p, task_slots_per_taskmanager);
@@ -201,10 +199,13 @@ impl ScalePlan {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::flink::{ClusterMetrics, FlowMetrics, JobHealthMetrics, MetricCatalog};
+    use crate::flink::{
+        AppDataWindow, ClusterMetrics, FlowMetrics, JobHealthMetrics, MetricCatalog,
+    };
     use crate::phases::decision::DecisionResult;
     use crate::phases::plan::ScaleDirection;
     use pretty_assertions::assert_eq;
+    use std::time::Duration;
 
     use pretty_snowflake::{Id, Label, Labeling};
     use proctor::elements::Timestamp;
@@ -233,7 +234,7 @@ mod tests {
 
     fn make_decision_result(
         direction: ScaleDirection, current_job_parallelism: u32, current_nr_task_managers: u32,
-    ) -> DecisionResult<MetricCatalog> {
+    ) -> DecisionOutcome {
         let data = MetricCatalog {
             correlation_id: Id::direct(
                 <MetricCatalog as Label>::labeler().label(),
@@ -253,6 +254,7 @@ mod tests {
             custom: Default::default(),
         };
 
+        let data = AppDataWindow::from_size(data, 1, Duration::from_secs(120));
         DecisionResult::from_direction(data, direction)
     }
 

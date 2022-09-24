@@ -1,21 +1,31 @@
 use std::fmt::Debug;
 use std::sync::Arc;
+use std::time::Duration;
 
 use async_trait::async_trait;
+use once_cell::sync::Lazy;
 use proctor::elements::{RecordsPerSecond, Timestamp};
 use proctor::error::PlanError;
 use proctor::graph::{Outlet, Port};
 use proctor::phases::plan::{PlanEvent, Planning};
+use prometheus::core::{AtomicU64, GenericGauge};
+use prometheus::Opts;
 use tokio::sync::broadcast;
 
-use crate::flink::MetricCatalog;
-use crate::phases::decision::DecisionResult;
+use crate::flink::{AppDataWindow, MetricCatalog};
+use crate::phases::decision::{DecisionOutcome, DecisionResult};
+use crate::phases::plan::benchmark::Benchmark;
 use crate::phases::plan::context::PlanningContext;
 use crate::phases::plan::forecast::{ForecastCalculator, ForecastInputs, Forecaster};
 use crate::phases::plan::model::{ScaleParameters, ScalePlan};
 use crate::phases::plan::performance_history::PerformanceHistory;
 use crate::phases::plan::performance_repository::PerformanceRepository;
-use crate::phases::plan::{PlanningMeasurement, PLANNING_FORECASTED_WORKLOAD};
+use crate::phases::plan::{
+    PlanningMeasurement, PLANNING_CTX_FORECASTING_MAX_CATCH_UP_SECS,
+    PLANNING_CTX_FORECASTING_RECOVERY_VALID_SECS, PLANNING_CTX_FORECASTING_RESTART_SECS,
+    PLANNING_CTX_MIN_SCALING_STEP, PLANNING_FORECASTED_WORKLOAD,
+};
+use crate::settings::Settings;
 
 // todo: this needs to be worked into Plan stage...  Need to determine best design
 // todo: pub type FlinkPlanningApi = mpsc::UnboundedSender<FlinkPlanningCmd>;
@@ -37,10 +47,41 @@ pub enum FlinkPlanningEvent {
     },
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct PlanningParameters {
+    pub min_scaling_step: u32,
+    pub evaluation_window: Option<Duration>,
+    pub forecast_inputs: ForecastInputs,
+    pub total_task_slots: Option<u32>,
+    pub free_task_slots: Option<u32>,
+}
+
+impl PlanningParameters {
+    pub fn from_settings(settings: &Settings) -> Result<Self, PlanError> {
+        let evaluation_window = settings
+            .decision
+            .template_data
+            .as_ref()
+            .and_then(|td| td.evaluate_duration_secs)
+            .map(|s| Duration::from_secs(u64::from(s)));
+
+        let forecast_inputs = ForecastInputs::from_settings(&settings.plan)?;
+
+        Ok(Self {
+            min_scaling_step: settings.plan.min_scaling_step,
+            evaluation_window,
+            forecast_inputs,
+            total_task_slots: None,
+            free_task_slots: None,
+        })
+    }
+}
+
 #[derive(Debug)]
 pub struct FlinkPlanning<F: Forecaster> {
     name: String,
     min_scaling_step: u32,
+    evaluation_window: Option<Duration>,
     total_task_slots: Option<u32>,
     free_task_slots: Option<u32>,
     pub forecast_calculator: ForecastCalculator<F>,
@@ -65,16 +106,17 @@ impl<F: Forecaster> PartialEq for FlinkPlanning<F> {
 
 impl<F: Forecaster> FlinkPlanning<F> {
     pub async fn new(
-        planning_name: &str, min_scaling_step: u32, inputs: ForecastInputs, forecaster: F,
-        performance_repository: Box<dyn PerformanceRepository>,
+        planning_name: &str, forecaster: F, performance_repository: Box<dyn PerformanceRepository>,
+        params: PlanningParameters,
     ) -> Result<Self, PlanError> {
         performance_repository.check().await?;
 
-        let forecast_calculator = ForecastCalculator::new(forecaster, inputs)?;
+        let forecast_calculator = ForecastCalculator::new(forecaster, params.forecast_inputs)?;
 
         let name = planning_name.to_string();
         let performance_history =
             performance_repository.load(name.as_str()).await?.unwrap_or_default();
+        Self::update_performance_history_metrics(&performance_history);
 
         // todo: this needs to be worked into Plan stage...  Need to determine best design
         // todo: let (tx_api, rx_api) = mpsc::unbounded_channel();
@@ -82,9 +124,10 @@ impl<F: Forecaster> FlinkPlanning<F> {
 
         Ok(Self {
             name,
-            min_scaling_step,
-            total_task_slots: None,
-            free_task_slots: None,
+            min_scaling_step: params.min_scaling_step,
+            evaluation_window: params.evaluation_window,
+            total_task_slots: params.total_task_slots,
+            free_task_slots: params.free_task_slots,
             forecast_calculator,
             performance_history,
             performance_repository,
@@ -96,29 +139,50 @@ impl<F: Forecaster> FlinkPlanning<F> {
     }
 
     #[inline]
+    fn update_performance_history_metrics(history: &PerformanceHistory) {
+        let nr_entries: u64 = u64::try_from(history.len()).unwrap_or(u64::MAX);
+        tracing::warn!(?history, %nr_entries, "DMR: updating performance history entry count metric");
+        PLANNING_PERFORMANCE_HISTORY_ENTRY_COUNT.set(nr_entries);
+    }
+
+    #[inline]
     pub fn rx_monitor(&self) -> FlinkPlanningMonitor {
         self.tx_monitor.subscribe()
     }
 
+    fn update_metrics(&self) {
+        PLANNING_CTX_MIN_SCALING_STEP.set(u64::from(self.min_scaling_step));
+        PLANNING_CTX_FORECASTING_RESTART_SECS
+            .set(self.forecast_calculator.inputs.restart.as_secs());
+        PLANNING_CTX_FORECASTING_MAX_CATCH_UP_SECS
+            .set(self.forecast_calculator.inputs.max_catch_up.as_secs());
+        PLANNING_CTX_FORECASTING_RECOVERY_VALID_SECS
+            .set(self.forecast_calculator.inputs.valid_offset.as_secs());
+    }
+
     #[tracing::instrument(level = "trace", skip(self, decision), fields(%decision))]
     pub async fn update_performance_history(
-        &mut self, decision: &DecisionResult<MetricCatalog>,
+        &mut self, decision: &DecisionOutcome,
     ) -> Result<(), PlanError> {
         use crate::phases::decision::DecisionResult as DR;
 
         let update_repository = match decision {
             DR::NoAction(_) => false,
-            DR::ScaleUp(metrics) => {
-                self.performance_history.add_upper_benchmark(metrics.into());
+            DR::ScaleUp(data) => {
+                let b = self.benchmark_from_data(data);
+                self.performance_history.add_upper_benchmark(b);
                 true
             },
-            DR::ScaleDown(metrics) => {
-                self.performance_history.add_lower_benchmark(metrics.into());
+            DR::ScaleDown(data) => {
+                let b = self.benchmark_from_data(data);
+                self.performance_history.add_lower_benchmark(b);
                 true
             },
         };
 
         if update_repository {
+            Self::update_performance_history_metrics(&self.performance_history);
+
             if let Err(err) = self
                 .performance_repository
                 .save(self.name.as_str(), &self.performance_history)
@@ -129,6 +193,12 @@ impl<F: Forecaster> FlinkPlanning<F> {
         }
 
         Ok(())
+    }
+
+    fn benchmark_from_data(&self, data: &AppDataWindow<MetricCatalog>) -> Benchmark {
+        self.evaluation_window
+            .map(|eval_window| Benchmark::from_window(data, eval_window))
+            .unwrap_or_else(|| data.latest().into())
     }
 
     #[tracing::instrument(level = "trace", skip(self, _metrics))]
@@ -145,7 +215,7 @@ impl<F: Forecaster> FlinkPlanning<F> {
         fields(planning_name=%self.name, ?decision),
     )]
     async fn plan_for_scale_decision(
-        &mut self, decision: DecisionResult<MetricCatalog>,
+        &mut self, decision: DecisionOutcome,
     ) -> Result<Option<ScalePlan>, PlanError> {
         let plan = if self.forecast_calculator.have_enough_data() {
             let history = &self.performance_history;
@@ -217,8 +287,8 @@ impl<F: Forecaster> FlinkPlanning<F> {
 #[async_trait]
 impl<F: Forecaster> Planning for FlinkPlanning<F> {
     type Context = PlanningContext;
-    type Decision = DecisionResult<MetricCatalog>;
-    type Observation = super::PlanningMeasurement;
+    type Decision = DecisionOutcome;
+    type Observation = PlanningMeasurement;
     type Out = ScalePlan;
 
     fn set_outlet(&mut self, outlet: Outlet<Self::Out>) {
@@ -301,6 +371,18 @@ impl<F: Forecaster> Planning for FlinkPlanning<F> {
     }
 }
 
+pub static PLANNING_PERFORMANCE_HISTORY_ENTRY_COUNT: Lazy<GenericGauge<AtomicU64>> =
+    Lazy::new(|| {
+        GenericGauge::with_opts(
+            Opts::new(
+                "planning_performance_history_entry_count",
+                "count of job parallelism benchmarks recorded",
+            )
+            .const_labels(proctor::metrics::CONST_LABELS.clone()),
+        )
+        .expect("failed creating planning_performance_history_entry_count metric")
+    });
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
@@ -353,10 +435,20 @@ mod tests {
         },
         custom: telemetry::TableType::default(),
     });
-    static SCALE_UP: Lazy<DecisionResult<MetricCatalog>> =
-        Lazy::new(|| DecisionResult::ScaleUp(METRICS.clone()));
-    static SCALE_DOWN: Lazy<DecisionResult<MetricCatalog>> =
-        Lazy::new(|| DecisionResult::ScaleDown(METRICS.clone()));
+    static SCALE_UP: Lazy<DecisionOutcome> = Lazy::new(|| {
+        DecisionResult::ScaleUp(AppDataWindow::from_size(
+            METRICS.clone(),
+            1,
+            Duration::from_secs(120),
+        ))
+    });
+    static SCALE_DOWN: Lazy<DecisionOutcome> = Lazy::new(|| {
+        DecisionResult::ScaleDown(AppDataWindow::from_size(
+            METRICS.clone(),
+            1,
+            Duration::from_secs(120),
+        ))
+    });
 
     enum SignalType {
         Sine,
@@ -417,6 +509,7 @@ mod tests {
         let planning = FlinkPlanning {
             name: planning_name.to_string(),
             min_scaling_step: 2,
+            evaluation_window: Some(Duration::from_secs(120)),
             total_task_slots: Some(total_task_slots),
             free_task_slots: None,
             forecast_calculator: calc,
@@ -434,7 +527,7 @@ mod tests {
 
     #[tracing::instrument(level = "info", skip(planning, probe_rx))]
     async fn assert_scale_decision_scenario(
-        label: &str, decision: &DecisionResult<MetricCatalog>, planning: Arc<Mutex<TestPlanning>>,
+        label: &str, decision: &DecisionOutcome, planning: Arc<Mutex<TestPlanning>>,
         probe_rx: &mut Receiver<ScalePlan>, expected: ScalePlan,
     ) -> anyhow::Result<()> {
         tracing::warn!("testing {}...", label);

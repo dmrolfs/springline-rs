@@ -12,11 +12,13 @@ use proctor::graph::stage::{self, WithApi, WithMonitor};
 use proctor::graph::{Connect, Graph, SinkShape, SourceShape};
 use proctor::phases::plan::{Plan, PlanEvent, Planning};
 use proctor::ProctorResult;
-use springline::flink::{ClusterMetrics, FlowMetrics, JobHealthMetrics, MetricCatalog};
-use springline::phases::decision::DecisionResult;
+use springline::flink::{
+    AppDataWindow, ClusterMetrics, FlowMetrics, JobHealthMetrics, MetricCatalog,
+};
+use springline::phases::decision::{DecisionOutcome, DecisionResult};
 use springline::phases::plan::{
     make_performance_repository, FlinkPlanningMonitor, ForecastInputs, PlanningContext,
-    PlanningMeasurement,
+    PlanningMeasurement, PlanningParameters,
 };
 use springline::phases::plan::{
     FlinkPlanning, LeastSquaresWorkloadForecaster, PerformanceRepositorySettings,
@@ -28,7 +30,7 @@ use tokio::task::JoinHandle;
 use crate::CORRELATION_ID;
 
 type InData = PlanningMeasurement;
-type InDecision = DecisionResult<MetricCatalog>;
+type InDecision = DecisionOutcome;
 type Out = ScalePlan;
 #[allow(dead_code)]
 type ForecastBuilder = LeastSquaresWorkloadForecaster;
@@ -93,7 +95,7 @@ impl TestFlow {
         })
     }
 
-    pub async fn push_data(&self, metrics: MetricCatalog) -> anyhow::Result<()> {
+    pub async fn push_data(&self, metrics: AppDataWindow<MetricCatalog>) -> anyhow::Result<()> {
         let measurement: PlanningMeasurement = metrics.into();
         stage::ActorSourceCmd::push(&self.tx_data_sensor_api, measurement)
             .await
@@ -186,12 +188,12 @@ const STEP: i64 = 15;
 fn make_test_data(
     start: Timestamp, tick: i64, parallelism: u32, source_records_lag_max: u32,
     records_per_sec: f64,
-) -> MetricCatalog {
+) -> AppDataWindow<MetricCatalog> {
     let job_source_max_parallelism = 16;
     let timestamp = Utc.timestamp(start.as_secs() + tick * STEP, 0).into();
     let corr_id = CORRELATION_ID.clone();
     let forecasted_timestamp = timestamp + Duration::from_secs(STEP as u64);
-    MetricCatalog {
+    let data = MetricCatalog {
         correlation_id: corr_id,
         recv_timestamp: timestamp,
         health: JobHealthMetrics {
@@ -230,13 +232,15 @@ fn make_test_data(
             task_network_output_pool_usage: 5.,
         },
         custom: telemetry::TableType::default(),
-    }
+    };
+
+    AppDataWindow::from_size(data, 1, Duration::from_secs(120))
 }
 
 fn make_test_data_series(
     start: Timestamp, parallelsim: u32, source_records_lag_max: u32,
     mut gen: impl FnMut(i64) -> f64,
-) -> Vec<MetricCatalog> {
+) -> Vec<AppDataWindow<MetricCatalog>> {
     let total = 30;
     (0..total)
         .into_iter()
@@ -296,13 +300,19 @@ async fn test_flink_planning_linear() {
         }
     ));
 
+    let params = PlanningParameters {
+        min_scaling_step: 2,
+        evaluation_window: None,
+        forecast_inputs: inputs,
+        total_task_slots: None,
+        free_task_slots: None,
+    };
     let mut planning = assert_ok!(
         TestPlanning::new(
             "test_planning_1",
-            2,
-            inputs,
             forecast_builder,
             performance_repository,
+            params,
         )
         .await
     );
@@ -446,14 +456,19 @@ async fn test_flink_planning_sine() {
         }
     ));
 
-    let min_scaling_step = 2;
+    let params = PlanningParameters {
+        min_scaling_step: 2,
+        evaluation_window: None,
+        forecast_inputs: inputs,
+        total_task_slots: None,
+        free_task_slots: None,
+    };
     let mut planning = assert_ok!(
         TestPlanning::new(
             "test_planning_2",
-            min_scaling_step,
-            inputs,
             forecaster,
             performance_repository,
+            params
         )
         .await
     );
@@ -463,7 +478,7 @@ async fn test_flink_planning_sine() {
             .patch_context(PlanningContext {
                 correlation_id: Id::direct("planning_context", 123, "ctx"),
                 recv_timestamp: Timestamp::now(),
-                min_scaling_step: Some(min_scaling_step),
+                min_scaling_step: Some(params.min_scaling_step),
                 total_task_slots: 2,
                 free_task_slots: 0,
                 rescale_restart: None,
@@ -608,13 +623,19 @@ async fn test_flink_planning_context_change() {
         }
     ));
 
+    let params = PlanningParameters {
+        min_scaling_step: 2,
+        evaluation_window: None,
+        forecast_inputs: inputs,
+        total_task_slots: None,
+        free_task_slots: None,
+    };
     let mut planning = assert_ok!(
         TestPlanning::new(
             "test_planning_3",
-            2,
-            inputs,
             forecaster,
             performance_repository,
+            params
         )
         .await
     );

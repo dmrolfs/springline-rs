@@ -16,6 +16,16 @@ use crate::phases::plan::MINIMAL_JOB_PARALLELISM;
 pub struct PerformanceHistory(BTreeMap<u32, BenchmarkRange>);
 
 impl PerformanceHistory {
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
     #[tracing::instrument(level = "debug")]
     pub fn add_lower_benchmark(&mut self, b: Benchmark) {
         if let Some(entry) = self.0.get_mut(&b.job_parallelism) {
@@ -25,6 +35,7 @@ impl PerformanceHistory {
             self.0.insert(entry.job_parallelism, entry);
         }
 
+        tracing::warn!(added=?b, history=?self, "DMR: added LOWER benchmark to history")
         // todo: dropped clearing performance history inconsistencies (see todo at file bottom)
         // self.clear_inconsistencies_for_new_lo(&b);
     }
@@ -38,6 +49,7 @@ impl PerformanceHistory {
             self.0.insert(entry.job_parallelism, entry);
         }
 
+        tracing::warn!(added=?b, history=?self, "DMR: added UPPER benchmark to history")
         // todo: dropped clearing performance history inconsistencies (see todo at file bottom)
         // self.clear_inconsistencies_for_new_hi(b);
     }
