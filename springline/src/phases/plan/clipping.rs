@@ -45,7 +45,7 @@ impl TemporaryLimitCell {
         self.triggered
             .map(|t| {
                 if self.reset_timeout <= t.elapsed() {
-                    tracing::debug!("clipping reset - clearing clipping point");
+                    tracing::info!("clipping reset - clearing clipping point");
                     self.clipping_point = None;
                     self.triggered = None;
                 }
@@ -60,6 +60,12 @@ impl TemporaryLimitCell {
             .clipping_point
             .map(|cp| u32::min(cp, clipping_point))
             .unwrap_or(clipping_point);
+
+        tracing::info!(
+            %clipping_point,
+            "possible source clipping identified - setting temporary clipping point to be reset in {:?}.",
+            self.reset_timeout
+        );
 
         self.clipping_point = Some(clipping_point);
         self.triggered = Some(Instant::now());
@@ -109,7 +115,9 @@ impl ClippingHandling {
         match self {
             Self::Ignore => (),
             Self::PermanentLimit(pt) => {
-                *pt = Some(clipping_point);
+                let new_pt = pt.map(|p| u32::min(p, clipping_point)).unwrap_or(clipping_point);
+                tracing::info!(clipping_point=%new_pt, "possible source clipping identified - setting permanent clipping point.");
+                *pt = Some(new_pt);
             },
             Self::TemporaryLimit { cell } => {
                 cell.borrow_mut().set_clipping_point(clipping_point);

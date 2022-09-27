@@ -79,7 +79,7 @@ pub struct KubernetesContext {
 }
 
 impl KubernetesContext {
-    #[tracing::instrument(level = "info", name = "KubernetesContext::from_settings")]
+    #[tracing::instrument(level = "debug", name = "KubernetesContext::from_settings")]
     pub async fn from_settings(label: &str, settings: &Settings) -> Result<Self, KubernetesError> {
         let kube = super::make_client(&settings.kubernetes).await?;
         let taskmanager = TaskmanagerSpec {

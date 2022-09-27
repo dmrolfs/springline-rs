@@ -15,7 +15,7 @@ use tokio::sync::{broadcast, Mutex};
 use crate::flink::{AppDataWindow, MetricCatalog};
 use crate::phases::decision::{DecisionOutcome, DecisionResult};
 use crate::phases::plan::benchmark::Benchmark;
-use crate::phases::plan::clipping_handling::ClippingHandling;
+use crate::phases::plan::clipping::ClippingHandling;
 use crate::phases::plan::context::PlanningContext;
 use crate::phases::plan::forecast::{ForecastCalculator, ForecastInputs, Forecaster};
 use crate::phases::plan::model::{ScaleParameters, ScalePlan};

@@ -222,7 +222,7 @@ mod tests {
     use std::cell::RefCell;
     use std::time::Duration;
 
-    use crate::phases::plan::clipping_handling::{ClippingHandling, TemporaryLimitCell};
+    use crate::phases::plan::clipping::{ClippingHandling, TemporaryLimitCell};
     use pretty_snowflake::{Id, Label, Labeling};
     use proctor::elements::Timestamp;
     use proptest::prelude::*;

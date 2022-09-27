@@ -33,14 +33,19 @@ application:
       evaluate_duration_secs: 120
       min_idle_source_back_pressured_time_millis_per_sec: 150.0
 
+  plan:
+      clipping_handling:
+        temporary_limit:
+          reset_timeout_secs: 14400 # 4 hours
+
   governance:
     rules:
       min_parallelism: 1
-      max_parallelism: 32
+      max_parallelism: 64
       min_cluster_size: 1
       max_cluster_size: 64
       min_scaling_step: 1
-      max_scaling_step: 6
+      max_scaling_step: 64
 
   action:
     taskmanager:

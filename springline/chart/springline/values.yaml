@@ -138,6 +138,11 @@ application:
       evaluate_duration_secs: 120
       min_idle_source_back_pressured_time_millis_per_sec:
 
+  plan:
+    clipping_handling:
+      temporary_limit:
+        reset_timeout_secs: 1800
+
   governance:
     rules:
       min_parallelism:

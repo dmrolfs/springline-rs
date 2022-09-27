@@ -142,7 +142,6 @@ pub fn register_metrics(registry: &Registry) -> Result<()> {
         decision::DECISION_SCALING_DECISION_COUNT_METRIC.clone(),
     ))?;
 
-    registry.register(Box::new(plan::PLANNING_PARALLELISM_CLIPPING_POINT.clone()))?;
     registry.register(Box::new(plan::PLANNING_CTX_MIN_SCALING_STEP.clone()))?;
     registry.register(Box::new(
         plan::PLANNING_CTX_FORECASTING_RESTART_SECS.clone(),
