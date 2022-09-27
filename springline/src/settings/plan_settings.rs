@@ -3,7 +3,7 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 
-use crate::phases::plan::{PerformanceRepositorySettings, SpikeSettings};
+use crate::phases::plan::{ClippingHandlingSettings, PerformanceRepositorySettings, SpikeSettings};
 
 #[serde_as]
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -31,7 +31,19 @@ pub struct PlanSettings {
     #[serde(rename = "recovery_valid_secs")]
     pub recovery_valid: Duration,
 
+    /// Optional setting that directs how springline should handle detected telemetry clipping,
+    /// during which necessary telemetry is not provided by Flink possibly due to misconfiguration or
+    /// instability. For misconfiguration, if the nonsource parallelism is allowed to get too high,
+    /// the job operators can be "overwhelmed" by the effort to aggregate data that source telemetry is
+    /// not published by Flink. The default is to `ignore`, and the corresponding decision rules may not
+    /// be able to recognize the need to rescale. `permanment_limit` will identify the parallelism level
+    /// that clipping happens so that planning can take that into account to cap the parallelism just
+    /// below it. `temporary_limit` allows you to set a timeout when the clipping level is reset.
+    #[serde(default = "ClippingHandlingSettings::default")]
+    pub clipping_handling: ClippingHandlingSettings,
+
     pub performance_repository: PerformanceRepositorySettings,
+
     pub window: usize,
     pub spike: SpikeSettings,
 }
@@ -44,6 +56,7 @@ impl Default for PlanSettings {
             restart: Duration::from_secs(2 * 60),
             max_catch_up: Duration::from_secs(13 * 60),
             recovery_valid: Duration::from_secs(5 * 60),
+            clipping_handling: ClippingHandlingSettings::Ignore,
             performance_repository: PerformanceRepositorySettings::default(),
             window: 20,
             spike: SpikeSettings::default(),
@@ -66,6 +79,9 @@ mod tests {
             restart: Duration::from_secs(3 * 60),
             max_catch_up: Duration::from_secs(10 * 60),
             recovery_valid: Duration::from_secs(5 * 60),
+            clipping_handling: ClippingHandlingSettings::TemporaryLimit {
+                reset_timeout: Duration::from_secs(350),
+            },
             performance_repository: PerformanceRepositorySettings {
                 storage: PerformanceRepositoryType::File,
                 storage_path: Some("./resources/foo.data".to_string()),
@@ -81,7 +97,7 @@ mod tests {
         assert_tokens(
             &settings,
             &vec![
-                Token::Struct { name: "PlanSettings", len: 8 },
+                Token::Struct { name: "PlanSettings", len: 9 },
                 Token::Str("min_cluster_size"),
                 Token::U32(3),
                 Token::Str("min_scaling_step"),
@@ -92,6 +108,15 @@ mod tests {
                 Token::U64(10 * 60),
                 Token::Str("recovery_valid_secs"),
                 Token::U64(5 * 60),
+                Token::Str("clipping_handling"),
+                Token::StructVariant {
+                    name: "ClippingHandlingSettings",
+                    variant: "temporary_limit",
+                    len: 1,
+                },
+                Token::Str("reset_timeout_secs"),
+                Token::U64(350),
+                Token::StructVariantEnd,
                 Token::Str("performance_repository"),
                 Token::Struct { name: "PerformanceRepositorySettings", len: 2 },
                 Token::Str("storage"),

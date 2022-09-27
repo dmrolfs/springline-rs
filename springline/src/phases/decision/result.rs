@@ -205,7 +205,6 @@ fn log_data_for_reason(
     }
 }
 
-
 const T_ITEM: &str = "item";
 const T_SCALE_DECISION: &str = "scale_decision";
 

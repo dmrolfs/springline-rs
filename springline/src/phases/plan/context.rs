@@ -5,9 +5,7 @@ use std::time::Duration;
 use crate::flink::MC_CLUSTER__FREE_TASK_SLOTS;
 use once_cell::sync::Lazy;
 use pretty_snowflake::{Id, Label};
-use proctor::elements::telemetry::UpdateMetricsFn;
-use proctor::elements::{Telemetry, Timestamp};
-use proctor::error::ProctorError;
+use proctor::elements::Timestamp;
 use proctor::phases::sense::SubscriptionRequirements;
 use proctor::Correlation;
 use prometheus::core::{AtomicU64, GenericGauge};
@@ -15,7 +13,6 @@ use prometheus::Opts;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 
-use crate::metrics::UpdateMetrics;
 use crate::phases::plan::ForecastInputs;
 
 pub const PLANNING__TOTAL_TASK_SLOTS: &str = "cluster.total_task_slots";
@@ -144,43 +141,43 @@ impl SubscriptionRequirements for PlanningContext {
     }
 }
 
-impl UpdateMetrics for PlanningContext {
-    fn update_metrics_for(phase_name: &str) -> UpdateMetricsFn {
-        let phase_name = phase_name.to_string();
-        let update_fn = move |subscription_name: &str, telemetry: &Telemetry| match telemetry
-            .clone()
-            .try_into::<Self>()
-        {
-            Ok(ctx) => {
-                if let Some(min_scaling_step) = ctx.min_scaling_step {
-                    PLANNING_CTX_MIN_SCALING_STEP.set(u64::from(min_scaling_step));
-                }
-
-                if let Some(restart) = ctx.rescale_restart {
-                    PLANNING_CTX_FORECASTING_RESTART_SECS.set(restart.as_secs());
-                }
-
-                if let Some(max_catch_up) = ctx.max_catch_up {
-                    PLANNING_CTX_FORECASTING_MAX_CATCH_UP_SECS.set(max_catch_up.as_secs());
-                }
-
-                if let Some(recovery_valid) = ctx.recovery_valid {
-                    PLANNING_CTX_FORECASTING_RECOVERY_VALID_SECS.set(recovery_valid.as_secs());
-                }
-            },
-
-            Err(err) => {
-                tracing::warn!(
-                    error=?err, %phase_name,
-                    "failed to update eligibility context metrics on subscription: {}", subscription_name
-                );
-                proctor::track_errors(&phase_name, &ProctorError::PlanPhase(err.into()));
-            },
-        };
-
-        Box::new(update_fn)
-    }
-}
+// impl UpdateMetrics for PlanningContext {
+//     fn update_metrics_for(phase_name: &str) -> UpdateMetricsFn {
+//         let phase_name = phase_name.to_string();
+//         let update_fn = move |subscription_name: &str, telemetry: &Telemetry| match telemetry
+//             .clone()
+//             .try_into::<Self>()
+//         {
+//             Ok(ctx) => {
+//                 if let Some(min_scaling_step) = ctx.min_scaling_step {
+//                     PLANNING_CTX_MIN_SCALING_STEP.set(u64::from(min_scaling_step));
+//                 }
+//
+//                 if let Some(restart) = ctx.rescale_restart {
+//                     PLANNING_CTX_FORECASTING_RESTART_SECS.set(restart.as_secs());
+//                 }
+//
+//                 if let Some(max_catch_up) = ctx.max_catch_up {
+//                     PLANNING_CTX_FORECASTING_MAX_CATCH_UP_SECS.set(max_catch_up.as_secs());
+//                 }
+//
+//                 if let Some(recovery_valid) = ctx.recovery_valid {
+//                     PLANNING_CTX_FORECASTING_RECOVERY_VALID_SECS.set(recovery_valid.as_secs());
+//                 }
+//             },
+//
+//             Err(err) => {
+//                 tracing::warn!(
+//                     error=?err, %phase_name,
+//                     "failed to update eligibility context metrics on subscription: {}", subscription_name
+//                 );
+//                 proctor::track_errors(&phase_name, &ProctorError::PlanPhase(err.into()));
+//             },
+//         };
+//
+//         Box::new(update_fn)
+//     }
+// }
 
 pub static PLANNING_CTX_MIN_SCALING_STEP: Lazy<GenericGauge<AtomicU64>> = Lazy::new(|| {
     GenericGauge::with_opts(

@@ -1,0 +1,8 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 47d6d8f353267c96e9541a6528f5303b23ab96b27ac16ba48427bdb8ee9a6d3c # shrinks to (direction, current_nr_task_managers, current_job_parallelism, calculated_parallelism, clipping_point) = (Up, 25, 1, Some(25), Some(1)), min_scaling_step = 1
+cc 9f3b27986715704ec4e8ac1b73774652631e6684b3134b8896f7f8b504bb7b8b # shrinks to (direction, current_nr_task_managers, current_job_parallelism, calculated_parallelism, clipping_point) = (Down, 1, 1, Some(1), None), min_scaling_step = 1

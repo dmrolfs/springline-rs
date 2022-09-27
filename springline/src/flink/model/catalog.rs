@@ -79,6 +79,14 @@ impl PolicyContributor for MetricCatalog {
             FlowMetrics::get_polar_class_builder()
                 .name("FlowMetrics")
                 .add_method("task_utilization", FlowMetrics::task_utilization)
+                .add_method(
+                    "source_back_pressure_percentage",
+                    FlowMetrics::source_back_pressure_percentage,
+                )
+                .add_method(
+                    "is_source_consumer_telemetry_populated",
+                    FlowMetrics::is_source_consumer_telemetry_populated,
+                )
                 .build(),
         )?;
         engine.register_class(
@@ -372,6 +380,12 @@ impl FlowMetrics {
     pub fn source_back_pressure_percentage(&self) -> f64 {
         let backpressure = self.source_back_pressured_time_millis_per_sec.max(0.0).min(1_000.0);
         backpressure / 1_000.0
+    }
+
+    pub const fn is_source_consumer_telemetry_populated(&self) -> bool {
+        self.source_records_lag_max.is_some()
+            && self.source_total_lag.is_some()
+            && self.source_records_consumed_rate.is_some()
     }
 }
 
@@ -672,14 +686,10 @@ impl UpdateMetrics for MetricCatalog {
                     METRIC_CATALOG_FLOW_SOURCE_RECORDS_CONSUMED_RATE.set(total_rate);
                 }
 
-                let is_consumer_telemetry_empty = catalog.flow.source_records_lag_max.is_none()
-                    || catalog.flow.source_total_lag.is_none()
-                    || catalog.flow.source_records_consumed_rate.is_none();
-
-                if is_consumer_telemetry_empty {
-                    METRIC_CATALOG_FLOW_SOURCE_IS_CONSUMER_TELEMETRY_POPULATED.set(0);
-                } else {
+                if catalog.flow.is_source_consumer_telemetry_populated() {
                     METRIC_CATALOG_FLOW_SOURCE_IS_CONSUMER_TELEMETRY_POPULATED.set(1);
+                } else {
+                    METRIC_CATALOG_FLOW_SOURCE_IS_CONSUMER_TELEMETRY_POPULATED.set(0);
                 }
 
                 if let Some(lag) = catalog.flow.source_millis_behind_latest {

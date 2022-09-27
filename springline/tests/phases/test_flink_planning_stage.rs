@@ -17,8 +17,8 @@ use springline::flink::{
 };
 use springline::phases::decision::{DecisionOutcome, DecisionResult};
 use springline::phases::plan::{
-    make_performance_repository, FlinkPlanningMonitor, ForecastInputs, PlanningContext,
-    PlanningMeasurement, PlanningParameters,
+    make_performance_repository, ClippingHandlingSettings, FlinkPlanningMonitor, ForecastInputs,
+    PlanningContext, PlanningMeasurement, PlanningParameters,
 };
 use springline::phases::plan::{
     FlinkPlanning, LeastSquaresWorkloadForecaster, PerformanceRepositorySettings,
@@ -306,6 +306,9 @@ async fn test_flink_planning_linear() {
         forecast_inputs: inputs,
         total_task_slots: None,
         free_task_slots: None,
+        clipping_handling: ClippingHandlingSettings::TemporaryLimit {
+            reset_timeout: Duration::from_secs(900),
+        },
     };
     let mut planning = assert_ok!(
         TestPlanning::new(
@@ -462,6 +465,7 @@ async fn test_flink_planning_sine() {
         forecast_inputs: inputs,
         total_task_slots: None,
         free_task_slots: None,
+        clipping_handling: ClippingHandlingSettings::Ignore,
     };
     let mut planning = assert_ok!(
         TestPlanning::new(
@@ -629,6 +633,9 @@ async fn test_flink_planning_context_change() {
         forecast_inputs: inputs,
         total_task_slots: None,
         free_task_slots: None,
+        clipping_handling: ClippingHandlingSettings::TemporaryLimit {
+            reset_timeout: Duration::from_secs(900),
+        },
     };
     let mut planning = assert_ok!(
         TestPlanning::new(

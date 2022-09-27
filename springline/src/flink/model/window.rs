@@ -539,6 +539,14 @@ impl PolicyContributor for AppDataWindow<MetricCatalog> {
                     Self::flow_source_relative_lag_velocity,
                 )
                 .add_method(
+                    "flow_is_source_consumer_telemetry_populated_over_window",
+                    Self::flow_is_source_consumer_telemetry_populated_over_window,
+                )
+                .add_method(
+                    "flow_is_source_consumer_telemetry_empty_over_window",
+                    Self::flow_is_source_consumer_telemetry_empty_over_window,
+                )
+                .add_method(
                     "flow_source_millis_behind_latest_rolling_average",
                     Self::flow_source_millis_behind_latest_rolling_average,
                 )
@@ -1051,6 +1059,24 @@ impl AppDataWindow<MetricCatalog> {
             total_rate
         );
         result
+    }
+
+    pub fn flow_is_source_consumer_telemetry_populated_over_window(
+        &self, looking_back_secs: u32,
+    ) -> bool {
+        self.for_duration_from_head(
+            Duration::from_secs(u64::from(looking_back_secs)),
+            |m: &MetricCatalog| m.flow.is_source_consumer_telemetry_populated(),
+        )
+    }
+
+    pub fn flow_is_source_consumer_telemetry_empty_over_window(
+        &self, looking_back_secs: u32,
+    ) -> bool {
+        self.for_duration_from_head(
+            Duration::from_secs(u64::from(looking_back_secs)),
+            |m: &MetricCatalog| !m.flow.is_source_consumer_telemetry_populated(),
+        )
     }
 }
 

@@ -18,6 +18,7 @@ use crate::settings::Settings;
 use crate::Result;
 
 mod benchmark;
+mod clipping_handling;
 mod context;
 mod forecast;
 mod model;
@@ -26,6 +27,7 @@ mod performance_repository;
 mod planning;
 
 pub use crate::phases::decision::ScaleDirection;
+pub use clipping_handling::{ClippingHandlingSettings, PLANNING_PARALLELISM_CLIPPING_POINT};
 pub use context::{
     PlanningContext, PLANNING__FREE_TASK_SLOTS, PLANNING__MAX_CATCH_UP, PLANNING__RECOVERY_VALID,
     PLANNING__RESCALE_RESTART, PLANNING__TOTAL_TASK_SLOTS,

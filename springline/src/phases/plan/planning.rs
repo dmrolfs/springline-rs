@@ -10,18 +10,19 @@ use proctor::graph::{Outlet, Port};
 use proctor::phases::plan::{PlanEvent, Planning};
 use prometheus::core::{AtomicU64, GenericGauge};
 use prometheus::Opts;
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, Mutex};
 
 use crate::flink::{AppDataWindow, MetricCatalog};
 use crate::phases::decision::{DecisionOutcome, DecisionResult};
 use crate::phases::plan::benchmark::Benchmark;
+use crate::phases::plan::clipping_handling::ClippingHandling;
 use crate::phases::plan::context::PlanningContext;
 use crate::phases::plan::forecast::{ForecastCalculator, ForecastInputs, Forecaster};
 use crate::phases::plan::model::{ScaleParameters, ScalePlan};
 use crate::phases::plan::performance_history::PerformanceHistory;
 use crate::phases::plan::performance_repository::PerformanceRepository;
 use crate::phases::plan::{
-    PlanningMeasurement, PLANNING_CTX_FORECASTING_MAX_CATCH_UP_SECS,
+    ClippingHandlingSettings, PlanningMeasurement, PLANNING_CTX_FORECASTING_MAX_CATCH_UP_SECS,
     PLANNING_CTX_FORECASTING_RECOVERY_VALID_SECS, PLANNING_CTX_FORECASTING_RESTART_SECS,
     PLANNING_CTX_MIN_SCALING_STEP, PLANNING_FORECASTED_WORKLOAD,
 };
@@ -54,6 +55,7 @@ pub struct PlanningParameters {
     pub forecast_inputs: ForecastInputs,
     pub total_task_slots: Option<u32>,
     pub free_task_slots: Option<u32>,
+    pub clipping_handling: ClippingHandlingSettings,
 }
 
 impl PlanningParameters {
@@ -73,6 +75,7 @@ impl PlanningParameters {
             forecast_inputs,
             total_task_slots: None,
             free_task_slots: None,
+            clipping_handling: settings.plan.clipping_handling,
         })
     }
 }
@@ -84,6 +87,7 @@ pub struct FlinkPlanning<F: Forecaster> {
     evaluation_window: Option<Duration>,
     total_task_slots: Option<u32>,
     free_task_slots: Option<u32>,
+    clipping_handling: Mutex<ClippingHandling>,
     pub forecast_calculator: ForecastCalculator<F>,
     performance_history: PerformanceHistory,
     performance_repository: Box<dyn PerformanceRepository>,
@@ -128,6 +132,7 @@ impl<F: Forecaster> FlinkPlanning<F> {
             evaluation_window: params.evaluation_window,
             total_task_slots: params.total_task_slots,
             free_task_slots: params.free_task_slots,
+            clipping_handling: Mutex::new(ClippingHandling::new(&params.clipping_handling)),
             forecast_calculator,
             performance_history,
             performance_repository,
@@ -152,10 +157,13 @@ impl<F: Forecaster> FlinkPlanning<F> {
 
     fn update_metrics(&self) {
         PLANNING_CTX_MIN_SCALING_STEP.set(u64::from(self.min_scaling_step));
+
         PLANNING_CTX_FORECASTING_RESTART_SECS
             .set(self.forecast_calculator.inputs.restart.as_secs());
+
         PLANNING_CTX_FORECASTING_MAX_CATCH_UP_SECS
             .set(self.forecast_calculator.inputs.max_catch_up.as_secs());
+
         PLANNING_CTX_FORECASTING_RECOVERY_VALID_SECS
             .set(self.forecast_calculator.inputs.valid_offset.as_secs());
     }
@@ -230,8 +238,11 @@ impl<F: Forecaster> FlinkPlanning<F> {
             let required_job_parallelism =
                 history.job_parallelism_for_workload(forecasted_workload);
 
+            let clipping_point = self.assess_for_job_clipping(&decision).await;
+
             let params = ScaleParameters {
                 calculated_job_parallelism: required_job_parallelism,
+                clipping_point,
                 nr_taskmanagers: decision.item().cluster.nr_task_managers,
                 total_task_slots: self.total_task_slots,
                 free_task_slots: self.free_task_slots,
@@ -263,6 +274,30 @@ impl<F: Forecaster> FlinkPlanning<F> {
         };
 
         Ok(plan)
+    }
+
+    /// tests decision telemetry for prolonged signs of job instability, aka. "clipping", during which rescaling
+    /// is not receiving necessary telemetry to make proper decisions. Although it requires a rescale decision,
+    /// this step is here in order to facilitate converging on max, non-clipping parallelism level *and* to
+    /// set a dynamic max parallelism accordingly. The clipping level could be maintained and identified in decision
+    /// phase, but the extra data would need to be conveyed in the decision result.
+    async fn assess_for_job_clipping(&mut self, decision: &DecisionOutcome) -> Option<u32> {
+        let item = decision.item();
+        let is_clipping = match self.evaluation_window {
+            Some(window) => {
+                let looking_back_secs = u32::try_from(window.as_secs()).unwrap_or(u32::MAX);
+                item.flow_is_source_consumer_telemetry_empty_over_window(looking_back_secs)
+            },
+            None => !item.flow.is_source_consumer_telemetry_populated(),
+        };
+
+        if is_clipping {
+            let mut handling = self.clipping_handling.lock().await;
+            handling.set_clipping_point(item.health.job_max_parallelism);
+            handling.clipping_point()
+        } else {
+            None
+        }
     }
 
     /// An attempt at cross-platform (wrt FlinkKafkaConsumer and FlinkKinesisConsumer at least)
@@ -512,6 +547,7 @@ mod tests {
             evaluation_window: Some(Duration::from_secs(120)),
             total_task_slots: Some(total_task_slots),
             free_task_slots: None,
+            clipping_handling: Mutex::new(ClippingHandling::Ignore),
             forecast_calculator: calc,
             performance_history: PerformanceHistory::default(),
             performance_repository: make_performance_repository(&PerformanceRepositorySettings {

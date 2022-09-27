@@ -224,7 +224,8 @@ mod tests {
     use crate::flink::RestoreMode;
     use crate::kubernetes::{KubernetesApiConstraints, KubernetesDeployResource};
     use crate::phases::plan::{
-        PerformanceRepositorySettings, PerformanceRepositoryType, SpikeSettings,
+        ClippingHandlingSettings, PerformanceRepositorySettings, PerformanceRepositoryType,
+        SpikeSettings,
     };
     use crate::phases::sense::flink::Aggregation::Sum;
     use crate::phases::sense::flink::{
@@ -415,6 +416,7 @@ mod tests {
                 restart: Duration::from_secs(120),
                 max_catch_up: Duration::from_secs(600),
                 recovery_valid: Duration::from_secs(300),
+                clipping_handling: ClippingHandlingSettings::Ignore,
                 performance_repository: PerformanceRepositorySettings {
                     storage: PerformanceRepositoryType::File,
                     storage_path: Some("./tests/data/performance.data".to_string()),
@@ -606,6 +608,9 @@ mod tests {
             restart: Duration::from_secs(5 * 60),
             max_catch_up: Duration::from_secs(10 * 60),
             recovery_valid: Duration::from_secs(5 * 60),
+            clipping_handling: ClippingHandlingSettings::TemporaryLimit {
+                reset_timeout: Duration::from_secs(900),
+            },
             performance_repository: PerformanceRepositorySettings {
                 storage: PerformanceRepositoryType::File,
                 storage_path: Some("./tmp".to_string()),
