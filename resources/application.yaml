@@ -155,7 +155,7 @@ eligibility:
         is_template: true
   template_data:
     policy_extension: eligibility_ext
-    cooling_secs: 600
+    cooling_secs: 900
     stable_secs: 300
 
 decision:
@@ -219,6 +219,32 @@ decision:
 plan:
   performance_repository:
     storage: memory
+
+  # Optional population of node : workload rates used to estimate best cluster size for projected
+  # workload. The performance history of the job is created based on the actual measured
+  # performance of the job, so will change for different resourcing, configurations and even as it
+  # runs. The Job's history is saved in the `performance_repository`. These default settings to tune
+  # initial rescale calculations, which without initial values tend to vary wildly, but converge
+  # over time while springline maps performance.
+
+  # optional initial map of workloads at which springline will rescale upward.
+  # For ech given `job_parallelism` specify the `hi_rate` (for rescale up) and/or the `lo_rate` (for
+  # rescale down) default benchmark workload rates. The table can be sparse, and springline
+  # calibrates its calculations accordingly.
+  benchmarks:
+    - job_parallelism: 1
+      hi_rate    : 2.59375
+    - job_parallelism: 2
+      hi_rate    : 5.12963
+    - job_parallelism: 3
+      hi_rate    : 6.777
+    - job_parallelism: 27
+      hi_rate    : 79.3875
+    - job_parallelism: 45
+      lo_rate    : 94.86458
+    - job_parallelism: 64
+      lo_rate    : 96.27037
+
   min_cluster_size: 1
   min_scaling_step: 2
   restart_secs: 300
@@ -227,7 +253,7 @@ plan:
 
   # Optional setting that directs how springline should handle detected telemetry clipping, during
   # which necessary telemetry is not provided by Flink possibly due to misconfiguration or
-  # instability. For misconfiguration, if the nonsource parallelism is allowed to get too high, the
+  # instability. For misconfiguration, if the non-source parallelism is allowed to get too high, the
   # job operators can be "overwhelmed" by the effort to aggregate data that source telemetry is not
   # published by Flink.
   # The default is to `ignore`, and the corresponding decision rules may not be able to recognize the

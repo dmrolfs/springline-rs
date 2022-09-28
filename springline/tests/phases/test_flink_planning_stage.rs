@@ -306,6 +306,7 @@ async fn test_flink_planning_linear() {
         forecast_inputs: inputs,
         total_task_slots: None,
         free_task_slots: None,
+        benchmarks: Vec::default(),
         clipping_handling: ClippingHandlingSettings::TemporaryLimit {
             reset_timeout: Duration::from_secs(900),
         },
@@ -459,14 +460,17 @@ async fn test_flink_planning_sine() {
         }
     ));
 
+    let min_scaling_step = 2;
     let params = PlanningParameters {
-        min_scaling_step: 2,
+        min_scaling_step,
         evaluation_window: None,
         forecast_inputs: inputs,
         total_task_slots: None,
         free_task_slots: None,
+        benchmarks: Vec::default(),
         clipping_handling: ClippingHandlingSettings::Ignore,
     };
+
     let mut planning = assert_ok!(
         TestPlanning::new(
             "test_planning_2",
@@ -482,7 +486,7 @@ async fn test_flink_planning_sine() {
             .patch_context(PlanningContext {
                 correlation_id: Id::direct("planning_context", 123, "ctx"),
                 recv_timestamp: Timestamp::now(),
-                min_scaling_step: Some(params.min_scaling_step),
+                min_scaling_step: Some(min_scaling_step),
                 total_task_slots: 2,
                 free_task_slots: 0,
                 rescale_restart: None,
@@ -633,6 +637,7 @@ async fn test_flink_planning_context_change() {
         forecast_inputs: inputs,
         total_task_slots: None,
         free_task_slots: None,
+        benchmarks: Vec::default(),
         clipping_handling: ClippingHandlingSettings::TemporaryLimit {
             reset_timeout: Duration::from_secs(900),
         },

@@ -22,9 +22,10 @@ use crate::phases::plan::model::{ScaleParameters, ScalePlan};
 use crate::phases::plan::performance_history::PerformanceHistory;
 use crate::phases::plan::performance_repository::PerformanceRepository;
 use crate::phases::plan::{
-    ClippingHandlingSettings, PlanningMeasurement, PLANNING_CTX_FORECASTING_MAX_CATCH_UP_SECS,
-    PLANNING_CTX_FORECASTING_RECOVERY_VALID_SECS, PLANNING_CTX_FORECASTING_RESTART_SECS,
-    PLANNING_CTX_MIN_SCALING_STEP, PLANNING_FORECASTED_WORKLOAD,
+    BenchmarkRange, ClippingHandlingSettings, PlanningMeasurement,
+    PLANNING_CTX_FORECASTING_MAX_CATCH_UP_SECS, PLANNING_CTX_FORECASTING_RECOVERY_VALID_SECS,
+    PLANNING_CTX_FORECASTING_RESTART_SECS, PLANNING_CTX_MIN_SCALING_STEP,
+    PLANNING_FORECASTED_WORKLOAD,
 };
 use crate::settings::Settings;
 
@@ -48,13 +49,14 @@ pub enum FlinkPlanningEvent {
     },
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct PlanningParameters {
     pub min_scaling_step: u32,
     pub evaluation_window: Option<Duration>,
     pub forecast_inputs: ForecastInputs,
     pub total_task_slots: Option<u32>,
     pub free_task_slots: Option<u32>,
+    pub benchmarks: Vec<BenchmarkRange>,
     pub clipping_handling: ClippingHandlingSettings,
 }
 
@@ -75,6 +77,7 @@ impl PlanningParameters {
             forecast_inputs,
             total_task_slots: None,
             free_task_slots: None,
+            benchmarks: settings.plan.benchmarks.clone(),
             clipping_handling: settings.plan.clipping_handling,
         })
     }
@@ -119,8 +122,8 @@ impl<F: Forecaster> FlinkPlanning<F> {
 
         let name = planning_name.to_string();
         let performance_history =
-            performance_repository.load(name.as_str()).await?.unwrap_or_default();
-        Self::update_performance_history_metrics(&performance_history);
+            Self::initialize_performance_history(&name, performance_repository.as_ref(), &params)
+                .await?;
 
         // todo: this needs to be worked into Plan stage...  Need to determine best design
         // todo: let (tx_api, rx_api) = mpsc::unbounded_channel();
@@ -141,6 +144,50 @@ impl<F: Forecaster> FlinkPlanning<F> {
             // todo: tx_api,
             // todo: rx_api,
         })
+    }
+
+    #[tracing::instrument(level = "info", skip(repository, parameters))]
+    async fn initialize_performance_history(
+        name: &str, repository: &dyn PerformanceRepository, parameters: &PlanningParameters,
+    ) -> Result<PerformanceHistory, PlanError> {
+        let history = match repository.load(name).await? {
+            Some(history) => {
+                tracing::info!(?history, "performance history loaded from repository.");
+                Ok(history)
+            },
+            None if parameters.benchmarks.is_empty() => {
+                let history = PerformanceHistory::default();
+                tracing::info!(
+                    ?history,
+                    "no performance history loaded nor are there configured default benchmarks - history initialized as empty."
+                );
+                Ok(history)
+            },
+            None => {
+                let mut history = PerformanceHistory::default();
+                for b in parameters.benchmarks.iter() {
+                    if let Some(hi_mark) = b.hi_mark() {
+                        history.add_upper_benchmark(hi_mark);
+                    }
+
+                    if let Some(lo_mark) = b.lo_mark() {
+                        history.add_lower_benchmark(lo_mark);
+                    }
+                }
+                tracing::info!(
+                    ?history,
+                    "initialized performance history to configured default benchmarks."
+                );
+                Ok(history)
+            },
+        };
+
+        if let Ok(ref h) = history {
+            let nr_entries = u64::try_from(h.len()).unwrap_or(u64::MAX);
+            PLANNING_PERFORMANCE_HISTORY_ENTRY_COUNT.set(nr_entries);
+        }
+
+        history
     }
 
     #[inline]

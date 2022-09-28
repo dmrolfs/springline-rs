@@ -81,10 +81,10 @@ serde_json = "1.0.85"
 serde_repr = "0.1.9"
 serde_with = { version = "2.0.1", features = ["chrono", "json", "macros"] }
 splines = "4.1.1"
-sysinfo = "0.26.2"
+sysinfo = "0.26.4"
 tailcall = "0.1.6"
-thiserror = "1.0.35"
-tokio = { version = "1.21.1", features = ["full", "tracing"] }
+thiserror = "1.0.37"
+tokio = { version = "1.21.2", features = ["full", "tracing"] }
 tower = { version = "0.4.13", features = ["timeout", "limit"] }
 tower-http = { version = "0.3.4", features = ["trace"] }
 tracing = "0.1.36"

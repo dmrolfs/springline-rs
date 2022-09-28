@@ -224,8 +224,8 @@ mod tests {
     use crate::flink::RestoreMode;
     use crate::kubernetes::{KubernetesApiConstraints, KubernetesDeployResource};
     use crate::phases::plan::{
-        ClippingHandlingSettings, PerformanceRepositorySettings, PerformanceRepositoryType,
-        SpikeSettings,
+        BenchmarkRange, ClippingHandlingSettings, PerformanceRepositorySettings,
+        PerformanceRepositoryType, SpikeSettings,
     };
     use crate::phases::sense::flink::Aggregation::Sum;
     use crate::phases::sense::flink::{
@@ -421,6 +421,7 @@ mod tests {
                     storage: PerformanceRepositoryType::File,
                     storage_path: Some("./tests/data/performance.data".to_string()),
                 },
+                benchmarks: Vec::new(),
                 window: 20,
                 spike: SpikeSettings {
                     std_deviation_threshold: 5.0,
@@ -583,7 +584,7 @@ mod tests {
             )))
             .with_template_data(EligibilityTemplateData {
                 policy_extension: Some("eligibility_ext".to_string()),
-                cooling_secs: Some(10 * 60),
+                cooling_secs: Some(15 * 60),
                 stable_secs: Some(5 * 60),
                 custom: HashMap::default(),
             }),
@@ -615,6 +616,14 @@ mod tests {
                 storage: PerformanceRepositoryType::File,
                 storage_path: Some("./tmp".to_string()),
             },
+            benchmarks: vec![
+                BenchmarkRange::new(1, None, Some(2.59375.into())),
+                BenchmarkRange::new(2, None, Some(5.12963.into())),
+                BenchmarkRange::new(3, None, Some(6.777.into())),
+                BenchmarkRange::new(27, None, Some(79.3875.into())),
+                BenchmarkRange::new(45, Some(94.86458.into()), None),
+                BenchmarkRange::new(64, Some(96.27037.into()), None),
+            ],
             window: 20,
             spike: SpikeSettings {
                 std_deviation_threshold: 5.,
@@ -730,7 +739,7 @@ mod tests {
                     },
                     eligibility: EligibilitySettings {
                         template_data: Some(EligibilityTemplateData {
-                            cooling_secs: Some(600),
+                            cooling_secs: Some(900),
                             ..SETTINGS.eligibility.template_data.clone().unwrap()
                         }),
                         ..SETTINGS.eligibility.clone()

@@ -3,7 +3,9 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 
-use crate::phases::plan::{ClippingHandlingSettings, PerformanceRepositorySettings, SpikeSettings};
+use crate::phases::plan::{
+    BenchmarkRange, ClippingHandlingSettings, PerformanceRepositorySettings, SpikeSettings,
+};
 
 #[serde_as]
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -44,6 +46,20 @@ pub struct PlanSettings {
 
     pub performance_repository: PerformanceRepositorySettings,
 
+    /// Optional population of node : workload rates used to estimate best cluster size for projected
+    /// workload. The performance history of the job is created based on the actual measured
+    /// performance of the job, so will change for different resourcing, configurations and even as it
+    /// runs. The Job's history is saved in the `performance_repository`. These default settings to tune
+    /// initial rescale calculations, which without initial values tend to vary wildly, but converge
+    /// over time while springline maps performance.
+    ///
+    /// optional initial map of workloads at which springline will rescale upward.
+    /// For ech given `job_parallelism` specify the `hi_rate` (for rescale up) and/or the `lo_rate` (for
+    /// rescale down) default benchmark workload rates. The table can be sparse, and springline
+    /// calibrates its calculations accordingly.
+    #[serde(default = "Default::default", skip_serializing_if = "Vec::is_empty")]
+    pub benchmarks: Vec<BenchmarkRange>,
+
     pub window: usize,
     pub spike: SpikeSettings,
 }
@@ -58,6 +74,7 @@ impl Default for PlanSettings {
             recovery_valid: Duration::from_secs(5 * 60),
             clipping_handling: ClippingHandlingSettings::Ignore,
             performance_repository: PerformanceRepositorySettings::default(),
+            benchmarks: Vec::default(),
             window: 20,
             spike: SpikeSettings::default(),
         }
@@ -86,6 +103,10 @@ mod tests {
                 storage: PerformanceRepositoryType::File,
                 storage_path: Some("./resources/foo.data".to_string()),
             },
+            benchmarks: vec![
+                BenchmarkRange::new(1, None, Some(3.14159.into())),
+                BenchmarkRange::new(27, None, Some(79.3875.into())),
+            ],
             window: 20,
             spike: SpikeSettings {
                 std_deviation_threshold: 3.1,
@@ -97,7 +118,7 @@ mod tests {
         assert_tokens(
             &settings,
             &vec![
-                Token::Struct { name: "PlanSettings", len: 9 },
+                Token::Struct { name: "PlanSettings", len: 10 },
                 Token::Str("min_cluster_size"),
                 Token::U32(3),
                 Token::Str("min_scaling_step"),
@@ -125,6 +146,25 @@ mod tests {
                 Token::Some,
                 Token::Str("./resources/foo.data"),
                 Token::StructEnd,
+                Token::Str("benchmarks"),
+                Token::Seq { len: Some(2) },
+                Token::Struct { name: "BenchmarkRange", len: 2 },
+                Token::Str("job_parallelism"),
+                Token::U32(1),
+                Token::Str("hi_rate"),
+                Token::Some,
+                Token::NewtypeStruct { name: "RecordsPerSecond" },
+                Token::F64(3.14159),
+                Token::StructEnd,
+                Token::Struct { name: "BenchmarkRange", len: 2 },
+                Token::Str("job_parallelism"),
+                Token::U32(27),
+                Token::Str("hi_rate"),
+                Token::Some,
+                Token::NewtypeStruct { name: "RecordsPerSecond" },
+                Token::F64(79.3875),
+                Token::StructEnd,
+                Token::SeqEnd,
                 Token::Str("window"),
                 Token::U64(20),
                 Token::Str("spike"),

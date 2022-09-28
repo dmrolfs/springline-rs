@@ -27,6 +27,7 @@ mod performance_repository;
 mod planning;
 
 pub use crate::phases::decision::ScaleDirection;
+pub use benchmark::BenchmarkRange;
 pub use clipping::{ClippingHandlingSettings, PLANNING_PARALLELISM_CLIPPING_POINT};
 pub use context::{
     PlanningContext, PLANNING__FREE_TASK_SLOTS, PLANNING__MAX_CATCH_UP, PLANNING__RECOVERY_VALID,
