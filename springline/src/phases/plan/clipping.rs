@@ -62,7 +62,7 @@ impl TemporaryLimitCell {
             .unwrap_or(clipping_point);
 
         tracing::info!(
-            %clipping_point,
+            %clipping_point, prior_clipping_point=?self.clipping_point,
             "possible source clipping identified - setting temporary clipping point to be reset in {:?}.",
             self.reset_timeout
         );
@@ -70,6 +70,7 @@ impl TemporaryLimitCell {
         self.clipping_point = Some(clipping_point);
         self.triggered = Some(Instant::now());
         PLANNING_PARALLELISM_CLIPPING_POINT.set(u64::from(clipping_point));
+        tracing::warn!(%clipping_point, saved=?self, "DMR: COMPARE SAVED vs SET.");
         self.clipping_point
     }
 }
@@ -92,13 +93,8 @@ impl ClippingHandling {
         match settings {
             ClippingHandlingSettings::Ignore => Self::Ignore,
             ClippingHandlingSettings::PermanentLimit => Self::PermanentLimit(None),
-            ClippingHandlingSettings::TemporaryLimit { reset_timeout } => {
-                let cell = TemporaryLimitCell {
-                    clipping_point: None,
-                    triggered: None,
-                    reset_timeout: *reset_timeout,
-                };
-                Self::TemporaryLimit { cell: RefCell::new(cell) }
+            ClippingHandlingSettings::TemporaryLimit { reset_timeout } => Self::TemporaryLimit {
+                cell: RefCell::new(TemporaryLimitCell::new(*reset_timeout)),
             },
         }
     }

@@ -285,7 +285,14 @@ impl<F: Forecaster> FlinkPlanning<F> {
             let required_job_parallelism =
                 history.job_parallelism_for_workload(forecasted_workload);
 
+            let dmr_prior_clipping_point = self.clipping_handling.lock().await.clipping_point();
             let clipping_point = self.assess_for_job_clipping(&decision).await;
+            let dmr_set_clipping_point = self.clipping_handling.lock().await.clipping_point();
+            tracing::warn!(
+                assessed_clipping_point=?clipping_point,
+                prior_clipping_point=?dmr_prior_clipping_point, set_clipping_point=?dmr_set_clipping_point,
+                "DMR: COMPARE ASSESSED TO PRIOR AND SET - assert SET=ASSESSED: {}", clipping_point == dmr_set_clipping_point
+            );
 
             let params = ScaleParameters {
                 calculated_job_parallelism: required_job_parallelism,
@@ -323,11 +330,15 @@ impl<F: Forecaster> FlinkPlanning<F> {
         Ok(plan)
     }
 
-    /// tests decision telemetry for prolonged signs of job instability, aka. "clipping", during which rescaling
+    /// Assess and tune the job's clipping level, and return the current effective clipping point to
+    /// contribute to planning.
+    ///
+    /// Tests decision telemetry for prolonged signs of job instability, aka. "clipping", during which rescaling
     /// is not receiving necessary telemetry to make proper decisions. Although it requires a rescale decision,
     /// this step is here in order to facilitate converging on max, non-clipping parallelism level *and* to
     /// set a dynamic max parallelism accordingly. The clipping level could be maintained and identified in decision
     /// phase, but the extra data would need to be conveyed in the decision result.
+    #[tracing::instrument(level = "info", skip(self, decision))]
     async fn assess_for_job_clipping(&mut self, decision: &DecisionOutcome) -> Option<u32> {
         let item = decision.item();
         let is_clipping = match self.evaluation_window {
@@ -338,12 +349,14 @@ impl<F: Forecaster> FlinkPlanning<F> {
             None => !item.flow.is_source_consumer_telemetry_populated(),
         };
 
+        let mut handling = self.clipping_handling.lock().await;
         if is_clipping {
-            let mut handling = self.clipping_handling.lock().await;
             handling.set_clipping_point(item.health.job_max_parallelism);
-            handling.clipping_point()
+            let saved = handling.clipping_point();
+            tracing::warn!(?saved, item_p=%item.health.job_max_parallelism, "DMR: COMPARE HANDLING SAVED CLIPPING TO CELL ASSIGNMENT");
+            saved
         } else {
-            None
+            handling.clipping_point()
         }
     }
 
