@@ -5,9 +5,17 @@ imagePullSecrets:
 #  dnsTail: -api-dev.plm.platform.in.here.com
 deployment:
   log:
-    level: "info,springline::phases::act=debug"
+    level: "info,springline::phases::plan=debug,springline::phases::act=debug"
     polar: "info"
     backtrace: "1"
+
+resources:
+  requests:
+    cpu: 5m
+    memory: 256Mi
+  limits:
+    cpu: 10m
+    memory: 1024Mi
 
 application:
   sensor:
@@ -24,9 +32,9 @@ application:
   decision:
     template_data:
       basis: chart_decision_basis
-      max_healthy_relative_lag_velocity: 10.0
+      max_healthy_relative_lag_velocity: 25.0
       max_health_lag: 5000000
-      min_task_utilization: 0.5
+      min_task_utilization: 0.4
       max_healthy_cpu_load: 0.9
       max_healthy_heap_memory_load: 0.85
       max_healthy_network_io_utilization: 0.8

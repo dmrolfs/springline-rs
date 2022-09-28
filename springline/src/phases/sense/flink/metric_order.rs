@@ -509,7 +509,7 @@ pub enum FlinkScope {
 }
 
 impl FlinkScope {
-    pub fn matches(&self, other: &FlinkScope) -> bool {
+    pub fn matches(&self, other: &Self) -> bool {
         *self == Self::Any || *other == Self::Any || *self == *other
     }
 }
