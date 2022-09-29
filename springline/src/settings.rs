@@ -609,9 +609,7 @@ mod tests {
             restart: Duration::from_secs(5 * 60),
             max_catch_up: Duration::from_secs(10 * 60),
             recovery_valid: Duration::from_secs(5 * 60),
-            clipping_handling: ClippingHandlingSettings::TemporaryLimit {
-                reset_timeout: Duration::from_secs(900),
-            },
+            clipping_handling: ClippingHandlingSettings::PermanentLimit,
             performance_repository: PerformanceRepositorySettings {
                 storage: PerformanceRepositoryType::File,
                 storage_path: Some("./tmp".to_string()),
@@ -619,9 +617,9 @@ mod tests {
             benchmarks: vec![
                 BenchmarkRange::new(1, None, Some(2.59375.into())),
                 BenchmarkRange::new(2, None, Some(5.12963.into())),
-                BenchmarkRange::new(3, None, Some(6.777.into())),
+                BenchmarkRange::new(3, None, Some(8.34375.into())),
                 BenchmarkRange::new(27, None, Some(79.3875.into())),
-                BenchmarkRange::new(45, Some(94.86458.into()), None),
+                BenchmarkRange::new(32, None, Some(90.0852.into())),
                 BenchmarkRange::new(64, Some(96.27037.into()), None),
             ],
             window: 20,

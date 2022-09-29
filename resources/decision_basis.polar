@@ -32,7 +32,7 @@ scale_down(item, _context, reason) if
     and item.flow_source_back_pressured_time_millis_per_sec_below_threshold(window, {{min_idle_source_back_pressured_time_millis_per_sec}})
     and total_lag_avg = item.flow_source_total_lag_rolling_average(window)
     and total_lag_avg == 0.0
-    and reason = "low_utilization_and_idle_telemetry";
+    and reason = "clipping_and_idle_telemetry";
 {{/if}}
 {{/if}}
 

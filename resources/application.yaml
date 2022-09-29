@@ -237,11 +237,11 @@ plan:
     - job_parallelism: 2
       hi_rate    : 5.12963
     - job_parallelism: 3
-      hi_rate    : 6.777
+      hi_rate    : 8.34375
     - job_parallelism: 27
       hi_rate    : 79.3875
-    - job_parallelism: 45
-      lo_rate    : 94.86458
+    - job_parallelism: 32
+      hi_rate    : 90.0852
     - job_parallelism: 64
       lo_rate    : 96.27037
 
@@ -261,9 +261,7 @@ plan:
   # `permanent_limit` will identify the parallelism level that clipping happens so that planning can
   # take that into account to cap the parallelism just below it.
   # `temporary_limit` allows you to set a `reset_timeout_secs` when the clipping level is reset.
-  clipping_handling:
-    temporary_limit:
-      reset_timeout_secs: 900
+  clipping_handling: permanent_limit
 
   window: 20
   spike:

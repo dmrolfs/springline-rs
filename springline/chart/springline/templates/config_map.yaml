@@ -99,9 +99,7 @@ data:
       performance_repository:
         storage: memory
       
-      clipping_handling:
-        temporary_limit:
-          reset_timeout_secs: {{ .Values.application.plan.clipping_handling.temporary_limit.reset_timeout_secs }}
+      clipping_handling: permanent_limit
 
     governance:
       rules:

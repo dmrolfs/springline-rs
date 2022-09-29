@@ -125,7 +125,7 @@ fn do_tally_binding_voted(ballots: Vec<String>) -> Vec<(String, usize)> {
 
 const RELATIVE_LAG_VELOCITY: &str = "relative_lag_velocity";
 const LOW_UTILIZATION_AND_ZERO_LAG: &str = "low_utilization_and_zero_lag";
-const LOW_UTILIZATION_AND_IDLE_TELEMETRY: &str = "low_utilization_and_idle_telemetry";
+const CLIPPING_AND_IDLE_TELEMETRY: &str = "clipping_and_idle_telemetry";
 const TOTAL_LAG: &str = "total_lag";
 const SOURCE_BACKPRESSURE: &str = "source_backpressure";
 const NO_REASON: &str = "no_reason_given";
@@ -169,7 +169,7 @@ fn log_data_for_reason(
             );
         },
 
-        (_, Some(LOW_UTILIZATION_AND_IDLE_TELEMETRY)) => {
+        (_, Some(CLIPPING_AND_IDLE_TELEMETRY)) => {
             let source_records_lag_max = item.flow.source_total_lag;
             let nonsource_utilization = item.flow_task_utilization_rolling_average(window);
             let source_back_pressure =

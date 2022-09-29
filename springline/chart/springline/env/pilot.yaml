@@ -53,7 +53,7 @@ application:
       min_cluster_size: 1
       max_cluster_size: 64
       min_scaling_step: 1
-      max_scaling_step: 64
+      max_scaling_step: 8
 
   action:
     taskmanager:
