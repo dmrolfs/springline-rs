@@ -112,8 +112,12 @@ impl ClippingHandling {
             Self::Ignore => (),
             Self::PermanentLimit(pt) => {
                 let new_pt = pt.map(|p| u32::min(p, clipping_point)).unwrap_or(clipping_point);
-                tracing::info!(clipping_point=%new_pt, "possible source clipping identified - setting permanent clipping point.");
+                tracing::info!(
+                    clipping_point=%new_pt, prior_clipping_point=?pt,
+                    "possible source clipping identified - setting permanent clipping point."
+                );
                 *pt = Some(new_pt);
+                PLANNING_PARALLELISM_CLIPPING_POINT.set(u64::from(pt.unwrap()));
             },
             Self::TemporaryLimit { cell } => {
                 cell.borrow_mut().set_clipping_point(clipping_point);
