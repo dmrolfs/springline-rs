@@ -23,17 +23,16 @@ scale_down(item, _context, reason) if
     and reason = "low_utilization_and_zero_lag";
 {{/if}}
 
-{{#if min_task_utilization}}
 {{#if min_idle_source_back_pressured_time_millis_per_sec}}
 scale_down(item, _context, reason) if
     idle_source_telemetry(item)
     and evaluation_window(window)
-    and item.flow_task_utilization_below_threshold(window, {{min_task_utilization}})
+    and min_utilization(utilization)
+    and item.flow_task_utilization_below_threshold(window, utilization)
     and item.flow_source_back_pressured_time_millis_per_sec_below_threshold(window, {{min_idle_source_back_pressured_time_millis_per_sec}})
     and total_lag_avg = item.flow_source_total_lag_rolling_average(window)
     and total_lag_avg == 0.0
     and reason = "clipping_and_idle_telemetry";
-{{/if}}
 {{/if}}
 
 {{#if max_healthy_lag}}
@@ -48,8 +47,10 @@ scale_up(item, _context, reason) if
 {{#if max_healthy_cpu_load}}
 scale_up(item, _context, reason) if
     evaluation_window(window)
-    and lag_increasing(item, _)
     and item.cluster_task_cpu_load_above_threshold(window, {{max_healthy_cpu_load}})
+    and lag_increasing(item, _)
+    and min_utilization(utilization)
+    and item.flow_task_utilization_below_threshold(window, utilization)
     and reason = "cpu_load";
 {{/if}}
 

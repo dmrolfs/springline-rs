@@ -4,6 +4,8 @@ scale(item, context, direction, reason) if scale_down(item, context, reason) and
 
 evaluation_window(window) if window = {{#if evaluate_duration_secs}}{{evaluate_duration_secs}}{{else}}60{{/if}};
 
+min_utilization(utilization) if utilization = {{#if min_task_utilization}}{{min_task_utilization}}{{else}}0.25{{/if}};
+
 idle_source_telemetry(item) if
   item.flow.source_total_lag == nil
   or item.flow.source_records_lag_max == nil
