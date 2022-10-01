@@ -237,7 +237,17 @@ plan:
     - job_parallelism: 2
       hi_rate    : 5.12963
     - job_parallelism: 3
-      hi_rate    : 8.34375
+      hi_rate    : 7.93958
+    - job_parallelism: 9
+      hi_rate    : 24.55
+    - job_parallelism: 11
+      hi_rate    : 30.4083
+    - job_parallelism: 17
+      hi_rate    : 47.58148
+    - job_parallelism: 19
+      hi_rate    : 51.50185
+    - job_parallelism: 25
+      hi_rate    : 70.40625
     - job_parallelism: 27
       hi_rate    : 79.3875
     - job_parallelism: 32
@@ -247,9 +257,13 @@ plan:
 
   min_cluster_size: 1
   min_scaling_step: 2
-  restart_secs: 300
+
   max_catch_up_secs: 600
   recovery_valid_secs: 300
+  direction_restart_secs:
+    up: 220
+    down: 600
+
 
   # Optional setting that directs how springline should handle detected telemetry clipping, during
   # which necessary telemetry is not provided by Flink possibly due to misconfiguration or
