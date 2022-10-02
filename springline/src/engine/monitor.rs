@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -59,7 +60,7 @@ impl From<PlanningFeedback> for Telemetry {
 struct ActionFeedback {
     pub is_rescaling: bool,
     pub last_deployment: Option<DateTime<Utc>>,
-    pub rescale_restart: Option<(ScaleDirection, Duration)>,
+    pub rescale_restart: HashMap<ScaleDirection, Duration>,
 }
 
 impl From<ActionFeedback> for Telemetry {
@@ -79,11 +80,12 @@ impl From<ActionFeedback> for Telemetry {
             );
         }
 
-        if let Some((direction, restart_duration)) = feedback.rescale_restart {
-            let restart_table: TableType = maplit::hashmap! {
-                plan::DIRECTION.to_string() => direction.to_string().into(),
-                plan::DURATION_SECS.to_string() => restart_duration.as_secs_f64().into(),
-            };
+        if !feedback.rescale_restart.is_empty() {
+            let mut restart_table: TableType =
+                HashMap::with_capacity(feedback.rescale_restart.len());
+            for (d, r) in feedback.rescale_restart {
+                restart_table.insert(d.to_string(), r.as_secs_f64().into());
+            }
 
             telemetry.insert(
                 plan::PLANNING__RESCALE_RESTART.to_string(),
@@ -416,7 +418,8 @@ impl Monitor {
                     None
                 }
             })
-            .map(|duration| (plan.direction(), duration));
+            .map(|duration| maplit::hashmap! { plan.direction() => duration })
+            .unwrap_or_else(HashMap::new);
 
         ActionFeedback {
             is_rescaling: false,
@@ -507,3 +510,63 @@ pub static GOVERNANCE_PLAN_ACCEPTED: Lazy<IntGauge> = Lazy::new(|| {
     )
     .expect("failed creating governance_plan_accepted metric")
 });
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::phases::plan::PlanningContext;
+    use claim::*;
+    use pretty_assertions::assert_eq;
+    use pretty_snowflake::Id;
+    use proctor::elements::TelemetryValue;
+    use std::time::Duration;
+
+    #[test]
+    fn test_action_feedback_telemetry_serde() {
+        let now = Utc::now();
+        let now_rep = format!("{}", now.format(FORMAT));
+
+        let feedback = ActionFeedback {
+            is_rescaling: false,
+            last_deployment: Some(now),
+            rescale_restart: maplit::hashmap! { ScaleDirection::Down => Duration::from_secs_f32(799.5) },
+        };
+
+        let mut actual: Telemetry = feedback.clone().into();
+        assert_eq!(
+            actual,
+            maplit::hashmap! {
+                crate::phases::eligibility::CLUSTER__IS_RESCALING.to_string() => false.into(),
+                crate::phases::eligibility::CLUSTER__LAST_DEPLOYMENT.to_string() => now_rep.into(),
+                plan::PLANNING__RESCALE_RESTART.to_string() => maplit::hashmap! {
+                    ScaleDirection::Down.to_string() => TelemetryValue::Float(799.5),
+                }.into(),
+            }
+            .into()
+        );
+
+        // extend to plan context
+        let corr_id = Id::direct("PlanningContext", 123, "abs");
+        let recv = Timestamp::now();
+        actual.insert("correlation_id".to_string(), corr_id.clone().into());
+        actual.insert("recv_timestamp".to_string(), recv.into());
+        actual.insert("cluster.total_task_slots".to_string(), 16.into());
+        actual.insert("cluster.free_task_slots".to_string(), 0.into());
+
+        let actual_context: PlanningContext = assert_ok!(actual.try_into());
+
+        assert_eq!(
+            actual_context,
+            PlanningContext {
+                correlation_id: corr_id,
+                recv_timestamp: recv,
+                min_scaling_step: None,
+                total_task_slots: 16,
+                free_task_slots: 0,
+                rescale_restart: maplit::hashmap! { ScaleDirection::Down => Duration::from_secs_f32(799.5), },
+                max_catch_up: None,
+                recovery_valid: None,
+            },
+        )
+    }
+}

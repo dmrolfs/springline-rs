@@ -52,7 +52,9 @@ pub struct PlanningContext {
     /// Time expected to restart Flink when scaling. Baseline time is set via configuration, but as
     /// springline rescales, it measures the restart duration and updates planning accordingly.
     #[serde(default, rename = "planning.rescale_restart_secs")]
-    #[serde_as(as = "HashMap<serde_with::DisplayFromStr, serde_with::DurationSeconds<u64>>")]
+    #[serde_as(
+        as = "HashMap<serde_with::DisplayFromStr, serde_with::DurationSecondsWithFrac<f64>>"
+    )]
     pub rescale_restart: HashMap<ScaleDirection, Duration>,
 
     /// Configured maximum time allowed to catch up processing accumulated records after the
@@ -240,7 +242,7 @@ mod tests {
                 Token::Str("planning.rescale_restart_secs"),
                 Token::Map { len: Some(1) },
                 Token::Str("down"),
-                Token::U64(23),
+                Token::F64(23_f64),
                 Token::MapEnd,
                 Token::Str("planning.max_catch_up_secs"),
                 Token::None,
