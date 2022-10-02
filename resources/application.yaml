@@ -260,6 +260,9 @@ plan:
 
   max_catch_up_secs: 600
   recovery_valid_secs: 300
+
+  # Optional starting point for restart planning for `up` and `down` rescaling.
+  # Unspecified restart times for a direction is 3 minutes.
   direction_restart_secs:
     up: 220
     down: 600

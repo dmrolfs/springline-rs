@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::time::Duration;
 
 use chrono::{DateTime, TimeZone, Utc};
@@ -18,7 +19,7 @@ use springline::flink::{
 use springline::phases::decision::{DecisionOutcome, DecisionResult};
 use springline::phases::plan::{
     make_performance_repository, ClippingHandlingSettings, FlinkPlanningMonitor, ForecastInputs,
-    PlanningContext, PlanningMeasurement, PlanningParameters,
+    PlanningContext, PlanningMeasurement, PlanningParameters, ScaleDirection,
 };
 use springline::phases::plan::{
     FlinkPlanning, LeastSquaresWorkloadForecaster, PerformanceRepositorySettings,
@@ -283,7 +284,10 @@ async fn test_flink_planning_linear() {
     let main_span = tracing::info_span!("test_flink_planning_linear");
     let _ = main_span.enter();
 
-    let restart_duration = Duration::from_secs(2 * 60);
+    let restart_duration = maplit::hashmap! {
+        ScaleDirection::Up => Duration::from_secs(2 * 60),
+        ScaleDirection::Down => Duration::from_secs(2 * 60),
+    };
     let max_catch_up_duration = Duration::from_secs(13 * 60);
     let recovery_valid_offset = Duration::from_secs(5 * 60);
     let inputs = assert_ok!(ForecastInputs::new(
@@ -443,7 +447,10 @@ async fn test_flink_planning_sine() {
     let main_span = tracing::info_span!("test_flink_planning_sine");
     let _ = main_span.enter();
 
-    let restart_duration = Duration::from_secs(2 * 60);
+    let restart_duration = maplit::hashmap! {
+        ScaleDirection::Up => Duration::from_secs(2 * 60),
+        ScaleDirection::Down => Duration::from_secs(2 * 60),
+    };
     let max_catch_up_duration = Duration::from_secs(13 * 60);
     let recovery_valid_offset = Duration::from_secs(5 * 60);
     let inputs = assert_ok!(ForecastInputs::new(
@@ -489,7 +496,7 @@ async fn test_flink_planning_sine() {
                 min_scaling_step: Some(min_scaling_step),
                 total_task_slots: 2,
                 free_task_slots: 0,
-                rescale_restart: None,
+                rescale_restart: HashMap::new(),
                 max_catch_up: None,
                 recovery_valid: None,
             })
@@ -618,7 +625,10 @@ async fn test_flink_planning_context_change() {
     let _ = main_span.enter();
 
     let inputs = assert_ok!(ForecastInputs::new(
-        Duration::from_secs(2 * 60),
+        maplit::hashmap! {
+            ScaleDirection::Up => Duration::from_secs(2 * 60),
+            ScaleDirection::Down => Duration::from_secs(2 * 60),
+        },
         Duration::from_secs(13 * 60),
         Duration::from_secs(5 * 60),
     ));
@@ -739,7 +749,10 @@ async fn test_flink_planning_context_change() {
             total_task_slots: nr_taskmanagers,
             free_task_slots: 0,
             min_scaling_step: Some(100),
-            rescale_restart: Some(Duration::from_millis(1)),
+            rescale_restart: maplit::hashmap! {
+                ScaleDirection::Up => Duration::from_millis(1),
+                ScaleDirection::Down => Duration::from_millis(1),
+            },
             max_catch_up: Some(Duration::from_millis(2)),
             recovery_valid: Some(Duration::from_millis(3)),
         })
@@ -750,7 +763,13 @@ async fn test_flink_planning_context_change() {
     match context_event.as_ref() {
         PlanEvent::ContextChanged(ctx) => {
             assert_eq!(assert_some!(ctx.min_scaling_step), 100);
-            assert_eq!(assert_some!(ctx.rescale_restart), Duration::from_millis(1));
+            assert_eq!(
+                ctx.rescale_restart,
+                maplit::hashmap! {
+                    ScaleDirection::Up => Duration::from_millis(1),
+                    ScaleDirection::Down => Duration::from_millis(1),
+                }
+            );
             assert_eq!(assert_some!(ctx.max_catch_up), Duration::from_millis(2));
             assert_eq!(assert_some!(ctx.recovery_valid), Duration::from_millis(3));
         },

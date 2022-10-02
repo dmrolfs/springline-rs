@@ -1,10 +1,12 @@
+use std::collections::HashMap;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 
 use crate::phases::plan::{
-    BenchmarkRange, ClippingHandlingSettings, PerformanceRepositorySettings, SpikeSettings,
+    BenchmarkRange, ClippingHandlingSettings, PerformanceRepositorySettings, ScaleDirection,
+    SpikeSettings,
 };
 
 #[serde_as]
@@ -19,9 +21,9 @@ pub struct PlanSettings {
 
     /// Starting estimated time used to restart the flink job. This time is measured and fed back
     /// by springline for subsequent rescale planning.
-    #[serde_as(as = "serde_with::DurationSeconds<u64>")]
-    #[serde(rename = "restart_secs")]
-    pub restart: Duration,
+    #[serde_as(as = "HashMap<serde_with::DisplayFromStr, serde_with::DurationSeconds<u64>>")]
+    #[serde(rename = "direction_restart_secs")]
+    pub direction_restart: HashMap<ScaleDirection, Duration>,
 
     /// Time allowed for the cluster to catch up processing messages after rescaling restart.
     #[serde_as(as = "serde_with::DurationSeconds<u64>")]
@@ -66,10 +68,15 @@ pub struct PlanSettings {
 
 impl Default for PlanSettings {
     fn default() -> Self {
+        let direction_restart = maplit::hashmap! {
+            ScaleDirection::Up => Duration::from_secs(210),
+            ScaleDirection::Down => Duration::from_secs(600),
+        };
+
         Self {
             min_cluster_size: 1,
             min_scaling_step: 1,
-            restart: Duration::from_secs(2 * 60),
+            direction_restart,
             max_catch_up: Duration::from_secs(13 * 60),
             recovery_valid: Duration::from_secs(5 * 60),
             clipping_handling: ClippingHandlingSettings::Ignore,
@@ -93,9 +100,8 @@ mod tests {
         let settings = PlanSettings {
             min_cluster_size: 3,
             min_scaling_step: 2,
-            restart: Duration::from_secs(3 * 60),
+            direction_restart: maplit::hashmap! { ScaleDirection::Up => Duration::from_secs(210), },
             max_catch_up: Duration::from_secs(10 * 60),
-            recovery_valid: Duration::from_secs(5 * 60),
             clipping_handling: ClippingHandlingSettings::TemporaryLimit {
                 reset_timeout: Duration::from_secs(350),
             },
@@ -107,12 +113,12 @@ mod tests {
                 BenchmarkRange::new(1, None, Some(3.14159.into())),
                 BenchmarkRange::new(27, None, Some(79.3875.into())),
             ],
-            window: 20,
             spike: SpikeSettings {
                 std_deviation_threshold: 3.1,
                 influence: 0.75,
                 length_threshold: 3,
             },
+            ..PlanSettings::default()
         };
 
         assert_tokens(
@@ -123,8 +129,11 @@ mod tests {
                 Token::U32(3),
                 Token::Str("min_scaling_step"),
                 Token::U32(2),
-                Token::Str("restart_secs"),
-                Token::U64(3 * 60),
+                Token::Str("direction_restart_secs"),
+                Token::Map { len: Some(1) },
+                Token::Str("up"),
+                Token::U64(210),
+                Token::MapEnd,
                 Token::Str("max_catch_up_secs"),
                 Token::U64(10 * 60),
                 Token::Str("recovery_valid_secs"),

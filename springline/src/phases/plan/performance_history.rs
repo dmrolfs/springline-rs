@@ -129,9 +129,9 @@ enum BenchNeighbors {
 impl BenchNeighbors {
     fn job_parallelism_for(&self, workload_rate: RecordsPerSecond) -> u32 {
         match self {
-            BenchNeighbors::BelowLowest(lo) => Self::extrapolate_lo(workload_rate, lo),
-            BenchNeighbors::AboveHighest(hi) => Self::extrapolate_hi(workload_rate, hi),
-            BenchNeighbors::Between { lo, hi } => Self::interpolate(workload_rate, lo, hi),
+            Self::BelowLowest(lo) => Self::extrapolate_lo(workload_rate, lo),
+            Self::AboveHighest(hi) => Self::extrapolate_hi(workload_rate, hi),
+            Self::Between { lo, hi } => Self::interpolate(workload_rate, lo, hi),
         }
     }
 

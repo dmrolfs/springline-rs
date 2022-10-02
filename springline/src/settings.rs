@@ -225,7 +225,7 @@ mod tests {
     use crate::kubernetes::{KubernetesApiConstraints, KubernetesDeployResource};
     use crate::phases::plan::{
         BenchmarkRange, ClippingHandlingSettings, PerformanceRepositorySettings,
-        PerformanceRepositoryType, SpikeSettings,
+        PerformanceRepositoryType, ScaleDirection, SpikeSettings,
     };
     use crate::phases::sense::flink::Aggregation::Sum;
     use crate::phases::sense::flink::{
@@ -413,7 +413,10 @@ mod tests {
             plan: PlanSettings {
                 min_cluster_size: 1,
                 min_scaling_step: 2,
-                restart: Duration::from_secs(120),
+                direction_restart: maplit::hashmap! {
+                    ScaleDirection::Up => Duration::from_secs(220),
+                    ScaleDirection::Down => Duration::from_secs(600),
+                },
                 max_catch_up: Duration::from_secs(600),
                 recovery_valid: Duration::from_secs(300),
                 clipping_handling: ClippingHandlingSettings::Ignore,
@@ -606,7 +609,10 @@ mod tests {
         plan: PlanSettings {
             min_cluster_size: 1,
             min_scaling_step: 2,
-            restart: Duration::from_secs(5 * 60),
+            direction_restart: maplit::hashmap! {
+                ScaleDirection::Up => Duration::from_secs(220),
+                ScaleDirection::Down => Duration::from_secs(600),
+            },
             max_catch_up: Duration::from_secs(10 * 60),
             recovery_valid: Duration::from_secs(5 * 60),
             clipping_handling: ClippingHandlingSettings::PermanentLimit,
@@ -618,8 +624,11 @@ mod tests {
                 BenchmarkRange::new(1, None, Some(2.59375.into())),
                 BenchmarkRange::new(2, None, Some(5.12963.into())),
                 BenchmarkRange::new(3, None, Some(7.93958.into())),
+                BenchmarkRange::new(9, None, Some(24.55.into())),
                 BenchmarkRange::new(11, None, Some(30.4083.into())),
+                BenchmarkRange::new(17, None, Some(47.58148.into())),
                 BenchmarkRange::new(19, None, Some(51.50185.into())),
+                BenchmarkRange::new(25, None, Some(70.40625.into())),
                 BenchmarkRange::new(27, None, Some(79.3875.into())),
                 BenchmarkRange::new(32, None, Some(90.0852.into())),
                 BenchmarkRange::new(64, Some(96.27037.into()), None),

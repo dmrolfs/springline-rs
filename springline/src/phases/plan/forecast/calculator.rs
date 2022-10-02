@@ -1,3 +1,5 @@
+use once_cell::sync::Lazy;
+use std::collections::HashMap;
 use std::fmt::Debug;
 use std::time::Duration;
 
@@ -5,33 +7,47 @@ use proctor::elements::{RecordsPerSecond, Timestamp};
 use proctor::error::PlanError;
 
 use super::{Forecaster, WorkloadForecast, WorkloadMeasurement};
-use crate::phases::plan::{PLANNING_RECOVERY_WORKLOAD_RATE, PLANNING_VALID_WORKLOAD_RATE};
+use crate::phases::plan::{
+    ScaleDirection, PLANNING_RECOVERY_WORKLOAD_RATE, PLANNING_VALID_WORKLOAD_RATE,
+};
 use crate::settings::PlanSettings;
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ForecastInputs {
-    pub restart: Duration,
+    pub direction_restart: HashMap<ScaleDirection, Duration>,
     pub max_catch_up: Duration,
     pub valid_offset: Duration,
 }
 
+static DEFAULT_DIRECTION_RESTART: Lazy<HashMap<ScaleDirection, Duration>> = Lazy::new(|| {
+    maplit::hashmap! {
+        ScaleDirection::Up => Duration::from_secs(180),
+        ScaleDirection::Down => Duration::from_secs(180),
+    }
+});
+
 impl ForecastInputs {
     pub fn new(
-        restart: Duration, max_catch_up: Duration, valid_offset: Duration,
+        restarts: HashMap<ScaleDirection, Duration>, max_catch_up: Duration, valid_offset: Duration,
     ) -> Result<Self, PlanError> {
-        Self { restart, max_catch_up, valid_offset }.check()
+        let mut direction_restart = DEFAULT_DIRECTION_RESTART.clone();
+        direction_restart.extend(restarts);
+        Self { direction_restart, max_catch_up, valid_offset }.check()
     }
 
     pub fn from_settings(settings: &PlanSettings) -> Result<Self, PlanError> {
         Self::new(
-            settings.restart,
+            settings.direction_restart.clone(),
             settings.max_catch_up,
             settings.recovery_valid,
         )
     }
 
     pub fn check(self) -> Result<Self, PlanError> {
-        let _ = Self::check_duration("restart", self.restart)?;
+        for (dir, dur) in self.direction_restart.iter() {
+            let _ = Self::check_duration(format!("restart::{}", dir).as_str(), *dur)?;
+        }
+
         let _ = Self::check_duration("max_catch_up", self.max_catch_up)?;
         let _ = Self::check_duration("valid_offset", self.valid_offset)?;
         Ok(self)
@@ -107,9 +123,9 @@ impl<F: Forecaster> ForecastCalculator<F> {
 
     #[tracing::instrument(level="debug", skip(self), fields(inputs=?self.inputs,))]
     pub fn calculate_target_rate(
-        &mut self, trigger_point: Timestamp, buffered_records: f64,
+        &mut self, trigger_point: Timestamp, direction: &ScaleDirection, buffered_records: f64,
     ) -> Result<RecordsPerSecond, PlanError> {
-        let recovery = self.calculate_recovery_timestamp_from(trigger_point);
+        let recovery = self.calculate_recovery_timestamp_from(trigger_point, direction);
         let valid = self.calculate_valid_timestamp_after_recovery(recovery);
         tracing::debug!( recovery=?recovery.as_utc(), valid=?valid.as_utc(), "cluster scaling timestamp markers estimated." );
 
@@ -138,8 +154,16 @@ impl<F: Forecaster> ForecastCalculator<F> {
         Ok(target_rate)
     }
 
-    fn calculate_recovery_timestamp_from(&self, timestamp: Timestamp) -> Timestamp {
-        timestamp + self.inputs.restart + self.inputs.max_catch_up
+    fn calculate_recovery_timestamp_from(
+        &self, timestamp: Timestamp, direction: &ScaleDirection,
+    ) -> Timestamp {
+        let mut recovery_ts = timestamp + self.inputs.max_catch_up;
+
+        if let Some(restart) = self.inputs.direction_restart.get(direction) {
+            recovery_ts = recovery_ts + *restart;
+        }
+
+        recovery_ts
     }
 
     fn calculate_valid_timestamp_after_recovery(&self, recovery: Timestamp) -> Timestamp {
@@ -165,6 +189,7 @@ mod tests {
     use approx::assert_relative_eq;
     use chrono::Utc;
     use claim::*;
+    use std::time::Duration;
 
     use super::*;
     use crate::phases::plan::forecast::*;
@@ -172,36 +197,43 @@ mod tests {
     #[test]
     fn test_creation() {
         let d1 = Duration::from_secs(2 * 60);
+        let rd = maplit::hashmap! { ScaleDirection::Up => d1, ScaleDirection::Down => d1, };
         let d2 = Duration::from_secs(13 * 60);
         let d3 = Duration::from_secs(5 * 60);
-        let inputs = assert_ok!(ForecastInputs::new(d1, d2, d3));
+        let inputs = assert_ok!(ForecastInputs::new(rd.clone(), d2, d3));
 
         assert_ok!(ForecastCalculator::new(MockForecaster::new(), inputs));
         assert_ok!(ForecastCalculator::new(
             MockForecaster::new(),
             assert_ok!(ForecastInputs::new(
-                d1,
+                rd.clone(),
                 Duration::from_millis(123_456_7),
                 d3
             ))
         ));
 
-        let err1 = assert_err!(ForecastInputs::new(Duration::ZERO, d1, d3));
-        claim::assert_matches!(err1, PlanError::ZeroDuration(msg) if msg == "workload forecast restart".to_string());
+        assert_ok!(ForecastInputs::new(HashMap::new(), d1, d3));
 
-        let err2 = assert_err!(ForecastInputs::new(d1, Duration::ZERO, d3));
+        let err2 = assert_err!(ForecastInputs::new(rd.clone(), Duration::ZERO, d3));
         claim::assert_matches!(err2, PlanError::ZeroDuration(msg) if msg == "workload forecast max_catch_up".to_string());
 
-        let err3 = assert_err!(ForecastInputs::new(d1, d2, Duration::ZERO));
+        let err3 = assert_err!(ForecastInputs::new(rd, d2, Duration::ZERO));
         claim::assert_matches!(err3, PlanError::ZeroDuration(msg) if msg == "workload forecast valid_offset".to_string());
     }
 
     #[test]
     fn test_recovery_rate() {
-        let restart = Duration::from_secs(2 * 60);
+        let restart = maplit::hashmap! {
+            ScaleDirection::Up => Duration::from_secs(2 * 60),
+            ScaleDirection::Down => Duration::from_secs(2 * 60),
+        };
         let max_catch_up = Duration::from_secs(13 * 60);
         let valid_offset = Duration::from_secs(5 * 60);
-        let inputs = assert_ok!(ForecastInputs::new(restart, max_catch_up, valid_offset));
+        let inputs = assert_ok!(ForecastInputs::new(
+            restart.clone(),
+            max_catch_up,
+            valid_offset
+        ));
 
         let c1 = assert_ok!(ForecastCalculator::new(MockForecaster::new(), inputs));
         assert_relative_eq!(
@@ -232,7 +264,10 @@ mod tests {
 
     #[test]
     fn test_calculate_valid_timestamp_after_recovery() {
-        let restart = Duration::from_secs(2 * 60);
+        let restart = maplit::hashmap! {
+            ScaleDirection::Up => Duration::from_secs(2 * 60),
+            ScaleDirection::Down => Duration::from_secs(2 * 60),
+        };
         let max_catch_up = Duration::from_secs(13 * 60);
         let valid_offset = Duration::from_millis(5 * 60 * 1_000 + 750);
         let inputs = assert_ok!(ForecastInputs::new(restart, max_catch_up, valid_offset));
@@ -251,7 +286,10 @@ mod tests {
 
     #[test]
     fn test_calculate_recovery_timestamp_from() {
-        let restart = Duration::from_secs(2 * 60);
+        let restart = maplit::hashmap! {
+            ScaleDirection::Up => Duration::from_secs(2 * 60),
+            ScaleDirection::Down => Duration::from_secs(2 * 60),
+        };
         let max_catch_up = Duration::from_millis(13 * 60 * 1_000 + 400);
         let valid_offset = Duration::from_secs(5 * 60);
         let inputs = assert_ok!(ForecastInputs::new(restart, max_catch_up, valid_offset));
@@ -262,7 +300,7 @@ mod tests {
         let nsecs = now.timestamp_subsec_nanos() + 400 * 1_000_000;
         let ts: Timestamp = now.into();
         assert_relative_eq!(
-            c1.calculate_recovery_timestamp_from(ts),
+            c1.calculate_recovery_timestamp_from(ts, &ScaleDirection::Up),
             Timestamp::new(secs, nsecs),
             epsilon = 1.0e-10
         );
@@ -275,7 +313,10 @@ mod tests {
         let _main_span_guard = main_span.enter();
 
         let now = Utc::now();
-        let restart = Duration::from_secs(2 * 60);
+        let restart = maplit::hashmap! {
+            ScaleDirection::Up => Duration::from_secs(2 * 60),
+            ScaleDirection::Down => Duration::from_secs(2 * 60),
+        };
         let max_catch_up = Duration::from_secs(13 * 60);
         let valid_offset = Duration::from_secs(5 * 60);
         let inputs = assert_ok!(ForecastInputs::new(restart, max_catch_up, valid_offset));
@@ -297,16 +338,16 @@ mod tests {
 
         let mut c1 = assert_ok!(ForecastCalculator::new(
             mock_workload_calc_builder(0.25.into()),
-            inputs
+            inputs.clone()
         ));
-        let actual = assert_ok!(c1.calculate_target_rate(now.into(), 333.));
+        let actual = assert_ok!(c1.calculate_target_rate(now.into(), &ScaleDirection::Up, 333.));
         assert_relative_eq!(actual, RecordsPerSecond::new(0.5551282), epsilon = 1.0e-7);
 
         let mut c2 = assert_ok!(ForecastCalculator::new(
             mock_workload_calc_builder(314.159.into()),
             inputs
         ));
-        let actual = assert_ok!(c2.calculate_target_rate(now.into(), 333.));
+        let actual = assert_ok!(c2.calculate_target_rate(now.into(), &ScaleDirection::Up, 333.));
         assert_relative_eq!(actual, RecordsPerSecond::new(314.159), epsilon = 1.0e-10);
         Ok(())
     }

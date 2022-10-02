@@ -1,25 +1,28 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fmt::{self, Debug};
 use std::time::Duration;
 
 use crate::flink::MC_CLUSTER__FREE_TASK_SLOTS;
+use crate::phases::decision::DECISION_DIRECTION;
+use crate::phases::plan::{ForecastInputs, ScaleDirection};
 use once_cell::sync::Lazy;
 use pretty_snowflake::{Id, Label};
 use proctor::elements::Timestamp;
 use proctor::phases::sense::SubscriptionRequirements;
 use proctor::Correlation;
-use prometheus::core::{AtomicU64, GenericGauge};
+use prometheus::core::{AtomicU64, GenericGauge, GenericGaugeVec};
 use prometheus::Opts;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
-
-use crate::phases::plan::ForecastInputs;
 
 pub const PLANNING__TOTAL_TASK_SLOTS: &str = "cluster.total_task_slots";
 pub const PLANNING__FREE_TASK_SLOTS: &str = MC_CLUSTER__FREE_TASK_SLOTS;
 pub const PLANNING__RESCALE_RESTART: &str = "planning.rescale_restart_secs";
 pub const PLANNING__MAX_CATCH_UP: &str = "planning.max_catch_up_secs";
 pub const PLANNING__RECOVERY_VALID: &str = "planning.recovery_valid_secs";
+
+pub const DIRECTION: &str = DECISION_DIRECTION;
+pub const DURATION_SECS: &str = "duration_secs";
 
 #[serde_as]
 #[derive(Label, Clone, Serialize, Deserialize)]
@@ -49,8 +52,8 @@ pub struct PlanningContext {
     /// Time expected to restart Flink when scaling. Baseline time is set via configuration, but as
     /// springline rescales, it measures the restart duration and updates planning accordingly.
     #[serde(default, rename = "planning.rescale_restart_secs")]
-    #[serde_as(as = "Option<serde_with::DurationSeconds<u64>>")]
-    pub rescale_restart: Option<Duration>,
+    #[serde_as(as = "HashMap<serde_with::DisplayFromStr, serde_with::DurationSeconds<u64>>")]
+    pub rescale_restart: HashMap<ScaleDirection, Duration>,
 
     /// Configured maximum time allowed to catch up processing accumulated records after the
     /// rescaling action. If the tolerating a longer catch-up time, allows the target cluster size
@@ -96,9 +99,9 @@ impl PlanningContext {
 
     #[tracing::instrument(level = "trace")]
     pub fn patch_inputs(&self, inputs: &mut ForecastInputs) {
-        if let Some(r) = self.rescale_restart {
-            tracing::info!(rescale_restart=?r, old_restart_input=?inputs.restart, "patching planning rescale_restart");
-            inputs.restart = r;
+        if !self.rescale_restart.is_empty() {
+            tracing::info!(rescale_restart=?self.rescale_restart, old_restart_input=?inputs.direction_restart, "patching planning rescale_restart");
+            inputs.direction_restart.extend(self.rescale_restart.clone());
         }
 
         if let Some(c) = self.max_catch_up {
@@ -141,44 +144,6 @@ impl SubscriptionRequirements for PlanningContext {
     }
 }
 
-// impl UpdateMetrics for PlanningContext {
-//     fn update_metrics_for(phase_name: &str) -> UpdateMetricsFn {
-//         let phase_name = phase_name.to_string();
-//         let update_fn = move |subscription_name: &str, telemetry: &Telemetry| match telemetry
-//             .clone()
-//             .try_into::<Self>()
-//         {
-//             Ok(ctx) => {
-//                 if let Some(min_scaling_step) = ctx.min_scaling_step {
-//                     PLANNING_CTX_MIN_SCALING_STEP.set(u64::from(min_scaling_step));
-//                 }
-//
-//                 if let Some(restart) = ctx.rescale_restart {
-//                     PLANNING_CTX_FORECASTING_RESTART_SECS.set(restart.as_secs());
-//                 }
-//
-//                 if let Some(max_catch_up) = ctx.max_catch_up {
-//                     PLANNING_CTX_FORECASTING_MAX_CATCH_UP_SECS.set(max_catch_up.as_secs());
-//                 }
-//
-//                 if let Some(recovery_valid) = ctx.recovery_valid {
-//                     PLANNING_CTX_FORECASTING_RECOVERY_VALID_SECS.set(recovery_valid.as_secs());
-//                 }
-//             },
-//
-//             Err(err) => {
-//                 tracing::warn!(
-//                     error=?err, %phase_name,
-//                     "failed to update eligibility context metrics on subscription: {}", subscription_name
-//                 );
-//                 proctor::track_errors(&phase_name, &ProctorError::PlanPhase(err.into()));
-//             },
-//         };
-//
-//         Box::new(update_fn)
-//     }
-// }
-
 pub static PLANNING_CTX_MIN_SCALING_STEP: Lazy<GenericGauge<AtomicU64>> = Lazy::new(|| {
     GenericGauge::with_opts(
         Opts::new(
@@ -190,16 +155,18 @@ pub static PLANNING_CTX_MIN_SCALING_STEP: Lazy<GenericGauge<AtomicU64>> = Lazy::
     .expect("failed creating planning_ctx_min_scaling_step metric")
 });
 
-pub static PLANNING_CTX_FORECASTING_RESTART_SECS: Lazy<GenericGauge<AtomicU64>> = Lazy::new(|| {
-    GenericGauge::with_opts(
-        Opts::new(
-            "planning_ctx_forecasting_restart_secs",
-            "expected restart duration in secs used for forecasting",
+pub static PLANNING_CTX_FORECASTING_RESTART_SECS: Lazy<GenericGaugeVec<AtomicU64>> =
+    Lazy::new(|| {
+        GenericGaugeVec::new(
+            Opts::new(
+                "planning_ctx_forecasting_restart_secs",
+                "expected rescale up restart duration in secs used for forecasting",
+            )
+            .const_labels(proctor::metrics::CONST_LABELS.clone()),
+            &["direction"],
         )
-        .const_labels(proctor::metrics::CONST_LABELS.clone()),
-    )
-    .expect("failed creating planning_ctx_forecasting_restart_secs metric")
-});
+        .expect("failed creating planning_ctx_forecasting_up_restart_secs metric")
+    });
 
 pub static PLANNING_CTX_FORECASTING_MAX_CATCH_UP_SECS: Lazy<GenericGauge<AtomicU64>> =
     Lazy::new(|| {
@@ -241,7 +208,9 @@ mod tests {
             total_task_slots: 1,
             free_task_slots: 0,
             min_scaling_step: None,
-            rescale_restart: Some(Duration::from_secs(17)),
+            rescale_restart: maplit::hashmap! {
+                ScaleDirection::Down =>Duration::from_secs(23),
+            },
             max_catch_up: None,
             recovery_valid: Some(Duration::from_secs(22)),
         };
@@ -269,8 +238,10 @@ mod tests {
                 Token::Str("cluster.free_task_slots"),
                 Token::U32(0),
                 Token::Str("planning.rescale_restart_secs"),
-                Token::Some,
-                Token::U64(17),
+                Token::Map { len: Some(1) },
+                Token::Str("down"),
+                Token::U64(23),
+                Token::MapEnd,
                 Token::Str("planning.max_catch_up_secs"),
                 Token::None,
                 Token::Str("planning.recovery_valid_secs"),

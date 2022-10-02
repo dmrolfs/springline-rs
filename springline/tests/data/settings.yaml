@@ -94,7 +94,11 @@ decision:
 plan:
   min_cluster_size: 1
   min_scaling_step: 2
-  restart_secs: 120
+
+  direction_restart_secs:
+    up: 220
+    down: 600
+
   max_catch_up_secs: 600
   recovery_valid_secs: 300
   performance_repository:

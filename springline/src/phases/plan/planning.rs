@@ -118,7 +118,8 @@ impl<F: Forecaster> FlinkPlanning<F> {
     ) -> Result<Self, PlanError> {
         performance_repository.check().await?;
 
-        let forecast_calculator = ForecastCalculator::new(forecaster, params.forecast_inputs)?;
+        let forecast_calculator =
+            ForecastCalculator::new(forecaster, params.forecast_inputs.clone())?;
 
         let name = planning_name.to_string();
         let performance_history =
@@ -205,14 +206,17 @@ impl<F: Forecaster> FlinkPlanning<F> {
     fn update_metrics(&self) {
         PLANNING_CTX_MIN_SCALING_STEP.set(u64::from(self.min_scaling_step));
 
-        PLANNING_CTX_FORECASTING_RESTART_SECS
-            .set(self.forecast_calculator.inputs.restart.as_secs());
-
         PLANNING_CTX_FORECASTING_MAX_CATCH_UP_SECS
             .set(self.forecast_calculator.inputs.max_catch_up.as_secs());
 
         PLANNING_CTX_FORECASTING_RECOVERY_VALID_SECS
             .set(self.forecast_calculator.inputs.valid_offset.as_secs());
+
+        for (d, r) in self.forecast_calculator.inputs.direction_restart.iter() {
+            PLANNING_CTX_FORECASTING_RESTART_SECS
+                .with_label_values(&[(*d).into()])
+                .set(r.as_secs());
+        }
     }
 
     #[tracing::instrument(level = "trace", skip(self, decision), fields(%decision))]
@@ -277,9 +281,11 @@ impl<F: Forecaster> FlinkPlanning<F> {
             let buffered_records = Self::buffered_lag_score(decision.item());
             let current_job_parallelism = decision.item().health.job_nonsource_max_parallelism;
 
-            let forecasted_workload = self
-                .forecast_calculator
-                .calculate_target_rate(decision.item().recv_timestamp, buffered_records)?;
+            let forecasted_workload = self.forecast_calculator.calculate_target_rate(
+                decision.item().recv_timestamp,
+                &decision.direction(),
+                buffered_records,
+            )?;
             PLANNING_FORECASTED_WORKLOAD.set(*forecasted_workload.as_ref());
 
             let required_job_parallelism =
@@ -500,7 +506,9 @@ mod tests {
     use crate::phases::plan::benchmark::*;
     use crate::phases::plan::forecast::*;
     use crate::phases::plan::performance_repository::*;
-    use crate::phases::plan::{PerformanceRepositorySettings, MINIMAL_JOB_PARALLELISM};
+    use crate::phases::plan::{
+        PerformanceRepositorySettings, ScaleDirection, MINIMAL_JOB_PARALLELISM,
+    };
 
     type TestPlanning = FlinkPlanning<LeastSquaresWorkloadForecaster>;
     #[allow(dead_code)]
@@ -560,7 +568,10 @@ mod tests {
                 SpikeSettings { influence: 0.25, ..SpikeSettings::default() },
             ),
             ForecastInputs {
-                restart: Duration::from_secs(2 * 60),       // restart
+                direction_restart: maplit::hashmap! {
+                    ScaleDirection::Up => Duration::from_secs(2 * 60),
+                    ScaleDirection::Down => Duration::from_secs(2 * 60),
+                },
                 max_catch_up: Duration::from_secs(13 * 60), // max_catch_up
                 valid_offset: Duration::from_secs(5 * 60),  // valid_offset
             },
@@ -811,14 +822,20 @@ mod tests {
             );
 
             let expected = ForecastInputs {
-                restart: Duration::from_secs(2 * 60),
+                direction_restart: maplit::hashmap! {
+                    ScaleDirection::Up => Duration::from_secs(2 * 60),
+                    ScaleDirection::Down => Duration::from_secs(2 * 60),
+                },
                 max_catch_up: Duration::from_secs(13 * 60),
                 valid_offset: Duration::from_secs(5 * 60),
             };
             assert_eq!(planning.forecast_calculator.inputs, expected);
 
             let expected = ForecastInputs {
-                restart: Duration::from_secs(33),
+                direction_restart: maplit::hashmap! {
+                    ScaleDirection::Up => Duration::from_secs(33),
+                    ScaleDirection::Down => Duration::from_secs(33),
+                },
                 valid_offset: Duration::from_secs(44),
                 ..expected
             };
@@ -829,7 +846,7 @@ mod tests {
                 total_task_slots: 11,
                 free_task_slots: 3,
                 min_scaling_step: None,
-                rescale_restart: Some(expected.restart),
+                rescale_restart: expected.direction_restart.clone(),
                 max_catch_up: None,
                 recovery_valid: Some(expected.valid_offset),
             };

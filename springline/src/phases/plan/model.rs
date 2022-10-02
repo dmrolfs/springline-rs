@@ -932,9 +932,9 @@ mod tests {
     }
 
     #[test]
-    fn test_specific_scale_plan_WIP() {
+    fn test_specific_scale_plan_wip() {
         once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
-        let main_span = tracing::info_span!("test_specific_scale_plan_WIP");
+        let main_span = tracing::info_span!("test_specific_scale_plan_wip");
         let _main_span_guard = main_span.enter();
 
         // cc b3d2f92ef005024f676107e8cbe251c9036fcfc1ebcf5abcb92a1f1464c58bc4 # shrinks to (direction, current_nr_task_managers, current_job_parallelism, calculated_parallelism, clipping_point) = (Up, 39, 1, Some(39), Some(1)), min_scaling_step = 1

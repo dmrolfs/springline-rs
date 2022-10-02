@@ -3,6 +3,7 @@ use std::future::Future;
 use clap::Parser;
 use futures::{future::FutureExt, pin_mut};
 use once_cell::sync::Lazy;
+use proctor::elements::telemetry::TableType;
 use proctor::graph::stage::{WithApi, WithMonitor};
 use prometheus::Registry;
 use settings_loader::{LoadingOptions, SettingsLoader};
@@ -202,9 +203,18 @@ fn make_settings_sensor(settings: &Settings) -> BoxedTelemetrySource {
     settings_telemetry.extend(settings.governance.rules.custom.clone());
 
     // todo: consider planning context telemetry
-    let rescale_restart = u32::try_from(settings.plan.restart.as_secs()).unwrap_or(u32::MAX);
     let max_catch_up = u32::try_from(settings.plan.max_catch_up.as_secs()).unwrap_or(u32::MAX);
     let recovery_valid = u32::try_from(settings.plan.recovery_valid.as_secs()).unwrap_or(u32::MAX);
+
+    let rescale_restart: TableType = settings
+        .plan
+        .direction_restart
+        .iter()
+        .map(|(direction, duration)| {
+            let secs = u32::try_from(duration.as_secs()).unwrap_or(u32::MAX);
+            (direction.to_string(), secs.into())
+        })
+        .collect();
 
     settings_telemetry.extend(maplit::hashmap! {
         "planning.min_scaling_step".to_string() => settings.plan.min_scaling_step.into(),

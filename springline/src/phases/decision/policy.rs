@@ -424,6 +424,8 @@ mod tests {
                 |
                 |evaluation_window(window) if window = 60;
                 |
+                |min_utilization(utilization) if utilization = 0.25;
+                |
                 |idle_source_telemetry(item) if
                 |  item.flow.source_total_lag == nil
                 |  or item.flow.source_records_lag_max == nil

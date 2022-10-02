@@ -3,11 +3,14 @@ use crate::phases;
 use crate::phases::eligibility::EligibilityOutcome;
 use crate::settings::DecisionSettings;
 use crate::Result;
+use anyhow::anyhow;
 use proctor::elements::{PolicySubscription, QueryResult};
 use proctor::phases::policy_phase::PolicyPhase;
 use proctor::phases::sense::{ClearinghouseSubscriptionAgent, SubscriptionChannel};
 use proctor::Correlation;
-use std::fmt::Display;
+use serde::{Deserialize, Serialize};
+use std::fmt;
+use std::str::FromStr;
 
 #[cfg(test)]
 #[allow(dead_code)]
@@ -66,11 +69,49 @@ where
     Ok((decision, channel))
 }
 
-#[derive(Debug, Display, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ScaleDirection {
     Up,
     Down,
     None,
+}
+
+impl fmt::Display for ScaleDirection {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.into())
+    }
+}
+
+impl From<ScaleDirection> for &str {
+    fn from(direction: ScaleDirection) -> Self {
+        (&direction).into()
+    }
+}
+
+impl From<&ScaleDirection> for &str {
+    fn from(direction: &ScaleDirection) -> Self {
+        match direction {
+            ScaleDirection::Up => "up",
+            ScaleDirection::Down => "down",
+            ScaleDirection::None => "none",
+        }
+    }
+}
+
+impl FromStr for ScaleDirection {
+    type Err = PolicyError;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "up" => Ok(Self::Up),
+            "down" => Ok(Self::Down),
+            "none" => Ok(Self::None),
+            _ => Err(PolicyError::Other(anyhow!(
+                "failed to parse direction value: {s}"
+            ))),
+        }
+    }
 }
 
 pub fn log_outcome_with_common_criteria(

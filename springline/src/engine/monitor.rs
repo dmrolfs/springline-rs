@@ -4,6 +4,7 @@ use std::time::Duration;
 use chrono::{DateTime, Utc};
 use enumflags2::BitFlags;
 use once_cell::sync::Lazy;
+use proctor::elements::telemetry::TableType;
 use proctor::elements::{RecordsPerSecond, Telemetry, Timestamp, FORMAT};
 use proctor::graph::stage::{ActorSourceApi, ActorSourceCmd};
 use proctor::phases::plan::{PlanEvent, PlanMonitor};
@@ -25,7 +26,9 @@ use crate::phases::eligibility::{EligibilityContext, EligibilityEvent, Eligibili
 use crate::phases::governance::{
     GovernanceContext, GovernanceEvent, GovernanceMonitor, GovernanceOutcome,
 };
-use crate::phases::plan::{FlinkPlanningEvent, FlinkPlanningMonitor, PlanningStrategy, ScalePlan};
+use crate::phases::plan::{
+    self, FlinkPlanningEvent, FlinkPlanningMonitor, PlanningStrategy, ScalePlan,
+};
 use crate::phases::{decision, WindowApi, WindowCmd};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -56,7 +59,7 @@ impl From<PlanningFeedback> for Telemetry {
 struct ActionFeedback {
     pub is_rescaling: bool,
     pub last_deployment: Option<DateTime<Utc>>,
-    pub rescale_restart: Option<Duration>,
+    pub rescale_restart: Option<(ScaleDirection, Duration)>,
 }
 
 impl From<ActionFeedback> for Telemetry {
@@ -76,18 +79,16 @@ impl From<ActionFeedback> for Telemetry {
             );
         }
 
-        if let Some(rescale_restart) = feedback.rescale_restart {
-            match i64::try_from(rescale_restart.as_secs()) {
-                Ok(rescale_restart_secs) => {
-                    telemetry.insert(
-                        crate::phases::plan::PLANNING__RESCALE_RESTART.to_string(),
-                        rescale_restart_secs.into(),
-                    );
-                },
-                Err(err) => {
-                    tracing::warn!(error=?err, "failed to convert rescale restart duration to seconds - not publishing");
-                },
-            }
+        if let Some((direction, restart_duration)) = feedback.rescale_restart {
+            let restart_table: TableType = maplit::hashmap! {
+                plan::DIRECTION.to_string() => direction.to_string().into(),
+                plan::DURATION_SECS.to_string() => restart_duration.as_secs_f64().into(),
+            };
+
+            telemetry.insert(
+                plan::PLANNING__RESCALE_RESTART.to_string(),
+                restart_table.into(),
+            );
         }
 
         telemetry
@@ -414,7 +415,8 @@ impl Monitor {
                     );
                     None
                 }
-            });
+            })
+            .map(|duration| (plan.direction(), duration));
 
         ActionFeedback {
             is_rescaling: false,
