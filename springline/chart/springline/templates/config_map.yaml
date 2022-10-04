@@ -99,7 +99,9 @@ data:
       performance_repository:
         storage: memory
       
-      clipping_handling: permanent_limit
+      clipping_handling: 
+        temporary_limit:
+            reset_timeout_secs: 14400
 
     governance:
       rules:

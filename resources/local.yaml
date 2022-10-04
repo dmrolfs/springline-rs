@@ -35,6 +35,10 @@ plan:
     storage: file
     storage_path: "./tmp"
 
+  clipping_handling:
+    temporary_limit:
+      reset_timeout_secs: 14400
+
 governance:
   rules:
     min_parallelism: 8

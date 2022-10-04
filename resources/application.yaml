@@ -278,7 +278,7 @@ plan:
   # `permanent_limit` will identify the parallelism level that clipping happens so that planning can
   # take that into account to cap the parallelism just below it.
   # `temporary_limit` allows you to set a `reset_timeout_secs` when the clipping level is reset.
-  clipping_handling: permanent_limit
+  clipping_handling: ignore
 
   window: 20
   spike:

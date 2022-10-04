@@ -5,7 +5,7 @@ imagePullSecrets:
 #  dnsTail: -api-dev.plm.platform.in.here.com
 deployment:
   log:
-    level: "info,springline::phases::plan=debug,springline::phases::act=debug"
+    level: "info,springline::flink=debug,springline::phases::plan=debug,springline::phases::act=debug"
     polar: "info"
     backtrace: "1"
 
@@ -42,9 +42,9 @@ application:
       min_idle_source_back_pressured_time_millis_per_sec: 150.0
 
   plan:
-      clipping_handling:
-        temporary_limit:
-          reset_timeout_secs: 14400 # 4 hours
+    clipping_handling:
+      temporary_limit:
+        reset_timeout_secs: 14400 # 4 hours
 
   governance:
     rules:

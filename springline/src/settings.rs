@@ -615,7 +615,7 @@ mod tests {
             },
             max_catch_up: Duration::from_secs(10 * 60),
             recovery_valid: Duration::from_secs(5 * 60),
-            clipping_handling: ClippingHandlingSettings::PermanentLimit,
+            clipping_handling: ClippingHandlingSettings::Ignore,
             performance_repository: PerformanceRepositorySettings {
                 storage: PerformanceRepositoryType::File,
                 storage_path: Some("./tmp".to_string()),
@@ -882,6 +882,12 @@ mod tests {
                             ..SETTINGS.decision.template_data.clone().unwrap()
                         }),
                         ..SETTINGS.decision.clone()
+                    },
+                    plan: PlanSettings {
+                        clipping_handling: ClippingHandlingSettings::TemporaryLimit {
+                            reset_timeout: Duration::from_secs(14400),
+                        },
+                        ..SETTINGS.plan.clone()
                     },
                     governance: GovernanceSettings {
                         rules: GovernanceRuleSettings {
