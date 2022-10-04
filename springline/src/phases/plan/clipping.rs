@@ -8,6 +8,16 @@ use std::collections::VecDeque;
 use std::fmt;
 use std::time::{Duration, Instant, SystemTime};
 
+/// Optional setting that directs how springline should handle detected telemetry clipping, during
+/// which necessary telemetry is not provided by Flink possibly due to misconfiguration or
+/// instability. For misconfiguration, if the non-source parallelism is allowed to get too high, the
+/// job operators can be "overwhelmed" by the effort to aggregate data that source telemetry is not
+/// published by Flink.
+/// The default is to `ignore`, and the corresponding decision rules may not be able to recognize the
+/// need to rescale.
+/// `permanent_limit` will identify the parallelism level that clipping happens so that planning can
+/// take that into account to cap the parallelism just below it.
+/// `temporary_limit` allows you to set a `reset_timeout_secs` when the clipping level is reset.
 #[serde_as]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
