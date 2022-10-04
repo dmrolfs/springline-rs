@@ -159,6 +159,7 @@ pub fn register_metrics(registry: &Registry) -> Result<()> {
         plan::PLANNING_PERFORMANCE_HISTORY_ENTRY_COUNT.clone(),
     ))?;
     registry.register(Box::new(plan::PLANNING_PARALLELISM_CLIPPING_POINT.clone()))?;
+    registry.register(Box::new(plan::PLANNING_PARALLELISM_CLIPPING_STATE.clone()))?;
 
     registry.register(Box::new(
         engine::ELIGIBILITY_IS_ELIGIBLE_FOR_SCALING.clone(),
