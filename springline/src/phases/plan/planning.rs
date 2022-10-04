@@ -357,10 +357,13 @@ impl<F: Forecaster> FlinkPlanning<F> {
 
         let mut handling = self.clipping_handling.lock().await;
         if is_clipping {
-            handling.set_clipping_point(item.health.job_max_parallelism);
-            let saved = handling.clipping_point();
-            tracing::warn!(?saved, item_p=%item.health.job_max_parallelism, "DMR: COMPARE HANDLING SAVED CLIPPING TO CELL ASSIGNMENT");
-            saved
+            handling.note_clipping(item.health.job_max_parallelism);
+            let effective_clipping_point = handling.clipping_point();
+            tracing::warn!(
+                ?effective_clipping_point, item_p=%item.health.job_max_parallelism,
+                "DMR: COMPARE HANDLING SAVED CLIPPING TO CELL ASSIGNMENT"
+            );
+            effective_clipping_point
         } else {
             handling.clipping_point()
         }
