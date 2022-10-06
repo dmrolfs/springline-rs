@@ -1,6 +1,7 @@
 use std::io::Write;
+use std::path::PathBuf;
 use std::str::FromStr;
-use std::{fs, io, path};
+use std::{fs, io};
 
 use clap::{Arg, Command};
 use thiserror::Error;
@@ -18,16 +19,15 @@ fn main() -> anyhow::Result<()> {
                 .help("from format - defaults to Ron")
                 .short('f')
                 .long("from")
-                .required(false)
-                .takes_value(true),
+                .required(false),
         )
-        .arg(Arg::new("to").help("to format").short('t').long("to").takes_value(true))
+        .arg(Arg::new("to").help("to format").short('t').long("to"))
         .get_matches();
 
-    let target = path::PathBuf::from(matches.value_of("config").unwrap());
+    let target = matches.get_one::<PathBuf>("config").unwrap();
     let doc = fs::read_to_string(target)?;
-    let from: ConfigFormat = matches.value_of_t("from").unwrap_or(ConfigFormat::Ron);
-    let to: ConfigFormat = matches.value_of_t("to").unwrap();
+    let from: ConfigFormat = matches.get_one("from").cloned().unwrap_or(ConfigFormat::Ron);
+    let to: ConfigFormat = matches.get_one("to").cloned().unwrap();
     transcode(doc, from, to)?;
     io::stdout().flush()?;
     Ok(())
