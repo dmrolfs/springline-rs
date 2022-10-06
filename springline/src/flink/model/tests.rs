@@ -37,6 +37,7 @@ macro_rules! modulo_signed_ext_impl {
 modulo_signed_ext_impl! { i8 i16 i32 i64 u32 }
 
 mod catalog {
+    use crate::model::NrReplicas;
     use pretty_assertions::assert_eq;
     use pretty_snowflake::{Id, Label, Labeling};
     use proctor::elements::{telemetry, Timestamp};
@@ -236,9 +237,9 @@ mod catalog {
                 ),
                 recv_timestamp: Timestamp::new(1647307527, 57406000),
                 health: JobHealthMetrics {
-                    job_max_parallelism: 4,
-                    job_source_max_parallelism: 4,
-                    job_nonsource_max_parallelism: 3,
+                    job_max_parallelism: Parallelism::new(4),
+                    job_source_max_parallelism: Parallelism::new(4),
+                    job_nonsource_max_parallelism: Parallelism::new(3),
                     job_uptime_millis: 201402,
                     job_nr_restarts: 0,
                     job_nr_completed_checkpoints: 0,
@@ -259,7 +260,7 @@ mod catalog {
                 },
                 cluster: ClusterMetrics {
                     nr_active_jobs: 0,
-                    nr_task_managers: 5,
+                    nr_task_managers: NrReplicas::new(5),
                     free_task_slots: 0,
                     task_cpu_load: 0.025,
                     task_heap_memory_used: 2511508464.0,
@@ -341,9 +342,9 @@ mod catalog {
             correlation_id: CORR_ID.clone(),
             recv_timestamp: ts,
             health: JobHealthMetrics {
-                job_max_parallelism: 0,
-                job_source_max_parallelism: 0,
-                job_nonsource_max_parallelism: 0,
+                job_max_parallelism: Parallelism::new(0),
+                job_source_max_parallelism: Parallelism::new(0),
+                job_nonsource_max_parallelism: Parallelism::new(0),
                 job_uptime_millis: 1_234_567,
                 job_nr_restarts: 3,
                 job_nr_completed_checkpoints: 12_345,
@@ -364,7 +365,7 @@ mod catalog {
             },
             cluster: ClusterMetrics {
                 nr_active_jobs: 1,
-                nr_task_managers: 4,
+                nr_task_managers: NrReplicas::new(4),
                 free_task_slots: 7,
                 task_cpu_load: 0.65,
                 task_heap_memory_used: 92_987_f64,
@@ -480,9 +481,9 @@ mod catalog {
             correlation_id: corr_id.clone(),
             recv_timestamp: ts,
             health: JobHealthMetrics {
-                job_max_parallelism: 12,
-                job_source_max_parallelism: 12,
-                job_nonsource_max_parallelism: 9,
+                job_max_parallelism: Parallelism::new(12),
+                job_source_max_parallelism: Parallelism::new(12),
+                job_nonsource_max_parallelism: Parallelism::new(9),
                 job_uptime_millis: 1_234_567,
                 job_nr_restarts: 3,
                 job_nr_completed_checkpoints: 12_345,
@@ -503,7 +504,7 @@ mod catalog {
             },
             cluster: ClusterMetrics {
                 nr_active_jobs: 1,
-                nr_task_managers: 4,
+                nr_task_managers: NrReplicas::new(4),
                 free_task_slots: 11,
                 task_cpu_load: 0.65,
                 task_heap_memory_used: 92_987_f64,

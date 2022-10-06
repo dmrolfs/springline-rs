@@ -1,7 +1,9 @@
 use super::*;
 use crate::flink::{
     AppDataWindowBuilder, ClusterMetrics, CorrelationGenerator, FlowMetrics, JobHealthMetrics,
+    Parallelism,
 };
+use crate::model::NrReplicas;
 use once_cell::sync::Lazy;
 use pretty_snowflake::{AlphabetCodec, IdPrettifier};
 use proctor::elements::telemetry;
@@ -330,7 +332,11 @@ impl JobHealthMetricsStrategyBuilder {
         )
             .prop_flat_map(|(source, nonsource)| {
                 let all = source.max(nonsource);
-                (Just(all), Just(source), Just(nonsource))
+                (
+                    Just(Parallelism::new(all)),
+                    Just(Parallelism::new(source)),
+                    Just(Parallelism::new(nonsource)),
+                )
             });
 
         (
@@ -616,7 +622,7 @@ pub fn arb_cluster_metrics() -> impl Strategy<Value = ClusterMetrics> {
 #[derive(Debug, Default, Clone)]
 pub struct ClusterMetricsStrategyBuilder {
     nr_active_jobs: Option<BoxedStrategy<u32>>,
-    nr_task_managers: Option<BoxedStrategy<u32>>,
+    nr_task_managers: Option<BoxedStrategy<NrReplicas>>,
     free_task_slots: Option<BoxedStrategy<u32>>,
     task_cpu_load: Option<BoxedStrategy<f64>>,
     task_heap_memory_used: Option<BoxedStrategy<f64>>,
@@ -648,13 +654,15 @@ impl ClusterMetricsStrategyBuilder {
         self.nr_active_jobs(Just(nr_active_jobs.into()))
     }
 
-    pub fn nr_task_managers(self, nr_task_managers: impl Strategy<Value = u32> + 'static) -> Self {
+    pub fn nr_task_managers(
+        self, nr_task_managers: impl Strategy<Value = NrReplicas> + 'static,
+    ) -> Self {
         let mut new = self;
         new.nr_task_managers = Some(nr_task_managers.boxed());
         new
     }
 
-    pub fn just_nr_task_managers(self, nr_task_managers: impl Into<u32>) -> Self {
+    pub fn just_nr_task_managers(self, nr_task_managers: impl Into<NrReplicas>) -> Self {
         self.nr_task_managers(Just(nr_task_managers.into()))
     }
 
@@ -758,7 +766,9 @@ impl ClusterMetricsStrategyBuilder {
 
     pub fn finish(self) -> impl Strategy<Value = ClusterMetrics> {
         let nr_active_jobs = self.nr_active_jobs.unwrap_or(any::<u32>().boxed());
-        let nr_task_managers = self.nr_task_managers.unwrap_or(any::<u32>().boxed());
+        let nr_task_managers = self
+            .nr_task_managers
+            .unwrap_or(any::<u32>().prop_map(NrReplicas::new).boxed());
         let free_task_slots = self.free_task_slots.unwrap_or(any::<u32>().boxed());
         let task_cpu_load = self.task_cpu_load.unwrap_or(any::<f64>().boxed());
         let task_heap_memory_used = self.task_heap_memory_used.unwrap_or(any::<f64>().boxed());

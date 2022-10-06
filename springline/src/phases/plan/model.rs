@@ -115,10 +115,8 @@ impl ScalePlan {
         match decision.direction() {
             ScaleDirection::None => None,
             direction => {
-                let current_job_parallelism =
-                    Parallelism::new(decision.item().health.job_nonsource_max_parallelism);
-                let current_nr_taskmanagers =
-                    NrReplicas::new(decision.item().cluster.nr_task_managers);
+                let current_job_parallelism = decision.item().health.job_nonsource_max_parallelism;
+                let current_nr_taskmanagers = decision.item().cluster.nr_task_managers;
 
                 let clip_it = |p| apply_clipping(parameters.clipping_point, p);
 
@@ -401,11 +399,11 @@ mod tests {
             make_decision_result(direction, current_job_parallelism, current_nr_task_managers);
         assert_eq!(
             current_job_parallelism,
-            Parallelism::new(decision.item().health.job_nonsource_max_parallelism)
+            decision.item().health.job_nonsource_max_parallelism
         );
         assert_eq!(
             current_nr_task_managers,
-            NrReplicas::new(decision.item().cluster.nr_task_managers)
+            decision.item().cluster.nr_task_managers
         );
 
         let parameters = ScaleParameters {
@@ -619,8 +617,8 @@ mod tests {
             min_scaling_step in (1_u32..)
         ) {
             let decision = make_decision_result(direction, current_job_parallelism, current_nr_task_managers);
-            prop_assert_eq!(current_job_parallelism, Parallelism::new(decision.item().health.job_nonsource_max_parallelism));
-            prop_assert_eq!(current_nr_task_managers, NrReplicas::new(decision.item().cluster.nr_task_managers));
+            prop_assert_eq!(current_job_parallelism, decision.item().health.job_nonsource_max_parallelism);
+            prop_assert_eq!(current_nr_task_managers, decision.item().cluster.nr_task_managers);
 
             once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
             let main_span = tracing::info_span!("test_scale_plan");
@@ -778,11 +776,11 @@ mod tests {
 
         assert_eq!(
             current_job_parallelism,
-            Parallelism::new(decision.item().health.job_nonsource_max_parallelism)
+            decision.item().health.job_nonsource_max_parallelism
         );
         assert_eq!(
             current_nr_task_managers,
-            NrReplicas::new(decision.item().cluster.nr_task_managers)
+            decision.item().cluster.nr_task_managers
         );
 
         let parameters = ScaleParameters {

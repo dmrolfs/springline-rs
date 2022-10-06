@@ -4,7 +4,7 @@ mod resources_regression_tests;
 
 pub use policy_scenario::*;
 
-use crate::flink::{ClusterMetrics, FlowMetrics, JobHealthMetrics};
+use crate::flink::{ClusterMetrics, FlowMetrics, JobHealthMetrics, Parallelism};
 pub use chrono::{DateTime, TimeZone, Utc};
 pub use claim::*;
 use fake::{Fake, Faker};
@@ -18,6 +18,7 @@ pub use super::{
     ClusterStatus, EligibilityContext, EligibilityPolicy, EligibilityTemplateData, JobStatus,
 };
 pub use crate::flink::{AppDataWindow, AppDataWindowBuilder, MetricCatalog};
+use crate::model::NrReplicas;
 pub use crate::phases::policy_test_fixtures::{arb_date_time, prepare_policy_engine};
 pub use crate::settings::EligibilitySettings;
 pub use proctor::elements::telemetry::TelemetryValue;
@@ -41,9 +42,10 @@ fn arb_policy_template_data() -> impl Strategy<Value = EligibilityTemplateData> 
 }
 
 fn make_metric_catalog(nr_active_jobs: u32) -> MetricCatalog {
-    let job_source_max_parallelism: u32 = Faker.fake();
-    let job_nonsource_max_parallelism: u32 = Faker.fake();
-    let job_max_parallelism = job_source_max_parallelism.max(job_nonsource_max_parallelism);
+    let job_source_max_parallelism = Parallelism::new(Faker.fake());
+    let job_nonsource_max_parallelism = Parallelism::new(Faker.fake());
+    let job_max_parallelism =
+        Parallelism::max(job_source_max_parallelism, job_nonsource_max_parallelism);
 
     MetricCatalog {
         correlation_id: Id::direct(
@@ -76,7 +78,7 @@ fn make_metric_catalog(nr_active_jobs: u32) -> MetricCatalog {
         },
         cluster: ClusterMetrics {
             nr_active_jobs,
-            nr_task_managers: Faker.fake(),
+            nr_task_managers: NrReplicas::new(Faker.fake()),
             free_task_slots: Faker.fake(),
             task_cpu_load: Faker.fake(),
             task_heap_memory_used: Faker.fake(),

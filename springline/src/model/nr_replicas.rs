@@ -5,7 +5,18 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 
 #[derive(
-    PolarClass, Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize,
+    PolarClass,
+    Debug,
+    Default,
+    Copy,
+    Clone,
+    PartialEq,
+    Eq,
+    Hash,
+    PartialOrd,
+    Ord,
+    Serialize,
+    Deserialize,
 )]
 #[serde(transparent)]
 #[repr(transparent)]
@@ -72,6 +83,14 @@ impl std::ops::Add<u32> for NrReplicas {
 
     fn add(self, rhs: u32) -> Self::Output {
         Self(self.0 + rhs)
+    }
+}
+
+impl std::ops::Add<NrReplicas> for u32 {
+    type Output = NrReplicas;
+
+    fn add(self, rhs: NrReplicas) -> Self::Output {
+        NrReplicas(self + rhs.0)
     }
 }
 

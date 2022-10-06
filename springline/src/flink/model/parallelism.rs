@@ -5,14 +5,25 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 
 #[derive(
-    PolarClass, Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize,
+    PolarClass,
+    Debug,
+    Default,
+    Copy,
+    Clone,
+    PartialEq,
+    Eq,
+    Hash,
+    PartialOrd,
+    Ord,
+    Serialize,
+    Deserialize,
 )]
 #[serde(transparent)]
 #[repr(transparent)]
 pub struct Parallelism(u32);
 
 impl Parallelism {
-    pub const MIN: Parallelism = Parallelism::new(1);
+    pub const MIN: Self = Self::new(1);
 
     pub const fn new(p: u32) -> Self {
         Self(p)
@@ -72,6 +83,14 @@ impl std::ops::Add<u32> for Parallelism {
 
     fn add(self, rhs: u32) -> Self::Output {
         Self(self.0 + rhs)
+    }
+}
+
+impl std::ops::Add<Parallelism> for u32 {
+    type Output = Parallelism;
+
+    fn add(self, rhs: Parallelism) -> Self::Output {
+        Parallelism(self + rhs.0)
     }
 }
 

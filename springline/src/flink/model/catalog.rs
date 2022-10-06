@@ -2,6 +2,7 @@ use std::collections::HashSet;
 use std::fmt;
 use std::ops::Add;
 
+use crate::flink::Parallelism;
 use frunk::{Monoid, Semigroup};
 use once_cell::sync::{Lazy, OnceCell};
 use oso::{Oso, PolarClass};
@@ -16,6 +17,7 @@ use prometheus::{Gauge, IntGauge, Opts};
 use serde::{Deserialize, Serialize};
 
 use crate::metrics::UpdateMetrics;
+use crate::model::NrReplicas;
 
 pub static SUPPLEMENTAL_TELEMETRY: OnceCell<HashSet<String>> = OnceCell::new();
 
@@ -150,7 +152,7 @@ pub struct JobHealthMetrics {
     /// slots.
     #[polar(attribute)]
     #[serde(default, rename = "health.job_max_parallelism")]
-    pub job_max_parallelism: u32,
+    pub job_max_parallelism: Parallelism,
 
     /// Max parallelism for source vertices found in Job. Source vertices may be fixed around
     /// the number of input partitions, with the remainder of the job running at a lower
@@ -158,7 +160,7 @@ pub struct JobHealthMetrics {
     /// simply restart at an increased parallelism up to the number of task slots.
     #[polar(attribute)]
     #[serde(default, rename = "health.job_source_max_parallelism")]
-    pub job_source_max_parallelism: u32,
+    pub job_source_max_parallelism: Parallelism,
 
     /// Max parallelism for non-source vertices found in Job. Source vertices may be fixed around
     /// the number of input partitions, with the remainder of the job running at a lower
@@ -166,7 +168,7 @@ pub struct JobHealthMetrics {
     /// simply restart at an increased parallelism up to the number of task managers.
     #[polar(attribute)]
     #[serde(default, rename = "health.job_nonsource_max_parallelism")]
-    pub job_nonsource_max_parallelism: u32,
+    pub job_nonsource_max_parallelism: Parallelism,
 
     // todo per Flink doc's this metric does not work properly under Reactive mode. remove in favor of eligibility's
     // last_failure?
@@ -202,9 +204,9 @@ pub struct JobHealthMetrics {
 impl Monoid for JobHealthMetrics {
     fn empty() -> Self {
         Self {
-            job_max_parallelism: 0,
-            job_source_max_parallelism: 0,
-            job_nonsource_max_parallelism: 0,
+            job_max_parallelism: Parallelism::new(0),
+            job_source_max_parallelism: Parallelism::new(0),
+            job_nonsource_max_parallelism: Parallelism::new(0),
             job_uptime_millis: 0,
             job_nr_restarts: 0,
             job_nr_completed_checkpoints: 0,
@@ -427,7 +429,7 @@ pub struct ClusterMetrics {
     /// Count of entries returned from Flink REST API /taskmanagers
     #[polar(attribute)]
     #[serde(rename = "cluster.nr_task_managers")]
-    pub nr_task_managers: u32,
+    pub nr_task_managers: NrReplicas,
 
     /// Observed free task slots
     #[polar(attribute)]
@@ -552,7 +554,7 @@ impl Monoid for ClusterMetrics {
     fn empty() -> Self {
         Self {
             nr_active_jobs: 0,
-            nr_task_managers: 0,
+            nr_task_managers: NrReplicas::new(0),
             free_task_slots: 0,
             task_cpu_load: -1.0,
             task_heap_memory_used: -1.0,
@@ -739,8 +741,8 @@ pub static METRIC_CATALOG_TIMESTAMP: Lazy<IntGauge> = Lazy::new(|| {
     .expect("failed creating metric_catalog_timestamp metric")
 });
 
-pub static METRIC_CATALOG_JOB_HEALTH_UPTIME: Lazy<IntGauge> = Lazy::new(|| {
-    IntGauge::with_opts(
+pub static METRIC_CATALOG_JOB_HEALTH_UPTIME: Lazy<GenericGauge<AtomicU64>> = Lazy::new(|| {
+    GenericGauge::with_opts(
         Opts::new(
             "metric_catalog_job_health_uptime",
             "The time that the job has been running without interruption.",
@@ -750,8 +752,8 @@ pub static METRIC_CATALOG_JOB_HEALTH_UPTIME: Lazy<IntGauge> = Lazy::new(|| {
     .expect("failed creating metric_catalog_job_health_uptime metric")
 });
 
-pub static METRIC_CATALOG_JOB_HEALTH_NR_RESTARTS: Lazy<IntGauge> = Lazy::new(|| {
-    IntGauge::with_opts(
+pub static METRIC_CATALOG_JOB_HEALTH_NR_RESTARTS: Lazy<GenericGauge<AtomicU64>> = Lazy::new(|| {
+    GenericGauge::with_opts(
         Opts::new(
         "metric_catalog_job_health_nr_restarts",
         "The total number of restarts since this job was submitted, including full restarts and fine-grained restarts.",
@@ -760,27 +762,29 @@ pub static METRIC_CATALOG_JOB_HEALTH_NR_RESTARTS: Lazy<IntGauge> = Lazy::new(|| 
     .expect("failed creating metric_catalog_job_health_nr_restarts metric")
 });
 
-pub static METRIC_CATALOG_JOB_HEALTH_NR_COMPLETED_CHECKPOINTS: Lazy<IntGauge> = Lazy::new(|| {
-    IntGauge::with_opts(
-        Opts::new(
-            "metric_catalog_job_health_nr_completed_checkpoints",
-            "The number of successfully completed checkpoints.",
+pub static METRIC_CATALOG_JOB_HEALTH_NR_COMPLETED_CHECKPOINTS: Lazy<GenericGauge<AtomicU64>> =
+    Lazy::new(|| {
+        GenericGauge::with_opts(
+            Opts::new(
+                "metric_catalog_job_health_nr_completed_checkpoints",
+                "The number of successfully completed checkpoints.",
+            )
+            .const_labels(proctor::metrics::CONST_LABELS.clone()),
         )
-        .const_labels(proctor::metrics::CONST_LABELS.clone()),
-    )
-    .expect("failed creating metric_catalog_job_health_nr_completed_checkpoints metric")
-});
+        .expect("failed creating metric_catalog_job_health_nr_completed_checkpoints metric")
+    });
 
-pub static METRIC_CATALOG_JOB_HEALTH_NR_FAILED_CHECKPOINTS: Lazy<IntGauge> = Lazy::new(|| {
-    IntGauge::with_opts(
-        Opts::new(
-            "metric_catalog_job_health_nr_failed_checkpoints",
-            "The number of failed checkpoints.",
+pub static METRIC_CATALOG_JOB_HEALTH_NR_FAILED_CHECKPOINTS: Lazy<GenericGauge<AtomicU64>> =
+    Lazy::new(|| {
+        GenericGauge::with_opts(
+            Opts::new(
+                "metric_catalog_job_health_nr_failed_checkpoints",
+                "The number of failed checkpoints.",
+            )
+            .const_labels(proctor::metrics::CONST_LABELS.clone()),
         )
-        .const_labels(proctor::metrics::CONST_LABELS.clone()),
-    )
-    .expect("failed creating metric_catalog_job_health_nr_failed_checkpoints metric")
-});
+        .expect("failed creating metric_catalog_job_health_nr_failed_checkpoints metric")
+    });
 
 pub static METRIC_CATALOG_FLOW_RECORDS_IN_PER_SEC: Lazy<Gauge> = Lazy::new(|| {
     Gauge::with_opts(
@@ -838,30 +842,32 @@ pub static METRIC_CATALOG_FLOW_TASK_UTILIZATION: Lazy<Gauge> = Lazy::new(|| {
     .expect("failed creating metric_catalog_flow_task_utilization metric")
 });
 
-pub static METRIC_CATALOG_FLOW_SOURCE_RECORDS_LAG_MAX: Lazy<IntGauge> = Lazy::new(|| {
-    IntGauge::with_opts(
-        Opts::new(
-            "metric_catalog_flow_source_records_lag_max",
-            "Current lag in handling messages from the Kafka ingress topic",
+pub static METRIC_CATALOG_FLOW_SOURCE_RECORDS_LAG_MAX: Lazy<GenericGauge<AtomicU64>> =
+    Lazy::new(|| {
+        GenericGauge::with_opts(
+            Opts::new(
+                "metric_catalog_flow_source_records_lag_max",
+                "Current lag in handling messages from the Kafka ingress topic",
+            )
+            .const_labels(proctor::metrics::CONST_LABELS.clone()),
         )
-        .const_labels(proctor::metrics::CONST_LABELS.clone()),
-    )
-    .expect("failed creating metric_catalog_flow_source_records_lag_max metric")
-});
+        .expect("failed creating metric_catalog_flow_source_records_lag_max metric")
+    });
 
-pub static METRIC_CATALOG_FLOW_SOURCE_ASSIGNED_PARTITIONS: Lazy<IntGauge> = Lazy::new(|| {
-    IntGauge::with_opts(
-        Opts::new(
-            "metric_catalog_flow_source_assigned_partitions",
-            "total assigned partitions in handling messages from the Kafka ingress topic",
+pub static METRIC_CATALOG_FLOW_SOURCE_ASSIGNED_PARTITIONS: Lazy<GenericGauge<AtomicU64>> =
+    Lazy::new(|| {
+        GenericGauge::with_opts(
+            Opts::new(
+                "metric_catalog_flow_source_assigned_partitions",
+                "total assigned partitions in handling messages from the Kafka ingress topic",
+            )
+            .const_labels(proctor::metrics::CONST_LABELS.clone()),
         )
-        .const_labels(proctor::metrics::CONST_LABELS.clone()),
-    )
-    .expect("failed creating metric_catalog_flow_source_assigned_partitions metric")
-});
+        .expect("failed creating metric_catalog_flow_source_assigned_partitions metric")
+    });
 
-pub static METRIC_CATALOG_FLOW_SOURCE_TOTAL_LAG: Lazy<IntGauge> = Lazy::new(|| {
-    IntGauge::with_opts(
+pub static METRIC_CATALOG_FLOW_SOURCE_TOTAL_LAG: Lazy<GenericGauge<AtomicU64>> = Lazy::new(|| {
+    GenericGauge::with_opts(
         Opts::new(
             "metric_catalog_flow_source_total_lag",
             "total estimated lag considering partitions in handling messages from the Kafka ingress topic",
@@ -895,19 +901,20 @@ pub static METRIC_CATALOG_FLOW_SOURCE_IS_CONSUMER_TELEMETRY_POPULATED: Lazy<
         .expect("failed creating metric_catalog_flow_source_is_consumer_telemetry_populated metric")
 });
 
-pub static METRIC_CATALOG_FLOW_SOURCE_MILLIS_BEHIND_LATEST: Lazy<IntGauge> = Lazy::new(|| {
-    IntGauge::with_opts(
-        Opts::new(
-            "metric_catalog_flow_source_millis_behind_latest",
-            "Current lag in handling messages from the Kinesis ingress topic",
+pub static METRIC_CATALOG_FLOW_SOURCE_MILLIS_BEHIND_LATEST: Lazy<GenericGauge<AtomicU64>> =
+    Lazy::new(|| {
+        GenericGauge::with_opts(
+            Opts::new(
+                "metric_catalog_flow_source_millis_behind_latest",
+                "Current lag in handling messages from the Kinesis ingress topic",
+            )
+            .const_labels(proctor::metrics::CONST_LABELS.clone()),
         )
-        .const_labels(proctor::metrics::CONST_LABELS.clone()),
-    )
-    .expect("failed creating metric_catalog_flow_source_records_lag_max metric")
-});
+        .expect("failed creating metric_catalog_flow_source_records_lag_max metric")
+    });
 
-pub static METRIC_CATALOG_CLUSTER_NR_ACTIVE_JOBS: Lazy<IntGauge> = Lazy::new(|| {
-    IntGauge::with_opts(
+pub static METRIC_CATALOG_CLUSTER_NR_ACTIVE_JOBS: Lazy<GenericGauge<AtomicU64>> = Lazy::new(|| {
+    GenericGauge::with_opts(
         Opts::new(
             "metric_catalog_cluster_nr_active_jobs",
             "Number of active jobs in the cluster",
@@ -917,16 +924,17 @@ pub static METRIC_CATALOG_CLUSTER_NR_ACTIVE_JOBS: Lazy<IntGauge> = Lazy::new(|| 
     .expect("failed creating metric_catalog_cluster_nr_active_jobs metric")
 });
 
-pub static METRIC_CATALOG_CLUSTER_NR_TASK_MANAGERS: Lazy<IntGauge> = Lazy::new(|| {
-    IntGauge::with_opts(
-        Opts::new(
-            "metric_catalog_cluster_nr_task_managers",
-            "Number of active task managers in the cluster",
+pub static METRIC_CATALOG_CLUSTER_NR_TASK_MANAGERS: Lazy<GenericGauge<AtomicU64>> =
+    Lazy::new(|| {
+        GenericGauge::with_opts(
+            Opts::new(
+                "metric_catalog_cluster_nr_task_managers",
+                "Number of active task managers in the cluster",
+            )
+            .const_labels(proctor::metrics::CONST_LABELS.clone()),
         )
-        .const_labels(proctor::metrics::CONST_LABELS.clone()),
-    )
-    .expect("failed creating metric_catalog_cluster_nr_task_managers metric")
-});
+        .expect("failed creating metric_catalog_cluster_nr_task_managers metric")
+    });
 
 pub static METRIC_CATALOG_CLUSTER_TASK_CPU_LOAD: Lazy<Gauge> = Lazy::new(|| {
     Gauge::with_opts(
@@ -961,16 +969,17 @@ pub static METRIC_CATALOG_CLUSTER_TASK_HEAP_MEMORY_COMMITTED: Lazy<Gauge> = Lazy
     .expect("failed creating metric_catalog_cluster_task_heap_memory_committed metric")
 });
 
-pub static METRIC_CATALOG_CLUSTER_TASK_NR_THREADS: Lazy<IntGauge> = Lazy::new(|| {
-    IntGauge::with_opts(
-        Opts::new(
-            "metric_catalog_cluster_task_nr_threads",
-            "The total number of live threads.",
+pub static METRIC_CATALOG_CLUSTER_TASK_NR_THREADS: Lazy<GenericGauge<AtomicU64>> =
+    Lazy::new(|| {
+        GenericGauge::with_opts(
+            Opts::new(
+                "metric_catalog_cluster_task_nr_threads",
+                "The total number of live threads.",
+            )
+            .const_labels(proctor::metrics::CONST_LABELS.clone()),
         )
-        .const_labels(proctor::metrics::CONST_LABELS.clone()),
-    )
-    .expect("failed creating metric_catalog_cluster_task_nr_threads metric")
-});
+        .expect("failed creating metric_catalog_cluster_task_nr_threads metric")
+    });
 
 pub static METRIC_CATALOG_CLUSTER_TASK_NETWORK_INPUT_QUEUE_LEN: Lazy<Gauge> = Lazy::new(|| {
     Gauge::with_opts(

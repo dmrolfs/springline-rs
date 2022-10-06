@@ -7,6 +7,7 @@ use pretty_snowflake::{AlphabetCodec, Id, IdPrettifier, Label, Labeling};
 use proctor::elements::Timestamp;
 use proctor::ProctorIdGenerator;
 use springline::flink::{AppDataWindow, ClusterMetrics, FlowMetrics, JobHealthMetrics};
+use springline::model::NrReplicas;
 use tailcall::tailcall;
 use trim_margin::MarginTrimmable;
 
@@ -376,7 +377,9 @@ impl Lens for ClusterLens {
     fn set(&self, telemetry: &mut Self::T, value_rep: impl AsRef<str>) -> anyhow::Result<()> {
         match self {
             Self::NrActiveJobs => telemetry.nr_active_jobs = u32::from_str(value_rep.as_ref())?,
-            Self::NrTaskManagers => telemetry.nr_task_managers = u32::from_str(value_rep.as_ref())?,
+            Self::NrTaskManagers => {
+                telemetry.nr_task_managers = NrReplicas::new(u32::from_str(value_rep.as_ref())?)
+            },
             Self::TaskCpuLoad => telemetry.task_cpu_load = f64::from_str(value_rep.as_ref())?,
             Self::TaskHeapMemoryUsed => {
                 telemetry.task_heap_memory_used = f64::from_str(value_rep.as_ref())?

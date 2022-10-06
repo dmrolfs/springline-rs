@@ -193,7 +193,7 @@ impl Benchmark {
     }
 
     pub fn from_window(data: &AppDataWindow<MetricCatalog>, window: Duration) -> Self {
-        let job_parallelism = Parallelism::new(data.health.job_max_parallelism);
+        let job_parallelism = data.health.job_max_parallelism;
         let window_secs = math::saturating_u64_to_u32(window.as_secs());
         let records_out_per_sec = data.flow_records_out_per_sec_rolling_average(window_secs).into();
         Self { job_parallelism, records_out_per_sec }
@@ -209,7 +209,7 @@ impl From<MetricCatalog> for Benchmark {
 impl From<&MetricCatalog> for Benchmark {
     fn from(that: &MetricCatalog) -> Self {
         Self {
-            job_parallelism: Parallelism::new(that.health.job_nonsource_max_parallelism),
+            job_parallelism: that.health.job_nonsource_max_parallelism,
             records_out_per_sec: that.flow.records_out_per_sec.into(),
         }
     }

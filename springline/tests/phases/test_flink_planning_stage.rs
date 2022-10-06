@@ -188,10 +188,10 @@ const STEP: i64 = 15;
 
 #[tracing::instrument(level = "info")]
 fn make_test_data(
-    start: Timestamp, tick: i64, parallelism: u32, source_records_lag_max: u32,
+    start: Timestamp, tick: i64, parallelism: Parallelism, source_records_lag_max: u32,
     records_per_sec: f64,
 ) -> AppDataWindow<MetricCatalog> {
-    let job_source_max_parallelism = 16;
+    let job_source_max_parallelism = Parallelism::new(16);
     let timestamp = Utc.timestamp(start.as_secs() + tick * STEP, 0).into();
     let corr_id = CORRELATION_ID.clone();
     let forecasted_timestamp = timestamp + Duration::from_secs(STEP as u64);
@@ -199,7 +199,7 @@ fn make_test_data(
         correlation_id: corr_id,
         recv_timestamp: timestamp,
         health: JobHealthMetrics {
-            job_max_parallelism: u32::max(job_source_max_parallelism, parallelism),
+            job_max_parallelism: Parallelism::max(job_source_max_parallelism, parallelism),
             job_source_max_parallelism,
             job_nonsource_max_parallelism: parallelism,
             job_uptime_millis: 1_234_567,
@@ -215,14 +215,16 @@ fn make_test_data(
             forecasted_timestamp: Some(forecasted_timestamp),
             forecasted_records_in_per_sec: Some(records_per_sec),
             source_records_lag_max: Some(source_records_lag_max),
-            source_assigned_partitions: Some(parallelism),
-            source_total_lag: Some(source_records_lag_max * parallelism),
-            source_records_consumed_rate: Some((source_records_lag_max * parallelism * 2) as f64),
+            source_assigned_partitions: Some(parallelism.as_u32()),
+            source_total_lag: Some(source_records_lag_max * parallelism.as_u32()),
+            source_records_consumed_rate: Some(
+                (source_records_lag_max * parallelism.as_u32() * 2) as f64,
+            ),
             source_millis_behind_latest: None,
         },
         cluster: ClusterMetrics {
             nr_active_jobs: 1,
-            nr_task_managers: parallelism,
+            nr_task_managers: NrReplicas::new(parallelism.as_u32()),
             free_task_slots: 0,
             task_cpu_load: 0.65,
             task_heap_memory_used: 92_987_f64,
@@ -240,14 +242,14 @@ fn make_test_data(
 }
 
 fn make_test_data_series(
-    start: Timestamp, parallelsim: u32, source_records_lag_max: u32,
+    start: Timestamp, parallelism: Parallelism, source_records_lag_max: u32,
     mut gen: impl FnMut(i64) -> f64,
 ) -> Vec<AppDataWindow<MetricCatalog>> {
     let total = 30;
     (0..total)
         .into_iter()
         .map(move |tick| {
-            make_test_data(start, tick, parallelsim, source_records_lag_max, gen(tick))
+            make_test_data(start, tick, parallelism, source_records_lag_max, gen(tick))
         })
         .collect()
 }
@@ -262,13 +264,13 @@ enum DecisionType {
 
 #[tracing::instrument(level = "info")]
 fn make_decision(
-    decision: DecisionType, start: Timestamp, tick: i64, parallelsim: u32,
+    decision: DecisionType, start: Timestamp, tick: i64, parallelism: Parallelism,
     source_records_lag_max: u32, records_per_sec: f64,
 ) -> InDecision {
     let data = make_test_data(
         start,
         tick,
-        parallelsim,
+        parallelism,
         source_records_lag_max,
         records_per_sec,
     );
@@ -327,7 +329,7 @@ async fn test_flink_planning_linear() {
     );
 
     let start: DateTime<Utc> = fake::faker::chrono::raw::DateTimeBefore(EN, Utc::now()).fake();
-    let data = make_test_data_series(start.into(), 2, 1000, |tick| tick as f64);
+    let data = make_test_data_series(start.into(), Parallelism::new(2), 1000, |tick| tick as f64);
     let data_len = data.len();
     let last_data = assert_some!(data.last()).clone();
 
@@ -337,7 +339,7 @@ async fn test_flink_planning_linear() {
                 DecisionType::Up,
                 last_data.recv_timestamp,
                 0,
-                2,
+                Parallelism::new(2),
                 0,
                 25.
             ))
@@ -350,7 +352,7 @@ async fn test_flink_planning_linear() {
                 DecisionType::Up,
                 last_data.recv_timestamp,
                 0,
-                4,
+                Parallelism::new(4),
                 0,
                 75.
             ))
@@ -363,7 +365,7 @@ async fn test_flink_planning_linear() {
                 DecisionType::Up,
                 last_data.recv_timestamp,
                 0,
-                10,
+                Parallelism::new(10),
                 0,
                 250.
             ))
@@ -505,7 +507,7 @@ async fn test_flink_planning_sine() {
     );
 
     let start: DateTime<Utc> = fake::faker::chrono::raw::DateTimeBefore(EN, Utc::now()).fake();
-    let data = make_test_data_series(start.into(), 2, 1000, |tick| {
+    let data = make_test_data_series(start.into(), Parallelism::new(2), 1000, |tick| {
         75. * ((tick as f64) / 15.).sin()
     });
     let data_len = data.len();
@@ -517,7 +519,7 @@ async fn test_flink_planning_sine() {
                 DecisionType::Up,
                 last_data.recv_timestamp,
                 1,
-                2,
+                Parallelism::new(2),
                 0,
                 25.
             ))
@@ -530,7 +532,7 @@ async fn test_flink_planning_sine() {
                 DecisionType::Up,
                 last_data.recv_timestamp,
                 2,
-                4,
+                Parallelism::new(4),
                 0,
                 75.
             ))
@@ -543,7 +545,7 @@ async fn test_flink_planning_sine() {
                 DecisionType::Up,
                 last_data.recv_timestamp,
                 3,
-                10,
+                Parallelism::new(10),
                 0,
                 250.
             ))
@@ -664,10 +666,13 @@ async fn test_flink_planning_context_change() {
     );
 
     let start: DateTime<Utc> = fake::faker::chrono::raw::DateTimeBefore(EN, Utc::now()).fake();
-    let nr_taskmanagers = 2;
-    let data = make_test_data_series(start.into(), nr_taskmanagers, 1000, |tick| {
-        75. * ((tick as f64) / 15.).sin()
-    });
+    let nr_taskmanagers = NrReplicas::new(2);
+    let data = make_test_data_series(
+        start.into(),
+        Parallelism::new(nr_taskmanagers.as_u32()),
+        1000,
+        |tick| 75. * ((tick as f64) / 15.).sin(),
+    );
     let data_len = data.len();
     let penultimate_data = data[data.len() - 2].clone();
     let last_data = data[data.len() - 1].clone();
@@ -678,7 +683,7 @@ async fn test_flink_planning_context_change() {
                 DecisionType::Up,
                 penultimate_data.recv_timestamp,
                 1,
-                2,
+                Parallelism::new(2),
                 0,
                 25.
             ))
@@ -691,7 +696,7 @@ async fn test_flink_planning_context_change() {
                 DecisionType::Up,
                 last_data.recv_timestamp,
                 2,
-                4,
+                Parallelism::new(4),
                 0,
                 75.
             ))
@@ -704,7 +709,7 @@ async fn test_flink_planning_context_change() {
                 DecisionType::Up,
                 last_data.recv_timestamp,
                 3,
-                10,
+                Parallelism::new(10),
                 0,
                 250.
             ))
@@ -747,7 +752,7 @@ async fn test_flink_planning_context_change() {
         flow.push_context(PlanningContext {
             correlation_id: CORRELATION_ID.relabel::<PlanningContext>(),
             recv_timestamp: Timestamp::now(),
-            total_task_slots: nr_taskmanagers,
+            total_task_slots: nr_taskmanagers.as_u32(),
             free_task_slots: 0,
             min_scaling_step: Some(100),
             rescale_restart: maplit::hashmap! {
