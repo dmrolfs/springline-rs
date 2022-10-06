@@ -9,9 +9,7 @@ use proctor::elements::{self, PolicyFilterEvent, PolicySource, Timestamp};
 use proctor::graph::stage::{self, WithApi, WithMonitor};
 use proctor::graph::{Connect, Graph, SinkShape, SourceShape};
 use proctor::phases::policy_phase::PolicyPhase;
-use springline::phases::governance::{
-    make_governance_transform, GovernanceContext, GovernancePolicy, GovernanceTemplateData,
-};
+use springline::phases::governance::{GovernanceContext, GovernanceStage};
 use springline::phases::plan::ScalePlan;
 use springline::settings::{GovernancePolicySettings, GovernanceSettings};
 use tokio::sync::oneshot;
@@ -37,7 +35,7 @@ struct TestFlow {
     pub graph_handle: JoinHandle<()>,
     pub tx_data_sensor_api: stage::ActorSourceApi<Data>,
     pub tx_context_sensor_api: stage::ActorSourceApi<Context>,
-    pub tx_governance_api: elements::PolicyFilterApi<Context, GovernanceTemplateData>,
+    // pub tx_governance_api: elements::PolicyFilterApi<Context, GovernanceTemplateData>,
     pub rx_governance_monitor: elements::PolicyFilterMonitor<Data, Context>,
     pub tx_sink_api: stage::FoldApi<Vec<Data>>,
     pub rx_sink: Option<oneshot::Receiver<Vec<Data>>>,
@@ -45,7 +43,8 @@ struct TestFlow {
 
 impl TestFlow {
     pub async fn new(
-        governance_stage: PolicyPhase<Data, Data, Context, GovernanceTemplateData>,
+        governance_stage: GovernanceStage<Data>,
+        // governance_stage: PolicyPhase<Data, Data, Context, GovernanceTemplateData>,
     ) -> anyhow::Result<Self> {
         let data_sensor: stage::ActorSource<Data> = stage::ActorSource::new("plan_sensor");
         let tx_data_sensor_api = data_sensor.tx_api();
@@ -53,7 +52,7 @@ impl TestFlow {
         let context_sensor: stage::ActorSource<Context> = stage::ActorSource::new("context_sensor");
         let tx_context_sensor_api = context_sensor.tx_api();
 
-        let tx_governance_api = governance_stage.tx_api();
+        // let tx_governance_api = governance_stage.tx_api();
         let rx_governance_monitor = governance_stage.rx_monitor();
 
         let mut sink = stage::Fold::<_, Data, _>::new("sink", Vec::new(), |mut acc, item| {
@@ -91,7 +90,7 @@ impl TestFlow {
             graph_handle,
             tx_data_sensor_api,
             tx_context_sensor_api,
-            tx_governance_api,
+            // tx_governance_api,
             rx_governance_monitor,
             tx_sink_api,
             rx_sink,
@@ -110,17 +109,17 @@ impl TestFlow {
             .map_err(|err| err.into())
     }
 
-    #[allow(dead_code)]
-    pub async fn tell_policy(
-        &self,
-        command_rx: (
-            elements::PolicyFilterCmd<Context, GovernanceTemplateData>,
-            oneshot::Receiver<proctor::Ack>,
-        ),
-    ) -> anyhow::Result<proctor::Ack> {
-        self.tx_governance_api.send(command_rx.0)?;
-        Ok(command_rx.1.await?)
-    }
+    // #[allow(dead_code)]
+    // pub async fn tell_policy(
+    //     &self,
+    //     command_rx: (
+    //         elements::PolicyFilterCmd<Context, GovernanceTemplateData>,
+    //         oneshot::Receiver<proctor::Ack>,
+    //     ),
+    // ) -> anyhow::Result<proctor::Ack> {
+    //     self.tx_governance_api.send(command_rx.0)?;
+    //     Ok(command_rx.1.await?)
+    // }
 
     pub async fn recv_policy_event(
         &mut self,
@@ -128,18 +127,18 @@ impl TestFlow {
         Ok(self.rx_governance_monitor.recv().await?)
     }
 
-    #[allow(dead_code)]
-    pub async fn inspect_policy_context(
-        &self,
-    ) -> anyhow::Result<elements::PolicyFilterDetail<Context, GovernanceTemplateData>> {
-        elements::PolicyFilterCmd::inspect(&self.tx_governance_api)
-            .await
-            .map(|d| {
-                tracing::info!(detail=?d, "inspected policy.");
-                d
-            })
-            .map_err(|err| err.into())
-    }
+    // #[allow(dead_code)]
+    // pub async fn inspect_policy_context(
+    //     &self,
+    // ) -> anyhow::Result<elements::PolicyFilterDetail<Context, GovernanceTemplateData>> {
+    //     elements::PolicyFilterCmd::inspect(&self.tx_governance_api)
+    //         .await
+    //         .map(|d| {
+    //             tracing::info!(detail=?d, "inspected policy.");
+    //             d
+    //         })
+    //         .map_err(|err| err.into())
+    // }
 
     pub async fn inspect_sink(&self) -> anyhow::Result<Vec<Data>> {
         stage::FoldCmd::get_accumulation(&self.tx_sink_api)
@@ -278,14 +277,15 @@ async fn test_flink_governance_flow_simple_and_happy() -> anyhow::Result<()> {
     let main_span = tracing::info_span!("test_flink_governance_flow_simple_and_happy");
     let _ = main_span.enter();
 
-    let policy = GovernancePolicy::new(&POLICY_SETTINGS);
+    // let policy = GovernancePolicy::new(&POLICY_SETTINGS);
 
-    let governance_stage = PolicyPhase::with_transform(
-        "test_governance".into(),
-        policy,
-        make_governance_transform("common_governance_transform"),
-    )
-    .await?;
+    let governance_stage = GovernanceStage::new("test_governance");
+    // PolicyPhase::with_transform(
+    // "test_governance".into(),
+    // policy,
+    // make_governance_transform("common_governance_transform"),
+    // )
+    // .await?;
 
     let mut flow = TestFlow::new(governance_stage).await?;
 
@@ -348,14 +348,15 @@ async fn test_flink_governance_flow_simple_below_min_cluster_size() -> anyhow::R
     let main_span = tracing::info_span!("test_flink_governance_flow_simple_below_min_cluster_size");
     let _ = main_span.enter();
 
-    let policy = GovernancePolicy::new(&POLICY_SETTINGS);
+    // let policy = GovernancePolicy::new(&POLICY_SETTINGS);
 
-    let governance_stage = PolicyPhase::with_transform(
-        "test_governance".into(),
-        policy,
-        make_governance_transform("common_governance_transform"),
-    )
-    .await?;
+    let governance_stage = GovernanceStage::new("common_governance_transform");
+    // PolicyPhase::with_transform(
+    //     "test_governance".into(),
+    //     policy,
+    //     make_governance_transform("common_governance_transform"),
+    // )
+    // .await?;
 
     let mut flow = TestFlow::new(governance_stage).await?;
 
@@ -418,14 +419,15 @@ async fn test_flink_governance_flow_simple_above_max_cluster_size() -> anyhow::R
     let main_span = tracing::info_span!("test_flink_governance_flow_simple_above_max_cluster_size");
     let _ = main_span.enter();
 
-    let policy = GovernancePolicy::new(&POLICY_SETTINGS);
+    // let policy = GovernancePolicy::new(&POLICY_SETTINGS);
 
-    let governance_stage = PolicyPhase::with_transform(
-        "test_governance".into(),
-        policy,
-        make_governance_transform("common_governance_transform"),
-    )
-    .await?;
+    let governance_stage = GovernanceStage::new("governance_flow_simple_above_max_cluster_size");
+    // PolicyPhase::with_transform(
+    // "test_governance".into(),
+    // policy,
+    // make_governance_transform("common_governance_transform"),
+    // )
+    // .await?;
 
     let mut flow = TestFlow::new(governance_stage).await?;
 
@@ -488,14 +490,15 @@ async fn test_flink_governance_flow_simple_step_up_too_big() -> anyhow::Result<(
     let main_span = tracing::info_span!("test_flink_governance_flow_simple_step_up_too_big");
     let _ = main_span.enter();
 
-    let policy = GovernancePolicy::new(&POLICY_SETTINGS);
+    // let policy = GovernancePolicy::new(&POLICY_SETTINGS);
 
-    let governance_stage = PolicyPhase::with_transform(
-        "test_governance".into(),
-        policy,
-        make_governance_transform("common_governance_transform"),
-    )
-    .await?;
+    let governance_stage = GovernanceStage::new("governance_flow_simple_step_up_too_big");
+    // PolicyPhase::with_transform(
+    // "test_governance".into(),
+    // policy,
+    // make_governance_transform("common_governance_transform"),
+    // )
+    // .await?;
 
     let mut flow = TestFlow::new(governance_stage).await?;
 
@@ -558,14 +561,15 @@ async fn test_flink_governance_flow_simple_step_down_too_big() -> anyhow::Result
     let main_span = tracing::info_span!("test_flink_governance_flow_simple_step_down_too_big");
     let _ = main_span.enter();
 
-    let policy = GovernancePolicy::new(&POLICY_SETTINGS);
+    // let policy = GovernancePolicy::new(&POLICY_SETTINGS);
 
-    let governance_stage = PolicyPhase::with_transform(
-        "test_governance".into(),
-        policy,
-        make_governance_transform("common_governance_transform"),
-    )
-    .await?;
+    let governance_stage = GovernanceStage::new("flow_simple_step_down_too_big");
+    // PolicyPhase::with_transform(
+    // "test_governance".into(),
+    // policy,
+    // make_governance_transform("common_governance_transform"),
+    // )
+    // .await?;
 
     let mut flow = TestFlow::new(governance_stage).await?;
 
@@ -631,14 +635,15 @@ async fn test_flink_governance_flow_simple_step_up_before_max() -> anyhow::Resul
     let main_span = tracing::info_span!("test_flink_governance_flow_simple_step_up_before_max");
     let _ = main_span.enter();
 
-    let policy = GovernancePolicy::new(&POLICY_SETTINGS);
+    // let policy = GovernancePolicy::new(&POLICY_SETTINGS);
 
-    let governance_stage = PolicyPhase::with_transform(
-        "test_governance".into(),
-        policy,
-        make_governance_transform("common_governance_transform"),
-    )
-    .await?;
+    let governance_stage = GovernanceStage::new("flow_simple_step_up_before_max");
+    // PolicyPhase::with_transform(
+    //     "test_governance".into(),
+    //     policy,
+    //     make_governance_transform("common_governance_transform"),
+    // )
+    // .await?;
 
     let mut flow = TestFlow::new(governance_stage).await?;
 
@@ -701,14 +706,15 @@ async fn test_flink_governance_flow_simple_step_down_before_min() -> anyhow::Res
     let main_span = tracing::info_span!("test_flink_governance_flow_simple_step_down_before_min");
     let _ = main_span.enter();
 
-    let policy = GovernancePolicy::new(&POLICY_SETTINGS);
+    // let policy = GovernancePolicy::new(&POLICY_SETTINGS);
 
-    let governance_stage = PolicyPhase::with_transform(
-        "test_governance".into(),
-        policy,
-        make_governance_transform("common_governance_transform"),
-    )
-    .await?;
+    let governance_stage = GovernanceStage::new("flow_simple_step_down_before_min");
+    // PolicyPhase::with_transform(
+    // "test_governance".into(),
+    // policy,
+    // make_governance_transform("common_governance_transform"),
+    // )
+    // .await?;
 
     let mut flow = TestFlow::new(governance_stage).await?;
 

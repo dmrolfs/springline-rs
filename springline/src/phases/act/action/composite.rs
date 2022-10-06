@@ -6,7 +6,8 @@ use tracing::Instrument;
 
 use super::{ActionSession, ScaleAction};
 use crate::phases::act::action::ActionStatus;
-use crate::phases::act::{self, ActError, ActErrorDisposition, ScaleActionPlan};
+use crate::phases::act::{self, ActError, ActErrorDisposition};
+use crate::phases::plan::ScaleActionPlan;
 
 #[derive(Debug)]
 pub struct CompositeAction<P> {

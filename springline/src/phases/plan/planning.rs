@@ -13,6 +13,7 @@ use prometheus::Opts;
 use tokio::sync::{broadcast, Mutex};
 
 use crate::flink::{AppDataWindow, MetricCatalog};
+use crate::math;
 use crate::phases::decision::{DecisionOutcome, DecisionResult};
 use crate::phases::plan::benchmark::Benchmark;
 use crate::phases::plan::clipping::ClippingHandling;
@@ -349,7 +350,7 @@ impl<F: Forecaster> FlinkPlanning<F> {
         let item = decision.item();
         let is_clipping = match self.evaluation_window {
             Some(window) => {
-                let looking_back_secs = u32::try_from(window.as_secs()).unwrap_or(u32::MAX);
+                let looking_back_secs = math::saturating_u64_to_u32(window.as_secs());
                 item.flow_is_source_consumer_telemetry_empty_over_window(looking_back_secs)
             },
             None => !item.flow.is_source_consumer_telemetry_populated(),

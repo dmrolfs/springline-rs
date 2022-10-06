@@ -17,8 +17,10 @@ use url::Url;
 use crate::flink::{
     self, FlinkContext, FlinkError, JarId, JobId, JobState, RestoreMode, SavepointLocation,
 };
+use crate::math;
 use crate::phases::act::action::{ActionSession, ScaleAction};
-use crate::phases::act::{self, ActError, ActErrorDisposition, ScaleActionPlan};
+use crate::phases::act::{self, ActError, ActErrorDisposition};
+use crate::phases::plan::ScaleActionPlan;
 use crate::settings::FlinkActionSettings;
 
 pub const ACTION_LABEL: &str = "restart_jobs";
@@ -130,9 +132,11 @@ where
                     }
 
                     let jars: Vec<_> = initial_failures.keys().cloned().collect();
+                    let restart_parallelism = usize::try_from(plan.current_replicas())
+                        .map_err(|err| ActError::Stage(err.into()))?;
                     let repeat_failures = self
                         .try_jar_restarts_for_parallelism(
-                            plan.current_replicas(),
+                            restart_parallelism,
                             &jars,
                             savepoints,
                             plan,
@@ -180,7 +184,7 @@ where
             if plan.target_replicas() != nr_tm_confirmed {
                 let confirmed_parallelism_capacity =
                     plan.parallelism_for_replicas(nr_tm_confirmed).unwrap_or(nr_tm_confirmed);
-                let effective_parallelism = usize::min(parallelism, confirmed_parallelism_capacity);
+                let effective_parallelism = u32::min(parallelism, confirmed_parallelism_capacity);
 
                 let track = format!("{}::try_jar_restart::confirmed_below_target", self.label());
                 tracing::warn!(
@@ -203,7 +207,7 @@ where
             }
         }
 
-        parallelism
+        math::saturating_u32_to_usize(parallelism)
     }
 
     async fn try_jar_restarts_for_parallelism<'s>(

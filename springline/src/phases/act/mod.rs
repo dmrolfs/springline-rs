@@ -3,7 +3,6 @@ use std::time::Duration;
 
 use either::{Either, Left, Right};
 use once_cell::sync::Lazy;
-use proctor::elements::Timestamp;
 use proctor::error::MetricLabel;
 use proctor::graph::stage::{self, SinkStage};
 use prometheus::{HistogramOpts, HistogramTimer, HistogramVec, IntCounterVec, Opts};
@@ -11,6 +10,7 @@ pub use protocol::{ActEvent, ActMonitor};
 use thiserror::Error;
 
 use crate::phases::governance::GovernanceOutcome;
+use crate::phases::plan::ScaleActionPlan;
 
 mod action;
 mod scale_actuator;
@@ -18,59 +18,6 @@ pub use action::ActionOutcome;
 pub use action::ACTION_TOTAL_DURATION;
 pub use action::FLINK_MISSED_JAR_RESTARTS;
 pub use scale_actuator::ScaleActuator;
-
-use crate::phases::plan::{ScaleDirection, ScalePlan};
-use crate::CorrelationId;
-
-pub trait ScaleActionPlan {
-    fn correlation(&self) -> &CorrelationId;
-    fn recv_timestamp(&self) -> Timestamp;
-    fn direction(&self) -> ScaleDirection;
-    fn current_job_parallelism(&self) -> usize;
-    fn target_job_parallelism(&self) -> usize;
-    fn current_replicas(&self) -> usize;
-    fn target_replicas(&self) -> usize;
-    fn parallelism_for_replicas(&self, nr_replicas: usize) -> Option<usize>;
-    fn replicas_for_parallelism(&self, parallelism: usize) -> Option<usize>;
-}
-
-impl ScaleActionPlan for ScalePlan {
-    fn correlation(&self) -> &CorrelationId {
-        &self.correlation_id
-    }
-
-    fn recv_timestamp(&self) -> Timestamp {
-        self.recv_timestamp
-    }
-
-    fn direction(&self) -> ScaleDirection {
-        self.direction()
-    }
-
-    fn current_job_parallelism(&self) -> usize {
-        self.current_job_parallelism as usize
-    }
-
-    fn target_job_parallelism(&self) -> usize {
-        self.target_job_parallelism as usize
-    }
-
-    fn current_replicas(&self) -> usize {
-        self.current_nr_taskmanagers as usize
-    }
-
-    fn target_replicas(&self) -> usize {
-        self.target_nr_taskmanagers as usize
-    }
-
-    fn parallelism_for_replicas(&self, nr_replicas: usize) -> Option<usize> {
-        Some(self.parallelism_for_taskmanagers(nr_replicas as u32) as usize)
-    }
-
-    fn replicas_for_parallelism(&self, parallelism: usize) -> Option<usize> {
-        Some(self.taskmanagers_for_parallelism(parallelism as u32) as usize)
-    }
-}
 
 #[derive(Debug, Error)]
 pub enum ActError {
@@ -140,7 +87,7 @@ mod protocol {
     use tokio::sync::broadcast;
 
     use crate::phases::act::action::ActionOutcome;
-    use crate::phases::act::ScaleActionPlan;
+    use crate::phases::plan::ScaleActionPlan;
     use crate::CorrelationId;
 
     pub type ActMonitor<P> = broadcast::Receiver<Arc<ActEvent<P>>>;

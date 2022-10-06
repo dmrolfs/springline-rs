@@ -16,7 +16,8 @@ use super::{ActionSession, ScaleAction};
 use crate::flink::{
     self, FlinkContext, FlinkError, JobId, JobSavepointReport, OperationStatus, SavepointStatus,
 };
-use crate::phases::act::{self, ActError, ActErrorDisposition, ScaleActionPlan};
+use crate::phases::act::{self, ActError, ActErrorDisposition};
+use crate::phases::plan::ScaleActionPlan;
 use crate::settings::FlinkActionSettings;
 use crate::CorrelationId;
 

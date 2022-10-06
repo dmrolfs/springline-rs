@@ -7,8 +7,10 @@ use tokio::time::Instant;
 
 use super::{ActionSession, ScaleAction};
 use crate::flink::FlinkContext;
+use crate::math;
 use crate::phases::act;
-use crate::phases::act::{ActError, ActErrorDisposition, ScaleActionPlan};
+use crate::phases::act::{ActError, ActErrorDisposition};
+use crate::phases::plan::ScaleActionPlan;
 
 pub const ACTION_LABEL: &str = "flink_settlement";
 
@@ -81,7 +83,7 @@ where
     )]
     async fn block_for_rescaled_taskmanagers(
         &self, plan: &<Self as ScaleAction>::Plan, flink: &FlinkContext,
-    ) -> usize {
+    ) -> u32 {
         let correlation = plan.correlation();
         let nr_target_taskmanagers = plan.target_replicas();
 
@@ -96,7 +98,8 @@ where
         while Instant::now().duration_since(start) < self.taskmanager_register_timeout {
             match flink.query_taskmanagers(correlation).await {
                 Ok(tm_detail) => {
-                    nr_confirmed_taskmanagers = tm_detail.nr_taskmanagers;
+                    nr_confirmed_taskmanagers =
+                        math::saturating_usize_to_u32(tm_detail.nr_taskmanagers);
                     if nr_confirmed_taskmanagers == nr_target_taskmanagers {
                         tracing::info!(
                             %nr_confirmed_taskmanagers, %nr_target_taskmanagers, ?correlation,

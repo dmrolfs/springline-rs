@@ -5,7 +5,6 @@ use std::time::Duration;
 use async_trait::async_trait;
 use proctor::AppData;
 
-use super::ScaleActionPlan;
 use crate::flink::{FlinkContext, JarId, JobId, JobSavepointReport};
 use crate::kubernetes::KubernetesContext;
 use crate::phases::act::ActError;
@@ -20,6 +19,7 @@ mod prepare_data;
 mod restart_jobs;
 mod savepoint;
 
+use crate::phases::plan::ScaleActionPlan;
 pub use composite::CompositeAction;
 pub use cull::CullTaskmanagers;
 pub use flink_settlement::FlinkSettlement;
@@ -119,8 +119,8 @@ pub struct ActionSession {
     pub history: Vec<ActionOutcome>,
     pub kube: KubernetesContext,
     pub flink: FlinkContext,
-    pub nr_target_replicas: Option<usize>,
-    pub nr_confirmed_rescaled_taskmanagers: Option<usize>,
+    pub nr_target_replicas: Option<u32>,
+    pub nr_confirmed_rescaled_taskmanagers: Option<u32>,
     pub active_jobs: Option<Vec<JobId>>,
     pub uploaded_jars: Option<Vec<JarId>>,
     pub savepoints: Option<JobSavepointReport>,

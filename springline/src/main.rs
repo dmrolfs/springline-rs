@@ -15,7 +15,7 @@ use springline::phases::plan::{
     PLANNING__MAX_CATCH_UP, PLANNING__RECOVERY_VALID, PLANNING__RESCALE_RESTART,
 };
 use springline::settings::{CliOptions, FlinkSettings, Settings};
-use springline::{engine, Result};
+use springline::{engine, math, Result};
 use tokio::signal::unix::{self, SignalKind};
 use tracing::Subscriber;
 
@@ -203,15 +203,15 @@ fn make_settings_sensor(settings: &Settings) -> BoxedTelemetrySource {
     settings_telemetry.extend(settings.governance.rules.custom.clone());
 
     // todo: consider planning context telemetry
-    let max_catch_up = u32::try_from(settings.plan.max_catch_up.as_secs()).unwrap_or(u32::MAX);
-    let recovery_valid = u32::try_from(settings.plan.recovery_valid.as_secs()).unwrap_or(u32::MAX);
+    let max_catch_up = math::saturating_u64_to_u32(settings.plan.max_catch_up.as_secs());
+    let recovery_valid = math::saturating_u64_to_u32(settings.plan.recovery_valid.as_secs());
 
     let rescale_restart: TableType = settings
         .plan
         .direction_restart
         .iter()
         .map(|(direction, duration)| {
-            let secs = u32::try_from(duration.as_secs()).unwrap_or(u32::MAX);
+            let secs = math::saturating_u64_to_u32(duration.as_secs());
             (direction.to_string(), secs.into())
         })
         .collect();

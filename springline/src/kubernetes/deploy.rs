@@ -56,7 +56,7 @@ impl DeployApi {
     }
 
     pub async fn patch_scale(
-        &self, replicas: usize, correlation: &CorrelationId,
+        &self, replicas: u32, correlation: &CorrelationId,
     ) -> Result<Option<i32>, KubernetesError> {
         let span = tracing::info_span!("Kubernetes Deploy::patch_scale", action=%"patch_scale", ?correlation);
         let params = PatchParams::default();

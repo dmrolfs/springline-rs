@@ -13,12 +13,12 @@ use tokio::sync::broadcast;
 use tracing::Instrument;
 
 use super::action::{self, ActionSession, ScaleAction};
-use super::{protocol, ActError, ActEvent, ScaleActionPlan};
+use super::{protocol, ActError, ActEvent};
 use crate::flink::FlinkContext;
 use crate::kubernetes::{KubernetesApiConstraints, KubernetesContext};
 use crate::phases::act::action::ActionStatus;
 use crate::phases::act::ACTION_TOTAL_DURATION;
-use crate::phases::plan::ScaleDirection;
+use crate::phases::plan::{ScaleActionPlan, ScaleDirection};
 use crate::settings::{FlinkActionSettings, Settings};
 
 const STAGE_NAME: &str = "execute_scaling";

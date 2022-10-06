@@ -2,7 +2,8 @@ use crate::kubernetes::FlinkComponent;
 use crate::math;
 use crate::phases::act;
 use crate::phases::act::action::{ActionSession, ScaleAction};
-use crate::phases::act::{ActError, ActErrorDisposition, ScaleActionPlan};
+use crate::phases::act::{ActError, ActErrorDisposition};
+use crate::phases::plan::ScaleActionPlan;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use either::{Left, Right};
@@ -58,7 +59,7 @@ where
         &mut self, plan: &'s Self::Plan, session: &'s mut ActionSession,
     ) -> Result<(), ActError> {
         let surplus = if plan.target_replicas() < plan.current_replicas() {
-            plan.current_replicas() - plan.target_replicas()
+            math::saturating_u32_to_usize(plan.current_replicas() - plan.target_replicas())
         } else {
             0
         };
@@ -68,7 +69,10 @@ where
         let core_culled = math::try_f64_to_u32(self.cull_ratio * nr_taskmanagers) as usize;
 
         let nr_to_cull = surplus + core_culled;
-        let nr_to_cull = usize::min(plan.current_replicas(), nr_to_cull);
+        let nr_to_cull = usize::min(
+            math::saturating_u32_to_usize(plan.current_replicas()),
+            nr_to_cull,
+        );
         tracing::debug!(
             %nr_to_cull, %surplus, %core_culled,
             "calculated number of taskmanagers to cull before restart."

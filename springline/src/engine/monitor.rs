@@ -113,7 +113,7 @@ pub struct Monitor {
     pub rx_decision_monitor: DecisionMonitor,
     pub rx_plan_monitor: PlanMonitor<PlanningStrategy>,
     pub rx_flink_planning_monitor: FlinkPlanningMonitor,
-    pub rx_governance_monitor: GovernanceMonitor,
+    pub rx_governance_monitor: GovernanceMonitor<GovernanceOutcome>,
     pub rx_action_monitor: ActMonitor<GovernanceOutcome>,
     pub tx_feedback: Option<ActorSourceApi<Telemetry>>,
     pub tx_engine: EngineServiceApi,

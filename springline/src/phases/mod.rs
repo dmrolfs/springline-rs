@@ -2,9 +2,11 @@ use proctor::elements::QueryResult;
 use proctor::graph::{Connect, SourceShape};
 use proctor::phases::policy_phase::PolicyPhase;
 use proctor::phases::sense::{
-    ClearinghouseSubscriptionAgent, SubscriptionChannel, TelemetrySubscription,
+    ClearinghouseSubscriptionAgent, SubscriptionChannel, SubscriptionRequirements,
+    TelemetrySubscription,
 };
 use proctor::{AppData, Correlation, ProctorContext};
+use serde::de::DeserializeOwned;
 use serde::Serialize;
 
 use crate::Result;
@@ -38,7 +40,7 @@ pub fn get_outcome_reason(results: &QueryResult) -> String {
 }
 
 #[tracing::instrument(level = "trace", skip(agent))]
-pub async fn subscribe_policy_phase<In, Out, C, D, A>(
+pub(crate) async fn subscribe_policy_phase<In, Out, C, D, A>(
     subscription: TelemetrySubscription, phase: &PolicyPhase<In, Out, C, D>, agent: &mut A,
 ) -> Result<SubscriptionChannel<C>>
 where
@@ -51,4 +53,20 @@ where
     let context_channel = SubscriptionChannel::connect_subscription(subscription, agent).await?;
     (context_channel.outlet(), phase.context_inlet()).connect().await;
     Ok(context_channel)
+}
+
+#[tracing::instrument(level = "trace", skip(agent))]
+pub(crate) async fn subscribe_channel_with_agent<T, A>(
+    name: &str, agent: &mut A,
+) -> Result<SubscriptionChannel<T>>
+where
+    T: AppData + SubscriptionRequirements + DeserializeOwned,
+    A: ClearinghouseSubscriptionAgent,
+{
+    let subscription = TelemetrySubscription::new(name).for_requirements::<T>();
+    let channel = SubscriptionChannel::new(name).await?;
+    agent
+        .subscribe(subscription, channel.subscription_receiver.clone())
+        .await?;
+    Ok(channel)
 }

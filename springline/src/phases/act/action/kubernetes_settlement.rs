@@ -7,8 +7,10 @@ use tokio::time::Instant;
 
 use super::{ActionSession, ScaleAction};
 use crate::kubernetes::{FlinkComponent, KubernetesContext, RUNNING_STATUS};
+use crate::math;
 use crate::phases::act;
-use crate::phases::act::{ActError, ActErrorDisposition, ScaleActionPlan};
+use crate::phases::act::{ActError, ActErrorDisposition};
+use crate::phases::plan::ScaleActionPlan;
 
 pub const ACTION_LABEL: &str = "kubernetes_settlement";
 
@@ -94,7 +96,7 @@ where
 {
     fn target_replicas<'s>(
         plan: &'s <Self as ScaleAction>::Plan, session: &'s ActionSession,
-    ) -> usize {
+    ) -> u32 {
         session.nr_target_replicas.unwrap_or_else(|| plan.target_replicas())
     }
 
@@ -106,7 +108,7 @@ where
     )]
     async fn block_for_rescaled_taskmanagers(
         &self, plan: &<Self as ScaleAction>::Plan, session: &ActionSession,
-    ) -> usize {
+    ) -> u32 {
         let correlation = plan.correlation();
         let nr_target_taskmanagers = Self::target_replicas(plan, session);
 
@@ -124,8 +126,10 @@ where
             match session.kube.list_pods(FlinkComponent::TaskManager).await {
                 Ok(tm_pods) => {
                     let tms_by_status = KubernetesContext::group_pods_by_status(&tm_pods);
-                    nr_confirmed_taskmanagers =
-                        tms_by_status.get(RUNNING_STATUS).map(|tms| tms.len()).unwrap_or(0);
+                    nr_confirmed_taskmanagers = tms_by_status
+                        .get(RUNNING_STATUS)
+                        .map(|tms| math::saturating_usize_to_u32(tms.len()))
+                        .unwrap_or(0);
 
                     if nr_confirmed_taskmanagers == nr_target_taskmanagers {
                         tracing::info!(

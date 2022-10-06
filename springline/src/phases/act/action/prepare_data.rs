@@ -6,7 +6,8 @@ use tracing::Instrument;
 
 use super::{ActionSession, ScaleAction};
 use crate::flink::{FlinkError, JarId, JobId};
-use crate::phases::act::{self, ActError, ActErrorDisposition, ScaleActionPlan};
+use crate::phases::act::{self, ActError, ActErrorDisposition};
+use crate::phases::plan::ScaleActionPlan;
 
 pub const ACTION_LABEL: &str = "prepare_data";
 

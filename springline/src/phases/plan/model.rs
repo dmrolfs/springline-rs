@@ -31,6 +31,21 @@ impl ScaleParameters {
     }
 }
 
+pub trait ScaleActionPlan {
+    fn correlation(&self) -> &CorrelationId;
+    fn recv_timestamp(&self) -> Timestamp;
+    fn direction(&self) -> ScaleDirection;
+    fn current_job_parallelism(&self) -> u32;
+    fn target_job_parallelism(&self) -> u32;
+    fn set_target_job_parallelism(&mut self, parallelism: u32);
+    fn current_replicas(&self) -> u32;
+    fn target_replicas(&self) -> u32;
+    fn set_target_replicas(&mut self, nr_replicas: u32);
+    fn parallelism_factor(&self) -> Option<f64>;
+    fn parallelism_for_replicas(&self, nr_replicas: u32) -> Option<u32>;
+    fn replicas_for_parallelism(&self, parallelism: u32) -> Option<u32>;
+}
+
 #[derive(PolarClass, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ScalePlan {
     pub correlation_id: CorrelationId,
@@ -198,6 +213,72 @@ impl ScalePlan {
 
     fn calculate_taskmanagers(parallelism: u32, task_slots_per_taskmanager: f64) -> u32 {
         math::try_f64_to_u32(f64::from(parallelism) / task_slots_per_taskmanager)
+    }
+}
+
+// impl<T: ScaleActionPlan> TryFrom<T> for ScalePlan {
+//     type Error = ();
+//
+//     fn try_from(plan: T) -> Result<Self, Self::Error> {
+//         let task_slots_per_taskmanager = plan.parallelism_factor().unwrap();
+//         Ok(Self {
+//             correlation_id: plan.correlation().clone(),
+//             recv_timestamp: plan.recv_timestamp(),
+//             current_job_parallelism: u32::try_from(plan.current_job_parallelism())?,
+//             target_job_parallelism: u32::try_from(plan.target_job_parallelism())?,
+//             current_nr_taskmanagers: u32::try_from(plan.current_replicas())?,
+//             target_nr_taskmanagers: u32::try_from(plan.target_replicas())?,
+//             task_slots_per_taskmanager,
+//         })
+//     }
+// }
+impl ScaleActionPlan for ScalePlan {
+    fn correlation(&self) -> &CorrelationId {
+        &self.correlation_id
+    }
+
+    fn recv_timestamp(&self) -> Timestamp {
+        self.recv_timestamp
+    }
+
+    fn direction(&self) -> ScaleDirection {
+        self.direction()
+    }
+
+    fn current_job_parallelism(&self) -> u32 {
+        self.current_job_parallelism
+    }
+
+    fn target_job_parallelism(&self) -> u32 {
+        self.target_job_parallelism
+    }
+
+    fn set_target_job_parallelism(&mut self, parallelism: u32) {
+        self.target_job_parallelism = parallelism;
+    }
+
+    fn current_replicas(&self) -> u32 {
+        self.current_nr_taskmanagers
+    }
+
+    fn target_replicas(&self) -> u32 {
+        self.target_nr_taskmanagers
+    }
+
+    fn set_target_replicas(&mut self, nr_replicas: u32) {
+        self.target_nr_taskmanagers = nr_replicas;
+    }
+
+    fn parallelism_factor(&self) -> Option<f64> {
+        Some(self.task_slots_per_taskmanager)
+    }
+
+    fn parallelism_for_replicas(&self, nr_replicas: u32) -> Option<u32> {
+        Some(self.parallelism_for_taskmanagers(nr_replicas))
+    }
+
+    fn replicas_for_parallelism(&self, parallelism: u32) -> Option<u32> {
+        Some(self.taskmanagers_for_parallelism(parallelism))
     }
 }
 

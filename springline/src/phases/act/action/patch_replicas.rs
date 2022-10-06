@@ -10,9 +10,10 @@ use tracing_futures::Instrument;
 
 use super::{ActionSession, ScaleAction};
 use crate::kubernetes::{self, FlinkComponent, KubernetesContext, KubernetesError};
+use crate::math;
 use crate::phases::act;
-use crate::phases::act::{ActError, ActErrorDisposition, ScaleActionPlan};
-use crate::phases::plan::ScaleDirection;
+use crate::phases::act::{ActError, ActErrorDisposition};
+use crate::phases::plan::{ScaleActionPlan, ScaleDirection};
 
 pub const ACTION_LABEL: &str = "patch_replicas";
 
@@ -55,23 +56,23 @@ where
         &mut self, plan: &'s Self::Plan, session: &'s mut ActionSession,
     ) -> Result<(), ActError> {
         let correlation = session.correlation();
-        let nr_target_taskmanagers = plan.target_replicas();
+        let nr_target_replicas = plan.target_replicas();
 
-        let original_nr_taskmanager_replicas =
+        let original_nr_replicas =
             session.kube.taskmanager().deploy.get_scale(&correlation).await?;
-        tracing::info!(%nr_target_taskmanagers, ?original_nr_taskmanager_replicas, "patching to scale taskmanager replicas");
+        tracing::info!(%nr_target_replicas, ?original_nr_replicas, "patching to scale taskmanager replicas");
 
-        let nr_patched_taskmanager_replicas = session
+        let nr_patched_replicas = session
             .kube
             .taskmanager()
             .deploy
-            .patch_scale(nr_target_taskmanagers, &correlation)
+            .patch_scale(nr_target_replicas, &correlation)
             .instrument(tracing::info_span!(
                 "kubernetes::patch_replicas",
-                ?correlation, %nr_target_taskmanagers, ?original_nr_taskmanager_replicas
+                ?correlation, %nr_target_replicas, ?original_nr_replicas
             ))
             .await;
-        let _patched = match nr_patched_taskmanager_replicas {
+        let _patched = match nr_patched_replicas {
             Err(err) => self.handle_error_on_patch_scale(err, plan, session).await,
             patched => patched,
         }?;
@@ -194,15 +195,15 @@ where
 
     fn do_count_running_pods(
         pods_by_status: &HashMap<String, Vec<Pod>>,
-    ) -> (usize, HashMap<String, usize>) {
-        let pod_status_counts: HashMap<String, usize> = pods_by_status
+    ) -> (u32, HashMap<String, u32>) {
+        let pod_status_counts: HashMap<String, u32> = pods_by_status
             .iter()
-            .map(|(status, pods)| (status.clone(), pods.len()))
+            .map(|(status, pods)| (status.clone(), math::saturating_usize_to_u32(pods.len())))
             .collect();
 
         let nr_running = pods_by_status
             .get(kubernetes::RUNNING_STATUS)
-            .map(|pods| pods.len())
+            .map(|pods| math::saturating_usize_to_u32(pods.len()))
             .unwrap_or(0);
 
         (nr_running, pod_status_counts)
