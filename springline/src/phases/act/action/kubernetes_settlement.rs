@@ -8,6 +8,7 @@ use tokio::time::Instant;
 use super::{ActionSession, ScaleAction};
 use crate::kubernetes::{FlinkComponent, KubernetesContext, RUNNING_STATUS};
 use crate::math;
+use crate::model::NrReplicas;
 use crate::phases::act;
 use crate::phases::act::{ActError, ActErrorDisposition};
 use crate::phases::plan::ScaleActionPlan;
@@ -96,7 +97,7 @@ where
 {
     fn target_replicas<'s>(
         plan: &'s <Self as ScaleAction>::Plan, session: &'s ActionSession,
-    ) -> u32 {
+    ) -> NrReplicas {
         session.nr_target_replicas.unwrap_or_else(|| plan.target_replicas())
     }
 
@@ -108,7 +109,7 @@ where
     )]
     async fn block_for_rescaled_taskmanagers(
         &self, plan: &<Self as ScaleAction>::Plan, session: &ActionSession,
-    ) -> u32 {
+    ) -> NrReplicas {
         let correlation = plan.correlation();
         let nr_target_taskmanagers = Self::target_replicas(plan, session);
 
@@ -119,7 +120,7 @@ where
             self.timeout
         );
 
-        let mut nr_confirmed_taskmanagers = 0;
+        let mut nr_confirmed_taskmanagers = NrReplicas::NONE;
         tokio::time::sleep(self.polling_interval).await;
         let start = Instant::now();
         while Instant::now().duration_since(start) < self.timeout {
@@ -128,8 +129,8 @@ where
                     let tms_by_status = KubernetesContext::group_pods_by_status(&tm_pods);
                     nr_confirmed_taskmanagers = tms_by_status
                         .get(RUNNING_STATUS)
-                        .map(|tms| math::saturating_usize_to_u32(tms.len()))
-                        .unwrap_or(0);
+                        .map(|tms| NrReplicas::new(math::saturating_usize_to_u32(tms.len())))
+                        .unwrap_or(NrReplicas::NONE);
 
                     if nr_confirmed_taskmanagers == nr_target_taskmanagers {
                         tracing::info!(

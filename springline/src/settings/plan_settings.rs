@@ -90,6 +90,7 @@ impl Default for PlanSettings {
 
 #[cfg(test)]
 mod tests {
+    use crate::flink::Parallelism;
     use serde_test::{assert_tokens, Token};
 
     use super::*;
@@ -110,8 +111,8 @@ mod tests {
                 storage_path: Some("./resources/foo.data".to_string()),
             },
             benchmarks: vec![
-                BenchmarkRange::new(1, None, Some(3.14159.into())),
-                BenchmarkRange::new(27, None, Some(79.3875.into())),
+                BenchmarkRange::new(Parallelism::new(1), None, Some(3.14159.into())),
+                BenchmarkRange::new(Parallelism::new(27), None, Some(79.3875.into())),
             ],
             spike: SpikeSettings {
                 std_deviation_threshold: 3.1,

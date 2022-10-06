@@ -221,7 +221,7 @@ mod tests {
     use proctor::phases::sense::SensorSetting;
 
     use super::*;
-    use crate::flink::RestoreMode;
+    use crate::flink::{Parallelism, RestoreMode};
     use crate::kubernetes::{KubernetesApiConstraints, KubernetesDeployResource};
     use crate::phases::plan::{
         BenchmarkRange, ClippingHandlingSettings, PerformanceRepositorySettings,
@@ -621,17 +621,17 @@ mod tests {
                 storage_path: Some("./tmp".to_string()),
             },
             benchmarks: vec![
-                BenchmarkRange::new(1, None, Some(2.59375.into())),
-                BenchmarkRange::new(2, None, Some(5.12963.into())),
-                BenchmarkRange::new(3, None, Some(7.93958.into())),
-                BenchmarkRange::new(9, None, Some(24.55.into())),
-                BenchmarkRange::new(11, None, Some(30.4083.into())),
-                BenchmarkRange::new(17, None, Some(47.58148.into())),
-                BenchmarkRange::new(19, None, Some(51.50185.into())),
-                BenchmarkRange::new(25, None, Some(70.40625.into())),
-                BenchmarkRange::new(27, None, Some(79.3875.into())),
-                BenchmarkRange::new(32, None, Some(90.0852.into())),
-                BenchmarkRange::new(64, Some(96.27037.into()), None),
+                BenchmarkRange::new(Parallelism::new(1), None, Some(2.59375.into())),
+                BenchmarkRange::new(Parallelism::new(2), None, Some(5.12963.into())),
+                BenchmarkRange::new(Parallelism::new(3), None, Some(7.93958.into())),
+                BenchmarkRange::new(Parallelism::new(9), None, Some(24.55.into())),
+                BenchmarkRange::new(Parallelism::new(11), None, Some(30.4083.into())),
+                BenchmarkRange::new(Parallelism::new(17), None, Some(47.58148.into())),
+                BenchmarkRange::new(Parallelism::new(19), None, Some(51.50185.into())),
+                BenchmarkRange::new(Parallelism::new(25), None, Some(70.40625.into())),
+                BenchmarkRange::new(Parallelism::new(27), None, Some(79.3875.into())),
+                BenchmarkRange::new(Parallelism::new(32), None, Some(90.0852.into())),
+                BenchmarkRange::new(Parallelism::new(64), Some(96.27037.into()), None),
             ],
             window: 20,
             spike: SpikeSettings {

@@ -12,8 +12,9 @@ use prometheus::core::{AtomicU64, GenericGauge};
 use prometheus::Opts;
 use tokio::sync::{broadcast, Mutex};
 
-use crate::flink::{AppDataWindow, MetricCatalog};
+use crate::flink::{AppDataWindow, MetricCatalog, Parallelism};
 use crate::math;
+use crate::model::NrReplicas;
 use crate::phases::decision::{DecisionOutcome, DecisionResult};
 use crate::phases::plan::benchmark::Benchmark;
 use crate::phases::plan::clipping::ClippingHandling;
@@ -304,7 +305,7 @@ impl<F: Forecaster> FlinkPlanning<F> {
             let params = ScaleParameters {
                 calculated_job_parallelism: required_job_parallelism,
                 clipping_point,
-                nr_taskmanagers: decision.item().cluster.nr_task_managers,
+                nr_task_managers: NrReplicas::new(decision.item().cluster.nr_task_managers),
                 total_task_slots: self.total_task_slots,
                 free_task_slots: self.free_task_slots,
                 min_scaling_step: self.min_scaling_step,
@@ -346,7 +347,7 @@ impl<F: Forecaster> FlinkPlanning<F> {
     /// set a dynamic max parallelism accordingly. The clipping level could be maintained and identified in decision
     /// phase, but the extra data would need to be conveyed in the decision result.
     #[tracing::instrument(level = "info", skip(self, decision))]
-    async fn assess_for_job_clipping(&mut self, decision: &DecisionOutcome) -> Option<u32> {
+    async fn assess_for_job_clipping(&mut self, decision: &DecisionOutcome) -> Option<Parallelism> {
         let item = decision.item();
         let is_clipping = match self.evaluation_window {
             Some(window) => {
@@ -358,7 +359,7 @@ impl<F: Forecaster> FlinkPlanning<F> {
 
         let mut handling = self.clipping_handling.lock().await;
         if is_clipping {
-            handling.note_clipping(item.health.job_max_parallelism);
+            handling.note_clipping(Parallelism::new(item.health.job_max_parallelism));
             let effective_clipping_point = handling.clipping_point();
             tracing::warn!(
                 ?effective_clipping_point, item_p=%item.health.job_max_parallelism,
@@ -510,9 +511,7 @@ mod tests {
     use crate::phases::plan::benchmark::*;
     use crate::phases::plan::forecast::*;
     use crate::phases::plan::performance_repository::*;
-    use crate::phases::plan::{
-        PerformanceRepositorySettings, ScaleDirection, MINIMAL_JOB_PARALLELISM,
-    };
+    use crate::phases::plan::{PerformanceRepositorySettings, ScaleDirection};
 
     type TestPlanning = FlinkPlanning<LeastSquaresWorkloadForecaster>;
     #[allow(dead_code)]
@@ -693,11 +692,16 @@ mod tests {
                     ScalePlan {
                         recv_timestamp,
                         correlation_id: CORRELATION.clone(),
-                        current_job_parallelism: METRICS.health.job_nonsource_max_parallelism,
-                        target_job_parallelism: min_step
-                            + METRICS.health.job_nonsource_max_parallelism,
-                        target_nr_taskmanagers: min_step + METRICS.cluster.nr_task_managers,
-                        current_nr_taskmanagers: METRICS.cluster.nr_task_managers,
+                        current_job_parallelism: Parallelism::new(
+                            METRICS.health.job_nonsource_max_parallelism
+                        ),
+                        target_job_parallelism: Parallelism::new(
+                            min_step + METRICS.health.job_nonsource_max_parallelism
+                        ),
+                        target_nr_taskmanagers: NrReplicas::new(
+                            min_step + METRICS.cluster.nr_task_managers
+                        ),
+                        current_nr_taskmanagers: NrReplicas::new(METRICS.cluster.nr_task_managers),
                         task_slots_per_taskmanager: 1.0,
                     },
                 )
@@ -713,11 +717,16 @@ mod tests {
                     ScalePlan {
                         recv_timestamp,
                         correlation_id: CORRELATION.clone(),
-                        current_job_parallelism: METRICS.health.job_nonsource_max_parallelism,
-                        target_job_parallelism: METRICS.health.job_nonsource_max_parallelism
-                            - min_step,
-                        target_nr_taskmanagers: METRICS.cluster.nr_task_managers - min_step,
-                        current_nr_taskmanagers: METRICS.cluster.nr_task_managers,
+                        current_job_parallelism: Parallelism::new(
+                            METRICS.health.job_nonsource_max_parallelism
+                        ),
+                        target_job_parallelism: Parallelism::new(
+                            METRICS.health.job_nonsource_max_parallelism - min_step
+                        ),
+                        target_nr_taskmanagers: NrReplicas::new(
+                            METRICS.cluster.nr_task_managers - min_step
+                        ),
+                        current_nr_taskmanagers: NrReplicas::new(METRICS.cluster.nr_task_managers),
                         task_slots_per_taskmanager: 1.0
                     },
                 )
@@ -736,10 +745,12 @@ mod tests {
                     ScalePlan {
                         recv_timestamp,
                         correlation_id: CORRELATION.clone(),
-                        current_job_parallelism: METRICS.health.job_nonsource_max_parallelism,
-                        target_job_parallelism: MINIMAL_JOB_PARALLELISM,
-                        target_nr_taskmanagers: MINIMAL_JOB_PARALLELISM,
-                        current_nr_taskmanagers: METRICS.cluster.nr_task_managers,
+                        current_job_parallelism: Parallelism::new(
+                            METRICS.health.job_nonsource_max_parallelism
+                        ),
+                        target_job_parallelism: Parallelism::MIN,
+                        target_nr_taskmanagers: NrReplicas::new(Parallelism::MIN.as_u32()),
+                        current_nr_taskmanagers: NrReplicas::new(METRICS.cluster.nr_task_managers),
                         task_slots_per_taskmanager: 1.0,
                     },
                 )
@@ -779,10 +790,14 @@ mod tests {
             )));
 
             let mut performance_history = PerformanceHistory::default();
-            performance_history.add_upper_benchmark(Benchmark::new(1, 55.0.into()));
-            performance_history.add_upper_benchmark(Benchmark::new(10, 1500.0.into()));
-            performance_history.add_upper_benchmark(Benchmark::new(15, 2000.0.into()));
-            performance_history.add_upper_benchmark(Benchmark::new(20, 5000.0.into()));
+            performance_history
+                .add_upper_benchmark(Benchmark::new(Parallelism::new(1), 55.0.into()));
+            performance_history
+                .add_upper_benchmark(Benchmark::new(Parallelism::new(10), 1500.0.into()));
+            performance_history
+                .add_upper_benchmark(Benchmark::new(Parallelism::new(15), 2000.0.into()));
+            performance_history
+                .add_upper_benchmark(Benchmark::new(Parallelism::new(20), 5000.0.into()));
             planning.lock().await.performance_history = performance_history;
 
             assert_ok!(
@@ -794,10 +809,12 @@ mod tests {
                     ScalePlan {
                         recv_timestamp,
                         correlation_id: CORRELATION.clone(),
-                        current_job_parallelism: METRICS.health.job_nonsource_max_parallelism,
-                        target_job_parallelism: 16,
-                        target_nr_taskmanagers: 16,
-                        current_nr_taskmanagers: METRICS.cluster.nr_task_managers,
+                        current_job_parallelism: Parallelism::new(
+                            METRICS.health.job_nonsource_max_parallelism
+                        ),
+                        target_job_parallelism: Parallelism::new(16),
+                        target_nr_taskmanagers: NrReplicas::new(16),
+                        current_nr_taskmanagers: NrReplicas::new(METRICS.cluster.nr_task_managers),
                         task_slots_per_taskmanager: 1.0,
                     },
                 )

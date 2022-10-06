@@ -1,13 +1,17 @@
 use super::GovernanceContext;
+use crate::flink::Parallelism;
+use crate::model::NrReplicas;
 use crate::phases::governance::GovernanceMonitor;
 use crate::phases::plan::{ScaleActionPlan, ScaleDirection};
 use async_trait::async_trait;
 use cast_trait_object::dyn_upcast;
+use num_traits::{SaturatingAdd, SaturatingSub};
 use proctor::elements::{Bindings, PolicyFilterEvent, QueryResult};
 use proctor::error::{PolicyError, PortError};
 use proctor::graph::stage::{Stage, WithMonitor};
 use proctor::graph::{Inlet, Outlet, Port, SinkShape, SourceShape, PORT_CONTEXT, PORT_DATA};
 use proctor::{AppData, ProctorResult};
+use std::fmt;
 use std::sync::Arc;
 use tokio::sync::broadcast;
 
@@ -257,20 +261,26 @@ where
     }
 
     #[inline]
-    fn abs_diff(lhs: u32, rhs: u32) -> u32 {
+    fn abs_diff<D>(lhs: D, rhs: D) -> u32
+    where
+        D: PartialOrd + SaturatingSub + Into<u32>,
+    {
         if lhs <= rhs {
-            rhs.saturating_sub(lhs)
+            rhs.saturating_sub(&lhs).into()
         } else {
-            lhs.saturating_sub(rhs)
+            lhs.saturating_sub(&rhs).into()
         }
     }
 
     #[inline]
     #[tracing::instrument(level = "trace", skip(from_current))]
-    fn fit_target_into_constraints(
-        current: u32, target: u32, min_bound: u32, max_bound: u32, context: &Context,
-        from_current: impl Fn(u32) -> u32,
-    ) -> u32 {
+    fn fit_target_into_constraints<D>(
+        current: D, target: D, min_bound: D, max_bound: D, context: &Context,
+        from_current: impl Fn(u32) -> D,
+    ) -> D
+    where
+        D: fmt::Debug + fmt::Display + Copy + PartialOrd + Ord + SaturatingSub + Into<u32>,
+    {
         let mut adjusted_target = target;
         tracing::debug!("DMR: AAA - adjusted_target={adjusted_target}");
 
@@ -292,14 +302,14 @@ where
 
         tracing::debug!(
             "DMR: DDD - max(min_bound[{min_bound}, adjusted_target[{adjusted_target}] = {}",
-            u32::max(min_bound, adjusted_target)
+            D::max(min_bound, adjusted_target)
         );
-        adjusted_target = u32::max(min_bound, adjusted_target);
+        adjusted_target = D::max(min_bound, adjusted_target);
         tracing::debug!(
             "DMR: EEE - min(adjusted_target[{adjusted_target}, max_bound[{max_bound}] = {}",
-            u32::min(adjusted_target, max_bound)
+            D::min(adjusted_target, max_bound)
         );
-        adjusted_target = u32::min(adjusted_target, max_bound);
+        adjusted_target = D::min(adjusted_target, max_bound);
         tracing::debug!("DMR: FFF - final adjusted_target={adjusted_target}");
         adjusted_target
     }
@@ -315,18 +325,23 @@ where
                 context.min_parallelism,
                 context.max_parallelism,
                 context,
-                |step| proposed.current_job_parallelism().saturating_add(step),
+                |step| proposed.current_job_parallelism().saturating_add(&Parallelism::new(step)),
             );
             proposed.set_target_job_parallelism(adjusted_target_parallelism);
 
-            let adjusted_target_nr_taskmanagers = Self::fit_target_into_constraints(
-                proposed.current_replicas(),
-                proposed.target_replicas(),
-                context.min_cluster_size,
-                context.max_cluster_size,
-                context,
-                |step| proposed.current_replicas().saturating_add(step),
-            );
+            let adjusted_target_nr_taskmanagers = proposed
+                .replicas_for_parallelism(proposed.target_job_parallelism())
+                .map(|nr| context.cluster_size_in_bounds(nr))
+                .unwrap_or_else(|| {
+                    Self::fit_target_into_constraints(
+                        proposed.current_replicas(),
+                        proposed.target_replicas(),
+                        context.min_cluster_size,
+                        context.max_cluster_size,
+                        context,
+                        |step| proposed.current_replicas().saturating_add(&NrReplicas::new(step)),
+                    )
+                });
             proposed.set_target_replicas(adjusted_target_nr_taskmanagers);
 
             if &proposed == plan {
@@ -352,18 +367,23 @@ where
                 context.min_parallelism,
                 context.max_parallelism,
                 context,
-                |step| proposed.current_job_parallelism().saturating_sub(step),
+                |step| proposed.current_job_parallelism().saturating_sub(&Parallelism::new(step)),
             );
             proposed.set_target_job_parallelism(adjusted_target_parallelism);
 
-            let adjusted_target_nr_taskmanagers = Self::fit_target_into_constraints(
-                proposed.current_replicas(),
-                proposed.target_replicas(),
-                context.min_cluster_size,
-                context.max_cluster_size,
-                context,
-                |step| proposed.current_replicas().saturating_sub(step),
-            );
+            let adjusted_target_nr_taskmanagers = proposed
+                .replicas_for_parallelism(proposed.target_job_parallelism())
+                .map(|nr| context.cluster_size_in_bounds(nr))
+                .unwrap_or_else(|| {
+                    Self::fit_target_into_constraints(
+                        proposed.current_replicas(),
+                        proposed.target_replicas(),
+                        context.min_cluster_size,
+                        context.max_cluster_size,
+                        context,
+                        |step| proposed.current_replicas().saturating_sub(&NrReplicas::new(step)),
+                    )
+                });
             proposed.set_target_replicas(adjusted_target_nr_taskmanagers);
 
             if &proposed == plan {

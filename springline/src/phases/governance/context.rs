@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 use std::fmt::{self, Debug};
 
+use crate::flink::Parallelism;
 use oso::PolarClass;
 use pretty_snowflake::{Id, Label};
 use proctor::elements::telemetry::UpdateMetricsFn;
@@ -11,6 +12,7 @@ use proctor::{Correlation, ProctorContext};
 use serde::{Deserialize, Serialize};
 
 use crate::metrics::UpdateMetrics;
+use crate::model::NrReplicas;
 
 #[derive(PolarClass, Label, Clone, Serialize, Deserialize)]
 pub struct GovernanceContext {
@@ -21,22 +23,22 @@ pub struct GovernanceContext {
     /// Minimal job parallelism autoscaling will allow to rescale to.
     /// - source from governance settings
     #[polar(attribute)]
-    pub min_parallelism: u32,
+    pub min_parallelism: Parallelism,
 
     /// Maximum job parallelism autoscaling will allow to rescale to.
     /// - source from governance settings
     #[polar(attribute)]
-    pub max_parallelism: u32,
+    pub max_parallelism: Parallelism,
 
     /// Minimal cluster size autoscaling will allow to rescale to.
     /// - source from governance settings
     #[polar(attribute)]
-    pub min_cluster_size: u32,
+    pub min_cluster_size: NrReplicas,
 
     /// Maximum cluster size autoscaling will allow to rescale to.
     /// - source from governance settings
     #[polar(attribute)]
-    pub max_cluster_size: u32,
+    pub max_cluster_size: NrReplicas,
 
     /// Minimal step in parallelism and cluster size autoscaling will allow to rescale.
     /// - source from governance settings
@@ -72,6 +74,30 @@ impl Debug for GovernanceContext {
             )
             .field("custom", &self.custom)
             .finish()
+    }
+}
+
+impl GovernanceContext {
+    #[inline]
+    pub fn cluster_size_in_bounds(&self, cluster_size: NrReplicas) -> NrReplicas {
+        let above_min = NrReplicas::max(self.min_cluster_size, cluster_size);
+        let result = NrReplicas::min(above_min, self.max_cluster_size);
+        tracing::warn!(
+            ?self,
+            "DMR: cluster_size_in_bounds({cluster_size}) = {result}"
+        );
+        result
+    }
+
+    #[inline]
+    pub fn parallelism_in_bounds(&self, parallelism: Parallelism) -> Parallelism {
+        let above_min = Parallelism::max(self.min_parallelism, parallelism);
+        let result = Parallelism::min(above_min, self.max_parallelism);
+        tracing::warn!(
+            ?self,
+            "DMR: parallelism_in_bounds({parallelism}) = {result}"
+        );
+        result
     }
 }
 
@@ -159,10 +185,10 @@ mod tests {
             // custom_prop_a in prop::num::f64::ANY,
             // custom_prop_b in prop::num::i64::ANY,
     ) {
-        let min_parallelism = 5;
-        let max_parallelism = 250;
-        let min_cluster_size = 7;
-        let max_cluster_size = 199;
+        let min_parallelism = Parallelism::new(5);
+        let max_parallelism = Parallelism::new(250);
+        let min_cluster_size = NrReplicas::new(7);
+        let max_cluster_size = NrReplicas::new(199);
         let min_scaling_step = 1;
         let max_scaling_step = 33;
         let custom_prop_a = std::f64::consts::SQRT_2;
@@ -198,13 +224,13 @@ mod tests {
             Token::U32(0),
             Token::TupleStructEnd,
             Token::Str("min_parallelism"),
-            Token::U32(min_parallelism),
+            Token::U32(min_parallelism.into()),
             Token::Str("max_parallelism"),
-            Token::U32(max_parallelism),
+            Token::U32(max_parallelism.into()),
             Token::Str("min_cluster_size"),
-            Token::U32(min_cluster_size),
+            Token::U32(min_cluster_size.into()),
             Token::Str("max_cluster_size"),
-            Token::U32(max_cluster_size),
+            Token::U32(max_cluster_size.into()),
             Token::Str("min_scaling_step"),
             Token::U32(min_scaling_step),
             Token::Str("max_scaling_step"),
@@ -236,10 +262,10 @@ mod tests {
     ) {
         once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
 
-        let min_parallelism = 3;
-        let max_parallelism = 300;
-        let min_cluster_size = 7;
-        let max_cluster_size = 199;
+        let min_parallelism = Parallelism::new(3);
+        let max_parallelism = Parallelism::new(300);
+        let min_cluster_size = NrReplicas::new(7);
+        let max_cluster_size = NrReplicas::new(199);
         let min_scaling_step = 2;
         let max_scaling_step = 33;
         let foo = std::f64::consts::SQRT_2;

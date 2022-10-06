@@ -9,12 +9,12 @@ use proctor::elements::{RecordsPerSecond, TelemetryType, TelemetryValue};
 use proctor::error::{PlanError, TelemetryError};
 use serde::{Deserialize, Serialize};
 
-use crate::flink::{AppDataWindow, MetricCatalog};
+use crate::flink::{AppDataWindow, MetricCatalog, Parallelism};
 use crate::math;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct BenchmarkRange {
-    pub job_parallelism: u32,
+    pub job_parallelism: Parallelism,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
@@ -35,7 +35,8 @@ impl BenchmarkRange {
     }
 
     pub const fn new(
-        job_parallelism: u32, lo_rate: Option<RecordsPerSecond>, hi_rate: Option<RecordsPerSecond>,
+        job_parallelism: Parallelism, lo_rate: Option<RecordsPerSecond>,
+        hi_rate: Option<RecordsPerSecond>,
     ) -> Self {
         Self { job_parallelism, lo_rate, hi_rate }
     }
@@ -176,7 +177,7 @@ impl RelativeEq for BenchmarkRange {
 #[serde_as]
 #[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Benchmark {
-    pub job_parallelism: u32,
+    pub job_parallelism: Parallelism,
     pub records_out_per_sec: RecordsPerSecond,
 }
 
@@ -187,12 +188,12 @@ impl fmt::Display for Benchmark {
 }
 
 impl Benchmark {
-    pub const fn new(job_parallelism: u32, records_out_per_sec: RecordsPerSecond) -> Self {
+    pub const fn new(job_parallelism: Parallelism, records_out_per_sec: RecordsPerSecond) -> Self {
         Self { job_parallelism, records_out_per_sec }
     }
 
     pub fn from_window(data: &AppDataWindow<MetricCatalog>, window: Duration) -> Self {
-        let job_parallelism = data.health.job_max_parallelism;
+        let job_parallelism = Parallelism::new(data.health.job_max_parallelism);
         let window_secs = math::saturating_u64_to_u32(window.as_secs());
         let records_out_per_sec = data.flow_records_out_per_sec_rolling_average(window_secs).into();
         Self { job_parallelism, records_out_per_sec }
@@ -208,7 +209,7 @@ impl From<MetricCatalog> for Benchmark {
 impl From<&MetricCatalog> for Benchmark {
     fn from(that: &MetricCatalog) -> Self {
         Self {
-            job_parallelism: that.health.job_nonsource_max_parallelism,
+            job_parallelism: Parallelism::new(that.health.job_nonsource_max_parallelism),
             records_out_per_sec: that.flow.records_out_per_sec.into(),
         }
     }
@@ -284,7 +285,10 @@ impl TryFrom<TelemetryValue> for Benchmark {
                 .ok_or_else(|| PlanError::DataNotFound(T_RECORDS_OUT_PER_SEC.to_string()))??
                 .into();
 
-            Ok(Self { job_parallelism, records_out_per_sec })
+            Ok(Self {
+                job_parallelism: Parallelism::new(job_parallelism),
+                records_out_per_sec,
+            })
         } else {
             Err(TelemetryError::TypeError {
                 expected: TelemetryType::Table,
@@ -307,19 +311,25 @@ mod tests {
         let main_span = tracing::info_span!("test_bench_add_lower_benchmark");
         let _main_span_guard = main_span.enter();
 
-        let mut actual = BenchmarkRange::new(4, None, None);
+        let mut actual = BenchmarkRange::new(Parallelism::new(4), None, None);
 
         actual.set_lo_rate(1.0.into());
-        assert_eq!(actual, BenchmarkRange::new(4, Some(1.0.into()), None));
+        assert_eq!(
+            actual,
+            BenchmarkRange::new(Parallelism::new(4), Some(1.0.into()), None)
+        );
 
         actual.set_lo_rate(3.0.into());
-        assert_eq!(actual, BenchmarkRange::new(4, Some(3.0.into()), None));
+        assert_eq!(
+            actual,
+            BenchmarkRange::new(Parallelism::new(4), Some(3.0.into()), None)
+        );
 
         actual.set_hi_rate(5.0.into());
         actual.set_lo_rate(1.0.into());
         assert_eq!(
             actual,
-            BenchmarkRange::new(4, Some(1.0.into()), Some(5.0.into()))
+            BenchmarkRange::new(Parallelism::new(4), Some(1.0.into()), Some(5.0.into()))
         );
 
         Ok(())
@@ -331,19 +341,25 @@ mod tests {
         let main_span = tracing::info_span!("test_bench_add_upper_benchmark");
         let _main_span_guard = main_span.enter();
 
-        let mut actual = BenchmarkRange::new(4, None, None);
+        let mut actual = BenchmarkRange::new(Parallelism::new(4), None, None);
 
         actual.set_hi_rate(1.0.into());
-        assert_eq!(actual, BenchmarkRange::new(4, None, Some(1.0.into())));
+        assert_eq!(
+            actual,
+            BenchmarkRange::new(Parallelism::new(4), None, Some(1.0.into()))
+        );
 
         actual.set_hi_rate(3.0.into());
-        assert_eq!(actual, BenchmarkRange::new(4, None, Some(3.0.into())));
+        assert_eq!(
+            actual,
+            BenchmarkRange::new(Parallelism::new(4), None, Some(3.0.into()))
+        );
 
         actual.set_lo_rate(1.0.into());
         actual.set_hi_rate(1.0.into());
         assert_eq!(
             actual,
-            BenchmarkRange::new(4, Some(1.0.into()), Some(1.0.into()))
+            BenchmarkRange::new(Parallelism::new(4), Some(1.0.into()), Some(1.0.into()))
         );
 
         Ok(())
@@ -355,19 +371,25 @@ mod tests {
         let main_span = tracing::info_span!("test_bench_add_lower_upper_benchmarks");
         let _main_span_guard = main_span.enter();
 
-        let mut actual = BenchmarkRange::new(4, None, None);
+        let mut actual = BenchmarkRange::new(Parallelism::new(4), None, None);
         actual.set_lo_rate(1.0.into());
         actual.set_hi_rate(5.0.into());
         assert_eq!(
             actual,
-            BenchmarkRange::new(4, Some(1.0.into()), Some(5.0.into()))
+            BenchmarkRange::new(Parallelism::new(4), Some(1.0.into()), Some(5.0.into()))
         );
 
         actual.set_lo_rate(7.0.into());
-        assert_eq!(actual, BenchmarkRange::new(4, Some(7.0.into()), None));
+        assert_eq!(
+            actual,
+            BenchmarkRange::new(Parallelism::new(4), Some(7.0.into()), None)
+        );
 
         actual.set_hi_rate(2.5.into());
-        assert_eq!(actual, BenchmarkRange::new(4, None, Some(2.5.into())));
+        assert_eq!(
+            actual,
+            BenchmarkRange::new(Parallelism::new(4), None, Some(2.5.into()))
+        );
 
         Ok(())
     }

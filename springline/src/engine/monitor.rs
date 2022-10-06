@@ -11,6 +11,7 @@ use proctor::graph::stage::{ActorSourceApi, ActorSourceCmd};
 use proctor::phases::plan::{PlanEvent, PlanMonitor};
 use proctor::phases::sense::{ClearinghouseApi, ClearinghouseCmd};
 use proctor::Correlation;
+use prometheus::core::{AtomicU64, GenericGauge};
 use prometheus::{IntCounter, IntGauge, Opts};
 
 use crate::engine::service::{EngineCmd, EngineServiceApi, Health};
@@ -266,7 +267,7 @@ impl Monitor {
             PlanEvent::DecisionPlanned(decision, plan) => match decision {
                 DecisionResult::ScaleUp(_) | DecisionResult::ScaleDown(_) => {
                     tracing::info!(?event, correlation=%decision.item().correlation(), "planning for scaling decision");
-                    PLAN_TARGET_NR_TASK_MANAGERS.set(plan.target_nr_taskmanagers as i64);
+                    PLAN_TARGET_NR_TASK_MANAGERS.set(plan.target_nr_taskmanagers.into());
                 },
                 _no_action => {
                     tracing::debug!(?event, correlation=%decision.item().correlation(), "no planning action by decision");
@@ -489,8 +490,8 @@ pub static PLAN_OBSERVATION_COUNT: Lazy<IntCounter> = Lazy::new(|| {
     .expect("failed creating plan_observation_count metric")
 });
 
-pub static PLAN_TARGET_NR_TASK_MANAGERS: Lazy<IntGauge> = Lazy::new(|| {
-    IntGauge::with_opts(
+pub static PLAN_TARGET_NR_TASK_MANAGERS: Lazy<GenericGauge<AtomicU64>> = Lazy::new(|| {
+    GenericGauge::with_opts(
         Opts::new(
             "plan_target_nr_task_managers",
             "Number of task managers targeted by Planning",

@@ -118,7 +118,7 @@ int_monoid_saturating_imps!(i8, i16, i32, i64, u8, u16, u32, u64, isize, usize);
 impl Semigroup for Saturating<f32> {
     fn combine(&self, other: &Self) -> Self {
         let sum = self.0 + other.0;
-        Saturating(sum)
+        Self(sum)
     }
 }
 
@@ -149,7 +149,7 @@ impl Monoid for Saturating<Option<f32>> {
 impl Semigroup for Saturating<f64> {
     fn combine(&self, other: &Self) -> Self {
         let sum = self.0 + other.0;
-        Saturating(sum)
+        Self(sum)
     }
 }
 

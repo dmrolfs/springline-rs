@@ -52,8 +52,6 @@ pub use planning::{
     PLANNING_PERFORMANCE_HISTORY_ENTRY_COUNT,
 };
 
-const MINIMAL_JOB_PARALLELISM: u32 = 1;
-
 pub type PlanningStrategy = planning::FlinkPlanning<forecast::LeastSquaresWorkloadForecaster>;
 pub type PlanningOutcome = <PlanningStrategy as Planning>::Out;
 

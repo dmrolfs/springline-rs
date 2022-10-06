@@ -14,8 +14,9 @@ use proctor::graph::{Connect, Graph, SinkShape, SourceShape};
 use proctor::phases::plan::{Plan, PlanEvent, Planning};
 use proctor::ProctorResult;
 use springline::flink::{
-    AppDataWindow, ClusterMetrics, FlowMetrics, JobHealthMetrics, MetricCatalog,
+    AppDataWindow, ClusterMetrics, FlowMetrics, JobHealthMetrics, MetricCatalog, Parallelism,
 };
+use springline::model::NrReplicas;
 use springline::phases::decision::{DecisionOutcome, DecisionResult};
 use springline::phases::plan::{
     make_performance_repository, ClippingHandlingSettings, FlinkPlanningMonitor, ForecastInputs,
@@ -413,10 +414,10 @@ async fn test_flink_planning_linear() {
             vec![ScalePlan {
                 recv_timestamp: timestamp,
                 correlation_id: correlation_id.clone(),
-                current_job_parallelism: 2,
-                target_job_parallelism: 6,
-                current_nr_taskmanagers: 2,
-                target_nr_taskmanagers: 6, // todo: also allow 5???
+                current_job_parallelism: Parallelism::new(2),
+                target_job_parallelism: Parallelism::new(6),
+                current_nr_taskmanagers: NrReplicas::new(2),
+                target_nr_taskmanagers: NrReplicas::new(6), // todo: also allow 5???
                 task_slots_per_taskmanager: 1_f64,
             }]
         )
@@ -428,10 +429,10 @@ async fn test_flink_planning_linear() {
             vec![ScalePlan {
                 recv_timestamp: timestamp,
                 correlation_id,
-                current_job_parallelism: 2,
-                target_job_parallelism: 5,
-                current_nr_taskmanagers: 2,
-                target_nr_taskmanagers: 5,
+                current_job_parallelism: Parallelism::new(2),
+                target_job_parallelism: Parallelism::new(5),
+                current_nr_taskmanagers: NrReplicas::new(2),
+                target_nr_taskmanagers: NrReplicas::new(5),
                 task_slots_per_taskmanager: 1_f64,
             }]
         )
@@ -591,10 +592,10 @@ async fn test_flink_planning_sine() {
             vec![ScalePlan {
                 recv_timestamp: timestamp,
                 correlation_id: CORRELATION_ID.clone(),
-                current_job_parallelism: 2,
-                target_job_parallelism: 8,
-                current_nr_taskmanagers: 2,
-                target_nr_taskmanagers: 8,
+                current_job_parallelism: Parallelism::new(2),
+                target_job_parallelism: Parallelism::new(8),
+                current_nr_taskmanagers: NrReplicas::new(2),
+                target_nr_taskmanagers: NrReplicas::new(8),
                 task_slots_per_taskmanager: 1_f64,
             }]
         )
@@ -605,10 +606,10 @@ async fn test_flink_planning_sine() {
             vec![ScalePlan {
                 recv_timestamp: timestamp,
                 correlation_id: CORRELATION_ID.clone(),
-                current_job_parallelism: 2,
-                target_job_parallelism: 9,
-                current_nr_taskmanagers: 2,
-                target_nr_taskmanagers: 9,
+                current_job_parallelism: Parallelism::new(2),
+                target_job_parallelism: Parallelism::new(9),
+                current_nr_taskmanagers: NrReplicas::new(2),
+                target_nr_taskmanagers: NrReplicas::new(9),
                 task_slots_per_taskmanager: 1_f64,
             }]
         )
@@ -796,10 +797,10 @@ async fn test_flink_planning_context_change() {
             ScalePlan {
                 recv_timestamp: penultimate_timestamp,
                 correlation_id: CORRELATION_ID.clone(),
-                current_job_parallelism: 2,
-                target_job_parallelism: 8,
-                current_nr_taskmanagers: 2,
-                target_nr_taskmanagers: 8,
+                current_job_parallelism: Parallelism::new(2),
+                target_job_parallelism: Parallelism::new(8),
+                current_nr_taskmanagers: NrReplicas::new(2),
+                target_nr_taskmanagers: NrReplicas::new(8),
                 task_slots_per_taskmanager: 1_f64,
             },
         )
@@ -811,10 +812,10 @@ async fn test_flink_planning_context_change() {
                 ScalePlan {
                     recv_timestamp: penultimate_timestamp,
                     correlation_id: CORRELATION_ID.clone(),
-                    current_job_parallelism: 2,
-                    target_job_parallelism: 9,
-                    current_nr_taskmanagers: 2,
-                    target_nr_taskmanagers: 9,
+                    current_job_parallelism: Parallelism::new(2),
+                    target_job_parallelism: Parallelism::new(9),
+                    current_nr_taskmanagers: NrReplicas::new(2),
+                    target_nr_taskmanagers: NrReplicas::new(9),
                     task_slots_per_taskmanager: 1_f64,
                 },
             )
@@ -825,10 +826,10 @@ async fn test_flink_planning_context_change() {
                 ScalePlan {
                     recv_timestamp: penultimate_timestamp,
                     correlation_id: CORRELATION_ID.clone(),
-                    current_job_parallelism: 2,
-                    target_job_parallelism: 7,
-                    current_nr_taskmanagers: 2,
-                    target_nr_taskmanagers: 7,
+                    current_job_parallelism: Parallelism::new(2),
+                    target_job_parallelism: Parallelism::new(7),
+                    current_nr_taskmanagers: NrReplicas::new(2),
+                    target_nr_taskmanagers: NrReplicas::new(7),
                     task_slots_per_taskmanager: 1_f64,
                 },
             )

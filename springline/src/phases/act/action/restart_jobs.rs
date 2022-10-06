@@ -15,9 +15,9 @@ use tracing_futures::Instrument;
 use url::Url;
 
 use crate::flink::{
-    self, FlinkContext, FlinkError, JarId, JobId, JobState, RestoreMode, SavepointLocation,
+    self, FlinkContext, FlinkError, JarId, JobId, JobState, Parallelism, RestoreMode,
+    SavepointLocation,
 };
-use crate::math;
 use crate::phases::act::action::{ActionSession, ScaleAction};
 use crate::phases::act::{self, ActError, ActErrorDisposition};
 use crate::phases::plan::ScaleActionPlan;
@@ -132,8 +132,7 @@ where
                     }
 
                     let jars: Vec<_> = initial_failures.keys().cloned().collect();
-                    let restart_parallelism = usize::try_from(plan.current_replicas())
-                        .map_err(|err| ActError::Stage(err.into()))?;
+                    let restart_parallelism = Parallelism::new(plan.current_replicas().into());
                     let repeat_failures = self
                         .try_jar_restarts_for_parallelism(
                             restart_parallelism,
@@ -177,14 +176,16 @@ where
     /// likely be the new parallelism. In the case of a scale down, this will most likely be the
     /// current parallelism. Discrepancies between the two cases are due to rescaling the cluster
     /// partially completed within budgeted time.
-    fn parallelism_from_plan_session(&self, plan: &P, session: &ActionSession) -> usize {
+    fn parallelism_from_plan_session(&self, plan: &P, session: &ActionSession) -> Parallelism {
         let mut parallelism = plan.target_job_parallelism();
 
         if let Some(nr_tm_confirmed) = session.nr_confirmed_rescaled_taskmanagers {
             if plan.target_replicas() != nr_tm_confirmed {
-                let confirmed_parallelism_capacity =
-                    plan.parallelism_for_replicas(nr_tm_confirmed).unwrap_or(nr_tm_confirmed);
-                let effective_parallelism = u32::min(parallelism, confirmed_parallelism_capacity);
+                let confirmed_parallelism_capacity = plan
+                    .parallelism_for_replicas(nr_tm_confirmed)
+                    .unwrap_or_else(|| Parallelism::new(nr_tm_confirmed.into()));
+                let effective_parallelism =
+                    Parallelism::min(parallelism, confirmed_parallelism_capacity);
 
                 let track = format!("{}::try_jar_restart::confirmed_below_target", self.label());
                 tracing::warn!(
@@ -207,11 +208,11 @@ where
             }
         }
 
-        math::saturating_u32_to_usize(parallelism)
+        parallelism
     }
 
     async fn try_jar_restarts_for_parallelism<'s>(
-        &self, parallelism: usize, jars: &[JarId], mut locations: HashSet<SavepointLocation>,
+        &self, parallelism: Parallelism, jars: &[JarId], mut locations: HashSet<SavepointLocation>,
         plan: &'s P, session: &'s ActionSession,
     ) -> Vec<(JarId, SavepointLocation, ActError)> {
         use crate::flink::JobState as JS;
@@ -298,8 +299,8 @@ where
 
     #[tracing::instrument(level = "trace", skip(session))]
     async fn try_all_jar_restarts(
-        &self, jars: &[JarId], locations: &mut HashSet<SavepointLocation>, parallelism: usize,
-        session: &ActionSession,
+        &self, jars: &[JarId], locations: &mut HashSet<SavepointLocation>,
+        parallelism: Parallelism, session: &ActionSession,
     ) -> Result<Vec<(JobId, JarId, SavepointLocation)>, FlinkError> {
         let mut pairings = Vec::with_capacity(jars.len());
         let correlation = session.correlation();
@@ -328,7 +329,7 @@ where
 
     #[tracing::instrument(level = "trace", skip(session))]
     async fn try_jar_restart(
-        &self, jar: &JarId, locations: HashSet<SavepointLocation>, parallelism: usize,
+        &self, jar: &JarId, locations: HashSet<SavepointLocation>, parallelism: Parallelism,
         session: &ActionSession,
     ) -> Result<Option<(JobId, SavepointLocation)>, FlinkError> {
         let mut job_savepoint = None;
@@ -358,7 +359,7 @@ where
 
     #[tracing::instrument(level = "trace", skip(session))]
     async fn try_jar_restart_for_location(
-        &self, jar: &JarId, location: &SavepointLocation, parallelism: usize,
+        &self, jar: &JarId, location: &SavepointLocation, parallelism: Parallelism,
         session: &ActionSession,
     ) -> Result<Either<JobId, StatusCode>, FlinkError> {
         let correlation = session.correlation();
@@ -366,9 +367,12 @@ where
         let url = Self::restart_jar_url_for(&session.flink, jar)?;
         let span = tracing::info_span!("act::restart_jobs - restart_jar", %url, ?correlation, %jar, %location, %parallelism);
 
+        let parallelism: u32 = parallelism.into();
         let body = restart::RestartJarRequestBody {
             savepoint_path: Some(location.clone()),
-            parallelism: Some(parallelism),
+            parallelism: Some(
+                usize::try_from(parallelism).map_err(|err| FlinkError::Other(err.into()))?,
+            ),
             allow_non_restored_state: self.allow_non_restored_state,
             program_args_list: self.program_args.clone(),
             //todo: add feature for supported flink version -- restore_mode: self.restore_mode,

@@ -2,18 +2,18 @@ use std::cmp;
 use std::collections::BTreeMap;
 use std::fmt::Debug;
 
+use crate::flink::Parallelism;
 use proctor::elements::RecordsPerSecond;
 use serde::{Deserialize, Serialize};
 use splines::{Interpolation, Key, Spline};
 
 use crate::math;
 use crate::phases::plan::benchmark::{Benchmark, BenchmarkRange};
-use crate::phases::plan::MINIMAL_JOB_PARALLELISM;
 
 // expect the spread of cluster size will be small and certainly not unbounded. If history is
 // unbounded, need to consider a bounded data structure (cache).
 #[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
-pub struct PerformanceHistory(BTreeMap<u32, BenchmarkRange>);
+pub struct PerformanceHistory(BTreeMap<Parallelism, BenchmarkRange>);
 
 impl PerformanceHistory {
     #[inline]
@@ -60,7 +60,9 @@ impl PerformanceHistory {
 }
 
 impl PerformanceHistory {
-    pub fn job_parallelism_for_workload(&self, workload_rate: RecordsPerSecond) -> Option<u32> {
+    pub fn job_parallelism_for_workload(
+        &self, workload_rate: RecordsPerSecond,
+    ) -> Option<Parallelism> {
         self.evaluate_neighbors(workload_rate)
             .map(|neighbors| neighbors.job_parallelism_for(workload_rate))
     }
@@ -105,16 +107,16 @@ impl PerformanceHistory {
 }
 
 impl IntoIterator for PerformanceHistory {
-    type IntoIter = std::collections::btree_map::IntoIter<u32, BenchmarkRange>;
-    type Item = (u32, BenchmarkRange);
+    type IntoIter = std::collections::btree_map::IntoIter<Parallelism, BenchmarkRange>;
+    type Item = (Parallelism, BenchmarkRange);
 
     fn into_iter(self) -> Self::IntoIter {
         self.0.into_iter()
     }
 }
 
-impl From<BTreeMap<u32, BenchmarkRange>> for PerformanceHistory {
-    fn from(that: BTreeMap<u32, BenchmarkRange>) -> Self {
+impl From<BTreeMap<Parallelism, BenchmarkRange>> for PerformanceHistory {
+    fn from(that: BTreeMap<Parallelism, BenchmarkRange>) -> Self {
         Self(that)
     }
 }
@@ -127,7 +129,7 @@ enum BenchNeighbors {
 }
 
 impl BenchNeighbors {
-    fn job_parallelism_for(&self, workload_rate: RecordsPerSecond) -> u32 {
+    fn job_parallelism_for(&self, workload_rate: RecordsPerSecond) -> Parallelism {
         match self {
             Self::BelowLowest(lo) => Self::extrapolate_lo(workload_rate, lo),
             Self::AboveHighest(hi) => Self::extrapolate_hi(workload_rate, hi),
@@ -136,12 +138,12 @@ impl BenchNeighbors {
     }
 
     #[tracing::instrument(level = "debug")]
-    fn extrapolate_lo(workload_rate: RecordsPerSecond, lo: &Benchmark) -> u32 {
+    fn extrapolate_lo(workload_rate: RecordsPerSecond, lo: &Benchmark) -> Parallelism {
         let workload_rate: f64 = workload_rate.into();
         let lo_rate: f64 = lo.records_out_per_sec.into();
 
-        let ratio: f64 = (f64::from(lo.job_parallelism)) / lo_rate;
-        let calculated = math::try_f64_to_u32((ratio * workload_rate).ceil());
+        let ratio: f64 = lo.job_parallelism.as_f64() / lo_rate;
+        let calculated = Parallelism::new(math::try_f64_to_u32((ratio * workload_rate).ceil()));
         // .unwrap_or_else(|err| {
         //     tracing::error!(error=?err, "failed to convert calculated job parallelism into integer - using lo benchmark: {}", lo.job_parallelism);
         //     lo.job_parallelism
@@ -149,50 +151,41 @@ impl BenchNeighbors {
 
         tracing::debug!(%ratio, %calculated, "calculations: {} ceil:{}", ratio * workload_rate, (ratio * workload_rate).ceil());
 
-        let lo_job_parallelism = cmp::min(
-            lo.job_parallelism,
-            cmp::max(MINIMAL_JOB_PARALLELISM, calculated),
-        );
+        let lo_job_parallelism =
+            cmp::min(lo.job_parallelism, cmp::max(Parallelism::MIN, calculated));
         tracing::debug!(%lo_job_parallelism, %ratio, extrapolated_parallelism=%calculated, "extrapolated job parallelism below lowest neighbor.");
         lo_job_parallelism
     }
 
     #[tracing::instrument(level = "debug")]
-    fn extrapolate_hi(workload_rate: RecordsPerSecond, hi: &Benchmark) -> u32 {
+    fn extrapolate_hi(workload_rate: RecordsPerSecond, hi: &Benchmark) -> Parallelism {
         let workload_rate: f64 = workload_rate.into();
         let hi_rate: f64 = hi.records_out_per_sec.into();
 
-        let ratio: f64 = (f64::from(hi.job_parallelism)) / hi_rate;
-        let calculated = math::try_f64_to_u32((ratio * workload_rate).ceil());
-        // .unwrap_or_else(|err| {
-        //     tracing::error!(error=?err, "failed to convert calculated job parallelism into integer - using hi benchmark: {}", hi.job_parallelism);
-        //     hi.job_parallelism
-        // });
-
-        let hi_job_parallelism = cmp::max(
-            hi.job_parallelism,
-            cmp::max(MINIMAL_JOB_PARALLELISM, calculated),
-        );
+        let ratio: f64 = hi.job_parallelism.as_f64() / hi_rate;
+        let calculated = Parallelism::new(math::try_f64_to_u32((ratio * workload_rate).ceil()));
+        let hi_job_parallelism =
+            cmp::max(hi.job_parallelism, cmp::max(Parallelism::MIN, calculated));
         tracing::debug!(%hi_job_parallelism, %ratio, extrapolated_parallelism=%calculated, "extrapolated job parallelism above highest neighbor.");
         hi_job_parallelism
     }
 
     #[tracing::instrument(level = "debug")]
-    fn interpolate(workload_rate: RecordsPerSecond, lo: &Benchmark, hi: &Benchmark) -> u32 {
+    fn interpolate(workload_rate: RecordsPerSecond, lo: &Benchmark, hi: &Benchmark) -> Parallelism {
         let start: Key<f64, f64> = Key::new(
             lo.records_out_per_sec.into(),
-            f64::from(lo.job_parallelism),
+            lo.job_parallelism.as_f64(),
             Interpolation::Linear,
         );
         let end: Key<f64, f64> = Key::new(
             hi.records_out_per_sec.into(),
-            f64::from(hi.job_parallelism),
+            hi.job_parallelism.as_f64(),
             Interpolation::Linear,
         );
         let spline = Spline::from_vec(vec![start, end]);
         let sampled: f64 = spline.clamped_sample(workload_rate.into()).unwrap();
 
-        let job_parallelism = math::try_f64_to_u32(sampled.ceil());
+        let job_parallelism = Parallelism::new(math::try_f64_to_u32(sampled.ceil()));
         // .expect("start-end are valid integers so in between must also be");
         tracing::debug!(%job_parallelism, interpolated_job_parallelism=?sampled, "interpolated job parallelism between neighbors.");
         job_parallelism
@@ -215,38 +208,38 @@ mod tests {
         let mut performance_history = PerformanceHistory::default();
         assert!(performance_history.0.is_empty());
 
-        performance_history.add_lower_benchmark(Benchmark::new(4, 1.0.into()));
+        performance_history.add_lower_benchmark(Benchmark::new(Parallelism::new(4), 1.0.into()));
         assert_eq!(
             performance_history,
             PerformanceHistory(
-                maplit::btreemap! { 4 => BenchmarkRange::new(4, Some(1.0.into()), None), }
+                maplit::btreemap! { Parallelism::new(4) => BenchmarkRange::new(Parallelism::new(4), Some(1.0.into()), None), }
             )
         );
 
-        performance_history.add_lower_benchmark(Benchmark::new(4, 3.0.into()));
+        performance_history.add_lower_benchmark(Benchmark::new(Parallelism::new(4), 3.0.into()));
         assert_eq!(
             performance_history,
             PerformanceHistory(
-                maplit::btreemap! { 4 => BenchmarkRange::new(4, Some(3.0.into()), None), }
+                maplit::btreemap! { Parallelism::new(4) => BenchmarkRange::new(Parallelism::new(4), Some(3.0.into()), None), }
             )
         );
 
-        performance_history.add_lower_benchmark(Benchmark::new(2, 0.5.into()));
+        performance_history.add_lower_benchmark(Benchmark::new(Parallelism::new(2), 0.5.into()));
         assert_eq!(
             performance_history,
             PerformanceHistory(maplit::btreemap! {
-                2 => BenchmarkRange::new(2, Some(0.5.into()), None),
-                4 => BenchmarkRange::new(4, Some(3.0.into()), None),
+                Parallelism::new(2) => BenchmarkRange::new(Parallelism::new(2), Some(0.5.into()), None),
+                Parallelism::new(4) => BenchmarkRange::new(Parallelism::new(4), Some(3.0.into()), None),
             })
         );
 
-        performance_history.add_upper_benchmark(Benchmark::new(4, 5.0.into()));
-        performance_history.add_lower_benchmark(Benchmark::new(4, 1.0.into()));
+        performance_history.add_upper_benchmark(Benchmark::new(Parallelism::new(4), 5.0.into()));
+        performance_history.add_lower_benchmark(Benchmark::new(Parallelism::new(4), 1.0.into()));
         assert_eq!(
             performance_history,
             PerformanceHistory(maplit::btreemap! {
-            2 => BenchmarkRange::new(2, Some(0.5.into()), None),
-            4 => BenchmarkRange::new(4, Some(1.0.into()), Some(5.0.into())), }),
+            Parallelism::new(2) => BenchmarkRange::new(Parallelism::new(2), Some(0.5.into()), None),
+            Parallelism::new(4) => BenchmarkRange::new(Parallelism::new(4), Some(1.0.into()), Some(5.0.into())), }),
         );
 
         Ok(())
@@ -261,38 +254,38 @@ mod tests {
         let mut performance_history = PerformanceHistory::default();
         assert!(performance_history.0.is_empty());
 
-        performance_history.add_upper_benchmark(Benchmark::new(4, 1.0.into()));
+        performance_history.add_upper_benchmark(Benchmark::new(Parallelism::new(4), 1.0.into()));
         assert_eq!(
             performance_history,
             PerformanceHistory(
-                maplit::btreemap! { 4 => BenchmarkRange::new(4, None, Some(1.0.into())), }
+                maplit::btreemap! { Parallelism::new(4) => BenchmarkRange::new(Parallelism::new(4), None, Some(1.0.into())), }
             )
         );
 
-        performance_history.add_upper_benchmark(Benchmark::new(4, 3.0.into()));
+        performance_history.add_upper_benchmark(Benchmark::new(Parallelism::new(4), 3.0.into()));
         assert_eq!(
             performance_history,
             PerformanceHistory(
-                maplit::btreemap! { 4 => BenchmarkRange::new(4, None, Some(3.0.into())), }
+                maplit::btreemap! { Parallelism::new(4) => BenchmarkRange::new(Parallelism::new(4), None, Some(3.0.into())), }
             )
         );
 
-        performance_history.add_upper_benchmark(Benchmark::new(2, 0.5.into()));
+        performance_history.add_upper_benchmark(Benchmark::new(Parallelism::new(2), 0.5.into()));
         assert_eq!(
             performance_history,
             PerformanceHistory(maplit::btreemap! {
-                2 => BenchmarkRange::new(2, None, Some(0.5.into())),
-                4 => BenchmarkRange::new(4, None, Some(3.0.into())),
+                Parallelism::new(2) => BenchmarkRange::new(Parallelism::new(2), None, Some(0.5.into())),
+                Parallelism::new(4) => BenchmarkRange::new(Parallelism::new(4), None, Some(3.0.into())),
             })
         );
 
-        performance_history.add_lower_benchmark(Benchmark::new(4, 1.0.into()));
-        performance_history.add_upper_benchmark(Benchmark::new(4, 1.0.into()));
+        performance_history.add_lower_benchmark(Benchmark::new(Parallelism::new(4), 1.0.into()));
+        performance_history.add_upper_benchmark(Benchmark::new(Parallelism::new(4), 1.0.into()));
         assert_eq!(
             performance_history,
             PerformanceHistory(maplit::btreemap! {
-            2 => BenchmarkRange::new(2, None, Some(0.5.into())),
-            4 => BenchmarkRange::new(4, Some(1.0.into()), Some(1.0.into())), }),
+            Parallelism::new(2) => BenchmarkRange::new(Parallelism::new(2), None, Some(0.5.into())),
+            Parallelism::new(4) => BenchmarkRange::new(Parallelism::new(4), Some(1.0.into()), Some(1.0.into())), }),
         );
 
         Ok(())
@@ -305,28 +298,28 @@ mod tests {
         let _main_span_guard = main_span.enter();
 
         let mut performance_history = PerformanceHistory::default();
-        performance_history.add_lower_benchmark(Benchmark::new(4, 1.0.into()));
-        performance_history.add_upper_benchmark(Benchmark::new(4, 5.0.into()));
+        performance_history.add_lower_benchmark(Benchmark::new(Parallelism::new(4), 1.0.into()));
+        performance_history.add_upper_benchmark(Benchmark::new(Parallelism::new(4), 5.0.into()));
         assert_eq!(
             performance_history,
             PerformanceHistory(
-                maplit::btreemap! { 4 => BenchmarkRange::new(4, Some(1.0.into()), Some(5.0.into())), }
+                maplit::btreemap! { Parallelism::new(4) => BenchmarkRange::new(Parallelism::new(4), Some(1.0.into()), Some(5.0.into())), }
             ),
         );
 
-        performance_history.add_lower_benchmark(Benchmark::new(4, 7.0.into()));
+        performance_history.add_lower_benchmark(Benchmark::new(Parallelism::new(4), 7.0.into()));
         assert_eq!(
             performance_history,
             PerformanceHistory(
-                maplit::btreemap! { 4 => BenchmarkRange::new(4, Some(7.0.into()), None), }
+                maplit::btreemap! { Parallelism::new(4) => BenchmarkRange::new(Parallelism::new(4), Some(7.0.into()), None), }
             )
         );
 
-        performance_history.add_upper_benchmark(Benchmark::new(4, 2.5.into()));
+        performance_history.add_upper_benchmark(Benchmark::new(Parallelism::new(4), 2.5.into()));
         assert_eq!(
             performance_history,
             PerformanceHistory(
-                maplit::btreemap! { 4 => BenchmarkRange::new(4, None, Some(2.5.into())) }
+                maplit::btreemap! { Parallelism::new(4) => BenchmarkRange::new(Parallelism::new(4), None, Some(2.5.into())) }
             )
         );
 
@@ -336,44 +329,83 @@ mod tests {
     #[test]
     fn test_performance_history_neighbors_interpolate() -> anyhow::Result<()> {
         let neighbors = BenchNeighbors::Between {
-            lo: Benchmark::new(2, 0.5.into()),
-            hi: Benchmark::new(4, 1.0.into()),
+            lo: Benchmark::new(Parallelism::new(2), 0.5.into()),
+            hi: Benchmark::new(Parallelism::new(4), 1.0.into()),
         };
 
-        assert_eq!(3, neighbors.job_parallelism_for(0.75.into()));
-        assert_eq!(2, neighbors.job_parallelism_for(0.5.into()));
-        assert_eq!(4, neighbors.job_parallelism_for(1.0.into()));
-        assert_eq!(3, neighbors.job_parallelism_for(0.55.into()));
+        assert_eq!(
+            Parallelism::new(3),
+            neighbors.job_parallelism_for(0.75.into())
+        );
+        assert_eq!(
+            Parallelism::new(2),
+            neighbors.job_parallelism_for(0.5.into())
+        );
+        assert_eq!(
+            Parallelism::new(4),
+            neighbors.job_parallelism_for(1.0.into())
+        );
+        assert_eq!(
+            Parallelism::new(3),
+            neighbors.job_parallelism_for(0.55.into())
+        );
         Ok(())
     }
 
     #[test]
     fn test_performance_history_between_neighbors_interpolate_clamped() -> anyhow::Result<()> {
         let neighbors = BenchNeighbors::Between {
-            lo: Benchmark::new(2, 0.5.into()),
-            hi: Benchmark::new(4, 1.0.into()),
+            lo: Benchmark::new(Parallelism::new(2), 0.5.into()),
+            hi: Benchmark::new(Parallelism::new(4), 1.0.into()),
         };
 
         // verify outside of boundary is clamped
-        assert_eq!(2, neighbors.job_parallelism_for(0.05.into()));
-        assert_eq!(4, neighbors.job_parallelism_for(1.5.into()));
+        assert_eq!(
+            Parallelism::new(2),
+            neighbors.job_parallelism_for(0.05.into())
+        );
+        assert_eq!(
+            Parallelism::new(4),
+            neighbors.job_parallelism_for(1.5.into())
+        );
         Ok(())
     }
 
     #[test]
     fn test_performance_history_interpolate_twin_neighbors() -> anyhow::Result<()> {
         let neighbors = BenchNeighbors::Between {
-            lo: Benchmark::new(4, 3.0.into()),
-            hi: Benchmark::new(4, 5.0.into()),
+            lo: Benchmark::new(Parallelism::new(4), 3.0.into()),
+            hi: Benchmark::new(Parallelism::new(4), 5.0.into()),
         };
 
-        assert_eq!(4, neighbors.job_parallelism_for(3.5.into()));
-        assert_eq!(4, neighbors.job_parallelism_for(4.0.into()));
-        assert_eq!(4, neighbors.job_parallelism_for(4.75.into()));
-        assert_eq!(4, neighbors.job_parallelism_for(3.0.into()));
-        assert_eq!(4, neighbors.job_parallelism_for(5.0.into()));
-        assert_eq!(4, neighbors.job_parallelism_for(2.5.into()));
-        assert_eq!(4, neighbors.job_parallelism_for(9.5.into()));
+        assert_eq!(
+            Parallelism::new(4),
+            neighbors.job_parallelism_for(3.5.into())
+        );
+        assert_eq!(
+            Parallelism::new(4),
+            neighbors.job_parallelism_for(4.0.into())
+        );
+        assert_eq!(
+            Parallelism::new(4),
+            neighbors.job_parallelism_for(4.75.into())
+        );
+        assert_eq!(
+            Parallelism::new(4),
+            neighbors.job_parallelism_for(3.0.into())
+        );
+        assert_eq!(
+            Parallelism::new(4),
+            neighbors.job_parallelism_for(5.0.into())
+        );
+        assert_eq!(
+            Parallelism::new(4),
+            neighbors.job_parallelism_for(2.5.into())
+        );
+        assert_eq!(
+            Parallelism::new(4),
+            neighbors.job_parallelism_for(9.5.into())
+        );
         Ok(())
     }
 
@@ -383,16 +415,41 @@ mod tests {
         // let main_span = tracing::info_span!("test_bench_below_lowest_neighbor_extrapolate");
         // let _main_span_guard = main_span.enter();
 
-        let neighbors = BenchNeighbors::BelowLowest(Benchmark::new(4, 1.0.into()));
+        let neighbors =
+            BenchNeighbors::BelowLowest(Benchmark::new(Parallelism::new(4), 1.0.into()));
 
-        assert_eq!(1, neighbors.job_parallelism_for(0.0.into()));
-        assert_eq!(1, neighbors.job_parallelism_for(0.1.into()));
-        assert_eq!(1, neighbors.job_parallelism_for(0.25.into()));
-        assert_eq!(2, neighbors.job_parallelism_for(0.35.into()));
-        assert_eq!(2, neighbors.job_parallelism_for(0.5.into()));
-        assert_eq!(3, neighbors.job_parallelism_for(0.6.into()));
-        assert_eq!(4, neighbors.job_parallelism_for(1.0.into()));
-        assert_eq!(4, neighbors.job_parallelism_for(10.0.into()));
+        assert_eq!(
+            Parallelism::new(1),
+            neighbors.job_parallelism_for(0.0.into())
+        );
+        assert_eq!(
+            Parallelism::new(1),
+            neighbors.job_parallelism_for(0.1.into())
+        );
+        assert_eq!(
+            Parallelism::new(1),
+            neighbors.job_parallelism_for(0.25.into())
+        );
+        assert_eq!(
+            Parallelism::new(2),
+            neighbors.job_parallelism_for(0.35.into())
+        );
+        assert_eq!(
+            Parallelism::new(2),
+            neighbors.job_parallelism_for(0.5.into())
+        );
+        assert_eq!(
+            Parallelism::new(3),
+            neighbors.job_parallelism_for(0.6.into())
+        );
+        assert_eq!(
+            Parallelism::new(4),
+            neighbors.job_parallelism_for(1.0.into())
+        );
+        assert_eq!(
+            Parallelism::new(4),
+            neighbors.job_parallelism_for(10.0.into())
+        );
         Ok(())
     }
 
@@ -402,18 +459,49 @@ mod tests {
         // let main_span = tracing::info_span!("test_bench_above_highest_neighbor_extrapolate");
         // let _main_span_guard = main_span.enter();
 
-        let neighbors = BenchNeighbors::AboveHighest(Benchmark::new(4, 1.0.into()));
+        let neighbors =
+            BenchNeighbors::AboveHighest(Benchmark::new(Parallelism::new(4), 1.0.into()));
 
-        assert_eq!(4, neighbors.job_parallelism_for(0.0.into()));
-        assert_eq!(4, neighbors.job_parallelism_for(0.5.into()));
-        assert_eq!(4, neighbors.job_parallelism_for(1.0.into()));
-        assert_eq!(6, neighbors.job_parallelism_for(1.5.into()));
-        assert_eq!(8, neighbors.job_parallelism_for(2.0.into()));
-        assert_eq!(7, neighbors.job_parallelism_for(1.56.into()));
-        assert_eq!(7, neighbors.job_parallelism_for(1.66.into()));
-        assert_eq!(20, neighbors.job_parallelism_for(5.0.into()));
-        assert_eq!(21, neighbors.job_parallelism_for(5.00000000001.into()));
-        assert_eq!(40, neighbors.job_parallelism_for(10.0.into()));
+        assert_eq!(
+            Parallelism::new(4),
+            neighbors.job_parallelism_for(0.0.into())
+        );
+        assert_eq!(
+            Parallelism::new(4),
+            neighbors.job_parallelism_for(0.5.into())
+        );
+        assert_eq!(
+            Parallelism::new(4),
+            neighbors.job_parallelism_for(1.0.into())
+        );
+        assert_eq!(
+            Parallelism::new(6),
+            neighbors.job_parallelism_for(1.5.into())
+        );
+        assert_eq!(
+            Parallelism::new(8),
+            neighbors.job_parallelism_for(2.0.into())
+        );
+        assert_eq!(
+            Parallelism::new(7),
+            neighbors.job_parallelism_for(1.56.into())
+        );
+        assert_eq!(
+            Parallelism::new(7),
+            neighbors.job_parallelism_for(1.66.into())
+        );
+        assert_eq!(
+            Parallelism::new(20),
+            neighbors.job_parallelism_for(5.0.into())
+        );
+        assert_eq!(
+            Parallelism::new(21),
+            neighbors.job_parallelism_for(5.00000000001.into())
+        );
+        assert_eq!(
+            Parallelism::new(40),
+            neighbors.job_parallelism_for(10.0.into())
+        );
         Ok(())
     }
 
@@ -426,18 +514,27 @@ mod tests {
         let mut performance_history = PerformanceHistory::default();
         assert_none!(performance_history.evaluate_neighbors(375.0.into()));
 
-        performance_history.add_upper_benchmark(Benchmark::new(4, 1.0.into()));
+        performance_history.add_upper_benchmark(Benchmark::new(Parallelism::new(4), 1.0.into()));
         assert_eq!(
             performance_history.evaluate_neighbors(0.5.into()),
-            Some(BenchNeighbors::BelowLowest(Benchmark::new(4, 1.0.into())))
+            Some(BenchNeighbors::BelowLowest(Benchmark::new(
+                Parallelism::new(4),
+                1.0.into()
+            )))
         );
         assert_eq!(
             performance_history.evaluate_neighbors(1.5.into()),
-            Some(BenchNeighbors::AboveHighest(Benchmark::new(4, 1.0.into())))
+            Some(BenchNeighbors::AboveHighest(Benchmark::new(
+                Parallelism::new(4),
+                1.0.into()
+            )))
         );
         assert_eq!(
             performance_history.evaluate_neighbors(1.0.into()),
-            Some(BenchNeighbors::AboveHighest(Benchmark::new(4, 1.0.into())))
+            Some(BenchNeighbors::AboveHighest(Benchmark::new(
+                Parallelism::new(4),
+                1.0.into()
+            )))
         );
         Ok(())
     }
@@ -449,45 +546,51 @@ mod tests {
         let _main_span_guard = main_span.enter();
 
         let mut performance_history = PerformanceHistory::default();
-        performance_history.add_upper_benchmark(Benchmark::new(2, 3.0.into()));
+        performance_history.add_upper_benchmark(Benchmark::new(Parallelism::new(2), 3.0.into()));
 
-        performance_history.add_upper_benchmark(Benchmark::new(4, 5.0.into()));
-        performance_history.add_lower_benchmark(Benchmark::new(4, 3.0.into()));
+        performance_history.add_upper_benchmark(Benchmark::new(Parallelism::new(4), 5.0.into()));
+        performance_history.add_lower_benchmark(Benchmark::new(Parallelism::new(4), 3.0.into()));
 
-        performance_history.add_upper_benchmark(Benchmark::new(6, 5.5.into()));
-        performance_history.add_lower_benchmark(Benchmark::new(6, 3.0.into()));
+        performance_history.add_upper_benchmark(Benchmark::new(Parallelism::new(6), 5.5.into()));
+        performance_history.add_lower_benchmark(Benchmark::new(Parallelism::new(6), 3.0.into()));
 
-        performance_history.add_upper_benchmark(Benchmark::new(9, 7.0.into()));
-        performance_history.add_upper_benchmark(Benchmark::new(12, 9.0.into()));
+        performance_history.add_upper_benchmark(Benchmark::new(Parallelism::new(9), 7.0.into()));
+        performance_history.add_upper_benchmark(Benchmark::new(Parallelism::new(12), 9.0.into()));
 
         assert_eq!(
             performance_history.evaluate_neighbors(1.0.into()),
-            Some(BenchNeighbors::BelowLowest(Benchmark::new(2, 3.0.into())))
+            Some(BenchNeighbors::BelowLowest(Benchmark::new(
+                Parallelism::new(2),
+                3.0.into()
+            )))
         );
         assert_eq!(
             performance_history.evaluate_neighbors(3.25.into()),
             Some(BenchNeighbors::Between {
-                lo: Benchmark::new(4, 3.0.into()),
-                hi: Benchmark::new(4, 5.0.into()),
+                lo: Benchmark::new(Parallelism::new(4), 3.0.into()),
+                hi: Benchmark::new(Parallelism::new(4), 5.0.into()),
             })
         );
         assert_eq!(
             performance_history.evaluate_neighbors(5.0.into()),
             Some(BenchNeighbors::Between {
-                lo: Benchmark::new(6, 3.0.into()),
-                hi: Benchmark::new(6, 5.5.into()),
+                lo: Benchmark::new(Parallelism::new(6), 3.0.into()),
+                hi: Benchmark::new(Parallelism::new(6), 5.5.into()),
             })
         );
         assert_eq!(
             performance_history.evaluate_neighbors(6.17.into()),
             Some(BenchNeighbors::Between {
-                lo: Benchmark::new(6, 5.5.into()),
-                hi: Benchmark::new(9, 7.0.into()),
+                lo: Benchmark::new(Parallelism::new(6), 5.5.into()),
+                hi: Benchmark::new(Parallelism::new(9), 7.0.into()),
             })
         );
         assert_eq!(
             performance_history.evaluate_neighbors(100.0.into()),
-            Some(BenchNeighbors::AboveHighest(Benchmark::new(12, 9.0.into())))
+            Some(BenchNeighbors::AboveHighest(Benchmark::new(
+                Parallelism::new(12),
+                9.0.into()
+            )))
         );
 
         Ok(())
@@ -505,82 +608,82 @@ mod tests {
             performance_history.job_parallelism_for_workload(1_000_000.0.into())
         );
 
-        performance_history.add_upper_benchmark(Benchmark::new(2, 3.0.into()));
+        performance_history.add_upper_benchmark(Benchmark::new(Parallelism::new(2), 3.0.into()));
 
-        performance_history.add_upper_benchmark(Benchmark::new(4, 5.0.into()));
-        performance_history.add_lower_benchmark(Benchmark::new(4, 3.25.into()));
+        performance_history.add_upper_benchmark(Benchmark::new(Parallelism::new(4), 5.0.into()));
+        performance_history.add_lower_benchmark(Benchmark::new(Parallelism::new(4), 3.25.into()));
 
-        performance_history.add_upper_benchmark(Benchmark::new(6, 10.0.into()));
-        performance_history.add_lower_benchmark(Benchmark::new(6, 1.0.into()));
+        performance_history.add_upper_benchmark(Benchmark::new(Parallelism::new(6), 10.0.into()));
+        performance_history.add_lower_benchmark(Benchmark::new(Parallelism::new(6), 1.0.into()));
 
-        performance_history.add_upper_benchmark(Benchmark::new(9, 15.0.into()));
-        performance_history.add_upper_benchmark(Benchmark::new(12, 25.0.into()));
+        performance_history.add_upper_benchmark(Benchmark::new(Parallelism::new(9), 15.0.into()));
+        performance_history.add_upper_benchmark(Benchmark::new(Parallelism::new(12), 25.0.into()));
 
         tracing::info!("STARTING ASSERTIONS...");
         assert_eq!(
-            Some(1),
+            Some(Parallelism::new(1)),
             performance_history.job_parallelism_for_workload(1.05.into())
         );
         assert_eq!(
-            Some(2),
+            Some(Parallelism::new(2)),
             performance_history.job_parallelism_for_workload(1.75.into())
         );
         assert_eq!(
-            Some(2),
+            Some(Parallelism::new(2)),
             performance_history.job_parallelism_for_workload(2.75.into())
         );
         assert_eq!(
-            Some(3),
+            Some(Parallelism::new(3)),
             performance_history.job_parallelism_for_workload(3.2.into())
         );
         assert_eq!(
-            Some(4),
+            Some(Parallelism::new(4)),
             performance_history.job_parallelism_for_workload(3.75.into())
         );
         assert_eq!(
-            Some(6),
+            Some(Parallelism::new(6)),
             performance_history.job_parallelism_for_workload(5.0.into())
         );
         assert_eq!(
-            Some(6),
+            Some(Parallelism::new(6)),
             performance_history.job_parallelism_for_workload(10.0.into())
         );
         assert_eq!(
-            Some(7),
+            Some(Parallelism::new(7)),
             performance_history.job_parallelism_for_workload(11.0.into())
         );
         assert_eq!(
-            Some(8),
+            Some(Parallelism::new(8)),
             performance_history.job_parallelism_for_workload(12.0.into())
         );
         assert_eq!(
-            Some(8),
+            Some(Parallelism::new(8)),
             performance_history.job_parallelism_for_workload(13.0.into())
         );
         assert_eq!(
-            Some(9),
+            Some(Parallelism::new(9)),
             performance_history.job_parallelism_for_workload(14.0.into())
         );
         assert_eq!(
-            Some(9),
+            Some(Parallelism::new(9)),
             performance_history.job_parallelism_for_workload(15.0.into())
         );
 
         assert_eq!(
-            Some(10),
+            Some(Parallelism::new(10)),
             performance_history.job_parallelism_for_workload(18.0.into())
         );
         assert_eq!(
-            Some(11),
+            Some(Parallelism::new(11)),
             performance_history.job_parallelism_for_workload(21.0.into())
         );
         assert_eq!(
-            Some(12),
+            Some(Parallelism::new(12)),
             performance_history.job_parallelism_for_workload(24.0.into())
         );
 
         assert_eq!(
-            Some(48),
+            Some(Parallelism::new(48)),
             performance_history.job_parallelism_for_workload(100.0.into())
         );
 

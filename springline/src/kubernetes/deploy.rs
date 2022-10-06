@@ -6,6 +6,7 @@ use tracing::Instrument;
 
 use crate::kubernetes::KubernetesError;
 use crate::kubernetes::{error, KubernetesDeployResource};
+use crate::model::NrReplicas;
 use crate::CorrelationId;
 
 #[derive(Debug, Clone)]
@@ -56,8 +57,8 @@ impl DeployApi {
     }
 
     pub async fn patch_scale(
-        &self, replicas: u32, correlation: &CorrelationId,
-    ) -> Result<Option<i32>, KubernetesError> {
+        &self, replicas: NrReplicas, correlation: &CorrelationId,
+    ) -> Result<Option<NrReplicas>, KubernetesError> {
         let span = tracing::info_span!("Kubernetes Deploy::patch_scale", action=%"patch_scale", ?correlation);
         let params = PatchParams::default();
         let spec = json!({ "spec": { "replicas": replicas } });
@@ -76,7 +77,13 @@ impl DeployApi {
                 .map_err(error::convert_kube_error),
         };
 
-        let patched_scale = patch.map(|s| s.spec.and_then(|ss| ss.replicas));
+        let patched_scale: Result<Option<NrReplicas>, KubernetesError> = patch.and_then(|s| {
+            s.spec
+                .and_then(|ss| ss.replicas.map(u32::try_from))
+                .transpose()
+                .map(|s| s.map(NrReplicas::new))
+                .map_err(|err| err.into())
+        });
         tracing::info!(
             "k8s scale patched for {}: target:{replicas} patched:{patched_scale:?}",
             self.name()

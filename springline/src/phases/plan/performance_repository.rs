@@ -233,6 +233,7 @@ impl PerformanceRepository for PerformanceFileRepository {
 
 #[cfg(test)]
 mod tests {
+    use crate::flink::Parallelism;
     use claim::{assert_none, assert_ok, assert_some};
     use pretty_assertions::assert_eq;
     use tokio_test::block_on;
@@ -249,12 +250,12 @@ mod tests {
         assert_none!(actual);
 
         let mut ph = PerformanceHistory::default();
-        ph.add_upper_benchmark(Benchmark::new(4, 3.5.into()));
+        ph.add_upper_benchmark(Benchmark::new(Parallelism::new(4), 3.5.into()));
         let actual = repo.save(name_a, &ph).await;
         assert_ok!(actual);
 
-        ph.add_upper_benchmark(Benchmark::new(4, 21.3.into()));
-        ph.add_upper_benchmark(Benchmark::new(12, 37.324.into()));
+        ph.add_upper_benchmark(Benchmark::new(Parallelism::new(4), 21.3.into()));
+        ph.add_upper_benchmark(Benchmark::new(Parallelism::new(12), 37.324.into()));
         let actual = repo.save(name_b, &ph).await;
         assert_ok!(actual);
 
@@ -262,15 +263,15 @@ mod tests {
         let actual_a = assert_ok!(actual_a);
         let actual_a = assert_some!(actual_a);
         let mut expected = PerformanceHistory::default();
-        expected.add_upper_benchmark(Benchmark::new(4, 3.5.into()));
+        expected.add_upper_benchmark(Benchmark::new(Parallelism::new(4), 3.5.into()));
         assert_eq!(actual_a, expected);
 
         let actual_b = repo.load(name_b).await;
         let actual_b = assert_ok!(actual_b);
         let actual_b = assert_some!(actual_b);
         let mut expected = PerformanceHistory::default();
-        expected.add_upper_benchmark(Benchmark::new(4, 21.3.into()));
-        expected.add_upper_benchmark(Benchmark::new(12, 37.324.into()));
+        expected.add_upper_benchmark(Benchmark::new(Parallelism::new(4), 21.3.into()));
+        expected.add_upper_benchmark(Benchmark::new(Parallelism::new(12), 37.324.into()));
         assert_eq!(actual_b, expected);
 
         let actual = repo.load("dummy").await;

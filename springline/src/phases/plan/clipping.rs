@@ -1,3 +1,4 @@
+use crate::flink::Parallelism;
 use once_cell::sync::Lazy;
 use prometheus::core::{AtomicU64, GenericGauge};
 use prometheus::Opts;
@@ -82,7 +83,7 @@ impl ClippingState {
 
 #[derive(Debug, Clone)]
 pub struct TemporaryLimitCell {
-    clipping_history: VecDeque<u32>,
+    clipping_history: VecDeque<Parallelism>,
     state: ClippingState,
     reset_timeout: Duration,
 }
@@ -100,7 +101,7 @@ impl TemporaryLimitCell {
         self.state.gauge_rep()
     }
 
-    pub fn clipping_point(&self) -> Option<u32> {
+    pub fn clipping_point(&self) -> Option<Parallelism> {
         use ClippingState as S;
 
         match self.state {
@@ -110,7 +111,7 @@ impl TemporaryLimitCell {
     }
 
     #[allow(clippy::cognitive_complexity)]
-    pub fn note_clipping(&mut self, clipping_point: Option<u32>) {
+    pub fn note_clipping(&mut self, clipping_point: Option<Parallelism>) {
         use ClippingState as S;
 
         match clipping_point {
@@ -182,7 +183,7 @@ impl PartialEq for TemporaryLimitCell {
 pub enum ClippingHandling {
     Ignore,
     TemporaryLimit { cell: RefCell<TemporaryLimitCell> },
-    PermanentLimit(Option<u32>),
+    PermanentLimit(Option<Parallelism>),
 }
 
 impl ClippingHandling {
@@ -196,7 +197,7 @@ impl ClippingHandling {
         }
     }
 
-    pub fn clipping_point(&self) -> Option<u32> {
+    pub fn clipping_point(&self) -> Option<Parallelism> {
         match self {
             Self::Ignore => None,
             Self::PermanentLimit(clipping_point) => *clipping_point,
@@ -204,11 +205,12 @@ impl ClippingHandling {
         }
     }
 
-    pub fn note_clipping(&mut self, clipping_point: u32) {
+    pub fn note_clipping(&mut self, clipping_point: Parallelism) {
         match self {
             Self::Ignore => (),
             Self::PermanentLimit(pt) => {
-                let new_pt = pt.map(|p| u32::min(p, clipping_point)).unwrap_or(clipping_point);
+                let new_pt =
+                    pt.map(|p| Parallelism::min(p, clipping_point)).unwrap_or(clipping_point);
                 tracing::info!(
                     clipping_point=%new_pt, prior_clipping_point=?pt,
                     "possible source clipping identified - setting permanent clipping point."
@@ -287,19 +289,28 @@ mod tests {
         assert_none!(temp_limit.clipping_point());
 
         tracing::info!("BBB: clear: first clipping point");
-        temp_limit.note_clipping(Some(10));
+        temp_limit.note_clipping(Some(Parallelism::new(10)));
         assert_eq!(temp_limit.state, S::Clipped(Instant::now()));
-        assert_eq!(assert_some!(temp_limit.clipping_point()), 10);
+        assert_eq!(
+            assert_some!(temp_limit.clipping_point()),
+            Parallelism::new(10)
+        );
 
         tracing::info!("CCC: clipped: note higher point");
-        temp_limit.note_clipping(Some(20));
+        temp_limit.note_clipping(Some(Parallelism::new(20)));
         assert_eq!(temp_limit.state, S::Clipped(Instant::now()));
-        assert_eq!(assert_some!(temp_limit.clipping_point()), 10);
+        assert_eq!(
+            assert_some!(temp_limit.clipping_point()),
+            Parallelism::new(10)
+        );
 
         tracing::info!("DDD: clipped: note lower point");
-        temp_limit.note_clipping(Some(9));
+        temp_limit.note_clipping(Some(Parallelism::new(9)));
         assert_eq!(temp_limit.state, S::Clipped(Instant::now()));
-        assert_eq!(assert_some!(temp_limit.clipping_point()), 9);
+        assert_eq!(
+            assert_some!(temp_limit.clipping_point()),
+            Parallelism::new(9)
+        );
 
         tracing::info!("EEE: sleep to half-clipped");
         std::thread::sleep(Duration::from_millis(11));
@@ -308,9 +319,12 @@ mod tests {
         assert_none!(temp_limit.clipping_point());
 
         tracing::info!("FFF: back to clipped (higher)");
-        temp_limit.note_clipping(Some(15));
+        temp_limit.note_clipping(Some(Parallelism::new(15)));
         assert_eq!(temp_limit.state, S::Clipped(Instant::now()));
-        assert_eq!(assert_some!(temp_limit.clipping_point()), 9);
+        assert_eq!(
+            assert_some!(temp_limit.clipping_point()),
+            Parallelism::new(9)
+        );
 
         tracing::info!("GGG: back to half clipped");
         std::thread::sleep(Duration::from_millis(11));
@@ -319,9 +333,12 @@ mod tests {
         assert_none!(temp_limit.clipping_point());
 
         tracing::info!("HHH: back to clipped (lower)");
-        temp_limit.note_clipping(Some(7));
+        temp_limit.note_clipping(Some(Parallelism::new(7)));
         assert_eq!(temp_limit.state, S::Clipped(Instant::now()));
-        assert_eq!(assert_some!(temp_limit.clipping_point()), 7);
+        assert_eq!(
+            assert_some!(temp_limit.clipping_point()),
+            Parallelism::new(7)
+        );
 
         tracing::info!("III: back to half clipped");
         std::thread::sleep(Duration::from_millis(11));
@@ -335,8 +352,11 @@ mod tests {
         assert_none!(temp_limit.clipping_point());
 
         tracing::info!("KKK: clip higher still but last point at 9");
-        temp_limit.note_clipping(Some(20));
+        temp_limit.note_clipping(Some(Parallelism::new(20)));
         assert_eq!(temp_limit.state, S::Clipped(Instant::now()));
-        assert_eq!(assert_some!(temp_limit.clipping_point()), 9);
+        assert_eq!(
+            assert_some!(temp_limit.clipping_point()),
+            Parallelism::new(9)
+        );
     }
 }

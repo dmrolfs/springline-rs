@@ -1,5 +1,6 @@
 use crate::kubernetes::FlinkComponent;
 use crate::math;
+use crate::model::NrReplicas;
 use crate::phases::act;
 use crate::phases::act::action::{ActionSession, ScaleAction};
 use crate::phases::act::{ActError, ActErrorDisposition};
@@ -59,20 +60,18 @@ where
         &mut self, plan: &'s Self::Plan, session: &'s mut ActionSession,
     ) -> Result<(), ActError> {
         let surplus = if plan.target_replicas() < plan.current_replicas() {
-            math::saturating_u32_to_usize(plan.current_replicas() - plan.target_replicas())
+            plan.current_replicas() - plan.target_replicas()
         } else {
-            0
+            NrReplicas::NONE
         };
 
-        let nr_taskmanagers = math::try_u64_to_f64(plan.current_replicas() as u64)
-            .map_err(|err| ActError::Stage(err.into()))?;
-        let core_culled = math::try_f64_to_u32(self.cull_ratio * nr_taskmanagers) as usize;
+        let nr_taskmanagers = plan.current_replicas();
+        let core_culled = NrReplicas::new(math::try_f64_to_u32(
+            self.cull_ratio * nr_taskmanagers.as_f64(),
+        ));
 
         let nr_to_cull = surplus + core_culled;
-        let nr_to_cull = usize::min(
-            math::saturating_u32_to_usize(plan.current_replicas()),
-            nr_to_cull,
-        );
+        let nr_to_cull = NrReplicas::min(plan.current_replicas(), nr_to_cull);
         tracing::debug!(
             %nr_to_cull, %surplus, %core_culled,
             "calculated number of taskmanagers to cull before restart."
@@ -92,7 +91,7 @@ where
 {
     #[tracing::instrument(level = "info", skip(self, plan, session))]
     async fn do_individual_culling<'s>(
-        &mut self, nr_to_cull: usize, plan: &'s <Self as ScaleAction>::Plan,
+        &mut self, nr_to_cull: NrReplicas, plan: &'s <Self as ScaleAction>::Plan,
         session: &'s mut ActionSession,
     ) -> Result<(), ActError> {
         // focus on culling oldest taskmanagers
@@ -110,7 +109,7 @@ where
                     .map(|ts| (p, ts))
             })
             .sorted_by_key(|(_, ts)| ts.timestamp())
-            .take(nr_to_cull)
+            .take(math::saturating_u32_to_usize(nr_to_cull.into()))
             .collect();
 
         tracing::debug!(

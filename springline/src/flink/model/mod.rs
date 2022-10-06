@@ -2,6 +2,7 @@
 mod tests;
 
 pub mod catalog;
+pub mod parallelism;
 pub mod window;
 
 use std::collections::HashMap;

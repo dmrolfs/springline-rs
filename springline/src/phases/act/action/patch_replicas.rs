@@ -11,6 +11,7 @@ use tracing_futures::Instrument;
 use super::{ActionSession, ScaleAction};
 use crate::kubernetes::{self, FlinkComponent, KubernetesContext, KubernetesError};
 use crate::math;
+use crate::model::NrReplicas;
 use crate::phases::act;
 use crate::phases::act::{ActError, ActErrorDisposition};
 use crate::phases::plan::{ScaleActionPlan, ScaleDirection};
@@ -62,7 +63,7 @@ where
             session.kube.taskmanager().deploy.get_scale(&correlation).await?;
         tracing::info!(%nr_target_replicas, ?original_nr_replicas, "patching to scale taskmanager replicas");
 
-        let nr_patched_replicas = session
+        let nr_patched_replicas: Result<Option<NrReplicas>, KubernetesError> = session
             .kube
             .taskmanager()
             .deploy
@@ -195,16 +196,21 @@ where
 
     fn do_count_running_pods(
         pods_by_status: &HashMap<String, Vec<Pod>>,
-    ) -> (u32, HashMap<String, u32>) {
-        let pod_status_counts: HashMap<String, u32> = pods_by_status
+    ) -> (NrReplicas, HashMap<String, NrReplicas>) {
+        let pod_status_counts: HashMap<String, NrReplicas> = pods_by_status
             .iter()
-            .map(|(status, pods)| (status.clone(), math::saturating_usize_to_u32(pods.len())))
+            .map(|(status, pods)| {
+                (
+                    status.clone(),
+                    NrReplicas::new(math::saturating_usize_to_u32(pods.len())),
+                )
+            })
             .collect();
 
         let nr_running = pods_by_status
             .get(kubernetes::RUNNING_STATUS)
-            .map(|pods| math::saturating_usize_to_u32(pods.len()))
-            .unwrap_or(0);
+            .map(|pods| NrReplicas::new(math::saturating_usize_to_u32(pods.len())))
+            .unwrap_or(NrReplicas::NONE);
 
         (nr_running, pod_status_counts)
     }
@@ -212,7 +218,7 @@ where
     #[tracing::instrument(level = "warn", skip(self, plan, session))]
     async fn handle_error_on_patch_scale<'s>(
         &self, error: KubernetesError, plan: &'s P, session: &'s mut ActionSession,
-    ) -> Result<Option<i32>, KubernetesError> {
+    ) -> Result<Option<NrReplicas>, KubernetesError> {
         let track = format!("{}::patch_scale", self.label());
         tracing::error!(
             ?error, ?plan, ?session, correlation=%session.correlation(), %track,

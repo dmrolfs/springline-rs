@@ -2,16 +2,15 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use claim::*;
-use once_cell::sync::Lazy;
 use pretty_assertions::assert_eq;
 use pretty_snowflake::Id;
-use proctor::elements::{self, PolicyFilterEvent, PolicySource, Timestamp};
+use proctor::elements::{self, PolicyFilterEvent, Timestamp};
 use proctor::graph::stage::{self, WithApi, WithMonitor};
 use proctor::graph::{Connect, Graph, SinkShape, SourceShape};
-use proctor::phases::policy_phase::PolicyPhase;
+use springline::flink::Parallelism;
+use springline::model::NrReplicas;
 use springline::phases::governance::{GovernanceContext, GovernanceStage};
 use springline::phases::plan::ScalePlan;
-use springline::settings::{GovernancePolicySettings, GovernanceSettings};
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
@@ -20,15 +19,15 @@ use crate::CORRELATION_ID;
 type Data = ScalePlan;
 type Context = GovernanceContext;
 
-static GOVERNANCE_PREAMBLE: Lazy<PolicySource> = Lazy::new(|| {
-    PolicySource::from_complete_file("../resources/governance.polar")
-        .expect("failed to create governance policy source")
-});
+// static GOVERNANCE_PREAMBLE: Lazy<PolicySource> = Lazy::new(|| {
+//     PolicySource::from_complete_file("../resources/governance.polar")
+//         .expect("failed to create governance policy source")
+// });
 
-static POLICY_SETTINGS: Lazy<GovernanceSettings> = Lazy::new(|| GovernanceSettings {
-    policy: GovernancePolicySettings::default().with_source(GOVERNANCE_PREAMBLE.clone()),
-    ..GovernanceSettings::default()
-});
+// static POLICY_SETTINGS: Lazy<GovernanceSettings> = Lazy::new(|| GovernanceSettings {
+//     policy: GovernancePolicySettings::default().with_source(GOVERNANCE_PREAMBLE.clone()),
+//     ..GovernanceSettings::default()
+// });
 
 #[allow(dead_code)]
 struct TestFlow {
@@ -289,10 +288,10 @@ async fn test_flink_governance_flow_simple_and_happy() -> anyhow::Result<()> {
 
     let mut flow = TestFlow::new(governance_stage).await?;
 
-    let min_parallelism = 1;
-    let max_parallelism = 20;
-    let min_cluster_size = 2;
-    let max_cluster_size = 10;
+    let min_parallelism = Parallelism::new(1);
+    let max_parallelism = Parallelism::new(20);
+    let min_cluster_size = NrReplicas::new(2);
+    let max_cluster_size = NrReplicas::new(10);
     let min_scaling_step = 1;
     let max_scaling_step = 5;
     let context = GovernanceContext {
@@ -320,19 +319,19 @@ async fn test_flink_governance_flow_simple_and_happy() -> anyhow::Result<()> {
             ScalePlan {
                 recv_timestamp: timestamp,
                 correlation_id: CORRELATION_ID.clone(),
-                current_job_parallelism: 4,
-                target_job_parallelism: 8,
-                current_nr_taskmanagers: 4,
-                target_nr_taskmanagers: 8,
+                current_job_parallelism: Parallelism::new(4),
+                target_job_parallelism: Parallelism::new(8),
+                current_nr_taskmanagers: NrReplicas::new(4),
+                target_nr_taskmanagers: NrReplicas::new(8),
                 task_slots_per_taskmanager: 1_f64,
             },
             vec![ScalePlan {
                 recv_timestamp: timestamp,
                 correlation_id: CORRELATION_ID.clone(),
-                current_job_parallelism: 4,
-                target_job_parallelism: 8,
-                current_nr_taskmanagers: 4,
-                target_nr_taskmanagers: 8,
+                current_job_parallelism: Parallelism::new(4),
+                target_job_parallelism: Parallelism::new(8),
+                current_nr_taskmanagers: NrReplicas::new(4),
+                target_nr_taskmanagers: NrReplicas::new(8),
                 task_slots_per_taskmanager: 1_f64,
             }]
         )
@@ -360,10 +359,10 @@ async fn test_flink_governance_flow_simple_below_min_cluster_size() -> anyhow::R
 
     let mut flow = TestFlow::new(governance_stage).await?;
 
-    let min_parallelism = 1;
-    let max_parallelism = 20;
-    let min_cluster_size = 2;
-    let max_cluster_size = 10;
+    let min_parallelism = Parallelism::new(1);
+    let max_parallelism = Parallelism::new(20);
+    let min_cluster_size = NrReplicas::new(2);
+    let max_cluster_size = NrReplicas::new(10);
     let min_scaling_step = 1;
     let max_scaling_step = 5;
     let context = GovernanceContext {
@@ -391,18 +390,18 @@ async fn test_flink_governance_flow_simple_below_min_cluster_size() -> anyhow::R
             ScalePlan {
                 recv_timestamp: timestamp,
                 correlation_id: CORRELATION_ID.clone(),
-                current_job_parallelism: 4,
-                target_job_parallelism: 0,
-                current_nr_taskmanagers: 4,
-                target_nr_taskmanagers: 0,
+                current_job_parallelism: Parallelism::new(4),
+                target_job_parallelism: Parallelism::new(0),
+                current_nr_taskmanagers: NrReplicas::new(4),
+                target_nr_taskmanagers: NrReplicas::new(0),
                 task_slots_per_taskmanager: 1_f64,
             },
             vec![ScalePlan {
                 recv_timestamp: timestamp,
                 correlation_id: CORRELATION_ID.clone(),
-                current_job_parallelism: 4,
+                current_job_parallelism: Parallelism::new(4),
                 target_job_parallelism: min_parallelism,
-                current_nr_taskmanagers: 4,
+                current_nr_taskmanagers: NrReplicas::new(4),
                 target_nr_taskmanagers: min_cluster_size,
                 task_slots_per_taskmanager: 1_f64,
             }]
@@ -431,10 +430,10 @@ async fn test_flink_governance_flow_simple_above_max_cluster_size() -> anyhow::R
 
     let mut flow = TestFlow::new(governance_stage).await?;
 
-    let min_parallelism = 1;
-    let max_parallelism = 20;
-    let min_cluster_size = 2;
-    let max_cluster_size = 10;
+    let min_parallelism = Parallelism::new(1);
+    let max_parallelism = Parallelism::new(20);
+    let min_cluster_size = NrReplicas::new(2);
+    let max_cluster_size = NrReplicas::new(10);
     let min_scaling_step = 1;
     let max_scaling_step = 5;
     let context = GovernanceContext {
@@ -462,18 +461,18 @@ async fn test_flink_governance_flow_simple_above_max_cluster_size() -> anyhow::R
             ScalePlan {
                 recv_timestamp: timestamp,
                 correlation_id: CORRELATION_ID.clone(),
-                current_job_parallelism: 6,
-                target_job_parallelism: 999,
-                current_nr_taskmanagers: 6,
-                target_nr_taskmanagers: 999,
+                current_job_parallelism: Parallelism::new(6),
+                target_job_parallelism: Parallelism::new(999),
+                current_nr_taskmanagers: NrReplicas::new(6),
+                target_nr_taskmanagers: NrReplicas::new(999),
                 task_slots_per_taskmanager: 1_f64,
             },
             vec![ScalePlan {
                 recv_timestamp: timestamp,
                 correlation_id: CORRELATION_ID.clone(),
-                current_job_parallelism: 6,
-                target_job_parallelism: 6 + max_scaling_step,
-                current_nr_taskmanagers: 6,
+                current_job_parallelism: Parallelism::new(6),
+                target_job_parallelism: Parallelism::new(6 + max_scaling_step),
+                current_nr_taskmanagers: NrReplicas::new(6),
                 target_nr_taskmanagers: max_cluster_size,
                 task_slots_per_taskmanager: 1_f64,
             }]
@@ -502,10 +501,10 @@ async fn test_flink_governance_flow_simple_step_up_too_big() -> anyhow::Result<(
 
     let mut flow = TestFlow::new(governance_stage).await?;
 
-    let min_parallelism = 1;
-    let max_parallelism = 20;
-    let min_cluster_size = 2;
-    let max_cluster_size = 10;
+    let min_parallelism = Parallelism::new(1);
+    let max_parallelism = Parallelism::new(20);
+    let min_cluster_size = NrReplicas::new(2);
+    let max_cluster_size = NrReplicas::new(10);
     let min_scaling_step = 1;
     let max_scaling_step = 5;
     let context = GovernanceContext {
@@ -533,19 +532,19 @@ async fn test_flink_governance_flow_simple_step_up_too_big() -> anyhow::Result<(
             ScalePlan {
                 recv_timestamp: timestamp,
                 correlation_id: CORRELATION_ID.clone(),
-                current_job_parallelism: 0,
-                target_job_parallelism: 9,
-                current_nr_taskmanagers: 0,
-                target_nr_taskmanagers: 9,
+                current_job_parallelism: Parallelism::new(0),
+                target_job_parallelism: Parallelism::new(9),
+                current_nr_taskmanagers: NrReplicas::new(0),
+                target_nr_taskmanagers: NrReplicas::new(9),
                 task_slots_per_taskmanager: 1_f64,
             },
             vec![ScalePlan {
                 recv_timestamp: timestamp,
                 correlation_id: CORRELATION_ID.clone(),
-                current_job_parallelism: 0,
-                target_job_parallelism: max_scaling_step,
-                current_nr_taskmanagers: 0,
-                target_nr_taskmanagers: max_scaling_step,
+                current_job_parallelism: Parallelism::new(0),
+                target_job_parallelism: Parallelism::new(max_scaling_step),
+                current_nr_taskmanagers: NrReplicas::new(0),
+                target_nr_taskmanagers: NrReplicas::new(max_scaling_step),
                 task_slots_per_taskmanager: 1_f64,
             }]
         )
@@ -573,10 +572,10 @@ async fn test_flink_governance_flow_simple_step_down_too_big() -> anyhow::Result
 
     let mut flow = TestFlow::new(governance_stage).await?;
 
-    let min_parallelism = 1;
-    let max_parallelism = 20;
-    let min_cluster_size = 2;
-    let max_cluster_size = 10;
+    let min_parallelism = Parallelism::new(1);
+    let max_parallelism = Parallelism::new(20);
+    let min_cluster_size = NrReplicas::new(2);
+    let max_cluster_size = NrReplicas::new(10);
     let min_scaling_step = 1;
     let max_scaling_step = 5;
     let context = GovernanceContext {
@@ -604,8 +603,8 @@ async fn test_flink_governance_flow_simple_step_down_too_big() -> anyhow::Result
             ScalePlan {
                 recv_timestamp: timestamp,
                 correlation_id: CORRELATION_ID.clone(),
-                current_job_parallelism: max_cluster_size,
-                target_job_parallelism: min_cluster_size,
+                current_job_parallelism: Parallelism::new(max_cluster_size.as_u32()),
+                target_job_parallelism: Parallelism::new(min_cluster_size.as_u32()),
                 current_nr_taskmanagers: max_cluster_size,
                 target_nr_taskmanagers: min_cluster_size,
                 task_slots_per_taskmanager: 1_f64,
@@ -613,8 +612,10 @@ async fn test_flink_governance_flow_simple_step_down_too_big() -> anyhow::Result
             vec![ScalePlan {
                 recv_timestamp: timestamp,
                 correlation_id: CORRELATION_ID.clone(),
-                current_job_parallelism: max_cluster_size,
-                target_job_parallelism: max_cluster_size - max_scaling_step,
+                current_job_parallelism: Parallelism::new(max_cluster_size.as_u32()),
+                target_job_parallelism: Parallelism::new(
+                    (max_cluster_size - max_scaling_step).as_u32()
+                ),
                 current_nr_taskmanagers: max_cluster_size,
                 target_nr_taskmanagers: max_cluster_size - max_scaling_step,
                 task_slots_per_taskmanager: 1_f64,
@@ -629,6 +630,7 @@ async fn test_flink_governance_flow_simple_step_down_too_big() -> anyhow::Result
 
     Ok(())
 }
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn test_flink_governance_flow_simple_step_up_before_max() -> anyhow::Result<()> {
     once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
@@ -647,10 +649,10 @@ async fn test_flink_governance_flow_simple_step_up_before_max() -> anyhow::Resul
 
     let mut flow = TestFlow::new(governance_stage).await?;
 
-    let min_parallelism = 1;
-    let max_parallelism = 20;
-    let min_cluster_size = 2;
-    let max_cluster_size = 10;
+    let min_parallelism = Parallelism::new(1);
+    let max_parallelism = Parallelism::new(20);
+    let min_cluster_size = NrReplicas::new(2);
+    let max_cluster_size = NrReplicas::new(10);
     let min_scaling_step = 1;
     let max_scaling_step = 5;
     let context = GovernanceContext {
@@ -678,19 +680,19 @@ async fn test_flink_governance_flow_simple_step_up_before_max() -> anyhow::Resul
             ScalePlan {
                 recv_timestamp: timestamp,
                 correlation_id: CORRELATION_ID.clone(),
-                current_job_parallelism: 0,
-                target_job_parallelism: 999,
-                current_nr_taskmanagers: 0,
-                target_nr_taskmanagers: 999,
+                current_job_parallelism: Parallelism::new(0),
+                target_job_parallelism: Parallelism::new(999),
+                current_nr_taskmanagers: NrReplicas::new(0),
+                target_nr_taskmanagers: NrReplicas::new(999),
                 task_slots_per_taskmanager: 1_f64,
             },
             vec![ScalePlan {
                 recv_timestamp: timestamp,
                 correlation_id: CORRELATION_ID.clone(),
-                current_job_parallelism: 0,
-                target_job_parallelism: max_scaling_step,
-                current_nr_taskmanagers: 0,
-                target_nr_taskmanagers: max_scaling_step,
+                current_job_parallelism: Parallelism::new(0),
+                target_job_parallelism: Parallelism::new(max_scaling_step),
+                current_nr_taskmanagers: NrReplicas::new(0),
+                target_nr_taskmanagers: NrReplicas::new(max_scaling_step),
                 task_slots_per_taskmanager: 1_f64,
             }]
         )
@@ -718,10 +720,10 @@ async fn test_flink_governance_flow_simple_step_down_before_min() -> anyhow::Res
 
     let mut flow = TestFlow::new(governance_stage).await?;
 
-    let min_parallelism = 1;
-    let max_parallelism = 20;
-    let min_cluster_size = 2;
-    let max_cluster_size = 10;
+    let min_parallelism = Parallelism::new(1);
+    let max_parallelism = Parallelism::new(20);
+    let min_cluster_size = NrReplicas::new(2);
+    let max_cluster_size = NrReplicas::new(10);
     let min_scaling_step = 1;
     let max_scaling_step = 5;
     let context = GovernanceContext {
@@ -749,17 +751,19 @@ async fn test_flink_governance_flow_simple_step_down_before_min() -> anyhow::Res
             ScalePlan {
                 recv_timestamp: timestamp,
                 correlation_id: CORRELATION_ID.clone(),
-                current_job_parallelism: max_cluster_size,
-                target_job_parallelism: 0,
+                current_job_parallelism: Parallelism::new(max_cluster_size.as_u32()),
+                target_job_parallelism: Parallelism::new(0),
                 current_nr_taskmanagers: max_cluster_size,
-                target_nr_taskmanagers: 0,
+                target_nr_taskmanagers: NrReplicas::NONE,
                 task_slots_per_taskmanager: 1_f64,
             },
             vec![ScalePlan {
                 recv_timestamp: timestamp,
                 correlation_id: CORRELATION_ID.clone(),
-                current_job_parallelism: max_cluster_size,
-                target_job_parallelism: max_cluster_size - max_scaling_step,
+                current_job_parallelism: Parallelism::new(max_cluster_size.as_u32()),
+                target_job_parallelism: Parallelism::new(
+                    (max_cluster_size - max_scaling_step).as_u32()
+                ),
                 current_nr_taskmanagers: max_cluster_size,
                 target_nr_taskmanagers: max_cluster_size - max_scaling_step,
                 task_slots_per_taskmanager: 1_f64,

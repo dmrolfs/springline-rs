@@ -19,6 +19,7 @@ mod prepare_data;
 mod restart_jobs;
 mod savepoint;
 
+use crate::model::NrReplicas;
 use crate::phases::plan::ScaleActionPlan;
 pub use composite::CompositeAction;
 pub use cull::CullTaskmanagers;
@@ -119,8 +120,8 @@ pub struct ActionSession {
     pub history: Vec<ActionOutcome>,
     pub kube: KubernetesContext,
     pub flink: FlinkContext,
-    pub nr_target_replicas: Option<u32>,
-    pub nr_confirmed_rescaled_taskmanagers: Option<u32>,
+    pub nr_target_replicas: Option<NrReplicas>,
+    pub nr_confirmed_rescaled_taskmanagers: Option<NrReplicas>,
     pub active_jobs: Option<Vec<JobId>>,
     pub uploaded_jars: Option<Vec<JarId>>,
     pub savepoints: Option<JobSavepointReport>,
