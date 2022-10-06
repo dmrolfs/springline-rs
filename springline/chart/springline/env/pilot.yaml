@@ -33,7 +33,7 @@ application:
     template_data:
       basis: chart_decision_basis
       max_healthy_relative_lag_velocity: 25.0
-      max_health_lag: 5000000
+      max_health_lag: 10000000
       min_task_utilization: 0.25
       max_healthy_cpu_load: 0.9
       max_healthy_heap_memory_load: 0.85
@@ -53,7 +53,7 @@ application:
       min_cluster_size: 1
       max_cluster_size: 64
       min_scaling_step: 1
-      max_scaling_step: 8
+      max_scaling_step: 16
 
   action:
     taskmanager:
