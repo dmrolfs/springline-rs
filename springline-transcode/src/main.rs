@@ -24,7 +24,7 @@ fn main() -> anyhow::Result<()> {
         .arg(Arg::new("to").help("to format").short('t').long("to"))
         .get_matches();
 
-    let target = matches.get_one::<PathBuf>("config").unwrap();
+    let target: &PathBuf = matches.get_one("config").unwrap();
     let doc = fs::read_to_string(target)?;
     let from: ConfigFormat = matches.get_one("from").cloned().unwrap_or(ConfigFormat::Ron);
     let to: ConfigFormat = matches.get_one("to").cloned().unwrap();
