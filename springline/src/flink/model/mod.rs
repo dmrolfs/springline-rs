@@ -6,7 +6,7 @@ pub mod parallelism;
 pub mod window;
 
 use std::collections::HashMap;
-use std::fmt::{self, Debug, Display};
+use std::fmt::{self, Debug};
 use std::hash::Hash;
 use std::marker::PhantomData;
 use std::time::Duration;
@@ -19,6 +19,7 @@ use proctor::elements::{TelemetryType, TelemetryValue, Timestamp};
 use proctor::ProctorIdGenerator;
 use serde::{de, Deserialize, Serialize};
 use serde_with::serde_as;
+use strum_macros::Display;
 
 use super::FlinkError;
 use super::MetricCatalog;
@@ -48,6 +49,7 @@ pub const JOB_STATES: [JobState; 11] = [
 
 #[derive(Debug, Display, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
+#[strum(serialize_all = "UPPERCASE")]
 pub enum JobState {
     Initializing,
     Created,
@@ -103,6 +105,7 @@ pub const TASK_STATES: [TaskState; 10] = [
 
 #[derive(Debug, Display, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
+#[strum(serialize_all = "UPPERCASE")]
 pub enum TaskState {
     Scheduled,
     Created,
@@ -695,8 +698,9 @@ impl From<FailureCause> for TelemetryValue {
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Display, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "UPPERCASE")]
 pub enum RestoreMode {
     /// Flink will take ownership of the given snapshot. It will clean the snapshot once it is
     /// subsumed by newer ones.
@@ -715,15 +719,15 @@ pub enum RestoreMode {
     Legacy,
 }
 
-impl fmt::Display for RestoreMode {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Claim => write!(f, "CLAIM"),
-            Self::NoClaim => write!(f, "NO-CLAIM"),
-            Self::Legacy => write!(f, "LEGACY"),
-        }
-    }
-}
+// impl fmt::Display for RestoreMode {
+//     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+//         match self {
+//             Self::Claim => write!(f, "CLAIM"),
+//             Self::NoClaim => write!(f, "NO-CLAIM"),
+//             Self::Legacy => write!(f, "LEGACY"),
+//         }
+//     }
+// }
 
 impl std::str::FromStr for RestoreMode {
     type Err = FlinkError;

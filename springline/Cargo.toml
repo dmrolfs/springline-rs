@@ -47,7 +47,7 @@ dashmap = "5.4.0"
 #derive_builder = "0.11.2"
 #dialoguer = { version = "0.10.1", features = ["fuzzy-select"] }
 either = { version = "1.8.0", features = ["serde"] }
-enum-display-derive = "0.1.1"
+# enum-display-derive = "0.1.1"
 enumflags2 = "0.7.5"
 frunk = "0.4.0"
 futures = "0.3.24"
@@ -81,6 +81,8 @@ serde_json = "1.0.85"
 serde_repr = "0.1.9"
 serde_with = { version = "2.0.1", features = ["chrono", "json", "macros"] }
 splines = "4.1.1"
+strum = "0.24.1"
+strum_macros = "0.24.3"
 sysinfo = "0.26.4"
 tailcall = "0.1.6"
 thiserror = "1.0.37"

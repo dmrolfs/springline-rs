@@ -1,9 +1,10 @@
-use std::fmt::{self, Debug, Display};
+use std::fmt::{self, Debug};
 use std::marker::PhantomData;
 use std::time::Duration;
 
 use async_trait::async_trait;
 use proctor::AppData;
+use strum_macros::Display;
 
 use crate::flink::{FlinkContext, JarId, JobId, JobSavepointReport};
 use crate::kubernetes::KubernetesContext;
@@ -97,7 +98,7 @@ pub struct ActionOutcome {
     pub is_leaf: bool,
 }
 
-impl Display for ActionOutcome {
+impl fmt::Display for ActionOutcome {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
