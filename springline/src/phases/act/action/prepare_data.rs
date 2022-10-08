@@ -7,17 +7,22 @@ use tracing::Instrument;
 use super::{ActionSession, ScaleAction};
 use crate::flink::{FlinkError, JarId, JobId};
 use crate::phases::act::{self, ActError, ActErrorDisposition, ScaleActionPlan};
+use crate::settings::FlinkActionSettings;
 
 pub const ACTION_LABEL: &str = "prepare_data";
 
 #[derive(Debug)]
 pub struct PrepareData<P> {
+    entry_class: Option<String>,
     marker: PhantomData<P>,
 }
 
-impl<P> Default for PrepareData<P> {
-    fn default() -> Self {
-        Self { marker: PhantomData }
+impl<P> PrepareData<P> {
+    pub fn from_settings(settings: &FlinkActionSettings) -> Self {
+        Self {
+            entry_class: settings.entry_class.clone(),
+            marker: PhantomData,
+        }
     }
 }
 
@@ -71,6 +76,11 @@ where
             Err(err) => self.handle_error_on_query_uploaded_jars(err, plan, session).await,
             jars => jars,
         }?;
+
+        // If there is one and only one uploaded jar file, optionally override entry-class on job restart.
+        if jars.len() == 1 {
+            session.entry_class = self.entry_class.clone();
+        }
 
         session.uploaded_jars = Some(jars);
         Ok(())

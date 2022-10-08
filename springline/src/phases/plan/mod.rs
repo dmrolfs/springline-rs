@@ -28,7 +28,10 @@ mod planning;
 
 pub use crate::phases::decision::ScaleDirection;
 pub use benchmark::BenchmarkRange;
-pub use clipping::{ClippingHandlingSettings, PLANNING_PARALLELISM_CLIPPING_POINT, PLANNING_PARALLELISM_CLIPPING_STATE};
+pub use clipping::{
+    ClippingHandlingSettings, PLANNING_PARALLELISM_CLIPPING_POINT,
+    PLANNING_PARALLELISM_CLIPPING_STATE,
+};
 pub use context::{
     PlanningContext, DIRECTION, DURATION_SECS, PLANNING__FREE_TASK_SLOTS, PLANNING__MAX_CATCH_UP,
     PLANNING__RECOVERY_VALID, PLANNING__RESCALE_RESTART, PLANNING__TOTAL_TASK_SLOTS,

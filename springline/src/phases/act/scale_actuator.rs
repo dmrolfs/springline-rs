@@ -169,9 +169,24 @@ where
             let action_duration = Duration::from_secs_f64(action_timer.stop_and_record());
             match outcome {
                 Ok(_) => {
+                    let mut total_status = ActionStatus::Success;
+                    for outcome in session.history.iter() {
+                        match outcome.status {
+                            ActionStatus::Failure => {
+                                total_status = ActionStatus::Failure;
+                                break;
+                            },
+                            ActionStatus::Recovered => {
+                                // set to recovered, but still look for failure. Later success doesn't redeem.
+                                total_status = ActionStatus::Recovered;
+                            },
+                            ActionStatus::Success => (),
+                        }
+                    }
+
                     session.mark_completion(
                         ACTION_TOTAL_DURATION,
-                        ActionStatus::Success,
+                        total_status,
                         action_duration,
                         action.is_leaf(),
                     );
@@ -216,7 +231,9 @@ where
         _plan: &P, parameters: &MakeActionParameters,
     ) -> Box<dyn ScaleAction<Plan = P>> {
         let mut action = action::CompositeAction::new("rescale_up")
-            .add_action_step(action::PrepareData::default())
+            .add_action_step(action::PrepareData::from_settings(
+                &parameters.flink_action_settings,
+            ))
             .add_action_step(action::CancelWithSavepoint::from_settings(
                 &parameters.flink_action_settings,
             ))
@@ -263,7 +280,9 @@ where
         _plan: &P, parameters: &MakeActionParameters,
     ) -> Box<dyn ScaleAction<Plan = P>> {
         let mut action = action::CompositeAction::new("rescale_down")
-            .add_action_step(action::PrepareData::default())
+            .add_action_step(action::PrepareData::from_settings(
+                &parameters.flink_action_settings,
+            ))
             .add_action_step(action::CancelWithSavepoint::from_settings(
                 &parameters.flink_action_settings,
             ))

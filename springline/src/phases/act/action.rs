@@ -123,6 +123,7 @@ pub struct ActionSession {
     pub nr_confirmed_rescaled_taskmanagers: Option<usize>,
     pub active_jobs: Option<Vec<JobId>>,
     pub uploaded_jars: Option<Vec<JarId>>,
+    pub entry_class: Option<String>,
     pub savepoints: Option<JobSavepointReport>,
 }
 
@@ -137,6 +138,7 @@ impl ActionSession {
             nr_confirmed_rescaled_taskmanagers: None,
             active_jobs: None,
             uploaded_jars: None,
+            entry_class: None,
             savepoints: None,
         }
     }
@@ -165,27 +167,33 @@ impl Debug for ActionSession {
             &self.history.iter().map(|o| o.to_string()).collect::<Vec<_>>(),
         );
 
-        if let Some(active_jobs) = &self.active_jobs {
+        if let Some(ref active_jobs) = self.active_jobs {
             debug.field("active_jobs", &active_jobs);
         }
 
-        if let Some(uploaded_jars) = &self.uploaded_jars {
+        if let Some(ref uploaded_jars) = self.uploaded_jars {
             debug.field("uploaded_jars", &uploaded_jars);
         }
 
-        if let Some(savepoints) = &self.savepoints {
+        if let Some(ref savepoints) = self.savepoints {
             debug.field("savepoints", &savepoints);
         }
 
-        if let Some(nr_target_replicas) = &self.nr_target_replicas {
+        if let Some(ref nr_target_replicas) = self.nr_target_replicas {
             debug.field("nr_target_replicas", &nr_target_replicas);
         }
 
-        if let Some(nr_confirmed_rescaled_taskmanagers) = &self.nr_confirmed_rescaled_taskmanagers {
+        if let Some(ref nr_confirmed_rescaled_taskmanagers) =
+            self.nr_confirmed_rescaled_taskmanagers
+        {
             debug.field(
                 "nr_confirmed_rescaled_taskmanagers",
                 &nr_confirmed_rescaled_taskmanagers,
             );
+        }
+
+        if let Some(ref entry_class) = self.entry_class {
+            debug.field("entry_class", &entry_class);
         }
 
         debug.finish()

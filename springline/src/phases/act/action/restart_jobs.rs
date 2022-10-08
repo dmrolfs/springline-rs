@@ -366,6 +366,7 @@ where
             savepoint_path: Some(location.clone()),
             parallelism: Some(parallelism),
             allow_non_restored_state: self.allow_non_restored_state,
+            entry_class: session.entry_class.clone(),
             program_args_list: self.program_args.clone(),
             //todo: add feature for supported flink version -- restore_mode: self.restore_mode,
             ..restart::RestartJarRequestBody::default()
@@ -763,6 +764,7 @@ mod tests {
     fn test_common_restart_jar_restart_body_serde_tokens() {
         let body = restart::RestartJarRequestBody {
             savepoint_path: Some(SavepointLocation::new("/path/to/savepoint")),
+            entry_class: Some("com.example.foo.Bar".to_string()),
             parallelism: Some(27),
             ..restart::RestartJarRequestBody::default()
         };
@@ -770,7 +772,10 @@ mod tests {
         assert_tokens(
             &body,
             &[
-                Token::Struct { name: "RestartJarRequestBody", len: 2 },
+                Token::Struct { name: "RestartJarRequestBody", len: 3 },
+                Token::Str("entryClass"),
+                Token::Some,
+                Token::Str("com.example.foo.Bar"),
                 Token::Str("parallelism"),
                 Token::Some,
                 Token::U64(27),

@@ -46,6 +46,10 @@ pub struct TaskmanagerContext {
 #[serde_as]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FlinkActionSettings {
+    /// If there is one and only one uploaded jar file, optionally override entry-class on job restart.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entry_class: Option<String>,
+
     /// Interval in which Flink asynchronous API is polled. Defaults to 1 second.
     #[serde(
         default = "FlinkActionSettings::default_polling_interval",
@@ -64,6 +68,7 @@ pub struct FlinkActionSettings {
 impl Default for FlinkActionSettings {
     fn default() -> Self {
         Self {
+            entry_class: None,
             polling_interval: Self::default_polling_interval(),
             savepoint: SavepointSettings::default(),
             restart: FlinkRestartSettings::default(),
