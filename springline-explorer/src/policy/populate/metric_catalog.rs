@@ -261,22 +261,26 @@ impl Lens for JobHealthLens {
 
     fn get(&self, telemetry: &Self::T) -> String {
         match self {
-            Self::UptimeMillis => format!("{}", telemetry.job_uptime_millis),
-            Self::NrRestarts => format!("{}", telemetry.job_nr_restarts),
-            Self::NrCompletedCheckpoints => format!("{}", telemetry.job_nr_completed_checkpoints),
-            Self::NrFailedCheckpoints => format!("{}", telemetry.job_nr_failed_checkpoints),
+            Self::UptimeMillis => format!("{:?}", telemetry.job_uptime_millis),
+            Self::NrRestarts => format!("{:?}", telemetry.job_nr_restarts),
+            Self::NrCompletedCheckpoints => format!("{:?}", telemetry.job_nr_completed_checkpoints),
+            Self::NrFailedCheckpoints => format!("{:?}", telemetry.job_nr_failed_checkpoints),
         }
     }
 
     fn set(&self, telemetry: &mut Self::T, value_rep: impl AsRef<str>) -> anyhow::Result<()> {
         match self {
-            Self::UptimeMillis => telemetry.job_uptime_millis = u32::from_str(value_rep.as_ref())?,
-            Self::NrRestarts => telemetry.job_nr_restarts = u32::from_str(value_rep.as_ref())?,
+            Self::UptimeMillis => {
+                telemetry.job_uptime_millis = Some(u32::from_str(value_rep.as_ref())?)
+            },
+            Self::NrRestarts => {
+                telemetry.job_nr_restarts = Some(u32::from_str(value_rep.as_ref())?)
+            },
             Self::NrCompletedCheckpoints => {
-                telemetry.job_nr_completed_checkpoints = u32::from_str(value_rep.as_ref())?
+                telemetry.job_nr_completed_checkpoints = Some(u32::from_str(value_rep.as_ref())?)
             },
             Self::NrFailedCheckpoints => {
-                telemetry.job_nr_failed_checkpoints = u32::from_str(value_rep.as_ref())?
+                telemetry.job_nr_failed_checkpoints = Some(u32::from_str(value_rep.as_ref())?)
             },
         }
 
