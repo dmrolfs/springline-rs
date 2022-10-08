@@ -99,9 +99,7 @@ data:
       performance_repository:
         storage: memory
       
-      clipping_handling: 
-        temporary_limit:
-            reset_timeout_secs: 14400
+      clipping_handling: ignore
 
     governance:
       rules:
@@ -121,13 +119,14 @@ data:
         kubernetes_api:
           api_timeout_secs: {{ .Values.application.action.taskmanager.kubernetes_api.api_timeout_secs }}
       flink:
-        {{- with .Values.application.action.flink.entry_class }}
-        entry_class: {{- toYaml . }}
-        {{- end }}
+        entry_class: {{ .Values.application.action.flink.entry_class }}
     
         polling_interval_secs: {{ .Values.application.action.flink.polling_interval_secs }}
+        savepoint:
+          operation_timeout_secs: {{ .Values.application.action.flink.savepoint.operation_timeout_secs }}
         restart:
           operation_timeout_secs: {{ .Values.application.action.flink.restart.operation_timeout_secs }}
+          
 #        label_selector: "component=taskmanager,release={{ include "common.name" . }}"
 #        deploy_resource: statefulset/{{ include "common.name" . }}-tm
 #        max_healthy_heap_memory_load: f64
