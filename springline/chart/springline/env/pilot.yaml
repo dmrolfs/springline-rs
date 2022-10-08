@@ -61,6 +61,7 @@ application:
       kubernetes_api:
         api_timeout_secs: 450
     flink:
+      entry_class: com.here.onemap.drivefilteringservice.RWODrivePublisher
       polling_interval_secs: 3
       restart:
         operation_timeout_secs: 300

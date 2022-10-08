@@ -8,6 +8,7 @@ use super::{ActionSession, ScaleAction};
 use crate::flink::{FlinkError, JarId, JobId};
 use crate::phases::act::{self, ActError, ActErrorDisposition};
 use crate::phases::plan::ScaleActionPlan;
+use crate::settings::FlinkActionSettings;
 
 pub const ACTION_LABEL: &str = "prepare_data";
 

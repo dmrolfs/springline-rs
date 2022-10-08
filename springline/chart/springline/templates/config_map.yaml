@@ -121,6 +121,10 @@ data:
         kubernetes_api:
           api_timeout_secs: {{ .Values.application.action.taskmanager.kubernetes_api.api_timeout_secs }}
       flink:
+        {{- with .Values.application.action.flink.entry_class }}
+        entry_class: {{- toYaml . }}
+        {{- end }}
+    
         polling_interval_secs: {{ .Values.application.action.flink.polling_interval_secs }}
         restart:
           operation_timeout_secs: {{ .Values.application.action.flink.restart.operation_timeout_secs }}
