@@ -49,9 +49,9 @@ application:
   governance:
     rules:
       min_parallelism: 1
-      max_parallelism: 64
+      max_parallelism: 16
       min_cluster_size: 1
-      max_cluster_size: 64
+      max_cluster_size: 16
       min_scaling_step: 1
       max_scaling_step: 16
 
