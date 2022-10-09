@@ -9,9 +9,6 @@
     rust_2018_idioms
 )]
 
-#[macro_use]
-extern crate enum_display_derive;
-
 pub mod engine;
 pub mod flink;
 pub mod kubernetes;

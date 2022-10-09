@@ -3,7 +3,7 @@ mod metrics_exporter;
 mod monitor;
 mod service;
 
-use std::fmt::{self, Display};
+use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -20,6 +20,7 @@ use proctor::ProctorResult;
 use prometheus::core::{AtomicU64, GenericGauge, GenericGaugeVec};
 use prometheus::{Opts, Registry};
 pub use service::EngineApiError;
+use strum_macros::Display;
 use sysinfo::SystemExt;
 use tokio::sync::RwLock;
 use tokio::task::JoinHandle;

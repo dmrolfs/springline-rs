@@ -1,4 +1,3 @@
-use std::fmt::Display;
 use std::time::Duration;
 
 use either::{Either, Left, Right};
@@ -7,6 +6,7 @@ use proctor::error::MetricLabel;
 use proctor::graph::stage::{self, SinkStage};
 use prometheus::{HistogramOpts, HistogramTimer, HistogramVec, IntCounterVec, Opts};
 pub use protocol::{ActEvent, ActMonitor};
+use strum_macros::Display;
 use thiserror::Error;
 
 use crate::phases::governance::GovernanceOutcome;

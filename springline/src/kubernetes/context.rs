@@ -1,6 +1,6 @@
 use either::{Either, Left, Right};
 use std::collections::HashMap;
-use std::fmt::{self, Display};
+use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -10,6 +10,7 @@ use kube::core::Status;
 use kube::{Api, Client};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
+use strum_macros::Display;
 use tracing_futures::Instrument;
 
 use super::{DeployApi, KubernetesDeployResource, KubernetesError};

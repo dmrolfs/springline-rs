@@ -1,6 +1,4 @@
-// use anyhow::anyhow;
 use std::borrow::Cow;
-use std::fmt::Display;
 use std::hash::Hash;
 
 use once_cell::sync::Lazy;
@@ -9,6 +7,7 @@ use proctor::elements::{TelemetryType, TelemetryValue};
 use proctor::error::{SenseError, TelemetryError};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
+use strum_macros::Display;
 
 use crate::phases::sense::flink::STD_METRIC_ORDERS;
 use crate::settings::FlinkSensorSettings;
@@ -46,6 +45,7 @@ const FLINK_SINK_PREFIX: &str = "Sink:";
 
 #[derive(Debug, Display, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 pub enum PlanPositionSpec {
     Any,
     Source,
@@ -89,6 +89,7 @@ impl PlanPositionSpec {
 
 #[derive(Debug, Display, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 pub enum DerivativeCombinator {
     Product,
 }
@@ -499,6 +500,7 @@ impl MetricOrder {
 
 #[derive(Debug, Display, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+// #[strum(serialize_all = "snake_case")]
 pub enum FlinkScope {
     Job,
     //todo: JobManager,
@@ -533,7 +535,8 @@ impl AsRef<str> for FlinkScope {
 }
 
 #[derive(Debug, Display, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "camelCase")]
+#[strum(serialize_all = "camelCase")]
 pub enum Aggregation {
     Value,
     Max,

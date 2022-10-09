@@ -176,29 +176,45 @@ pub struct JobHealthMetrics {
     /// Flink REST API: /jobs/metrics?get=uptime&agg=max
     /// Returns -1 for completed jobs (in milliseconds).
     #[polar(attribute)]
-    #[serde(rename = "health.job_uptime_millis")]
-    pub job_uptime_millis: u32,
+    #[serde(
+        default,
+        rename = "health.job_uptime_millis",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub job_uptime_millis: Option<u32>,
 
     /// The total number of restarts since this job was submitted, including full restarts and
     /// fine-grained restarts.
     /// Flink REST API: /jobs/metrics?get=numRestarts&agg=max
     #[polar(attribute)]
-    #[serde(rename = "health.job_nr_restarts")]
-    pub job_nr_restarts: u32,
+    #[serde(
+        default,
+        rename = "health.job_nr_restarts",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub job_nr_restarts: Option<u32>,
 
     /// The number of successfully completed checkpoints.
     /// Note: this metrics does not work properly when Reactive Mode is enabled.
     /// Flink REST API: /jobs/metrics?get=numberOfCompletedCheckpoints&agg=max
     #[polar(attribute)]
-    #[serde(rename = "health.job_nr_completed_checkpoints")]
-    pub job_nr_completed_checkpoints: u32,
+    #[serde(
+        default,
+        rename = "health.job_nr_completed_checkpoints",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub job_nr_completed_checkpoints: Option<u32>,
 
     /// The number of failed checkpoints.
     /// Note: this metrics does not work properly when Reactive Mode is enabled.
     /// Flink REST API: /jobs/metrics?get=numberOfFailedCheckpoints&agg=max
     #[polar(attribute)]
-    #[serde(rename = "health.job_nr_failed_checkpoints")]
-    pub job_nr_failed_checkpoints: u32,
+    #[serde(
+        default,
+        rename = "health.job_nr_failed_checkpoints",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub job_nr_failed_checkpoints: Option<u32>,
 }
 
 impl Monoid for JobHealthMetrics {
@@ -207,10 +223,7 @@ impl Monoid for JobHealthMetrics {
             job_max_parallelism: Parallelism::new(0),
             job_source_max_parallelism: Parallelism::new(0),
             job_nonsource_max_parallelism: Parallelism::new(0),
-            job_uptime_millis: 0,
-            job_nr_restarts: 0,
-            job_nr_completed_checkpoints: 0,
-            job_nr_failed_checkpoints: 0,
+            ..JobHealthMetrics::default()
         }
     }
 }
@@ -601,10 +614,6 @@ impl SubscriptionRequirements for MetricCatalog {
             MC_HEALTH__JOB_MAX_PARALLELISM.into(),
             MC_HEALTH__JOB_SOURCE_MAX_PARALLELISM.into(),
             MC_HEALTH__JOB_NONSOURCE_MAX_PARALLELISM.into(),
-            "health.job_uptime_millis".into(),
-            "health.job_nr_restarts".into(),
-            "health.job_nr_completed_checkpoints".into(),
-            "health.job_nr_failed_checkpoints".into(),
 
             // FlowMetrics
             MC_FLOW__RECORDS_IN_PER_SEC.into(),
@@ -629,6 +638,12 @@ impl SubscriptionRequirements for MetricCatalog {
 
     fn optional_fields() -> HashSet<String> {
         let mut optional = maplit::hashset! {
+            // JobHealthMetrics
+            "health.job_uptime_millis".into(),
+            "health.job_nr_restarts".into(),
+            "health.job_nr_completed_checkpoints".into(),
+            "health.job_nr_failed_checkpoints".into(),
+
             // FlowMetrics
             "flow.forecasted_timestamp".into(),
             "flow.forecasted_records_in_per_sec".into(),
@@ -657,12 +672,25 @@ impl UpdateMetrics for MetricCatalog {
             Ok(catalog) => {
                 METRIC_CATALOG_TIMESTAMP.set(catalog.recv_timestamp.as_secs());
 
-                METRIC_CATALOG_JOB_HEALTH_UPTIME.set(catalog.health.job_uptime_millis.into());
-                METRIC_CATALOG_JOB_HEALTH_NR_RESTARTS.set(catalog.health.job_nr_restarts.into());
-                METRIC_CATALOG_JOB_HEALTH_NR_COMPLETED_CHECKPOINTS
-                    .set(catalog.health.job_nr_completed_checkpoints.into());
-                METRIC_CATALOG_JOB_HEALTH_NR_FAILED_CHECKPOINTS
-                    .set(catalog.health.job_nr_failed_checkpoints.into());
+                if let Some(job_uptime_millis) = catalog.health.job_uptime_millis {
+                    METRIC_CATALOG_JOB_HEALTH_UPTIME.set(job_uptime_millis.into());
+                }
+
+                if let Some(job_nr_restarts) = catalog.health.job_nr_restarts {
+                    METRIC_CATALOG_JOB_HEALTH_NR_RESTARTS.set(job_nr_restarts.into());
+                }
+
+                if let Some(job_nr_completed_checkpoints) =
+                    catalog.health.job_nr_completed_checkpoints
+                {
+                    METRIC_CATALOG_JOB_HEALTH_NR_COMPLETED_CHECKPOINTS
+                        .set(job_nr_completed_checkpoints.into());
+                }
+
+                if let Some(job_nr_failed_checkpoints) = catalog.health.job_nr_failed_checkpoints {
+                    METRIC_CATALOG_JOB_HEALTH_NR_FAILED_CHECKPOINTS
+                        .set(job_nr_failed_checkpoints.into());
+                }
 
                 METRIC_CATALOG_FLOW_RECORDS_IN_PER_SEC.set(catalog.flow.records_in_per_sec);
                 METRIC_CATALOG_FLOW_RECORDS_OUT_PER_SEC.set(catalog.flow.records_out_per_sec);

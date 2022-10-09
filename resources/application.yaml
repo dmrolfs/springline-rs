@@ -332,6 +332,9 @@ action:
       polling_interval_secs: 5
 
   flink:
+    # If there is one and only one uploaded jar file, optionally override entry-class on job restart.
+#    entry_class: fully.qualified.class.name
+
     # Interval in which Flink asynchronous API status is polled. Defaults to 3 second.
     polling_interval_secs: 3
 

@@ -144,10 +144,10 @@ fn suffix_for(id: &str, agg: Aggregation) -> String {
     });
 
     match forms.matches(id).into_iter().take(1).next() {
-        Some(0) => format!("{}", agg), // camelCase - Jobs and Kinesis
-        Some(1) => format!(".{}", agg.to_string().to_lowercase()), // .camelCase - Task vertex
-        Some(2) => format!("-{}", agg.to_string().to_lowercase()), // kabab-case - Kafka
-        Some(3) => format!(".{}", agg), // .PascalCase - TaskManagers
+        Some(0) => format!("{}", agg),  // camelCase - Jobs and Kinesis
+        Some(1) => format!(".{}", agg), // .camelCase - Task vertex
+        Some(2) => format!("-{}", heck::AsKebabCase(agg.to_string())), // kabab-case - Kafka
+        Some(3) => format!(".{}", heck::AsPascalCase(agg.to_string())), // .PascalCase - TaskManagers
         _ => {
             tracing::warn!(%id, %agg, "failed to match metric id to known Flink forms - defaulting to camelCase");
             format!("{}", agg)
@@ -167,11 +167,11 @@ mod tests {
     fn test_suffix_for() {
         use self::Aggregation::*;
 
-        assert_eq!(&suffix_for("", Min), "Min");
-        assert_eq!(&suffix_for("*&^@(*#(*", Value), "Value");
-        assert_eq!(&suffix_for("uptime", Max), "Max");
-        assert_eq!(&suffix_for("numRestarts", Max), "Max");
-        assert_eq!(&suffix_for("numberOfCompletedCheckpoints", Max), "Max");
+        assert_eq!(&suffix_for("", Min), "min");
+        assert_eq!(&suffix_for("*&^@(*#(*", Value), "value");
+        assert_eq!(&suffix_for("uptime", Max), "max");
+        assert_eq!(&suffix_for("numRestarts", Max), "max");
+        assert_eq!(&suffix_for("numberOfCompletedCheckpoints", Max), "max");
         assert_eq!(&suffix_for("Status.JVM.CPU.Load", Max), ".Max");
         assert_eq!(&suffix_for("buffers.inputQueueLength", Max), ".max");
         assert_eq!(&suffix_for("records-lag-max", Value), "-value");

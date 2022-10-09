@@ -228,10 +228,10 @@ pub fn arb_job_health_metrics() -> impl Strategy<Value = JobHealthMetrics> {
 pub struct JobHealthMetricsStrategyBuilder {
     job_source_max_parallelism: Option<BoxedStrategy<u32>>,
     job_nonsource_max_parallelism: Option<BoxedStrategy<u32>>,
-    job_uptime_millis: Option<BoxedStrategy<u32>>,
-    job_nr_restarts: Option<BoxedStrategy<u32>>,
-    job_nr_completed_checkpoints: Option<BoxedStrategy<u32>>,
-    job_nr_failed_checkpoints: Option<BoxedStrategy<u32>>,
+    job_uptime_millis: Option<BoxedStrategy<Option<u32>>>,
+    job_nr_restarts: Option<BoxedStrategy<Option<u32>>>,
+    job_nr_completed_checkpoints: Option<BoxedStrategy<Option<u32>>>,
+    job_nr_failed_checkpoints: Option<BoxedStrategy<Option<u32>>>,
 }
 
 #[allow(dead_code)]
@@ -273,29 +273,31 @@ impl JobHealthMetricsStrategyBuilder {
     }
 
     pub fn job_uptime_millis(
-        self, job_uptime_millis: impl Strategy<Value = u32> + 'static,
+        self, job_uptime_millis: impl Strategy<Value = Option<u32>> + 'static,
     ) -> Self {
         let mut new = self;
         new.job_uptime_millis = Some(job_uptime_millis.boxed());
         new
     }
 
-    pub fn just_job_uptime_millis(self, job_uptime_millis: impl Into<u32>) -> Self {
+    pub fn just_job_uptime_millis(self, job_uptime_millis: impl Into<Option<u32>>) -> Self {
         self.job_uptime_millis(Just(job_uptime_millis.into()))
     }
 
-    pub fn job_nr_restarts(self, job_nr_restarts: impl Strategy<Value = u32> + 'static) -> Self {
+    pub fn job_nr_restarts(
+        self, job_nr_restarts: impl Strategy<Value = Option<u32>> + 'static,
+    ) -> Self {
         let mut new = self;
         new.job_nr_restarts = Some(job_nr_restarts.boxed());
         new
     }
 
-    pub fn just_job_nr_restarts(self, job_nr_restarts: impl Into<u32>) -> Self {
+    pub fn just_job_nr_restarts(self, job_nr_restarts: impl Into<Option<u32>>) -> Self {
         self.job_nr_restarts(Just(job_nr_restarts.into()))
     }
 
     pub fn job_nr_completed_checkpoints(
-        self, job_nr_completed_checkpoints: impl Strategy<Value = u32> + 'static,
+        self, job_nr_completed_checkpoints: impl Strategy<Value = Option<u32>> + 'static,
     ) -> Self {
         let mut new = self;
         new.job_nr_completed_checkpoints = Some(job_nr_completed_checkpoints.boxed());
@@ -303,20 +305,22 @@ impl JobHealthMetricsStrategyBuilder {
     }
 
     pub fn just_job_nr_completed_checkpoints(
-        self, job_nr_completed_checkpoints: impl Into<u32>,
+        self, job_nr_completed_checkpoints: impl Into<Option<u32>>,
     ) -> Self {
         self.job_nr_completed_checkpoints(Just(job_nr_completed_checkpoints.into()))
     }
 
     pub fn job_nr_failed_checkpoints(
-        self, job_nr_failed_checkpoints: impl Strategy<Value = u32> + 'static,
+        self, job_nr_failed_checkpoints: impl Strategy<Value = Option<u32>> + 'static,
     ) -> Self {
         let mut new = self;
         new.job_nr_failed_checkpoints = Some(job_nr_failed_checkpoints.boxed());
         new
     }
 
-    pub fn just_job_nr_failed_checkpoints(self, job_nr_failed_checkpoints: impl Into<u32>) -> Self {
+    pub fn just_job_nr_failed_checkpoints(
+        self, job_nr_failed_checkpoints: impl Into<Option<u32>>,
+    ) -> Self {
         self.job_nr_failed_checkpoints(Just(job_nr_failed_checkpoints.into()))
     }
 
@@ -339,12 +343,23 @@ impl JobHealthMetricsStrategyBuilder {
                 )
             });
 
+        let job_uptime_millis =
+            self.job_uptime_millis.unwrap_or(prop::option::of(any::<u32>()).boxed());
+        let job_nr_restarts =
+            self.job_nr_restarts.unwrap_or(prop::option::of(any::<u32>()).boxed());
+        let job_nr_completed_checkpoints = self
+            .job_nr_completed_checkpoints
+            .unwrap_or(prop::option::of(any::<u32>()).boxed());
+        let job_nr_failed_checkpoints = self
+            .job_nr_failed_checkpoints
+            .unwrap_or(prop::option::of(any::<u32>()).boxed());
+
         (
             max_parallelisms,
-            self.job_uptime_millis.unwrap_or(any::<u32>().boxed()),
-            self.job_nr_restarts.unwrap_or(any::<u32>().boxed()),
-            self.job_nr_completed_checkpoints.unwrap_or(any::<u32>().boxed()),
-            self.job_nr_failed_checkpoints.unwrap_or(any::<u32>().boxed()),
+            job_uptime_millis,
+            job_nr_restarts,
+            job_nr_completed_checkpoints,
+            job_nr_failed_checkpoints,
         )
             .prop_map(
                 |(

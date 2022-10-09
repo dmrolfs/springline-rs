@@ -15,14 +15,12 @@ use crate::settings::Settings;
 
 mod protocol {
     use std::collections::HashMap;
-    use std::fmt::Display;
     use std::sync::Arc;
 
     use axum::body::{self, BoxBody};
     use axum::http::{Response, StatusCode};
     use axum::response::IntoResponse;
     use either::{Left, Right};
-    use enum_display_derive::Display;
     use itertools::Either;
     use once_cell::sync::Lazy;
     use proctor::error::MetricLabel;
@@ -30,6 +28,7 @@ mod protocol {
     use proctor::phases::sense::ClearinghouseSnapshot;
     use regex::RegexSet;
     use serde::Deserialize;
+    use strum_macros::Display;
     use thiserror::Error;
     use tokio::sync::{mpsc, oneshot};
 
@@ -205,6 +204,7 @@ mod protocol {
 
     #[derive(Debug, Display, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize)]
     #[serde(rename_all(deserialize = "lowercase"))]
+    #[strum(serialize_all = "lowercase")]
     pub enum MetricsSpan {
         All,
         Sense,
