@@ -195,11 +195,11 @@ impl Monitor {
     ) {
         match &*event {
             EligibilityEvent::ItemPassed(item, query_result) => {
-                tracing::debug!(?event, ?query_result, correlation=%item.correlation(), "data item passed eligibility");
+                tracing::debug!(?event, ?query_result, correlation=%item.correlation(), "eligibility outcome: data item passed eligibility");
                 ELIGIBILITY_IS_ELIGIBLE_FOR_SCALING.set(true as i64)
             },
             EligibilityEvent::ItemBlocked(item, query_result) => {
-                tracing::info!(?event, ?query_result, correlation=%item.correlation(), "data item blocked in eligibility");
+                tracing::info!(?event, ?query_result, correlation=%item.correlation(), "eligibility outcome: data item blocked in eligibility");
                 ELIGIBILITY_IS_ELIGIBLE_FOR_SCALING.set(false as i64)
             },
             EligibilityEvent::ContextChanged(Some(ctx))
@@ -266,15 +266,15 @@ impl Monitor {
         match &*event {
             PlanEvent::DecisionPlanned(decision, plan) => match decision {
                 DecisionResult::ScaleUp(_) | DecisionResult::ScaleDown(_) => {
-                    tracing::info!(?event, correlation=%decision.item().correlation(), "planning for scaling decision");
+                    tracing::info!(?event, correlation=%decision.item().correlation(), "plan outcome: planning for scaling decision");
                     PLAN_TARGET_NR_TASK_MANAGERS.set(plan.target_nr_taskmanagers.into());
                 },
                 _no_action => {
-                    tracing::debug!(?event, correlation=%decision.item().correlation(), "no planning action by decision");
+                    tracing::debug!(?event, correlation=%decision.item().correlation(), "plan outcome: no planning action by decision");
                 },
             },
             PlanEvent::DecisionIgnored(decision) => {
-                tracing::debug!(?event, correlation=%decision.item().correlation(), "planning is ignoring decision result.");
+                tracing::debug!(?event, correlation=%decision.item().correlation(), "plan outcome: planning is ignoring decision result.");
             },
 
             PlanEvent::ContextChanged(context) if !loaded.contains(PhaseFlag::Plan) => {
@@ -324,11 +324,11 @@ impl Monitor {
     ) {
         match &*event {
             GovernanceEvent::ItemPassed(item, query_result) => {
-                tracing::info!(?event, ?query_result, correlation=%item.correlation(), "data item passed governance");
+                tracing::info!(?event, ?query_result, correlation=%item.correlation(), "governance outcome: data item passed governance");
                 GOVERNANCE_PLAN_ACCEPTED.set(true as i64)
             },
             GovernanceEvent::ItemBlocked(item, query_result) => {
-                tracing::info!(?event, ?query_result, correlation=%item.correlation(), "data item blocked in governance");
+                tracing::info!(?event, ?query_result, correlation=%item.correlation(), "governance outcome: data item blocked in governance");
                 GOVERNANCE_PLAN_ACCEPTED.set(false as i64)
             },
             GovernanceEvent::ContextChanged(Some(ctx))
@@ -369,14 +369,14 @@ impl Monitor {
     }
 
     fn do_handle_rescale_started(plan: &ScalePlan) -> ActionFeedback {
-        tracing::info!(?plan, correlation=%plan.correlation(), "rescale action started");
+        tracing::info!(?plan, correlation=%plan.correlation(), "act outcome: rescale action started");
         ActionFeedback { is_rescaling: true, ..ActionFeedback::default() }
     }
 
     async fn do_handle_rescale_executed(
         &self, plan: &ScalePlan, outcomes: &[ActionOutcome], now: Timestamp,
     ) -> ActionFeedback {
-        tracing::info!(%now, ?plan, correlation=%plan.correlation(), ?outcomes, "rescale executed");
+        tracing::info!(%now, ?plan, correlation=%plan.correlation(), ?outcomes, "act outcome: rescale executed");
         ACT_RESCALE_ACTION_COUNT
             .with_label_values(&[
                 plan.current_nr_taskmanagers.to_string().as_str(),
@@ -432,7 +432,7 @@ impl Monitor {
     fn do_handle_rescale_failed(
         plan: &ScalePlan, error_metric_label: &str, _now: Timestamp,
     ) -> ActionFeedback {
-        tracing::warn!(%error_metric_label, ?plan, correlation=%plan.correlation(), "rescale action during act phase failed.");
+        tracing::warn!(%error_metric_label, ?plan, correlation=%plan.correlation(), "act outcome: rescale action during act phase failed.");
         PHASE_ACT_ERRORS
             .with_label_values(&[
                 "monitor::act",
