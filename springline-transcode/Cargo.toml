@@ -21,10 +21,10 @@ path = "src/main.rs"
 [dependencies]
 springline = { path = "../springline", version = "*" }
 anyhow = "1.0.65"
-clap = "4.0.10"
+clap = "4.0.14"
 serde = "1.0.145"
 ron = "0.8.0"
-serde_json = "1.0.85"
+serde_json = "1.0.86"
 serde_yaml = "0.9.13"
 serde-transcode = "1.1.1"
 thiserror = "1.0.37"
