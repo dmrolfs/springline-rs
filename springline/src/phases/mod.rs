@@ -1,3 +1,4 @@
+use pretty_snowflake::Label;
 use proctor::elements::QueryResult;
 use proctor::graph::{Connect, SourceShape};
 use proctor::phases::policy_phase::PolicyPhase;
@@ -9,7 +10,7 @@ use proctor::{AppData, Correlation, ProctorContext};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
-use crate::Result;
+use crate::{Env, Result};
 
 #[cfg(test)]
 mod tests;
@@ -25,7 +26,13 @@ pub mod governance;
 pub mod plan;
 pub mod sense;
 
+use crate::flink::{AppDataWindow, MetricCatalog};
 pub use collect_window::{CollectMetricWindow, WindowApi, WindowCmd};
+
+pub type PhaseDataT = MetricCatalog;
+pub type PhaseData = Env<PhaseDataT>;
+pub type WindowDataT = AppDataWindow<PhaseData>;
+pub type WindowData = Env<WindowDataT>;
 
 pub const REASON: &str = "reason";
 pub const UNSPECIFIED: &str = "unspecified";
@@ -41,12 +48,13 @@ pub fn get_outcome_reason(results: &QueryResult) -> String {
 
 #[tracing::instrument(level = "trace", skip(agent))]
 pub(crate) async fn subscribe_policy_phase<In, Out, C, D, A>(
-    subscription: TelemetrySubscription, phase: &PolicyPhase<In, Out, C, D>, agent: &mut A,
+    subscription: TelemetrySubscription, phase: &PolicyPhase<In, Out, Env<C>, D>, agent: &mut A,
 ) -> Result<SubscriptionChannel<C>>
 where
     In: AppData + Correlation + oso::ToPolar,
     Out: AppData,
-    C: ProctorContext,
+    C: ProctorContext + Label + PartialEq,
+    Env<C>: ProctorContext,
     D: AppData + Serialize,
     A: ClearinghouseSubscriptionAgent,
 {
@@ -60,7 +68,7 @@ pub(crate) async fn subscribe_channel_with_agent<T, A>(
     name: &str, agent: &mut A,
 ) -> Result<SubscriptionChannel<T>>
 where
-    T: AppData + SubscriptionRequirements + DeserializeOwned,
+    T: AppData + Label + SubscriptionRequirements + DeserializeOwned,
     A: ClearinghouseSubscriptionAgent,
 {
     let subscription = TelemetrySubscription::new(name).for_requirements::<T>();

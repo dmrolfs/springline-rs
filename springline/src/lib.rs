@@ -4,8 +4,6 @@
     clippy::suspicious,
     // missing_docs,
     clippy::nursery,
-    // clippy::pedantic,
-    future_incompatible,
     rust_2018_idioms
 )]
 
@@ -20,4 +18,6 @@ pub mod settings;
 
 pub type Result<T> = anyhow::Result<T>;
 
-pub use flink::CorrelationId;
+pub type Env<T> = proctor::Env<T>;
+
+pub type CorrelationId = pretty_snowflake::Id<phases::PhaseDataT>;

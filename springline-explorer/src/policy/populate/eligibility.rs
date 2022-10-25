@@ -1,7 +1,6 @@
-use proctor::ProctorIdGenerator;
-
 use super::*;
 use crate::THEME;
+use proctor::elements::telemetry;
 
 impl PopulateContext for EligibilityContext {
     type Settings = EligibilitySettings;
@@ -42,7 +41,7 @@ impl PopulateContext for EligibilityContext {
             None
         };
 
-        let mut custom = HashMap::default();
+        let mut custom: telemetry::TableType = HashMap::default();
         loop {
             let key: String = Input::with_theme(&*THEME)
                 .with_prompt("Add custom property?")
@@ -61,10 +60,7 @@ impl PopulateContext for EligibilityContext {
             custom.insert(key, value.to_telemetry());
         }
 
-        let mut id_gen = ProctorIdGenerator::default();
         Ok(EligibilityContext {
-            correlation_id: id_gen.next_id(),
-            recv_timestamp: now.into(),
             all_sinks_healthy,
             job: JobStatus { last_failure },
             cluster: ClusterStatus { is_deploying, is_rescaling, last_deployment },

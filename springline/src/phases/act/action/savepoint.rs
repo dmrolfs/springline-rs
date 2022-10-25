@@ -6,8 +6,9 @@ use std::time::Duration;
 use async_trait::async_trait;
 use futures_util::{FutureExt, TryFutureExt};
 use http::Method;
+use pretty_snowflake::Id;
 use proctor::error::UrlError;
-use proctor::AppData;
+use proctor::{AppData, Correlation};
 use tokio::time::Instant;
 use tracing::Instrument;
 use url::Url;
@@ -19,7 +20,7 @@ use crate::flink::{
 use crate::phases::act::{self, ActError, ActErrorDisposition};
 use crate::phases::plan::ScaleActionPlan;
 use crate::settings::FlinkActionSettings;
-use crate::CorrelationId;
+use crate::Env;
 
 pub const ACTION_LABEL: &str = "savepoint";
 
@@ -53,7 +54,7 @@ where
         ACTION_LABEL
     }
 
-    fn check_preconditions(&self, session: &ActionSession) -> Result<(), ActError> {
+    fn check_preconditions(&self, session: &Env<ActionSession>) -> Result<(), ActError> {
         match &session.active_jobs {
             None => Err(ActError::ActionPrecondition {
                 action: self.label().to_string(),
@@ -87,7 +88,7 @@ where
         skip(self, plan)
     )]
     async fn execute<'s>(
-        &mut self, plan: &'s Self::Plan, session: &'s mut ActionSession,
+        &mut self, plan: &'s Self::Plan, session: &'s mut Env<ActionSession>,
     ) -> Result<(), ActError> {
         let active_jobs = session.active_jobs.clone().unwrap_or_default();
 
@@ -139,7 +140,7 @@ where
 {
     #[tracing::instrument(level = "info", skip(self, job_triggers, session))]
     async fn do_collect_savepoint_report<'s>(
-        &self, job_triggers: &[(JobId, trigger::TriggerId)], session: &'s ActionSession,
+        &self, job_triggers: &[(JobId, trigger::TriggerId)], session: &'s Env<ActionSession>,
     ) -> Result<JobSavepointReport, ActError> {
         let mut tasks = Vec::new();
         for (job, trigger) in job_triggers.iter().cloned() {
@@ -160,7 +161,7 @@ where
 
     #[tracing::instrument(level = "info", skip(self, job_triggers, session))]
     async fn do_wait_for_job_cancel<'s>(
-        &self, job_triggers: &[(JobId, trigger::TriggerId)], session: &'s ActionSession,
+        &self, job_triggers: &[(JobId, trigger::TriggerId)], session: &'s Env<ActionSession>,
     ) -> Result<HashSet<JobId>, ActError> {
         let mut tasks = Vec::new();
         for (job, _) in job_triggers.iter().cloned() {
@@ -183,7 +184,7 @@ where
     }
 
     async fn trigger_savepoints_for(
-        jobs: &[JobId], session: &ActionSession,
+        jobs: &[JobId], session: &Env<ActionSession>,
     ) -> Result<Vec<(JobId, trigger::TriggerId)>, ActError> {
         let mut job_triggers = Vec::with_capacity(jobs.len());
         let mut trigger_failures = Vec::new();
@@ -207,7 +208,7 @@ where
     }
 
     async fn trigger_savepoint(
-        job_id: &JobId, cancel_job: bool, session: &ActionSession,
+        job_id: &JobId, cancel_job: bool, session: &Env<ActionSession>,
     ) -> Result<trigger::TriggerId, FlinkError> {
         let step_label = super::action_step(ACTION_LABEL, "trigger_savepoint");
         let url = Self::trigger_endpoint_url_for(&session.flink, job_id)?;
@@ -267,14 +268,14 @@ where
 
     #[tracing::instrument(level = "debug", skip(session))]
     async fn wait_on_job_cancel(
-        job: JobId, polling_interval: Duration, cancel_timeout: Duration, session: &ActionSession,
+        job: JobId, polling_interval: Duration, cancel_timeout: Duration,
+        session: &Env<ActionSession>,
     ) -> Result<(), FlinkError> {
         let task = async {
             let start = Instant::now();
-
+            let correlation = session.correlation().relabel();
             loop {
-                let job_detail =
-                    session.flink.query_job_details(&job, &session.correlation()).await;
+                let job_detail = session.flink.query_job_details(&job, &correlation).await;
                 match job_detail {
                     Ok(details) if details.state.is_stopped() => {
                         tracing::info!(job_status=%details.state, "job {job} is not active.");
@@ -290,7 +291,7 @@ where
                     },
                     Err(err) => {
                         tracing::warn!(
-                            error=?err, ?job, correlation=%session.correlation(),
+                            error=?err, ?job, %correlation,
                             "check on cancellation of job {job} failed - checking again in {polling_interval:?}.",
                         );
                     },
@@ -308,7 +309,7 @@ where
     #[tracing::instrument(level = "trace", skip(session))]
     async fn wait_on_savepoint(
         job: JobId, trigger: trigger::TriggerId, polling_interval: Duration,
-        savepoint_timeout: Duration, session: &ActionSession,
+        savepoint_timeout: Duration, session: &Env<ActionSession>,
     ) -> Result<SavepointStatus, FlinkError> {
         let task = async {
             let start = Instant::now();
@@ -350,7 +351,7 @@ where
 
     #[tracing::instrument(level = "trace", skip(job_id, trigger_id, session))]
     async fn check_savepoint(
-        job_id: &JobId, trigger_id: &trigger::TriggerId, session: &ActionSession,
+        job_id: &JobId, trigger_id: &trigger::TriggerId, session: &Env<ActionSession>,
     ) -> Result<SavepointStatus, FlinkError> {
         let step_label = super::action_step(ACTION_LABEL, "check_savepoint");
         let url = Self::savepoint_info_url_for(&session.flink, job_id, trigger_id)?;
@@ -407,7 +408,7 @@ where
 
     #[tracing::instrument(level = "trace", skip(tasks))]
     async fn block_for_all_savepoints<F>(
-        tasks: Vec<F>, correlation: &CorrelationId,
+        tasks: Vec<F>, correlation: &Id<ActionSession>,
     ) -> Result<JobSavepointReport, ActError>
     where
         F: Future<Output = (JobId, Result<SavepointStatus, FlinkError>)> + Send,
@@ -454,7 +455,7 @@ where
 
     #[tracing::instrument(level = "trace", skip(tasks))]
     async fn block_for_all_cancellations<F>(
-        tasks: Vec<F>, correlation: &CorrelationId,
+        tasks: Vec<F>, correlation: &Id<ActionSession>,
     ) -> Result<Vec<JobId>, ActError>
     where
         F: Future<Output = (JobId, Result<(), FlinkError>)> + Send,
@@ -488,7 +489,7 @@ where
     #[tracing::instrument(level = "warn", skip(self, job_triggers, plan, session))]
     async fn handle_error_on_wait_for_cancellations<'s>(
         &self, error: ActError, job_triggers: &[(JobId, trigger::TriggerId)], plan: &'s P,
-        session: &'s ActionSession,
+        session: &'s Env<ActionSession>,
     ) -> Result<HashSet<JobId>, ActError> {
         let track = format!("{}::wait_for_cancellations", self.label());
         tracing::error!(
@@ -501,7 +502,7 @@ where
 
     #[tracing::instrument(level = "warn", skip(self, plan, session))]
     async fn handle_error_on_trigger<'s>(
-        &self, error: ActError, plan: &'s P, session: &'s mut ActionSession,
+        &self, error: ActError, plan: &'s P, session: &'s mut Env<ActionSession>,
     ) -> Result<Vec<(JobId, trigger::TriggerId)>, ActError> {
         let track = format!("{}::trigger", self.label());
         tracing::error!(
@@ -515,7 +516,7 @@ where
     #[tracing::instrument(level = "warn", skip(self, job_triggers, plan, session))]
     async fn handle_error_on_collect_savepoint<'s>(
         &self, error: ActError, job_triggers: &[(JobId, trigger::TriggerId)], plan: &'s P,
-        session: &'s ActionSession,
+        session: &'s Env<ActionSession>,
     ) -> Result<JobSavepointReport, ActError> {
         let track = format!("{}::collect_savepoint", self.label());
         tracing::error!(

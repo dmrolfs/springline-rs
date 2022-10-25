@@ -9,8 +9,9 @@ use proctor::elements::{RecordsPerSecond, TelemetryType, TelemetryValue};
 use proctor::error::{PlanError, TelemetryError};
 use serde::{Deserialize, Serialize};
 
-use crate::flink::{AppDataWindow, MetricCatalog, Parallelism};
+use crate::flink::{MetricCatalog, Parallelism};
 use crate::math;
+use crate::phases::decision::DecisionDataT;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct BenchmarkRange {
@@ -192,7 +193,7 @@ impl Benchmark {
         Self { job_parallelism, records_out_per_sec }
     }
 
-    pub fn from_window(data: &AppDataWindow<MetricCatalog>, window: Duration) -> Self {
+    pub fn from_window(data: &DecisionDataT, window: Duration) -> Self {
         let job_parallelism = data.health.job_max_parallelism;
         let window_secs = math::saturating_u64_to_u32(window.as_secs());
         let records_out_per_sec = data.flow_records_out_per_sec_rolling_average(window_secs).into();

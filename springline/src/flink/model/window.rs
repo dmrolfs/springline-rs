@@ -1,4 +1,3 @@
-use std::cmp::Ordering;
 use std::collections::VecDeque;
 use std::convert::TryFrom;
 use std::fmt;
@@ -7,14 +6,17 @@ use std::marker::PhantomData;
 use std::ops::Deref;
 use std::time::Duration;
 
+use crate::model::Saturating;
+use crate::phases::PhaseData;
+use crate::Env;
 use frunk::{Monoid, Semigroup};
 use itertools::Itertools;
 use once_cell::sync::Lazy;
 use oso::{Oso, PolarClass};
-use pretty_snowflake::Id;
+use pretty_snowflake::{Label, MakeLabeling};
 use proctor::elements::{Interval, PolicyContributor, Timestamp};
 use proctor::error::PolicyError;
-use proctor::{AppData, Correlation, ReceivedAt};
+use proctor::{AppData, ReceivedAt};
 use prometheus::{GaugeVec, Opts};
 use serde::de::{self, DeserializeOwned, MapAccess, Visitor};
 use serde::ser::SerializeStruct;
@@ -38,176 +40,35 @@ pub trait UpdateWindowMetrics: Window {
     fn update_metrics(&self, window: Option<Duration>);
 }
 
-#[derive(Debug)]
-pub struct Saturating<T>(pub T);
+pub trait WindowEntry {
+    type Entry: AppData + PartialEq + ReceivedAt;
+    type Data: AppData;
 
-impl<T: Clone> Clone for Saturating<T> {
-    fn clone(&self) -> Self {
-        Self(self.0.clone())
-    }
+    fn new(item: Self) -> Self::Entry;
+    fn into_data(entry: Self::Entry) -> Self::Data;
+    fn data_of(entry: &Self::Entry) -> &Self::Data;
 }
 
-impl<T: Copy + Clone> Copy for Saturating<T> {}
+impl<T> WindowEntry for Env<T>
+where
+    T: AppData + Label + PartialEq,
+{
+    type Entry = (T, Timestamp);
+    type Data = T;
 
-impl<T: PartialEq> PartialEq for Saturating<T> {
-    fn eq(&self, other: &Self) -> bool {
-        self.0 == other.0
+    fn new(item: Self) -> Self::Entry {
+        let ts = item.recv_timestamp();
+        (item.into_inner(), ts)
+    }
+
+    fn into_data(entry: Self::Entry) -> Self::Data {
+        entry.0
+    }
+
+    fn data_of(entry: &Self::Entry) -> &Self::Data {
+        &entry.0
     }
 }
-
-impl<T: Eq + PartialEq> Eq for Saturating<T> {}
-
-impl<T: PartialOrd> PartialOrd for Saturating<T> {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.0.partial_cmp(&other.0)
-    }
-}
-
-impl<T: Ord + PartialOrd> Ord for Saturating<T> {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.0.cmp(&other.0)
-    }
-}
-
-macro_rules! int_monoid_saturating_imps {
-    ($($tr:ty), *) => {
-        $(
-            impl Semigroup for Saturating<$tr> {
-                fn combine(&self, other: &Self) -> Self {
-                    let sum = self.0.saturating_add(other.0);
-                    Self(sum)
-                }
-            }
-
-            impl Semigroup for Saturating<Option<$tr>> {
-                fn combine(&self, other: &Self) -> Self {
-                    let result = match (self.0.map(Saturating), other.0.map(Saturating)) {
-                        (Some(x), Some(y)) => Some(x.combine(&y)),
-                        (Some(x), None) => Some(x),
-                        (None, Some(y)) => Some(y),
-                        (None, None) => None,
-                    };
-                    Self(result.map(|r| r.0))
-                }
-            }
-
-            impl Monoid for Saturating<$tr> {
-                fn empty() -> Self {
-                    Self(<$tr as Monoid>::empty())
-                }
-            }
-
-            impl Monoid for Saturating<Option<$tr>> {
-                fn empty() -> Self {
-                    Self(None)
-                }
-            }
-        )*
-    }
-}
-
-int_monoid_saturating_imps!(i8, i16, i32, i64, u8, u16, u32, u64, isize, usize);
-
-// impl<T: SaturatingAdd> Semigroup for Saturating<T> {
-//     fn combine(&self, other: &Self) -> Self {
-//         let sum = self.0.saturating_add(&other.0);
-//         Saturating(sum)
-//     }
-// }
-
-impl Semigroup for Saturating<f32> {
-    fn combine(&self, other: &Self) -> Self {
-        let sum = self.0 + other.0;
-        Self(sum)
-    }
-}
-
-impl Semigroup for Saturating<Option<f32>> {
-    fn combine(&self, other: &Self) -> Self {
-        let result = match (self.0.map(Saturating), other.0.map(Saturating)) {
-            (Some(x), Some(y)) => Some(x.combine(&y)),
-            (Some(x), None) => Some(x),
-            (None, Some(y)) => Some(y),
-            (None, None) => None,
-        };
-        Self(result.map(|r| r.0))
-    }
-}
-
-impl Monoid for Saturating<f32> {
-    fn empty() -> Self {
-        Self(<f32 as Monoid>::empty())
-    }
-}
-
-impl Monoid for Saturating<Option<f32>> {
-    fn empty() -> Self {
-        Self(None)
-    }
-}
-
-impl Semigroup for Saturating<f64> {
-    fn combine(&self, other: &Self) -> Self {
-        let sum = self.0 + other.0;
-        Self(sum)
-    }
-}
-
-impl Semigroup for Saturating<Option<f64>> {
-    fn combine(&self, other: &Self) -> Self {
-        let result = match (self.0.map(Saturating), other.0.map(Saturating)) {
-            (Some(x), Some(y)) => Some(x.combine(&y)),
-            (Some(x), None) => Some(x),
-            (None, Some(y)) => Some(y),
-            (None, None) => None,
-        };
-        Self(result.map(|r| r.0))
-    }
-}
-
-impl Monoid for Saturating<f64> {
-    fn empty() -> Self {
-        Self(<f64 as Monoid>::empty())
-    }
-}
-
-impl Monoid for Saturating<Option<f64>> {
-    fn empty() -> Self {
-        Self(None)
-    }
-}
-
-// pub trait SaturatingAdd {
-//     fn saturating_combine(&self, rhs: &Self) -> Self;
-// }
-//
-// macro_rules! numeric_saturating_add_imps {
-//     ($($tr:ty), *) => {
-//         $(
-//             impl SaturatingAdd for $tr {
-//                 fn saturating_combine(&self, rhs: &Self) -> Self {
-//                     let x = *self;
-//                     let y = *rhs;
-//                     <$tr>::saturating_add(x, y)
-//                 }
-//             }
-//         )*
-//     }
-// }
-//
-// numeric_saturating_add_imps!(i8, i16, i32, i64, u8, u16, u32, u64, isize, usize);
-
-// impl SaturatingAdd for f32 {
-//     fn saturating_combine(&self, rhs: &Self) -> Self {
-//         self.combine(rhs)
-//     }
-// }
-//
-// impl SaturatingAdd for f64 {
-//     fn saturating_combine(&self, rhs: &Self) -> Self {
-//         self.combine(rhs)
-//     }
-// }
 
 /// Window of data objects used for range queries; e.g., has CPU utilization exceeded a threshold
 /// for 5 minutes.
@@ -215,22 +76,22 @@ impl Monoid for Saturating<Option<f64>> {
 #[derive(Clone, PartialEq)]
 pub struct AppDataWindow<T>
 where
-    T: AppData + ReceivedAt,
+    T: AppData + WindowEntry,
 {
-    data: VecDeque<T>,
+    entries: VecDeque<<T as WindowEntry>::Entry>,
     pub time_window: Duration,
     pub quorum_percentile: f64,
 }
 
 impl<T> Validate for AppDataWindow<T>
 where
-    T: AppData + ReceivedAt,
+    T: AppData + WindowEntry,
 {
     fn validate(&self) -> Result<(), ValidationErrors> {
         let checks = vec![
             Self::check_quorum_percentile(self.quorum_percentile)
                 .map_err(|err| ("insufficient quorum", err)),
-            Self::check_nonempty(&self.data).map_err(|err| ("empty window", err)),
+            Self::check_nonempty(&self.entries).map_err(|err| ("empty window", err)),
         ];
 
         checks.into_iter().fold(Ok(()), |acc, check| match acc {
@@ -255,7 +116,7 @@ where
 
 impl<T> fmt::Debug for AppDataWindow<T>
 where
-    T: AppData + ReceivedAt,
+    T: AppData + WindowEntry,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("AppDataWindow")
@@ -266,9 +127,23 @@ where
             )
             .field("time_window", &self.time_window)
             .field("quorum_percentile", &self.quorum_percentile)
-            .field("window_size", &self.data.len())
-            .field("latest", &self.latest().recv_timestamp().to_string())
+            .field("window_size", &self.entries.len())
+            .field(
+                "latest_ts",
+                &self.latest_entry().recv_timestamp().to_string(),
+            )
             .finish()
+    }
+}
+
+impl<T> Label for AppDataWindow<T>
+where
+    T: AppData + Label + WindowEntry,
+{
+    type Labeler = <T as Label>::Labeler;
+
+    fn labeler() -> Self::Labeler {
+        <T as Label>::labeler()
     }
 }
 
@@ -280,8 +155,39 @@ pub const fn default_quorum_percentile() -> f64 {
 
 impl<T> AppDataWindow<T>
 where
-    T: AppData + ReceivedAt,
+    T: AppData + WindowEntry,
 {
+    pub fn from_size(data: T, window_size: usize, interval: Duration) -> Self {
+        let mut window = VecDeque::with_capacity(window_size);
+        let entry = <T as WindowEntry>::new(data);
+        window.push_back(entry);
+        let time_window = interval * window_size as u32;
+        let result = Self {
+            entries: window,
+            time_window,
+            quorum_percentile: DEFAULT_QUORUM_PERCENTILE,
+        };
+        result.validate().expect("window parameters are not valid");
+        result
+    }
+
+    pub fn from_time_window(data: T, time_window: Duration) -> Self {
+        let mut window = VecDeque::new();
+        let entry = <T as WindowEntry>::new(data);
+        window.push_back(entry);
+        let result = Self {
+            entries: window,
+            time_window,
+            quorum_percentile: DEFAULT_QUORUM_PERCENTILE,
+        };
+        result.validate().expect("window parameters are not valid");
+        result
+    }
+
+    pub fn builder() -> AppDataWindowBuilder<T> {
+        AppDataWindowBuilder::default()
+    }
+
     fn check_quorum_percentile(percentile: f64) -> Result<(), ValidationError> {
         if percentile <= 0.0 {
             Err(ValidationError::new(
@@ -296,54 +202,16 @@ where
         }
     }
 
-    fn check_nonempty(data: &VecDeque<T>) -> Result<(), ValidationError> {
+    fn check_nonempty(data: &VecDeque<<T as WindowEntry>::Entry>) -> Result<(), ValidationError> {
         if data.is_empty() {
             Err(ValidationError::new("window data cannot be empty."))
         } else {
             Ok(())
         }
     }
-
-    pub fn from_size(data: T, window_size: usize, interval: Duration) -> Self {
-        let mut window = VecDeque::with_capacity(window_size);
-        window.push_back(data);
-        let time_window = interval * window_size as u32;
-        let result = Self {
-            data: window,
-            time_window,
-            quorum_percentile: DEFAULT_QUORUM_PERCENTILE,
-        };
-        result.validate().expect("window parameters are not valid");
-        result
-    }
-
-    pub fn from_time_window(data: T, time_window: Duration) -> Self {
-        let mut window = VecDeque::new();
-        window.push_back(data);
-        let result = Self {
-            data: window,
-            time_window,
-            quorum_percentile: DEFAULT_QUORUM_PERCENTILE,
-        };
-        result.validate().expect("window parameters are not valid");
-        result
-    }
-
-    pub fn builder() -> AppDataWindowBuilder<T> {
-        AppDataWindowBuilder::default()
-    }
 }
 
-impl<T: AppData + ReceivedAt> PolarClass for AppDataWindow<T> {}
-
-impl<T: AppData + ReceivedAt> ReceivedAt for AppDataWindow<T>
-where
-    T: AppData + ReceivedAt,
-{
-    fn recv_timestamp(&self) -> Timestamp {
-        self.deref().recv_timestamp()
-    }
-}
+impl<T> PolarClass for AppDataWindow<T> where T: AppData + WindowEntry {}
 
 // macro_rules! add_methods {
 //     ($polar_class:expr, $($name:ident)*) => {
@@ -370,13 +238,12 @@ where
 //     }
 // }
 
-impl PolicyContributor for AppDataWindow<MetricCatalog> {
+impl PolicyContributor for AppDataWindow<PhaseData> {
     #[tracing::instrument(level = "trace", skip(engine))]
     fn register_with_policy_engine(engine: &mut Oso) -> Result<(), PolicyError> {
         MetricCatalog::register_with_policy_engine(engine)?;
 
         let builder = Self::get_polar_class_builder()
-            .add_attribute_getter("recv_timestamp", |p| p.recv_timestamp)
             .add_attribute_getter("health", |p| p.health.clone())
             .add_attribute_getter("flow", |p| p.flow.clone())
             .add_attribute_getter("cluster", |p| p.cluster.clone())
@@ -665,40 +532,37 @@ impl PolicyContributor for AppDataWindow<MetricCatalog> {
     }
 }
 
-impl<T> Correlation for AppDataWindow<T>
-where
-    T: AppData + ReceivedAt + Correlation<Correlated = T>,
-{
-    type Correlated = T;
-
-    fn correlation(&self) -> &Id<Self::Correlated> {
-        self.deref().correlation()
-    }
-}
-
 impl<T> IntoIterator for AppDataWindow<T>
 where
-    T: AppData + ReceivedAt,
+    T: AppData + WindowEntry,
 {
-    type IntoIter = std::collections::vec_deque::IntoIter<Self::Item>;
-    type Item = T;
+    type IntoIter = std::vec::IntoIter<<T as WindowEntry>::Data>;
+    type Item = <T as WindowEntry>::Data;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.data.into_iter()
+        self.entries
+            .into_iter()
+            .map(<T as WindowEntry>::into_data)
+            .collect::<Vec<_>>()
+            .into_iter()
     }
 }
 
 impl<T> AppDataWindow<T>
 where
-    T: AppData + ReceivedAt,
+    T: AppData + WindowEntry,
 {
     #[inline]
-    pub fn latest(&self) -> &T {
-        self.data.back().unwrap()
+    pub fn latest(&self) -> &<T as WindowEntry>::Data {
+        <T as WindowEntry>::data_of(self.latest_entry())
     }
 
-    pub fn history(&self) -> impl Iterator<Item = &T> {
-        self.data.iter().rev()
+    pub fn latest_entry(&self) -> &<T as WindowEntry>::Entry {
+        self.entries.back().unwrap()
+    }
+
+    pub fn history(&self) -> impl Iterator<Item = &<T as WindowEntry>::Entry> {
+        self.entries.iter().rev()
     }
 
     pub const fn is_empty(&self) -> bool {
@@ -707,11 +571,11 @@ where
 
     #[inline]
     pub fn len(&self) -> usize {
-        self.data.len()
+        self.entries.len()
     }
 
     pub fn has_quorum_looking_back_secs(&self, looking_back_secs: u32) -> bool {
-        let head_ts = self.recv_timestamp();
+        let head_ts = self.latest_entry().recv_timestamp();
         let looking_back = Duration::from_secs(looking_back_secs as u64);
         self.has_quorum(Interval::new(head_ts - looking_back, head_ts).unwrap())
     }
@@ -720,7 +584,9 @@ where
         self.quorum_percentile <= self.assess_coverage_of(interval).0
     }
 
-    pub fn assess_coverage_of(&self, interval: Interval) -> (f64, impl Iterator<Item = &T>) {
+    pub fn assess_coverage_of(
+        &self, interval: Interval,
+    ) -> (f64, impl Iterator<Item = &<T as WindowEntry>::Entry>) {
         let mut coverage_start: Option<Timestamp> = None;
         let mut coverage_end: Option<Timestamp> = None;
         let mut range = Vec::new();
@@ -762,9 +628,9 @@ where
     #[tracing::instrument(level = "trace", skip(self, extractor))]
     pub fn extract_from_head<F, D>(&self, looking_back: Duration, extractor: F) -> Vec<D>
     where
-        F: FnMut(&T) -> D,
+        F: FnMut(&<T as WindowEntry>::Entry) -> Option<D>,
     {
-        let head_ts = self.latest().recv_timestamp();
+        let head_ts = self.latest_entry().recv_timestamp();
         self.extract_in_interval(
             Interval::new(head_ts - looking_back, head_ts).unwrap(),
             extractor,
@@ -779,11 +645,11 @@ where
         &self, interval: Interval, extractor: F,
     ) -> impl Iterator<Item = D>
     where
-        F: FnMut(&T) -> D,
+        F: FnMut(&<T as WindowEntry>::Entry) -> Option<D>,
     {
         self.history()
             .take_while(|m| interval.contains_timestamp(m.recv_timestamp()))
-            .map(extractor)
+            .flat_map(extractor)
             .collect::<Vec<_>>()
             .into_iter()
     }
@@ -791,10 +657,10 @@ where
     #[tracing::instrument(level = "trace", skip(self, f))]
     fn fold_duration_from_head<F, R>(&self, init: R, looking_back: Duration, f: F) -> R
     where
-        F: FnMut(R, &T) -> R,
+        F: FnMut(R, &<T as WindowEntry>::Entry) -> R,
         R: Copy + fmt::Debug,
     {
-        let latest_ts = self.latest().recv_timestamp();
+        let latest_ts = self.latest_entry().recv_timestamp();
         let interval = Interval::new(latest_ts - looking_back, latest_ts);
         let interval = interval.unwrap();
         let (_quorum_percentage, range_iter) = self.assess_coverage_of(interval);
@@ -804,7 +670,7 @@ where
     #[tracing::instrument(level = "trace", skip(self, f))]
     fn sum_from_head<F, R>(&self, looking_back: Duration, mut f: F) -> (R, usize)
     where
-        F: FnMut(&T) -> R,
+        F: FnMut(&<T as WindowEntry>::Entry) -> R,
         Saturating<R>: Semigroup,
         R: Copy + Monoid + fmt::Debug,
     {
@@ -822,23 +688,24 @@ where
     #[tracing::instrument(level = "trace", skip(self, f))]
     pub fn for_duration_from_head<F>(&self, looking_back: Duration, f: F) -> bool
     where
-        F: FnMut(&T) -> bool,
+        F: FnMut(&<T as WindowEntry>::Entry) -> bool,
     {
-        let head_ts = self.latest().recv_timestamp();
+        let head_ts = self.latest_entry().recv_timestamp();
         self.for_coverage_in_interval(Interval::new(head_ts - looking_back, head_ts).unwrap(), f)
     }
 
     #[tracing::instrument(level = "trace", skip(self, f))]
     pub fn for_coverage_in_interval<F>(&self, interval: Interval, mut f: F) -> bool
     where
-        F: FnMut(&T) -> bool,
+        F: FnMut(&<T as WindowEntry>::Entry) -> bool,
     {
         if self.is_empty() {
             tracing::debug!("empty window");
             false
         } else if self.len() == 1 && interval.duration() == Duration::ZERO {
             tracing::debug!("single metric window");
-            interval.contains_timestamp(self.recv_timestamp()) && f(self)
+            let entry = self.latest_entry();
+            interval.contains_timestamp(entry.recv_timestamp()) && f(entry)
         } else {
             tracing::debug!(window=?self.window_interval(), ?interval, "Checking for interval");
 
@@ -855,7 +722,7 @@ where
                 return false;
             }
 
-            let range: Vec<&T> = range_iter.collect();
+            let range: Vec<&<T as WindowEntry>::Entry> = range_iter.collect();
             tracing::debug!(
                 range=?range.iter().map(|m| m.recv_timestamp().to_string()).collect::<Vec<_>>(),
                 ?interval,
@@ -870,13 +737,14 @@ where
 }
 
 macro_rules! window_opt_integer_ops_for {
-    ($($name:ident = $property:expr)*) => {
+    ($($name:ident = $property_accessor:expr)*) => {
         $(
             ::paste::paste! {
                 pub fn [<$name _rolling_average>](&self, looking_back_secs: u32) -> f64 {
+                    let entry_accessor = |(mc, _ts): &(MetricCatalog, Timestamp)| { $property_accessor(mc) };
                     let (sum, size): (_, usize) = self.sum_from_head(
                         Duration::from_secs(looking_back_secs as u64),
-                        $property
+                        entry_accessor
                     );
 
                     if size == 0 {
@@ -889,13 +757,14 @@ macro_rules! window_opt_integer_ops_for {
                 }
 
                 pub fn [<$name _rolling_change_per_sec>](&self, looking_back_secs: u32) -> f64 {
+                    let entry_accessor = |(mc, ts): &(MetricCatalog, Timestamp)| {
+                        $property_accessor(mc).map(|v| (*ts, v))
+                    };
+
                     let values: Vec<(Timestamp, _)> = self.extract_from_head(
                         Duration::from_secs(u64::from(looking_back_secs)),
-                        |m: &MetricCatalog| { $property(m).map(|val| (m.recv_timestamp, val)) }
-                    )
-                        .into_iter()
-                        .flatten()
-                        .collect();
+                        entry_accessor
+                    );
 
                     values
                         .last()
@@ -916,25 +785,29 @@ macro_rules! window_opt_integer_ops_for {
                         .unwrap_or(0.0)
                 }
 
-                pub fn [<$name _below_threshold>](&self, looking_back_secs: u32, threshold: i64) -> bool {
+                pub fn [<$name _below_threshold>](&self, looking_back_secs: u32, threshold: u32) -> bool {
+                    let check_entry_threshold = |(mc, _ts): &(MetricCatalog, Timestamp)| {
+                        $property_accessor(mc)
+                            .map(|value| value < threshold)
+                            .unwrap_or(false)
+                    };
+
                     self.for_duration_from_head(
                         Duration::from_secs(u64::from(looking_back_secs)),
-                        |m: &MetricCatalog| {
-                            $property(m)
-                                .map(|value| i64::from(value) < threshold)
-                                .unwrap_or(false)
-                        }
+                        check_entry_threshold
                     )
                 }
 
-                pub fn [<$name _above_threshold>](&self, looking_back_secs: u32, threshold: i64) -> bool {
+                pub fn [<$name _above_threshold>](&self, looking_back_secs: u32, threshold: u32) -> bool {
+                    let check_entry_threshold = |(mc, _ts): &(MetricCatalog, Timestamp)| {
+                        $property_accessor(mc)
+                            .map(|value| threshold < value)
+                            .unwrap_or(false)
+                    };
+
                     self.for_duration_from_head(
                         Duration::from_secs(u64::from(looking_back_secs)),
-                        |m: &MetricCatalog| {
-                            $property(m)
-                                .map(|value| threshold < i64::from(value))
-                                .unwrap_or(false)
-                        }
+                        check_entry_threshold
                     )
                 }
             }
@@ -943,13 +816,14 @@ macro_rules! window_opt_integer_ops_for {
 }
 
 macro_rules! window_opt_float_ops_for {
-    ($($name:ident = $property:expr)*) => {
+    ($($name:ident = $property_accessor:expr)*) => {
         $(
             ::paste::paste! {
                 pub fn [<$name _rolling_average>](&self, looking_back_secs: u32) -> f64 {
+                    let entry_accessor = |(mc, _ts): &(MetricCatalog, Timestamp)| { $property_accessor(mc) };
                     let sum_size: (_, usize) = self.sum_from_head(
                         Duration::from_secs(looking_back_secs as u64),
-                        $property
+                        entry_accessor
                     );
                     let (sum, size) = sum_size;
 
@@ -959,13 +833,14 @@ macro_rules! window_opt_float_ops_for {
                 }
 
                 pub fn [<$name _rolling_change_per_sec>](&self, looking_back_secs: u32) -> f64 {
+                    let entry_accessor = |(mc, ts): &(MetricCatalog, Timestamp)| {
+                        $property_accessor(mc).map(|v| (*ts, v))
+                    };
+
                     let values: Vec<(Timestamp, _)> = self.extract_from_head(
                         Duration::from_secs(u64::from(looking_back_secs)),
-                        |m: &MetricCatalog| { $property(m).map(|val| (m.recv_timestamp, val)) }
-                    )
-                        .into_iter()
-                        .flatten()
-                        .collect();
+                        entry_accessor
+                    );
 
                     values
                         .last()
@@ -986,24 +861,28 @@ macro_rules! window_opt_float_ops_for {
                 }
 
                 pub fn [<$name _below_threshold>](&self, looking_back_secs: u32, threshold: f64) -> bool {
+                    let check_entry_threshold = |(mc, _ts): &(MetricCatalog, Timestamp)| {
+                        $property_accessor(mc)
+                            .map(|value| value < threshold)
+                            .unwrap_or(false)
+                    };
+
                     self.for_duration_from_head(
                         Duration::from_secs(u64::from(looking_back_secs)),
-                        |m: &MetricCatalog| {
-                            $property(m)
-                                .map(|value| value < threshold)
-                                .unwrap_or(false)
-                        }
+                        check_entry_threshold
                     )
                 }
 
                 pub fn [<$name _above_threshold>](&self, looking_back_secs: u32, threshold: f64) -> bool {
+                    let check_entry_threshold = |(mc, _ts): &(MetricCatalog, Timestamp)| {
+                        $property_accessor(mc)
+                            .map(|value| threshold < value)
+                            .unwrap_or(false)
+                    };
+
                     self.for_duration_from_head(
                         Duration::from_secs(u64::from(looking_back_secs)),
-                        |m: &MetricCatalog| {
-                            $property(m)
-                                .map(|value| threshold < value)
-                                .unwrap_or(false)
-                        }
+                        check_entry_threshold
                     )
                 }
             }
@@ -1011,7 +890,7 @@ macro_rules! window_opt_float_ops_for {
     }
 }
 
-impl AppDataWindow<MetricCatalog> {
+impl AppDataWindow<PhaseData> {
     window_opt_float_ops_for!(
         flow_idle_time_millis_per_sec = |m: &MetricCatalog| Some(m.flow.idle_time_millis_per_sec)
         flow_task_utilization = |m: &MetricCatalog| Some(m.flow.task_utilization())
@@ -1066,7 +945,7 @@ impl AppDataWindow<MetricCatalog> {
     ) -> bool {
         self.for_duration_from_head(
             Duration::from_secs(u64::from(looking_back_secs)),
-            |m: &MetricCatalog| m.flow.is_source_consumer_telemetry_populated(),
+            |(m, _): &(MetricCatalog, Timestamp)| m.flow.is_source_consumer_telemetry_populated(),
         )
     }
 
@@ -1075,21 +954,21 @@ impl AppDataWindow<MetricCatalog> {
     ) -> bool {
         self.for_duration_from_head(
             Duration::from_secs(u64::from(looking_back_secs)),
-            |m: &MetricCatalog| !m.flow.is_source_consumer_telemetry_populated(),
+            |(m, _): &(MetricCatalog, Timestamp)| !m.flow.is_source_consumer_telemetry_populated(),
         )
     }
 }
 
 impl<T> Window for AppDataWindow<T>
 where
-    T: AppData + ReceivedAt,
+    T: AppData + WindowEntry,
 {
     type Item = T;
 
     fn window_interval(&self) -> Option<Interval> {
         // window vecdeque runs oldest to youngest
-        let start = self.data.front().map(|m| m.recv_timestamp());
-        let end = self.data.back().map(|m| m.recv_timestamp());
+        let start = self.entries.front().map(|m| m.recv_timestamp());
+        let end = self.entries.back().map(|m| m.recv_timestamp());
         start.zip(end).map(|i| {
             i.try_into()
                 .expect("window represents invalid interval (end before start): {i:?}")
@@ -1101,26 +980,28 @@ where
     }
 
     fn push(&mut self, data: Self::Item) {
+        let data_entry = <T as WindowEntry>::new(data);
+
         // efficient push to back if monotonically increasing recv_timestamp; otherwise expensive resort
-        match self.data.back() {
-            Some(last) if data.recv_timestamp() < last.recv_timestamp() => {
+        match self.entries.back() {
+            Some(last) if data_entry.recv_timestamp() < last.recv_timestamp() => {
                 tracing::warn!(
-                    data_recv_ts=?data.recv_timestamp(), window_last_ts=?last.recv_timestamp(),
+                    data_recv_ts=?data_entry.recv_timestamp(), window_last_ts=?last.recv_timestamp(),
                     "data window works best if data items' recv_timestamps are monotonically increasing - performing expensive data resort."
                 );
-                self.data.push_back(data);
-                let mut my_data: Vec<_> = self.data.iter().collect();
+                self.entries.push_back(data_entry);
+                let mut my_data: Vec<_> = self.entries.iter().collect();
                 my_data.sort_by_key(|item| item.recv_timestamp());
-                self.data = my_data.into_iter().cloned().collect();
+                self.entries = my_data.into_iter().cloned().collect();
             },
-            _ => self.data.push_back(data),
+            _ => self.entries.push_back(data_entry),
         }
 
-        let allowed = self.data.back().map(|last| last.recv_timestamp() - self.time_window);
+        let allowed = self.entries.back().map(|last| last.recv_timestamp() - self.time_window);
 
-        while let Some((item, oldest_allowed)) = self.data.front().zip(allowed) {
+        while let Some((item, oldest_allowed)) = self.entries.front().zip(allowed) {
             if item.recv_timestamp() < oldest_allowed {
-                let expiring = self.data.pop_front();
+                let expiring = self.entries.pop_front();
                 tracing::debug!(?expiring, %oldest_allowed, "expiring data item outside of time window");
             } else {
                 break;
@@ -1139,7 +1020,7 @@ where
     }
 }
 
-impl UpdateWindowMetrics for AppDataWindow<MetricCatalog> {
+impl UpdateWindowMetrics for AppDataWindow<Env<MetricCatalog>> {
     #[allow(clippy::cognitive_complexity)]
     fn update_metrics(&self, window: Option<Duration>) {
         let window_secs = window.and_then(|w| u32::try_from(w.as_secs()).ok()).unwrap_or(60);
@@ -1171,11 +1052,55 @@ impl UpdateWindowMetrics for AppDataWindow<MetricCatalog> {
     }
 }
 
+impl<T> Window for Env<AppDataWindow<Env<T>>>
+where
+    T: AppData + Label + PartialEq,
+{
+    type Item = Env<T>;
+
+    fn from_item(
+        item: Self::Item, time_window: Duration, quorum_percentage: f64,
+    ) -> Result<Self, ValidationErrors> {
+        item.flat_map(|i| {
+            AppDataWindow::builder()
+                .with_item(i)
+                .with_time_window(time_window)
+                .with_quorum_percentile(quorum_percentage)
+                .build()
+        })
+        .transpose()
+    }
+
+    fn time_window(&self) -> Duration {
+        self.deref().time_window()
+    }
+
+    fn window_interval(&self) -> Option<Interval> {
+        self.deref().window_interval()
+    }
+
+    fn push(&mut self, item: Self::Item) {
+        self.adopt_metadata(item.metadata().clone());
+        self.as_mut().push(item)
+    }
+}
+
+impl<T> UpdateWindowMetrics for Env<AppDataWindow<T>>
+where
+    T: AppData + Label + PartialEq + WindowEntry,
+    AppDataWindow<T>: UpdateWindowMetrics,
+    Self: Window,
+{
+    fn update_metrics(&self, window: Option<Duration>) {
+        self.deref().update_metrics(window);
+    }
+}
+
 impl<T> std::ops::Deref for AppDataWindow<T>
 where
-    T: AppData + ReceivedAt,
+    T: AppData + WindowEntry,
 {
-    type Target = T;
+    type Target = <T as WindowEntry>::Data;
 
     fn deref(&self) -> &Self::Target {
         self.latest()
@@ -1184,7 +1109,7 @@ where
 
 impl<T> std::ops::Add<T> for AppDataWindow<T>
 where
-    T: AppData + ReceivedAt,
+    T: AppData + WindowEntry,
 {
     type Output = Self;
 
@@ -1196,7 +1121,7 @@ where
 
 impl<T> std::ops::Add for AppDataWindow<T>
 where
-    T: AppData + ReceivedAt,
+    T: AppData + WindowEntry,
 {
     type Output = Self;
 
@@ -1207,13 +1132,13 @@ where
 
 impl<T> Semigroup for AppDataWindow<T>
 where
-    T: AppData + ReceivedAt,
+    T: AppData + WindowEntry,
 {
     fn combine(&self, other: &Self) -> Self {
         let book = Self::do_ordered_combine(self, other);
         let required_coverage = self.quorum_percentile.max(other.quorum_percentile);
         Self {
-            data: book,
+            entries: book,
             time_window: self.time_window,
             quorum_percentile: required_coverage,
         }
@@ -1222,19 +1147,20 @@ where
 
 impl<T> AppDataWindow<T>
 where
-    T: AppData + ReceivedAt,
+    T: AppData + WindowEntry,
 {
     #[tracing::instrument(level = "trace", skip(older, younger))]
     fn block_combine(
-        time_window: Duration, older: &VecDeque<T>, younger: &VecDeque<T>,
-    ) -> VecDeque<T> {
+        time_window: Duration, older: &VecDeque<<T as WindowEntry>::Entry>,
+        younger: &VecDeque<<T as WindowEntry>::Entry>,
+    ) -> VecDeque<<T as WindowEntry>::Entry> {
         younger.back().map_or_else(
             || older.clone(), // if younger has no back, then it must be empty.
             |youngest| {
                 let cutoff = youngest.recv_timestamp() - time_window;
                 let older_iter = older.iter().cloned();
                 let younger_iter = younger.iter().cloned();
-                let result: VecDeque<T> = older_iter
+                let result: VecDeque<<T as WindowEntry>::Entry> = older_iter
                     .chain(younger_iter)
                     .filter(|m| cutoff <= m.recv_timestamp())
                     .collect();
@@ -1254,26 +1180,28 @@ where
     }
 
     #[tracing::instrument(level = "trace", skip(lhs_window, rhs_window))]
-    fn do_ordered_combine(lhs_window: &Self, rhs_window: &Self) -> VecDeque<T> {
+    fn do_ordered_combine(
+        lhs_window: &Self, rhs_window: &Self,
+    ) -> VecDeque<<T as WindowEntry>::Entry> {
         let (lhs_interval, rhs_interval) =
             match (lhs_window.window_interval(), rhs_window.window_interval()) {
                 (None, None) => return VecDeque::new(),
-                (Some(_), None) => return lhs_window.data.clone(),
-                (None, Some(_)) => return rhs_window.data.clone(),
+                (Some(_), None) => return lhs_window.entries.clone(),
+                (None, Some(_)) => return rhs_window.entries.clone(),
                 (Some(lhs), Some(rhs)) => (lhs, rhs),
             };
 
         let time_window = lhs_window.time_window;
         if lhs_interval.is_before(rhs_interval) {
-            Self::block_combine(time_window, &lhs_window.data, &rhs_window.data)
+            Self::block_combine(time_window, &lhs_window.entries, &rhs_window.entries)
         } else if rhs_interval.is_before(lhs_interval) {
-            Self::block_combine(time_window, &rhs_window.data, &lhs_window.data)
+            Self::block_combine(time_window, &rhs_window.entries, &lhs_window.entries)
         } else {
             tracing::trace_span!("interspersed combination", ?time_window).in_scope(|| {
                 let mut combined = lhs_window
-                    .data
+                    .entries
                     .iter()
-                    .chain(rhs_window.data.iter())
+                    .chain(rhs_window.entries.iter())
                     .sorted_by(|lhs, rhs| lhs.recv_timestamp().cmp(&rhs.recv_timestamp()))
                     .cloned()
                     .collect::<VecDeque<_>>();
@@ -1299,7 +1227,8 @@ where
 
 impl<T> Serialize for AppDataWindow<T>
 where
-    T: Serialize + AppData + ReceivedAt,
+    T: AppData + WindowEntry + Serialize,
+    <T as WindowEntry>::Entry: Serialize,
 {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -1308,14 +1237,15 @@ where
         let mut state = serializer.serialize_struct("AppDataWindow", 3)?;
         state.serialize_field("time_window", &self.time_window)?;
         state.serialize_field("quorum_percentage", &self.quorum_percentile)?;
-        state.serialize_field("data", &self.data)?;
+        state.serialize_field("entries", &self.entries)?;
         state.end()
     }
 }
 
 impl<'de, T> Deserialize<'de> for AppDataWindow<T>
 where
-    T: DeserializeOwned + AppData + ReceivedAt,
+    T: AppData + WindowEntry + DeserializeOwned,
+    <T as WindowEntry>::Entry: DeserializeOwned,
 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -1324,7 +1254,7 @@ where
         enum Field {
             TimeWindow,
             QuorumPercentage,
-            Data,
+            Entries,
         }
 
         impl<'de> Deserialize<'de> for Field {
@@ -1338,7 +1268,7 @@ where
                     type Value = Field;
 
                     fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                        f.write_str("`time_window`, `quorum_percentage` or `data`")
+                        f.write_str("`time_window`, `quorum_percentage` or `entries`")
                     }
 
                     fn visit_str<E>(self, value: &str) -> Result<Field, E>
@@ -1348,7 +1278,7 @@ where
                         match value {
                             "time_window" => Ok(Field::TimeWindow),
                             "quorum_percentage" => Ok(Field::QuorumPercentage),
-                            "data" => Ok(Field::Data),
+                            "entries" => Ok(Field::Entries),
                             _ => Err(de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -1362,7 +1292,8 @@ where
 
         impl<T0> AppDataWindowVisitor<T0>
         where
-            T0: DeserializeOwned + AppData + ReceivedAt,
+            T0: DeserializeOwned + WindowEntry,
+            <T0 as WindowEntry>::Entry: DeserializeOwned,
         {
             pub const fn new() -> Self {
                 Self(PhantomData)
@@ -1371,7 +1302,8 @@ where
 
         impl<'de, T0> Visitor<'de> for AppDataWindowVisitor<T0>
         where
-            T0: DeserializeOwned + AppData + ReceivedAt,
+            T0: AppData + WindowEntry + DeserializeOwned,
+            <T0 as WindowEntry>::Entry: DeserializeOwned,
         {
             type Value = AppDataWindow<T0>;
 
@@ -1385,7 +1317,7 @@ where
             {
                 let mut time_window = None;
                 let mut quorum_percentage = None;
-                let mut data = None;
+                let mut entries = None;
                 while let Some(key) = map.next_key()? {
                     match key {
                         Field::TimeWindow => {
@@ -1400,11 +1332,11 @@ where
                             }
                             quorum_percentage = Some(map.next_value()?);
                         },
-                        Field::Data => {
-                            if data.is_some() {
-                                return Err(de::Error::duplicate_field("data"));
+                        Field::Entries => {
+                            if entries.is_some() {
+                                return Err(de::Error::duplicate_field("entries"));
                             }
-                            data = Some(map.next_value()?);
+                            entries = Some(map.next_value()?);
                         },
                     }
                 }
@@ -1413,12 +1345,13 @@ where
                     time_window.ok_or_else(|| de::Error::missing_field("time_window"))?;
                 let quorum_percentage = quorum_percentage
                     .ok_or_else(|| de::Error::missing_field("quorum_percentage"))?;
-                let data: Vec<T0> = data.ok_or_else(|| de::Error::missing_field("data"))?;
+                let entries: Vec<<T0 as WindowEntry>::Entry> =
+                    entries.ok_or_else(|| de::Error::missing_field("entries"))?;
 
                 AppDataWindow::builder()
                     .with_time_window(time_window)
                     .with_quorum_percentile(quorum_percentage)
-                    .with_items(data)
+                    .with_entries(entries)
                     .build()
                     .map_err(|err| {
                         de::Error::custom(format!(
@@ -1428,7 +1361,7 @@ where
             }
         }
 
-        const FIELDS: &[&str] = &["time_window", "quorum_percentage", "data"];
+        const FIELDS: &[&str] = &["time_window", "quorum_percentage", "entries"];
         deserializer.deserialize_struct("AppDataWindow", FIELDS, AppDataWindowVisitor::<T>::new())
     }
 }
@@ -1436,9 +1369,9 @@ where
 #[derive(Debug, Clone, PartialEq, Validate)]
 pub struct AppDataWindowBuilder<T>
 where
-    T: AppData + ReceivedAt,
+    T: AppData + WindowEntry,
 {
-    data: Option<VecDeque<T>>,
+    entries: Option<VecDeque<<T as WindowEntry>::Entry>>,
     time_window: Option<Duration>,
     #[validate(custom = "AppDataWindow::<T>::check_quorum_percentile")]
     quorum_percentile: Option<f64>,
@@ -1446,11 +1379,11 @@ where
 
 impl<T> Default for AppDataWindowBuilder<T>
 where
-    T: AppData + ReceivedAt,
+    T: AppData + WindowEntry,
 {
     fn default() -> Self {
         Self {
-            data: None,
+            entries: None,
             time_window: None,
             quorum_percentile: None,
         }
@@ -1459,17 +1392,32 @@ where
 
 impl<T> AppDataWindowBuilder<T>
 where
-    T: AppData + ReceivedAt,
+    T: AppData + WindowEntry,
 {
     pub fn with_item(mut self, item: T) -> Self {
-        self.push(item);
+        self.push_item(item);
+        self
+    }
+
+    pub fn with_entry(mut self, entry: <T as WindowEntry>::Entry) -> Self {
+        self.push_entry(entry);
         self
     }
 
     pub fn with_items(mut self, items: impl IntoIterator<Item = T>) -> Self {
-        for item in items {
-            self.push(item);
-        }
+        items.into_iter().for_each(|entry| {
+            self.push_item(entry);
+        });
+        self
+    }
+
+    pub fn with_entries<E>(mut self, entries: E) -> Self
+    where
+        E: IntoIterator<Item = <T as WindowEntry>::Entry>,
+    {
+        entries.into_iter().for_each(|entry| {
+            self.push_entry(entry);
+        });
         self
     }
 
@@ -1488,36 +1436,52 @@ where
         self
     }
 
-    pub fn push(&mut self, data: T) -> &mut Self {
-        if let Some(items) = &mut self.data {
-            items.push_back(data);
+    pub fn push_item(&mut self, item: T) -> &mut Self {
+        self.push_entry(<T as WindowEntry>::new(item))
+    }
+
+    pub fn push_entry(&mut self, entry: <T as WindowEntry>::Entry) -> &mut Self {
+        if let Some(entries) = &mut self.entries {
+            entries.push_back(entry);
         } else {
-            let mut items = VecDeque::new();
-            items.push_back(data);
-            self.data = Some(items);
+            let mut entries = VecDeque::new();
+            entries.push_back(entry);
+            self.entries = Some(entries);
         }
 
         self
     }
 
     pub fn is_empty(&self) -> bool {
-        self.data.as_ref().map_or(true, |d| d.is_empty())
+        self.entries.as_ref().map_or(true, |d| d.is_empty())
     }
 
     pub fn len(&self) -> usize {
-        self.data.as_ref().map_or(0, |d| d.len())
+        self.entries.as_ref().map_or(0, |d| d.len())
     }
 
     pub fn build(self) -> Result<AppDataWindow<T>, ValidationErrors> {
-        let mut window: Vec<T> = self.data.map_or(Vec::default(), |d| d.into_iter().collect());
+        let mut window: Vec<<T as WindowEntry>::Entry> =
+            self.entries.map_or(Vec::default(), |d| d.into_iter().collect());
         window.sort_by_key(|item| item.recv_timestamp());
-        let result = AppDataWindow {
-            data: window.into_iter().collect(),
+        let result: AppDataWindow<T> = AppDataWindow {
+            entries: window.into_iter().collect(),
             time_window: self.time_window.expect("must supply time window before final build"),
             quorum_percentile: self.quorum_percentile.unwrap_or(DEFAULT_QUORUM_PERCENTILE),
         };
         result.validate()?;
         Ok(result)
+    }
+}
+
+impl<T> Label for AppDataWindowBuilder<T>
+where
+    T: AppData + WindowEntry,
+{
+    type Labeler = MakeLabeling<Self>;
+
+    fn labeler() -> Self::Labeler {
+        Self::Labeler::default()
     }
 }
 
@@ -1578,29 +1542,37 @@ mod tests {
     use approx::*;
     use claim::*;
     use pretty_assertions::assert_eq;
+    use proctor::MetaData;
     use serde_test::{assert_tokens, Token};
 
-    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    #[derive(Debug, Clone, PartialEq, Label, Serialize, Deserialize)]
     struct TestData(pub i64);
 
-    impl ReceivedAt for TestData {
-        fn recv_timestamp(&self) -> Timestamp {
-            Timestamp::from_secs(self.0)
-        }
+    fn envelope_for<T: Label + Send>(data: T) -> Env<T> {
+        Env::new(data)
+    }
+    fn envelope_for_ts<T: Label + Send>(data: T, ts: Timestamp) -> Env<T> {
+        Env::from_parts(MetaData::default().with_recv_timestamp(ts), data)
     }
 
     #[test]
     fn test_app_data_window_serde_tokens() {
+        let now = Timestamp::new(100, 0);
+
         let data_window = assert_ok!(AppDataWindow::builder()
             .with_time_window(Duration::from_secs(10))
             .with_quorum_percentile(0.67)
-            .with_items(vec![
-                TestData(1),
-                TestData(2),
-                TestData(3),
-                TestData(4),
-                TestData(5)
-            ])
+            .with_items(
+                vec![
+                    (TestData(10), now + Duration::from_secs(1)),
+                    (TestData(20), now + Duration::from_secs(2)),
+                    (TestData(30), now + Duration::from_secs(3)),
+                    (TestData(40), now + Duration::from_secs(4)),
+                    (TestData(50), now + Duration::from_secs(5)),
+                ]
+                .into_iter()
+                .map(|(d, ts)| envelope_for_ts(d, ts))
+            )
             .build());
 
         assert_tokens(
@@ -1616,18 +1588,48 @@ mod tests {
                 Token::StructEnd,
                 Token::Str("quorum_percentage"),
                 Token::F64(0.67),
-                Token::Str("data"),
+                Token::Str("entries"),
                 Token::Seq { len: Some(5) },
+                Token::Tuple { len: 2 },
                 Token::NewtypeStruct { name: "TestData" },
-                Token::I64(1),
+                Token::I64(10),
+                Token::TupleStruct { name: "Timestamp", len: 2 },
+                Token::I64(now.as_pair().0 + 1),
+                Token::U32(now.as_pair().1),
+                Token::TupleStructEnd,
+                Token::TupleEnd,
+                Token::Tuple { len: 2 },
                 Token::NewtypeStruct { name: "TestData" },
-                Token::I64(2),
+                Token::I64(20),
+                Token::TupleStruct { name: "Timestamp", len: 2 },
+                Token::I64(now.as_pair().0 + 2),
+                Token::U32(now.as_pair().1),
+                Token::TupleStructEnd,
+                Token::TupleEnd,
+                Token::Tuple { len: 2 },
                 Token::NewtypeStruct { name: "TestData" },
-                Token::I64(3),
+                Token::I64(30),
+                Token::TupleStruct { name: "Timestamp", len: 2 },
+                Token::I64(now.as_pair().0 + 3),
+                Token::U32(now.as_pair().1),
+                Token::TupleStructEnd,
+                Token::TupleEnd,
+                Token::Tuple { len: 2 },
                 Token::NewtypeStruct { name: "TestData" },
-                Token::I64(4),
+                Token::I64(40),
+                Token::TupleStruct { name: "Timestamp", len: 2 },
+                Token::I64(now.as_pair().0 + 4),
+                Token::U32(now.as_pair().1),
+                Token::TupleStructEnd,
+                Token::TupleEnd,
+                Token::Tuple { len: 2 },
                 Token::NewtypeStruct { name: "TestData" },
-                Token::I64(5),
+                Token::I64(50),
+                Token::TupleStruct { name: "Timestamp", len: 2 },
+                Token::I64(now.as_pair().0 + 5),
+                Token::U32(now.as_pair().1),
+                Token::TupleStructEnd,
+                Token::TupleEnd,
                 Token::SeqEnd,
                 Token::StructEnd,
             ],
@@ -1636,20 +1638,24 @@ mod tests {
 
     #[test]
     fn test_app_data_window_serde_json() {
-        let expected: AppDataWindow<TestData> = assert_ok!(AppDataWindow::builder()
+        let expected: AppDataWindow<Env<TestData>> = assert_ok!(AppDataWindow::builder()
             .with_time_window(Duration::from_secs(10))
             .with_quorum_percentile(0.67)
-            .with_items(vec![
-                TestData(1),
-                TestData(2),
-                TestData(3),
-                TestData(4),
-                TestData(5)
-            ])
+            .with_items(
+                vec![
+                    TestData(1),
+                    TestData(2),
+                    TestData(3),
+                    TestData(4),
+                    TestData(5)
+                ]
+                .into_iter()
+                .map(envelope_for)
+            )
             .build());
 
         let actual_rep = assert_ok!(serde_json::to_string(&expected));
-        let actual: AppDataWindow<TestData> = assert_ok!(serde_json::from_str(&actual_rep));
+        let actual: AppDataWindow<Env<TestData>> = assert_ok!(serde_json::from_str(&actual_rep));
         assert_eq!(actual, expected);
     }
 
@@ -1712,11 +1718,13 @@ mod tests {
             AppDataWindow::builder().with_time_window(Duration::from_secs(120)),
             |acc, i| {
                 let source_total_lag = Some(100 + i * 10);
-                acc.with_item(MetricCatalog {
-                    recv_timestamp: start + incr * i,
-                    flow: FlowMetrics { source_total_lag, ..basis.flow.clone() },
-                    ..basis.clone()
-                })
+                acc.with_item(envelope_for_ts(
+                    MetricCatalog {
+                        flow: FlowMetrics { source_total_lag, ..basis.flow.clone() },
+                        ..basis.clone()
+                    },
+                    start + incr * i,
+                ))
             },
         );
         let data = assert_ok!(builder.build());
@@ -1738,11 +1746,13 @@ mod tests {
             AppDataWindow::builder().with_time_window(Duration::from_secs(120)),
             |acc, i| {
                 let source_total_lag = if i % 2 == 0 { Some(100 + i * 10) } else { None };
-                acc.with_item(MetricCatalog {
-                    recv_timestamp: start + incr * i,
-                    flow: FlowMetrics { source_total_lag, ..basis.flow.clone() },
-                    ..basis.clone()
-                })
+                acc.with_item(envelope_for_ts(
+                    MetricCatalog {
+                        flow: FlowMetrics { source_total_lag, ..basis.flow.clone() },
+                        ..basis.clone()
+                    },
+                    start + incr * i,
+                ))
             },
         );
         let data = assert_ok!(builder.build());

@@ -8,14 +8,19 @@ pub use decision_template_data_strategy::*;
 pub use metric_catalog_strategy::*;
 pub use policy_scenario::*;
 use std::ops::RangeInclusive;
+use std::sync::Mutex;
 
 pub use super::policy::DecisionTemplateData;
 pub use super::{ScaleDirection, DECISION_DIRECTION};
+use crate::flink::CorrelationGenerator;
 pub use crate::flink::{AppDataWindow, MetricCatalog};
 pub use claim::*;
+use once_cell::sync::Lazy;
 pub use pretty_snowflake::MachineNode;
+use pretty_snowflake::{AlphabetCodec, IdPrettifier, Label};
 pub use proctor::elements::{telemetry, TelemetryValue, Timestamp};
 pub use proctor::error::PolicyError;
+use proctor::{AppData, MetaData};
 pub use proptest::prelude::*;
 pub use std::time::Duration;
 
@@ -37,6 +42,26 @@ pub fn arb_perturbed_duration(
         let deviation = center * rng.gen_range(factor_range);
         Duration::from_secs_f64(center + deviation)
     })
+}
+
+static CORRELATION_GEN: Lazy<Mutex<CorrelationGenerator>> = Lazy::new(|| {
+    Mutex::new(CorrelationGenerator::distributed(
+        MachineNode::new(1, 1).unwrap(),
+        IdPrettifier::<AlphabetCodec>::default(),
+    ))
+});
+
+pub fn arb_metadata<T>(recv_timestamp: Timestamp) -> impl Strategy<Value = MetaData<T>>
+where
+    T: AppData + Label,
+{
+    let correlation_gen = CORRELATION_GEN.lock().unwrap();
+    let foo = Just(MetaData::from_parts(
+        correlation_gen.next_id().relabel(),
+        recv_timestamp,
+    ))
+    .boxed();
+    foo
 }
 
 pub fn arb_timestamp_window(

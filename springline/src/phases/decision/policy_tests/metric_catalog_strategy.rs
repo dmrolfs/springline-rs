@@ -1,37 +1,55 @@
 use super::*;
 use crate::flink::{
-    AppDataWindowBuilder, ClusterMetrics, CorrelationGenerator, FlowMetrics, JobHealthMetrics,
-    Parallelism,
+    AppDataWindowBuilder, ClusterMetrics, FlowMetrics, JobHealthMetrics, Parallelism,
 };
 use crate::model::NrReplicas;
-use once_cell::sync::Lazy;
-use pretty_snowflake::{AlphabetCodec, IdPrettifier};
+use crate::Env;
+use pretty_snowflake::Id;
+use pretty_snowflake::Labeling;
 use proctor::elements::telemetry;
-use std::sync::Mutex;
+use proctor::MetaData;
 
 pub fn arb_metric_catalog_window_from_timestamp_window<M>(
     timestamps: impl Strategy<Value = (Vec<Timestamp>, Duration)>, make_data_strategy: M,
-) -> impl Strategy<Value = AppDataWindow<MetricCatalog>>
+) -> impl Strategy<Value = Env<AppDataWindow<Env<MetricCatalog>>>>
 where
-    M: FnMut(Timestamp) -> BoxedStrategy<MetricCatalog> + Clone + 'static,
+    M: FnMut(Timestamp) -> BoxedStrategy<Env<MetricCatalog>> + Clone + 'static,
 {
     timestamps
         .prop_flat_map(move |(timestamps, window)| {
-            let acc = AppDataWindowBuilder::default().with_time_window(window);
+            let acc = Env::from_parts(
+                MetaData::default(),
+                AppDataWindowBuilder::default().with_time_window(window),
+            );
             data_loop(timestamps, Just(acc), make_data_strategy.clone())
         })
         .prop_map(|builder| {
-            builder.build().expect("failed to build valid metric catalog data window")
+            let window = builder
+                .into_inner()
+                .build()
+                .expect("failed to build valid metric catalog data window");
+            let ts = window.latest_entry().1;
+            Env::from_parts(
+                MetaData::from_parts(
+                    Id::direct(
+                        <AppDataWindow<Env<MetricCatalog>> as Label>::labeler().label(),
+                        0,
+                        "<undefined>",
+                    ),
+                    ts,
+                ),
+                window,
+            )
         })
 }
 
 fn data_loop<M>(
     timestamps: Vec<Timestamp>,
-    acc: impl Strategy<Value = AppDataWindowBuilder<MetricCatalog>> + 'static,
+    acc: impl Strategy<Value = Env<AppDataWindowBuilder<Env<MetricCatalog>>>> + 'static,
     mut make_data_strategy: M,
-) -> impl Strategy<Value = AppDataWindowBuilder<MetricCatalog>>
+) -> impl Strategy<Value = Env<AppDataWindowBuilder<Env<MetricCatalog>>>>
 where
-    M: FnMut(Timestamp) -> BoxedStrategy<MetricCatalog> + Clone + 'static,
+    M: FnMut(Timestamp) -> BoxedStrategy<Env<MetricCatalog>> + Clone + 'static,
 {
     let mut ts_iter = timestamps.into_iter();
     let next_ts = ts_iter.next();
@@ -42,8 +60,12 @@ where
         let make_data_strategy_1 = make_data_strategy_0.clone();
         (acc, make_data_strategy(recv_ts))
             .prop_flat_map(move |(acc_0, data)| {
-                let mut acc_1 = acc_0.clone();
-                acc_1.push(data);
+                let acc_1 = data.clone().flat_map(|d| {
+                    let mut acc_1 = acc_0.clone().into_inner();
+                    acc_1.push_item(d);
+                    acc_1
+                });
+
                 data_loop(remaining.clone(), Just(acc_1), make_data_strategy_1.clone()).boxed()
             })
             .boxed()
@@ -51,45 +73,57 @@ where
 }
 
 pub fn arb_metric_catalog_window<M>(
-    start: Timestamp, window: impl Strategy<Value = Duration>,
+    start: Timestamp, window: impl Strategy<Value = Duration> + 'static,
     interval: impl Strategy<Value = Duration> + 'static, make_data_strategy: M,
-) -> impl Strategy<Value = AppDataWindow<MetricCatalog>>
+) -> impl Strategy<Value = Env<AppDataWindow<Env<MetricCatalog>>>>
 where
-    M: Fn(Timestamp) -> BoxedStrategy<MetricCatalog> + Clone + 'static,
+    M: Fn(Timestamp) -> BoxedStrategy<Env<MetricCatalog>> + Clone + 'static,
 {
     let interval = interval.boxed();
     let interval = move || interval.clone();
 
-    window.prop_flat_map(move |window| {
-        let builder = AppDataWindowBuilder::default()
-            .with_quorum_percentile(0.6)
-            .with_time_window(window);
-        let acc_start = Just((builder, Some((start, window))));
-        do_arb_metric_catalog_window_loop(acc_start, interval.clone(), make_data_strategy.clone())
+    window
+        .prop_flat_map(move |window| {
+            let builder = Env::new(
+                AppDataWindowBuilder::default()
+                    .with_quorum_percentile(0.6)
+                    .with_time_window(window),
+            );
+            let acc_start = Just((builder, Some((start, window))));
+            let bar = do_arb_metric_catalog_window_loop(
+                acc_start,
+                interval.clone(),
+                make_data_strategy.clone(),
+            )
             .prop_map(move |(data, _)| {
-                data.build().expect("failed to generate valid metric catalog data window")
+                data.map(|d| {
+                    d.build().expect("failed to generate valid metric catalog data window")
+                })
             })
-    })
+            .boxed();
+            bar
+        })
+        .boxed()
 }
 
 #[tracing::instrument(level = "debug", skip(acc, make_interval_strategy, make_data_strategy))]
 fn do_arb_metric_catalog_window_loop<I, M>(
     acc: impl Strategy<
         Value = (
-            AppDataWindowBuilder<MetricCatalog>,
+            Env<AppDataWindowBuilder<Env<MetricCatalog>>>,
             Option<(Timestamp, Duration)>,
         ),
     >,
     make_interval_strategy: I, make_data_strategy: M,
 ) -> impl Strategy<
     Value = (
-        AppDataWindowBuilder<MetricCatalog>,
+        Env<AppDataWindowBuilder<Env<MetricCatalog>>>,
         Option<(Timestamp, Duration)>,
     ),
 >
 where
     I: Fn() -> BoxedStrategy<Duration> + Clone + 'static,
-    M: Fn(Timestamp) -> BoxedStrategy<MetricCatalog> + Clone + 'static,
+    M: Fn(Timestamp) -> BoxedStrategy<Env<MetricCatalog>> + Clone + 'static,
 {
     (acc, make_interval_strategy()).prop_flat_map(move |((acc_data, next_remaining), interval)| {
         match next_remaining {
@@ -106,10 +140,14 @@ where
 
                         let next_remaining = remaining - interval;
 
-                        acc_data_0.push(data);
+                        acc_data_0 = data.flat_map(|d| {
+                            let mut builder = acc_data_0.into_inner();
+                            builder.push_item(d);
+                            builder
+                        });
 
                         let next_acc: (
-                            AppDataWindowBuilder<MetricCatalog>,
+                            Env<AppDataWindowBuilder<Env<MetricCatalog>>>,
                             Option<(Timestamp, Duration)>,
                         ) = (acc_data_0, Some((recv_ts, next_remaining)));
 
@@ -129,23 +167,16 @@ where
 
 #[derive(Debug, Default, Clone)]
 pub struct MetricCatalogStrategyBuilder {
-    recv_timestamp: Option<BoxedStrategy<Timestamp>>,
+    metadata: Option<BoxedStrategy<MetaData<MetricCatalog>>>,
     health: Option<BoxedStrategy<JobHealthMetrics>>,
     flow: Option<BoxedStrategy<FlowMetrics>>,
     cluster: Option<BoxedStrategy<ClusterMetrics>>,
     custom: Option<BoxedStrategy<telemetry::TableType>>,
 }
 
-static CORRELATION_GEN: Lazy<Mutex<CorrelationGenerator>> = Lazy::new(|| {
-    Mutex::new(CorrelationGenerator::distributed(
-        MachineNode::new(1, 1).unwrap(),
-        IdPrettifier::<AlphabetCodec>::default(),
-    ))
-});
-
 #[allow(dead_code)]
 impl MetricCatalogStrategyBuilder {
-    pub fn strategy() -> impl Strategy<Value = MetricCatalog> {
+    pub fn strategy() -> impl Strategy<Value = Env<MetricCatalog>> {
         Self::new().finish()
     }
 
@@ -153,14 +184,16 @@ impl MetricCatalogStrategyBuilder {
         Self::default()
     }
 
-    pub fn recv_timestamp(self, timestamp: impl Strategy<Value = Timestamp> + 'static) -> Self {
+    pub fn metadata(
+        self, metadata: impl Strategy<Value = MetaData<MetricCatalog>> + 'static,
+    ) -> Self {
         let mut new = self;
-        new.recv_timestamp = Some(timestamp.boxed());
+        new.metadata = Some(metadata.boxed());
         new
     }
 
-    pub fn just_recv_timestamp(self, timestamp: impl Into<Timestamp>) -> Self {
-        self.recv_timestamp(Just(timestamp.into()))
+    pub fn just_metadata(self, metadata: impl Into<MetaData<MetricCatalog>>) -> Self {
+        self.metadata(Just(metadata.into()))
     }
 
     pub fn health(self, health: impl Strategy<Value = JobHealthMetrics> + 'static) -> Self {
@@ -203,19 +236,20 @@ impl MetricCatalogStrategyBuilder {
         self.custom(Just(custom.into()))
     }
 
-    pub fn finish(self) -> impl Strategy<Value = MetricCatalog> {
-        let recv_timestamp = self.recv_timestamp.unwrap_or(arb_timestamp().boxed());
-        let health = self.health.unwrap_or(arb_job_health_metrics().boxed());
-        let flow = self.flow.unwrap_or(arb_flow_metrics().boxed());
-        let cluster = self.cluster.unwrap_or(arb_cluster_metrics().boxed());
-        let custom = self.custom.unwrap_or(arb_telemetry_table_type().boxed());
+    pub fn finish(self) -> impl Strategy<Value = Env<MetricCatalog>> {
+        let metadata = self
+            .metadata
+            .unwrap_or_else(|| arb_timestamp().prop_flat_map(arb_metadata).boxed());
 
-        (recv_timestamp, health, flow, cluster, custom)
-            .prop_map(|(recv_timestamp, health, flow, cluster, custom)| {
-                let mut correlation_gen = CORRELATION_GEN.lock().unwrap();
-                let correlation_id = correlation_gen.next_id();
-                tracing::info!(%correlation_id, %recv_timestamp, ?health, ?flow, ?cluster, ?custom, "DMR: making metric catalog...");
-                MetricCatalog { correlation_id, recv_timestamp, health, flow, cluster, custom, }
+        let health = self.health.unwrap_or_else(|| arb_job_health_metrics().boxed());
+        let flow = self.flow.unwrap_or_else(|| arb_flow_metrics().boxed());
+        let cluster = self.cluster.unwrap_or_else(|| arb_cluster_metrics().boxed());
+        let custom = self.custom.unwrap_or_else(|| arb_telemetry_table_type().boxed());
+
+        (metadata, health, flow, cluster, custom)
+            .prop_map(|(metadata, health, flow, cluster, custom)| {
+                tracing::info!(%metadata, ?health, ?flow, ?cluster, ?custom, "DMR: making metric catalog...");
+                Env::from_parts(metadata, MetricCatalog { health, flow, cluster, custom, })
             })
     }
 }

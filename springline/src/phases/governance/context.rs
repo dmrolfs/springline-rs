@@ -3,12 +3,12 @@ use std::fmt::{self, Debug};
 
 use crate::flink::Parallelism;
 use oso::PolarClass;
-use pretty_snowflake::{Id, Label};
+use pretty_snowflake::Label;
 use proctor::elements::telemetry::UpdateMetricsFn;
-use proctor::elements::{telemetry, Telemetry, Timestamp};
+use proctor::elements::{telemetry, Telemetry};
 use proctor::error::GovernanceError;
 use proctor::phases::sense::SubscriptionRequirements;
-use proctor::{Correlation, ProctorContext};
+use proctor::ProctorContext;
 use serde::{Deserialize, Serialize};
 
 use crate::metrics::UpdateMetrics;
@@ -16,10 +16,6 @@ use crate::model::NrReplicas;
 
 #[derive(PolarClass, Label, Clone, Serialize, Deserialize)]
 pub struct GovernanceContext {
-    // auto-filled
-    pub correlation_id: Id<Self>,
-    pub recv_timestamp: Timestamp,
-
     /// Minimal job parallelism autoscaling will allow to rescale to.
     /// - source from governance settings
     #[polar(attribute)]
@@ -58,8 +54,6 @@ pub struct GovernanceContext {
 impl Debug for GovernanceContext {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("GovernanceContext")
-            .field("correlation_id", &self.correlation_id)
-            .field("recv_timestamp", &self.recv_timestamp.to_string())
             .field(
                 "parallelism",
                 &format!("[{}, {}]", self.min_parallelism, self.max_parallelism),
@@ -101,14 +95,6 @@ impl GovernanceContext {
     }
 }
 
-impl Correlation for GovernanceContext {
-    type Correlated = Self;
-
-    fn correlation(&self) -> &Id<Self::Correlated> {
-        &self.correlation_id
-    }
-}
-
 impl PartialEq for GovernanceContext {
     fn eq(&self, other: &Self) -> bool {
         self.min_parallelism == other.min_parallelism
@@ -135,6 +121,7 @@ impl SubscriptionRequirements for GovernanceContext {
 }
 
 impl ProctorContext for GovernanceContext {
+    type ContextData = Self;
     type Error = GovernanceError;
 
     fn custom(&self) -> telemetry::TableType {
@@ -195,8 +182,6 @@ mod tests {
         let custom_prop_b = 242;
 
         let context = GovernanceContext {
-            correlation_id: Id::direct("GovernanceContext", 0, "A"),
-            recv_timestamp: Timestamp::new(0, 0),
             min_parallelism,
             max_parallelism,
             min_cluster_size,
@@ -211,18 +196,6 @@ mod tests {
 
         let mut expected = vec![
             Token::Map { len: None },
-            Token::Str("correlation_id"),
-            Token::Struct { name: "Id", len: 2 },
-            Token::Str("snowflake"),
-            Token::I64(0),
-            Token::Str("pretty"),
-            Token::Str("A"),
-            Token::StructEnd,
-            Token::Str("recv_timestamp"),
-            Token::TupleStruct { name: "Timestamp", len: 2 },
-            Token::I64(0),
-            Token::U32(0),
-            Token::TupleStructEnd,
             Token::Str("min_parallelism"),
             Token::U32(min_parallelism.into()),
             Token::Str("max_parallelism"),
@@ -247,8 +220,8 @@ mod tests {
         });
 
         if result.is_err() {
-            expected.swap(25, 27);
-            expected.swap(26, 28);
+            expected.swap(13, 15);
+            expected.swap(14, 16);
             assert_tokens(&context, expected.as_slice());
         }
     }
@@ -272,8 +245,6 @@ mod tests {
         let bar = 242;
 
         let data: Telemetry = maplit::hashmap! {
-            "correlation_id" => Id::<GovernanceContext>::direct("GovernanceContext", 0, "A").to_telemetry(),
-            "recv_timestamp" => Timestamp::new(0, 0).to_telemetry(),
             "min_parallelism" => min_parallelism.to_telemetry(),
             "max_parallelism" => max_parallelism.to_telemetry(),
             "min_cluster_size" => min_cluster_size.to_telemetry(),
@@ -291,8 +262,6 @@ mod tests {
         let actual = assert_ok!(data.try_into::<GovernanceContext>());
         tracing::info!(?actual, "converted into FlinkGovernanceContext");
         let expected = GovernanceContext {
-            correlation_id: Id::direct("GovernanceContext", 0, "A"),
-            recv_timestamp: Timestamp::new(0, 0),
             min_parallelism,
             max_parallelism,
             min_cluster_size,

@@ -1,8 +1,8 @@
-use crate::flink::{AppDataWindow, MetricCatalog};
-use crate::phases;
 use crate::phases::eligibility::EligibilityOutcome;
+use crate::phases::{WindowDataT, UNSPECIFIED};
 use crate::settings::DecisionSettings;
 use crate::Result;
+use crate::{phases, Env};
 use anyhow::anyhow;
 use proctor::elements::{PolicySubscription, QueryResult};
 use proctor::phases::policy_phase::PolicyPhase;
@@ -20,7 +20,6 @@ mod context;
 mod policy;
 mod result;
 
-use crate::phases::UNSPECIFIED;
 pub use context::DecisionContext;
 pub(crate) use policy::DECISION_SCALING_DECISION_COUNT_METRIC;
 pub use policy::{DecisionPolicy, DecisionTemplateData};
@@ -29,14 +28,24 @@ pub use result::DecisionResult;
 pub use result::DECISION_DIRECTION;
 pub use result::{get_direction_and_reason, make_decision_transform};
 
-pub type DecisionData = AppDataWindow<MetricCatalog>;
-pub type DecisionOutcome = DecisionResult<DecisionData>;
-pub type DecisionApi = proctor::elements::PolicyFilterApi<DecisionContext, DecisionTemplateData>;
-pub type DecisionMonitor = proctor::elements::PolicyFilterMonitor<DecisionData, DecisionContext>;
-pub type DecisionEvent = proctor::elements::PolicyFilterEvent<DecisionData, DecisionContext>;
+pub type DecisionDataT = WindowDataT;
+pub type DecisionData = Env<DecisionDataT>;
+pub type DecisionOutcome = Env<DecisionResult<DecisionDataT>>;
+pub type DecisionApi =
+    proctor::elements::PolicyFilterApi<Env<DecisionContext>, DecisionTemplateData>;
+pub type DecisionMonitor =
+    proctor::elements::PolicyFilterMonitor<DecisionData, Env<DecisionContext>>;
+pub type DecisionEvent = proctor::elements::PolicyFilterEvent<DecisionData, Env<DecisionContext>>;
 
 pub type DecisionPhase = (
-    Box<PolicyPhase<EligibilityOutcome, DecisionOutcome, DecisionContext, DecisionTemplateData>>,
+    Box<
+        PolicyPhase<
+            EligibilityOutcome,
+            DecisionOutcome,
+            Env<DecisionContext>,
+            DecisionTemplateData,
+        >,
+    >,
     SubscriptionChannel<DecisionContext>,
 );
 

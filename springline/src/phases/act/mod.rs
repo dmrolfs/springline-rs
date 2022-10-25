@@ -9,8 +9,7 @@ pub use protocol::{ActEvent, ActMonitor};
 use strum_macros::Display;
 use thiserror::Error;
 
-use crate::phases::governance::GovernanceOutcome;
-use crate::phases::plan::ScaleActionPlan;
+use crate::phases::plan::{PlanningOutcome, ScaleActionPlan};
 
 mod action;
 mod scale_actuator;
@@ -27,8 +26,6 @@ pub enum ActError {
     #[error("failure into kubernetes: {0}")]
     Kubernetes(#[from] crate::kubernetes::KubernetesError),
 
-    // #[error("failure in kubernetes client: {0}")]
-    // Kube(#[from] kube::Error),
     #[error("failure while calling Flink API: {0}")]
     Flink(#[from] crate::flink::FlinkError),
 
@@ -68,8 +65,6 @@ impl MetricLabel for ActError {
         match self {
             Self::Timeout(..) => Left("timeout".into()),
             Self::Kubernetes(_) => Left("kubernetes".into()),
-            // Self::Kube(_) => Left("kubernetes".into()),
-            // Self::KubeApi(e) => Left(format!("kubernetes::{}", e.reason).into()),
             Self::Flink(e) => Right(Box::new(e)),
             Self::Savepoint { .. } => Left("savepoint".into()),
             Self::FailedJob(_, _) => Left("restart::flink".into()),
@@ -82,13 +77,10 @@ impl MetricLabel for ActError {
 }
 
 mod protocol {
-    use std::sync::Arc;
-
-    use tokio::sync::broadcast;
-
     use crate::phases::act::action::ActionOutcome;
     use crate::phases::plan::ScaleActionPlan;
-    use crate::CorrelationId;
+    use std::sync::Arc;
+    use tokio::sync::broadcast;
 
     pub type ActMonitor<P> = broadcast::Receiver<Arc<ActEvent<P>>>;
 
@@ -105,7 +97,10 @@ mod protocol {
         },
     }
 
-    impl<P: ScaleActionPlan> ActEvent<P> {
+    impl<P> ActEvent<P>
+    where
+        P: ScaleActionPlan, // + Correlation,
+    {
         #[allow(clippy::missing_const_for_fn)]
         pub fn plan(&self) -> &P {
             match self {
@@ -113,10 +108,6 @@ mod protocol {
                 Self::PlanExecuted { plan, .. } => plan,
                 Self::PlanFailed { plan, .. } => plan,
             }
-        }
-
-        pub fn correlation(&self) -> &CorrelationId {
-            self.plan().correlation()
         }
     }
 }
@@ -157,15 +148,7 @@ pub(crate) static PHASE_ACT_ERRORS: Lazy<IntCounterVec> = Lazy::new(|| {
     IntCounterVec::new(
         Opts::new("phase_act_errors", "Count of errors executing scale plans")
             .const_labels(proctor::metrics::CONST_LABELS.clone()),
-        &[
-            "action",
-            "error_type",
-            "disposition",
-            // "current_job_parallelism",
-            // "target_job_parallelism",
-            // "current_nr_task_managers",
-            // "target_nr_task_managers",
-        ],
+        &["action", "error_type", "disposition"],
     )
     .expect("failed creating phase_act_errors metric")
 });
@@ -191,19 +174,15 @@ pub(crate) fn track_act_errors<'p, E, P>(
             action,
             error_type.as_str(),
             disposition.to_string().as_str(),
-            // plan.current_job_parallelism().to_string().as_str(),
-            // plan.target_job_parallelism().to_string().as_str(),
-            // plan.current_replicas().to_string().as_str(),
-            // plan.target_replicas().to_string().as_str(),
         ])
         .inc()
 }
 
 #[tracing::instrument(level = "trace")]
-pub fn make_logger_act_phase() -> Box<dyn SinkStage<GovernanceOutcome>> {
+pub fn make_logger_act_phase() -> Box<dyn SinkStage<PlanningOutcome>> {
     Box::new(stage::Foreach::new(
         "logging_act",
-        |plan: GovernanceOutcome| {
+        |plan: PlanningOutcome| {
             ACT_RESCALE_ACTION_COUNT
                 .with_label_values(&[
                     plan.current_nr_taskmanagers.to_string().as_str(),

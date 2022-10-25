@@ -21,3 +21,4 @@ tmp/
 
 .env
 springline/target/*
+log/

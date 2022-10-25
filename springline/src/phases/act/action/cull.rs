@@ -1,10 +1,10 @@
 use crate::kubernetes::FlinkComponent;
-use crate::math;
 use crate::model::NrReplicas;
 use crate::phases::act;
 use crate::phases::act::action::{ActionSession, ScaleAction};
 use crate::phases::act::{ActError, ActErrorDisposition};
 use crate::phases::plan::ScaleActionPlan;
+use crate::{math, Env};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use either::{Left, Right};
@@ -41,7 +41,7 @@ where
         ACTION_LABEL
     }
 
-    fn check_preconditions(&self, session: &ActionSession) -> Result<(), ActError> {
+    fn check_preconditions(&self, session: &Env<ActionSession>) -> Result<(), ActError> {
         session
             .savepoints
             .as_ref()
@@ -57,7 +57,7 @@ where
 
     #[tracing::instrument(level = "info", name = "CullTaskmanagers::execute", skip(self, plan))]
     async fn execute<'s>(
-        &mut self, plan: &'s Self::Plan, session: &'s mut ActionSession,
+        &mut self, plan: &'s Self::Plan, session: &'s mut Env<ActionSession>,
     ) -> Result<(), ActError> {
         let surplus = if plan.target_replicas() < plan.current_replicas() {
             plan.current_replicas() - plan.target_replicas()
@@ -92,7 +92,7 @@ where
     #[tracing::instrument(level = "info", skip(self, plan, session))]
     async fn do_individual_culling<'s>(
         &mut self, nr_to_cull: NrReplicas, plan: &'s <Self as ScaleAction>::Plan,
-        session: &'s mut ActionSession,
+        session: &'s mut Env<ActionSession>,
     ) -> Result<(), ActError> {
         // focus on culling oldest taskmanagers
         let tms: Vec<(Pod, DateTime<Utc>)> = session
@@ -144,7 +144,7 @@ where
 
     // #[tracing::instrument(level = "info", skip(self, _plan, session))]
     // async fn do_complete_culling<'s>(
-    //     &mut self, _plan: &'s <Self as ScaleAction>::Plan, session: &'s mut ActionSession,
+    //     &mut self, _plan: &'s <Self as ScaleAction>::Plan, session: &'s mut Env<ActionSession>,
     // ) -> Result<(), ActError> {
     //     let patched_scale = session
     //         .kube

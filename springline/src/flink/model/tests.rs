@@ -1,24 +1,16 @@
-use std::collections::HashMap;
-use std::convert::TryFrom;
-use std::sync::Mutex;
-
+use crate::flink::*;
 use chrono::{DateTime, TimeZone, Utc};
 use claim::*;
 use once_cell::sync::Lazy;
-use proctor::elements::telemetry::TableValue;
 use proctor::elements::{Telemetry, TelemetryType, TelemetryValue, ToTelemetry};
 use proctor::error::TelemetryError;
 use proctor::phases::sense::{SUBSCRIPTION_CORRELATION, SUBSCRIPTION_TIMESTAMP};
-use proctor::ProctorIdGenerator;
 use rand::seq::SliceRandom;
 use rand::thread_rng;
 use serde_test::{assert_tokens, Token};
+use std::collections::HashMap;
+use std::convert::TryFrom;
 use trim_margin::MarginTrimmable;
-
-use crate::flink::*;
-
-static ID_GENERATOR: Lazy<Mutex<ProctorIdGenerator<MetricCatalog>>> =
-    Lazy::new(|| Mutex::new(ProctorIdGenerator::default()));
 
 pub trait ModuloSignedExt {
     fn modulo(&self, n: Self) -> Self;
@@ -38,24 +30,26 @@ modulo_signed_ext_impl! { i8 i16 i32 i64 u32 }
 
 mod catalog {
     use crate::model::NrReplicas;
+    use crate::Env;
     use pretty_assertions::assert_eq;
     use pretty_snowflake::{Id, Label, Labeling};
     use proctor::elements::{telemetry, Timestamp};
+    use proctor::MetaData;
 
     use super::*;
 
     fn metrics_for_test_with_datetime(
         ts: DateTime<Utc>, custom: telemetry::TableType,
-    ) -> MetricCatalog {
-        let mut id_gen = assert_ok!(ID_GENERATOR.lock());
-        MetricCatalog {
-            correlation_id: id_gen.next_id(),
-            recv_timestamp: ts.into(),
-            custom,
-            health: JobHealthMetrics::default(),
-            flow: FlowMetrics::default(),
-            cluster: ClusterMetrics::default(),
-        }
+    ) -> Env<MetricCatalog> {
+        Env::from_parts(
+            MetaData::default().with_recv_timestamp(ts.into()),
+            MetricCatalog {
+                custom,
+                health: JobHealthMetrics::default(),
+                flow: FlowMetrics::default(),
+                cluster: ClusterMetrics::default(),
+            },
+        )
     }
 
     fn get_custom_metric<T>(mc: &MetricCatalog, key: &str) -> Result<Option<T>, TelemetryError>
@@ -148,13 +142,6 @@ mod catalog {
             TelemetryValue::Integer(0),
         );
         telemetry.insert(
-            "recv_timestamp".to_string(),
-            TelemetryValue::Table(TableValue(Box::new(maplit::hashmap! {
-                "secs".to_string() => TelemetryValue::Integer(1647307527),
-                "nanos".to_string() => TelemetryValue::Integer(57406000)
-            }))),
-        );
-        telemetry.insert(
             "health.job_max_parallelism".to_string(),
             TelemetryValue::Integer(4),
         );
@@ -211,13 +198,6 @@ mod catalog {
             TelemetryValue::Integer(0),
         );
         telemetry.insert(
-            "correlation_id".to_string(),
-            TelemetryValue::Table(TableValue(Box::new(maplit::hashmap! {
-                "pretty".to_string() => TelemetryValue::Text("FRQB-08549-HYQY-31208".to_string()),
-                "snowflake".to_string() => TelemetryValue::Integer(6909308549966213120)
-            }))),
-        );
-        telemetry.insert(
             "health.job_nr_failed_checkpoints".to_string(),
             TelemetryValue::Integer(0),
         );
@@ -230,12 +210,6 @@ mod catalog {
         assert_eq!(
             actual,
             MetricCatalog {
-                correlation_id: CorrelationId::direct(
-                    "MetricCatalog",
-                    6909308549966213120_i64,
-                    "FRQB-08549-HYQY-31208"
-                ),
-                recv_timestamp: Timestamp::new(1647307527, 57406000),
                 health: JobHealthMetrics {
                     job_max_parallelism: Parallelism::new(4),
                     job_source_max_parallelism: Parallelism::new(4),
@@ -338,53 +312,56 @@ mod catalog {
     fn test_metric_catalog_serde() {
         let ts: Timestamp = Utc.ymd(1988, 5, 30).and_hms(9, 1, 17).into();
         let (ts_secs, ts_nsecs) = ts.as_pair();
-        let metrics = MetricCatalog {
-            correlation_id: CORR_ID.clone(),
-            recv_timestamp: ts,
-            health: JobHealthMetrics {
-                job_max_parallelism: Parallelism::new(0),
-                job_source_max_parallelism: Parallelism::new(0),
-                job_nonsource_max_parallelism: Parallelism::new(0),
-                job_uptime_millis: Some(1_234_567),
-                job_nr_restarts: Some(3),
-                job_nr_completed_checkpoints: Some(12_345),
-                job_nr_failed_checkpoints: Some(7),
+        let metrics = Env::from_parts(
+            MetaData::from_parts(CORR_ID.clone(), ts),
+            MetricCatalog {
+                health: JobHealthMetrics {
+                    job_max_parallelism: Parallelism::new(0),
+                    job_source_max_parallelism: Parallelism::new(0),
+                    job_nonsource_max_parallelism: Parallelism::new(0),
+                    job_uptime_millis: Some(1_234_567),
+                    job_nr_restarts: Some(3),
+                    job_nr_completed_checkpoints: Some(12_345),
+                    job_nr_failed_checkpoints: Some(7),
+                },
+                flow: FlowMetrics {
+                    records_in_per_sec: 17.,
+                    forecasted_timestamp: Some(ts),
+                    forecasted_records_in_per_sec: Some(23.),
+                    idle_time_millis_per_sec: 777.7,
+                    source_back_pressured_time_millis_per_sec: 111.0,
+                    source_records_lag_max: Some(314),
+                    source_assigned_partitions: Some(2),
+                    source_total_lag: Some(628),
+                    source_records_consumed_rate: Some(471.0),
+                    source_millis_behind_latest: None,
+                    records_out_per_sec: 0.0,
+                },
+                cluster: ClusterMetrics {
+                    nr_active_jobs: 1,
+                    nr_task_managers: NrReplicas::new(4),
+                    free_task_slots: 7,
+                    task_cpu_load: 0.65,
+                    task_heap_memory_used: 92_987_f64,
+                    task_heap_memory_committed: 103_929_920_f64,
+                    task_nr_threads: 8,
+                    task_network_input_queue_len: 12.,
+                    task_network_input_pool_usage: 8.,
+                    task_network_output_queue_len: 13.,
+                    task_network_output_pool_usage: 5.,
+                },
+                custom: maplit::hashmap! {
+                    "bar".to_string() => 33.to_telemetry(),
+                },
             },
-            flow: FlowMetrics {
-                records_in_per_sec: 17.,
-                forecasted_timestamp: Some(ts),
-                forecasted_records_in_per_sec: Some(23.),
-                idle_time_millis_per_sec: 777.7,
-                source_back_pressured_time_millis_per_sec: 111.0,
-                source_records_lag_max: Some(314),
-                source_assigned_partitions: Some(2),
-                source_total_lag: Some(628),
-                source_records_consumed_rate: Some(471.0),
-                source_millis_behind_latest: None,
-                records_out_per_sec: 0.0,
-            },
-            cluster: ClusterMetrics {
-                nr_active_jobs: 1,
-                nr_task_managers: NrReplicas::new(4),
-                free_task_slots: 7,
-                task_cpu_load: 0.65,
-                task_heap_memory_used: 92_987_f64,
-                task_heap_memory_committed: 103_929_920_f64,
-                task_nr_threads: 8,
-                task_network_input_queue_len: 12.,
-                task_network_input_pool_usage: 8.,
-                task_network_output_queue_len: 13.,
-                task_network_output_pool_usage: 5.,
-            },
-            custom: maplit::hashmap! {
-                "bar".to_string() => 33.to_telemetry(),
-            },
-        };
+        );
 
         assert_tokens(
             &metrics,
             &vec![
-                Token::Map { len: None },
+                Token::Struct { name: "Envelope", len: 2 },
+                Token::Str("metadata"),
+                Token::Struct { name: "MetaData", len: 2 },
                 Token::Str(SUBSCRIPTION_CORRELATION),
                 Token::Struct { name: "Id", len: 2 },
                 Token::Str("snowflake"),
@@ -397,6 +374,9 @@ mod catalog {
                 Token::I64(ts_secs),
                 Token::U32(ts_nsecs),
                 Token::TupleStructEnd,
+                Token::StructEnd,
+                Token::Str("content"),
+                Token::Map { len: None },
                 Token::Str("health.job_max_parallelism"),
                 Token::U32(0),
                 Token::Str("health.job_source_max_parallelism"),
@@ -469,6 +449,7 @@ mod catalog {
                 Token::Str("bar"),
                 Token::I64(33),
                 Token::MapEnd,
+                Token::StructEnd,
             ],
         )
     }
@@ -481,58 +462,56 @@ mod catalog {
 
         let ts = Utc.ymd(1988, 5, 30).and_hms(9, 1, 17).into();
         let corr_id = Id::direct("MetricCatalog", 17, "AB");
-        let metrics = MetricCatalog {
-            correlation_id: corr_id.clone(),
-            recv_timestamp: ts,
-            health: JobHealthMetrics {
-                job_max_parallelism: Parallelism::new(12),
-                job_source_max_parallelism: Parallelism::new(12),
-                job_nonsource_max_parallelism: Parallelism::new(9),
-                job_uptime_millis: Some(1_234_567),
-                job_nr_restarts: Some(3),
-                job_nr_completed_checkpoints: Some(12_345),
-                job_nr_failed_checkpoints: Some(7),
+        let metrics = Env::from_parts(
+            MetaData::from_parts(corr_id.clone(), ts),
+            MetricCatalog {
+                health: JobHealthMetrics {
+                    job_max_parallelism: Parallelism::new(12),
+                    job_source_max_parallelism: Parallelism::new(12),
+                    job_nonsource_max_parallelism: Parallelism::new(9),
+                    job_uptime_millis: Some(1_234_567),
+                    job_nr_restarts: Some(3),
+                    job_nr_completed_checkpoints: Some(12_345),
+                    job_nr_failed_checkpoints: Some(7),
+                },
+                flow: FlowMetrics {
+                    records_in_per_sec: 17.,
+                    idle_time_millis_per_sec: 333.3,
+                    source_back_pressured_time_millis_per_sec: 928.0,
+                    forecasted_timestamp: None,
+                    forecasted_records_in_per_sec: None,
+                    source_records_lag_max: Some(314),
+                    source_assigned_partitions: Some(3),
+                    source_total_lag: Some(1_042),
+                    source_records_consumed_rate: Some(521.0),
+                    source_millis_behind_latest: None,
+                    records_out_per_sec: 0.0,
+                },
+                cluster: ClusterMetrics {
+                    nr_active_jobs: 1,
+                    nr_task_managers: NrReplicas::new(4),
+                    free_task_slots: 11,
+                    task_cpu_load: 0.65,
+                    task_heap_memory_used: 92_987_f64,
+                    task_heap_memory_committed: 103_929_920_f64,
+                    task_nr_threads: 8,
+                    task_network_input_queue_len: 12.,
+                    task_network_input_pool_usage: 8.,
+                    task_network_output_queue_len: 13.,
+                    task_network_output_pool_usage: 5.,
+                },
+                custom: maplit::hashmap! {
+                    "foo".to_string() => "David".to_telemetry(),
+                    "bar".to_string() => 33.to_telemetry(),
+                },
             },
-            flow: FlowMetrics {
-                records_in_per_sec: 17.,
-                idle_time_millis_per_sec: 333.3,
-                source_back_pressured_time_millis_per_sec: 928.0,
-                forecasted_timestamp: None,
-                forecasted_records_in_per_sec: None,
-                source_records_lag_max: Some(314),
-                source_assigned_partitions: Some(3),
-                source_total_lag: Some(1_042),
-                source_records_consumed_rate: Some(521.0),
-                source_millis_behind_latest: None,
-                records_out_per_sec: 0.0,
-            },
-            cluster: ClusterMetrics {
-                nr_active_jobs: 1,
-                nr_task_managers: NrReplicas::new(4),
-                free_task_slots: 11,
-                task_cpu_load: 0.65,
-                task_heap_memory_used: 92_987_f64,
-                task_heap_memory_committed: 103_929_920_f64,
-                task_nr_threads: 8,
-                task_network_input_queue_len: 12.,
-                task_network_input_pool_usage: 8.,
-                task_network_output_queue_len: 13.,
-                task_network_output_pool_usage: 5.,
-            },
-            custom: maplit::hashmap! {
-                "foo".to_string() => "David".to_telemetry(),
-                "bar".to_string() => 33.to_telemetry(),
-            },
-        };
+        );
 
-        let telemetry = Telemetry::try_from(&metrics)?;
-        let (ts_secs, ts_nsecs) = ts.as_pair();
+        let telemetry = Telemetry::try_from(metrics.as_ref())?;
 
         assert_eq!(
             telemetry,
             TelemetryValue::Table(maplit::hashmap! {
-                SUBSCRIPTION_CORRELATION.to_string() => corr_id.to_telemetry(),
-                SUBSCRIPTION_TIMESTAMP.to_string() => TelemetryValue::Seq(vec![ts_secs.to_telemetry(), ts_nsecs.to_telemetry(),]),
                 "health.job_max_parallelism".to_string() => 12.to_telemetry(),
                 "health.job_source_max_parallelism".to_string() => 12.to_telemetry(),
                 "health.job_nonsource_max_parallelism".to_string() => 9.to_telemetry(),
@@ -572,41 +551,48 @@ mod catalog {
     }
 
     #[tracing::instrument(level = "info")]
-    pub fn make_test_catalog(ts: Timestamp, value: u32) -> MetricCatalog {
-        MetricCatalog {
-            correlation_id: Id::direct(
-                <MetricCatalog as Label>::labeler().label(),
-                ts.as_secs(),
-                ts.as_secs_f64().to_string(),
+    pub fn make_test_catalog(ts: Timestamp, value: u32) -> Env<MetricCatalog> {
+        Env::from_parts(
+            MetaData::from_parts(
+                Id::direct(
+                    <MetricCatalog as Label>::labeler().label(),
+                    ts.as_secs(),
+                    ts.as_secs_f64().to_string(),
+                ),
+                ts,
             ),
-            recv_timestamp: ts,
-            health: JobHealthMetrics::default(),
-            flow: FlowMetrics {
-                records_in_per_sec: f64::from(value),
-                idle_time_millis_per_sec: f64::from(value.modulo(1_000)),
-                ..FlowMetrics::default()
+            MetricCatalog {
+                health: JobHealthMetrics::default(),
+                flow: FlowMetrics {
+                    records_in_per_sec: f64::from(value),
+                    idle_time_millis_per_sec: f64::from(value.modulo(1_000)),
+                    ..FlowMetrics::default()
+                },
+                cluster: ClusterMetrics::default(),
+                custom: HashMap::new(),
             },
-            cluster: ClusterMetrics::default(),
-            custom: HashMap::new(),
-        }
+        )
     }
 }
 
 mod window {
     use std::time::Duration;
 
+    use crate::Env;
     use approx::assert_relative_eq;
     use frunk::{Monoid, Semigroup};
     use pretty_assertions::assert_eq;
+    use pretty_snowflake::Label;
     use proctor::elements::Timestamp;
+    use proctor::{Correlation, ReceivedAt};
 
     use super::catalog::make_test_catalog;
     use super::*;
 
     #[tracing::instrument(level = "info", skip(catalogs))]
     fn make_test_window(
-        limit: usize, interval: Duration, catalogs: &[MetricCatalog],
-    ) -> (AppDataWindow<MetricCatalog>, Vec<MetricCatalog>) {
+        limit: usize, interval: Duration, catalogs: &[Env<MetricCatalog>],
+    ) -> (AppDataWindow<Env<MetricCatalog>>, Vec<Env<MetricCatalog>>) {
         let mut window = AppDataWindow::builder()
             .with_size_and_interval(limit, interval)
             .with_quorum_percentile(0.5);
@@ -621,11 +607,15 @@ mod window {
         }
 
         for c in used {
-            tracing::debug!(window_len=%(window.len()+1), catalog=%c.correlation_id,"pushing catalog into window.");
-            window.push(c);
+            tracing::debug!(window_len=%(window.len()+1), catalog=%c.correlation(),"pushing catalog into window.");
+            window.push_item(c);
         }
 
         (assert_ok!(window.build()), remaining)
+    }
+
+    fn extract_inner<T: Label + Send>(ds: Vec<Env<T>>) -> Vec<T> {
+        ds.into_iter().map(|d| d.into_inner()).collect()
     }
 
     #[test]
@@ -671,12 +661,14 @@ mod window {
         let m2 = make_test_catalog(Timestamp::new(2, 0), 2);
 
         let mut window = AppDataWindow::from_size(m1.clone(), 3, Duration::from_secs(1));
-        assert_eq!(window.correlation_id, m1.correlation_id);
-        assert_eq!(window.recv_timestamp, m1.recv_timestamp);
+        let (actual_data, actual_ts) = window.latest_entry();
+        assert_eq!(actual_ts, &m1.recv_timestamp());
+        assert_eq!(actual_data, m1.as_ref());
 
         window.push(m2.clone());
-        assert_eq!(window.correlation_id, m2.correlation_id);
-        assert_eq!(window.recv_timestamp, m2.recv_timestamp);
+        let (actual_data, actual_ts) = window.latest_entry();
+        assert_eq!(actual_ts, &m2.recv_timestamp());
+        assert_eq!(actual_data, m2.as_ref());
     }
 
     #[test]
@@ -708,24 +700,33 @@ mod window {
         assert_eq!(port_1.len(), 3);
         assert_eq!(
             port_1.clone().into_iter().collect::<Vec<_>>(),
-            vec![m1.clone(), m2.clone(), m3.clone()]
+            extract_inner(vec![m1.clone(), m2.clone(), m3.clone()])
         );
         let (port_2, _) = make_test_window(4, interval, &remaining);
         assert_eq!(port_2.len(), 4);
         assert_eq!(
             port_2.clone().into_iter().collect::<Vec<_>>(),
-            vec![m4.clone(), m5.clone(), m6.clone(), m7.clone()]
+            extract_inner(vec![m4.clone(), m5.clone(), m6.clone(), m7.clone()])
         );
         let combined = port_1.clone().combine(&port_2);
         assert_eq!(combined.time_window, port_1.time_window);
         let actual: Vec<MetricCatalog> = combined.into_iter().collect();
-        assert_eq!(actual, vec![m4.clone(), m5.clone(), m6.clone(), m7.clone()]);
+        assert_eq!(
+            actual,
+            extract_inner(vec![m4.clone(), m5.clone(), m6.clone(), m7.clone()])
+        );
         let combined = port_2.combine(&port_1);
         assert_eq!(combined.time_window, port_2.time_window);
         let actual: Vec<MetricCatalog> = combined.into_iter().collect();
         assert_eq!(
             actual,
-            vec![m3.clone(), m4.clone(), m5.clone(), m6.clone(), m7.clone()]
+            extract_inner(vec![
+                m3.clone(),
+                m4.clone(),
+                m5.clone(),
+                m6.clone(),
+                m7.clone()
+            ])
         );
 
         let (port_3, remaining) = make_test_window(4, interval, &ms);
@@ -735,12 +736,21 @@ mod window {
         let actual: Vec<MetricCatalog> = combined.into_iter().collect();
         assert_eq!(
             actual,
-            vec![m2.clone(), m3.clone(), m4.clone(), m5.clone(), m6.clone()]
+            extract_inner(vec![
+                m2.clone(),
+                m3.clone(),
+                m4.clone(),
+                m5.clone(),
+                m6.clone()
+            ])
         );
         let combined = port_4.clone().combine(&port_3);
         assert_eq!(combined.time_window, port_4.time_window);
         let actual: Vec<MetricCatalog> = combined.into_iter().collect();
-        assert_eq!(actual, vec![m4.clone(), m5.clone(), m6.clone()]);
+        assert_eq!(
+            actual,
+            extract_inner(vec![m4.clone(), m5.clone(), m6.clone()])
+        );
     }
 
     #[test]
@@ -775,12 +785,21 @@ mod window {
         let (port_2, _) = make_test_window(4, interval, &remaining);
         let combined = port_1.clone().combine(&port_2);
         let actual: Vec<MetricCatalog> = combined.into_iter().collect();
-        assert_eq!(actual, vec![m4.clone(), m5.clone(), m6.clone(), m7.clone()]);
+        assert_eq!(
+            actual,
+            extract_inner(vec![m4.clone(), m5.clone(), m6.clone(), m7.clone()])
+        );
         let combined = port_2.clone().combine(&port_1);
         let actual: Vec<MetricCatalog> = combined.into_iter().collect();
         assert_eq!(
             actual,
-            vec![m3.clone(), m4.clone(), m5.clone(), m6.clone(), m7.clone()]
+            extract_inner(vec![
+                m3.clone(),
+                m4.clone(),
+                m5.clone(),
+                m6.clone(),
+                m7.clone()
+            ])
         );
 
         let (port_3, remaining) = make_test_window(6, interval, &shuffled);
@@ -789,9 +808,9 @@ mod window {
         assert_eq!(port_4.len(), 1);
         let combined = port_3.clone().combine(&port_4);
         tracing::debug!(
-            lhs=?port_3.history().map(|p| p.correlation_id.to_string()).collect::<Vec<_>>(),
-            rhs=?port_4.history().map(|p| p.correlation_id.to_string()).collect::<Vec<_>>(),
-            combined=?combined.history().map(|p| p.correlation_id.to_string()).collect::<Vec<_>>(),
+            lhs=?port_3.history().map(|p| p.recv_timestamp().to_string()).collect::<Vec<_>>(),
+            rhs=?port_4.history().map(|p| p.recv_timestamp().to_string()).collect::<Vec<_>>(),
+            combined=?combined.history().map(|p| p.recv_timestamp().to_string()).collect::<Vec<_>>(),
             "port_3.combine(port_4)"
         );
         assert_eq!(combined.len(), port_3.len() + 1);
@@ -802,7 +821,7 @@ mod window {
         let actual: Vec<MetricCatalog> = combined.into_iter().collect();
         assert_eq!(
             actual,
-            vec![
+            extract_inner(vec![
                 m1.clone(),
                 m2.clone(),
                 m3.clone(),
@@ -810,7 +829,7 @@ mod window {
                 m5.clone(),
                 m6.clone(),
                 m7.clone()
-            ]
+            ])
         );
         let combined = port_4.clone().combine(&port_3);
         assert_eq!(combined.len(), port_4.len() + 1);
@@ -819,7 +838,7 @@ mod window {
             port_4.time_window
         );
         let actual: Vec<MetricCatalog> = combined.into_iter().collect();
-        assert_eq!(actual, vec![m6.clone(), m7.clone()]);
+        assert_eq!(actual, extract_inner(vec![m6.clone(), m7.clone()]));
     }
 
     #[test]
@@ -849,10 +868,10 @@ mod window {
             m7.clone(),
         ];
 
-        let f = |c: &MetricCatalog| {
+        let f = |(c, ts): &(MetricCatalog, Timestamp)| {
             tracing::debug!(
                 "[test] testing catalog[{}]: ({} <= {}) is {}",
-                c.recv_timestamp.to_string(),
+                ts,
                 c.flow.records_in_per_sec,
                 5.0,
                 c.flow.records_in_per_sec <= 5.0,
@@ -862,7 +881,7 @@ mod window {
 
         let (window, _) = make_test_window(10, interval, &ms);
         tracing::info!(
-            window=?window.history().map(|m| (m.recv_timestamp.to_string(), m.flow.records_in_per_sec)).collect::<Vec<_>>(),
+            window=?window.history().map(|m| (m.recv_timestamp().to_string(), m.0.flow.records_in_per_sec)).collect::<Vec<_>>(),
             "*** WINDOW CREATED"
         );
 

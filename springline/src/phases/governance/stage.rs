@@ -1,16 +1,18 @@
 use super::GovernanceContext;
 use crate::flink::Parallelism;
 use crate::model::NrReplicas;
-use crate::phases::governance::GovernanceMonitor;
+use crate::phases::governance::{GovernanceEvent, GovernanceMonitor};
 use crate::phases::plan::{ScaleActionPlan, ScaleDirection};
+use crate::Env;
 use async_trait::async_trait;
 use cast_trait_object::dyn_upcast;
 use num_traits::{SaturatingAdd, SaturatingSub};
+use pretty_snowflake::Label;
 use proctor::elements::{Bindings, PolicyFilterEvent, QueryResult};
 use proctor::error::{PolicyError, PortError};
 use proctor::graph::stage::{Stage, WithMonitor};
 use proctor::graph::{Inlet, Outlet, Port, SinkShape, SourceShape, PORT_CONTEXT, PORT_DATA};
-use proctor::{AppData, ProctorResult};
+use proctor::{AppData, Correlation, ProctorResult};
 use std::fmt;
 use std::sync::Arc;
 use tokio::sync::broadcast;
@@ -18,15 +20,21 @@ use tokio::sync::broadcast;
 type Context = GovernanceContext;
 
 #[derive(Debug)]
-pub struct GovernanceStage<T> {
+pub struct GovernanceStage<T>
+where
+    T: Label,
+{
     name: String,
-    context_inlet: Inlet<Context>,
-    inlet: Inlet<T>,
-    outlet: Outlet<T>,
-    tx_monitor: broadcast::Sender<Arc<PolicyFilterEvent<T, Context>>>,
+    context_inlet: Inlet<Env<Context>>,
+    inlet: Inlet<Env<T>>,
+    outlet: Outlet<Env<T>>,
+    tx_monitor: broadcast::Sender<Arc<GovernanceEvent<T>>>,
 }
 
-impl<T> GovernanceStage<T> {
+impl<T> GovernanceStage<T>
+where
+    T: Label,
+{
     #[tracing::instrument(level = "trace", skip(name))]
     pub fn new(name: &str) -> Self {
         let context_inlet = Inlet::new(name, PORT_CONTEXT);
@@ -39,13 +47,16 @@ impl<T> GovernanceStage<T> {
     }
 
     #[inline]
-    pub fn context_inlet(&self) -> Inlet<Context> {
+    pub fn context_inlet(&self) -> Inlet<Env<Context>> {
         self.context_inlet.clone()
     }
 }
 
-impl<T> SinkShape for GovernanceStage<T> {
-    type In = T;
+impl<T> SinkShape for GovernanceStage<T>
+where
+    T: Label,
+{
+    type In = Env<T>;
 
     #[inline]
     fn inlet(&self) -> Inlet<Self::In> {
@@ -53,15 +64,21 @@ impl<T> SinkShape for GovernanceStage<T> {
     }
 }
 
-impl<T> SourceShape for GovernanceStage<T> {
-    type Out = T;
+impl<T> SourceShape for GovernanceStage<T>
+where
+    T: Label,
+{
+    type Out = Env<T>;
 
     fn outlet(&self) -> Outlet<Self::Out> {
         self.outlet.clone()
     }
 }
 
-impl<T> WithMonitor for GovernanceStage<T> {
+impl<T> WithMonitor for GovernanceStage<T>
+where
+    T: Label,
+{
     type Receiver = GovernanceMonitor<T>;
 
     fn rx_monitor(&self) -> Self::Receiver {
@@ -73,7 +90,7 @@ impl<T> WithMonitor for GovernanceStage<T> {
 #[async_trait]
 impl<T> Stage for GovernanceStage<T>
 where
-    T: AppData + ScaleActionPlan + PartialEq,
+    T: AppData + Label + ScaleActionPlan + PartialEq,
 {
     fn name(&self) -> &str {
         self.name.as_str()
@@ -100,7 +117,7 @@ where
 
 impl<T> GovernanceStage<T>
 where
-    T: AppData + ScaleActionPlan + PartialEq,
+    T: AppData + Label + ScaleActionPlan + PartialEq,
 {
     #[inline]
     async fn do_check(&self) -> Result<(), PortError> {
@@ -134,7 +151,7 @@ where
                 },
 
                 Some(incoming_context) = self.context_inlet.recv() => {
-                    self.handle_context(&mut context, incoming_context).await?;
+                    self.handle_context(&mut context, incoming_context)?;
                     tracing::warn!("DMR: AFTER HANDLE CONTEXT: {context:?}");
                 },
 
@@ -160,25 +177,34 @@ where
 
 impl<T> GovernanceStage<T>
 where
-    T: AppData + ScaleActionPlan + PartialEq,
+    T: AppData + Label + ScaleActionPlan + PartialEq,
 {
     #[tracing::instrument(level="trace", name = "governance handle item", skip(self), fields(stage=%self.name))]
-    async fn handle_plan(&mut self, plan: T, context: &Context) -> Result<(), PolicyError> {
+    async fn handle_plan(
+        &mut self, plan: Env<T>, context: &Env<Context>,
+    ) -> Result<(), PolicyError> {
+        let correlation = plan.correlation();
         let event = if let Some(accepted_plan) = Self::assess(&plan, context) {
             tracing::info!(
-                correlation=?accepted_plan.correlation(), ?accepted_plan,
-                "plan passed {} policy review - sending via outlet", self.name
+                ?correlation,
+                ?accepted_plan,
+                "plan passed {} policy review - sending via outlet",
+                self.name
             );
             let policy_result = QueryResult::passed_without_bindings();
             self.outlet.send(accepted_plan.clone()).await?;
             PolicyFilterEvent::ItemPassed(accepted_plan, policy_result)
         } else {
-            tracing::info!(correlation=?plan.correlation(), ?plan, "plan failed {} policy review - dropping.", self.name);
+            tracing::info!(
+                ?correlation,
+                ?plan,
+                "plan failed {} policy review - dropping.",
+                self.name
+            );
             let policy_result = QueryResult { passed: false, bindings: Bindings::default() };
             PolicyFilterEvent::ItemBlocked(plan, Some(policy_result))
         };
-        self.publish_event(event)?;
-        Ok(())
+        self.publish_event(event)
     }
 
     #[tracing::instrument(
@@ -186,29 +212,29 @@ where
         name = "governance handle plan before context set",
         skip(self)
     )]
-    fn handle_plan_before_context(&self, plan: T) -> Result<(), PolicyError> {
+    fn handle_plan_before_context(&self, plan: Env<T>) -> Result<(), PolicyError> {
         tracing::info!(correlation=?plan.correlation(), ?plan, "dropping plan received before governance context set.");
-        self.publish_event(PolicyFilterEvent::ItemBlocked(plan, None))?;
-        Ok(())
+        let event = PolicyFilterEvent::ItemBlocked(plan, None);
+        self.publish_event(event)
     }
 
     #[tracing::instrument(level = "trace", skip(self, context))]
-    async fn handle_context(
-        &self, context: &mut Option<Context>, recv_context: Context,
+    fn handle_context(
+        &self, context: &mut Option<Env<Context>>, recv_context: Env<Context>,
     ) -> Result<(), PolicyError> {
+        let event = PolicyFilterEvent::ContextChanged(Some(recv_context.clone()));
         *context = Some(recv_context);
-        self.publish_event(PolicyFilterEvent::ContextChanged(context.clone()))?;
-        Ok(())
+        self.publish_event(event)
     }
 
     #[tracing::instrument(level = "trace")]
-    fn assess(proposed: &T, context: &Context) -> Option<T> {
+    fn assess(proposed: &Env<T>, context: &Context) -> Option<Env<T>> {
         let correlation = proposed.correlation();
         let assessment_counter_plan = Self::accept_scale_up(proposed, context)
             .or_else(|| Self::accept_scale_down(proposed, context))
             .or_else(|| Self::accept_lateral_rescale(proposed, context));
 
-        match assessment_counter_plan {
+        let counter = match assessment_counter_plan {
             None => {
                 tracing::info!(
                     ?correlation,
@@ -245,7 +271,9 @@ where
                 );
                 plan
             },
-        }
+        };
+
+        proposed.clone().map(|_| counter).transpose()
     }
 
     fn improves_utilization(proposal: &T) -> bool {
@@ -410,7 +438,9 @@ where
     }
 
     #[tracing::instrument(level = "trace", skip(self))]
-    fn publish_event(&self, event: PolicyFilterEvent<T, Context>) -> Result<(), PolicyError> {
+    fn publish_event(
+        &self, event: PolicyFilterEvent<Env<T>, Env<Context>>,
+    ) -> Result<(), PolicyError> {
         let nr_notified = self
             .tx_monitor
             .send(Arc::new(event))

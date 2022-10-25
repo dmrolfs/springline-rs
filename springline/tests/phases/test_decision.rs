@@ -1,8 +1,9 @@
+use once_cell::sync::Lazy;
 use std::sync::Arc;
 use std::time::Duration;
 
 use pretty_assertions::assert_eq;
-use pretty_snowflake::MachineNode;
+use pretty_snowflake::{Label, MachineNode};
 use proctor::elements::{
     self, PolicyOutcome, PolicySource, PolicySubscription, Telemetry, TelemetryValue, ToTelemetry,
 };
@@ -18,18 +19,24 @@ use springline::flink::{
     MC_CLUSTER__NR_TASK_MANAGERS,
 };
 use springline::phases::decision::{make_decision_transform, DecisionResult, DECISION_DIRECTION};
-use springline::phases::decision::{DecisionContext, DecisionPolicy, DecisionTemplateData};
+use springline::phases::decision::{DecisionPolicy, DecisionTemplateData};
 use springline::settings::{DecisionSettings, EngineSettings};
+use springline::Env;
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
 use super::fixtures::*;
 
-type Data = AppDataWindow<MetricCatalog>;
+type DataT = AppDataWindow<Env<MetricCatalog>>;
+type Data = Env<DataT>;
 
-lazy_static::lazy_static! {
-    static ref DECISION_PREAMBLE: PolicySource = PolicySource::from_template_file("../resources/decision.polar").expect("failed to create decision policy source");
-    static ref POLICY_SETTINGS: DecisionSettings = DecisionSettings::default()
+static DECISION_PREAMBLE: Lazy<PolicySource> = Lazy::new(|| {
+    PolicySource::from_template_file("../resources/decision.polar")
+        .expect("failed to create decision policy source")
+});
+
+static POLICY_SETTINGS: Lazy<DecisionSettings> = Lazy::new(|| {
+    DecisionSettings::default()
         .with_source(DECISION_PREAMBLE.clone())
         .with_template_data(DecisionTemplateData {
             custom: maplit::hashmap! {
@@ -37,17 +44,20 @@ lazy_static::lazy_static! {
                 "min_records_in_per_sec".to_string() => 1_f64.to_string(),
             },
             ..DecisionTemplateData::default()
-        });
-}
+        })
+});
 
 #[allow(dead_code)]
-struct TestFlow<Out, C> {
+struct TestFlow<Out, C>
+where
+    C: Label,
+{
     pub graph_handle: JoinHandle<()>,
     pub tx_data_sensor_api: stage::ActorSourceApi<Telemetry>,
     pub tx_context_sensor_api: stage::ActorSourceApi<Telemetry>,
     pub tx_clearinghouse_api: sense::ClearinghouseApi,
-    pub tx_decision_api: elements::PolicyFilterApi<C, DecisionTemplateData>,
-    pub rx_decision_monitor: elements::PolicyFilterMonitor<Data, C>,
+    pub tx_decision_api: elements::PolicyFilterApi<Env<C>, DecisionTemplateData>,
+    pub rx_decision_monitor: elements::PolicyFilterMonitor<Data, Env<C>>,
     pub tx_sink_api: stage::FoldApi<Vec<Out>>,
     pub rx_sink: Option<oneshot::Receiver<Vec<Out>>>,
 }
@@ -61,9 +71,9 @@ where
     pub async fn new(
         sensor_out_subscription: TelemetrySubscription,
         context_subscription: TelemetrySubscription, decision_stage: impl ThroughStage<Data, Out>,
-        decision_context_inlet: Inlet<C>,
-        tx_decision_api: elements::PolicyFilterApi<C, DecisionTemplateData>,
-        rx_decision_monitor: elements::PolicyFilterMonitor<Data, C>,
+        decision_context_inlet: Inlet<Env<C>>,
+        tx_decision_api: elements::PolicyFilterApi<Env<C>, DecisionTemplateData>,
+        rx_decision_monitor: elements::PolicyFilterMonitor<Data, Env<C>>,
     ) -> anyhow::Result<Self> {
         let telemetry_sensor = stage::ActorSource::<Telemetry>::new("telemetry_sensor");
         let tx_data_sensor_api = telemetry_sensor.tx_api();
@@ -161,7 +171,7 @@ where
     pub async fn tell_policy(
         &self,
         command_rx: (
-            elements::PolicyFilterCmd<C, DecisionTemplateData>,
+            elements::PolicyFilterCmd<Env<C>, DecisionTemplateData>,
             oneshot::Receiver<proctor::Ack>,
         ),
     ) -> anyhow::Result<proctor::Ack> {
@@ -171,14 +181,14 @@ where
 
     pub async fn recv_policy_event(
         &mut self,
-    ) -> anyhow::Result<Arc<elements::PolicyFilterEvent<Data, C>>> {
+    ) -> anyhow::Result<Arc<elements::PolicyFilterEvent<Data, Env<C>>>> {
         self.rx_decision_monitor.recv().await.map_err(|err| err.into())
     }
 
     #[allow(dead_code)]
     pub async fn inspect_policy_context(
         &self,
-    ) -> anyhow::Result<elements::PolicyFilterDetail<C, DecisionTemplateData>> {
+    ) -> anyhow::Result<elements::PolicyFilterDetail<Env<C>, DecisionTemplateData>> {
         elements::PolicyFilterCmd::inspect(&self.tx_decision_api)
             .await
             .map(|d| {
@@ -307,8 +317,7 @@ async fn test_decision_carry_policy_result() -> anyhow::Result<()> {
     let padding = make_test_item_padding();
     flow.push_telemetry(padding).await?;
 
-    let ts = *DT_1 + chrono::Duration::hours(1);
-    let item = make_test_item(&ts, std::f64::consts::PI, 1);
+    let item = make_test_item(std::f64::consts::PI, 1);
     tracing::warn!(?item, "DMR-A.1: created item to push.");
     flow.push_telemetry(item).await?;
     let event = &*flow.recv_policy_event().await?;
@@ -319,14 +328,13 @@ async fn test_decision_carry_policy_result() -> anyhow::Result<()> {
             .await?
     );
 
-    let item = make_test_item(&ts, std::f64::consts::E, 2);
-    // let telemetry = Telemetry::try_from(&item);
+    let item = make_test_item(std::f64::consts::E, 2);
     flow.push_telemetry(item).await?;
     let event = &*flow.recv_policy_event().await?;
     claim::assert_matches!(event, &elements::PolicyFilterEvent::ItemBlocked(_, _));
     tracing::warn!(?event, "DMR-C: item dropped confirmed");
 
-    let item = make_test_item(&ts, std::f64::consts::LN_2, 1);
+    let item = make_test_item(std::f64::consts::LN_2, 1);
     tracing::warn!(?item, "DMR-D.1: created item to push.");
     flow.push_telemetry(item).await?;
     tracing::info!("waiting for item to reach sink...");
@@ -335,7 +343,7 @@ async fn test_decision_carry_policy_result() -> anyhow::Result<()> {
             .await?
     );
 
-    let actual: Vec<PolicyOutcome<Data, DecisionContext>> = flow.close().await?;
+    let actual: Vec<PolicyOutcome<_, _>> = flow.close().await?;
     tracing::warn!(?actual, "DMR: 08. Verify final accumulation...");
     let actual_vals: Vec<(f64, Option<String>)> = actual
         .into_iter()
@@ -410,10 +418,8 @@ async fn test_decision_common() -> anyhow::Result<()> {
     )
     .await?;
     let decision_context_inlet = decision_stage.context_inlet();
-    let tx_decision_api: elements::PolicyFilterApi<DecisionContext, DecisionTemplateData> =
-        decision_stage.tx_api();
-    let rx_decision_monitor: elements::PolicyFilterMonitor<Data, DecisionContext> =
-        decision_stage.rx_monitor();
+    let tx_decision_api: elements::PolicyFilterApi<_, _> = decision_stage.tx_api();
+    let rx_decision_monitor: elements::PolicyFilterMonitor<_, _> = decision_stage.rx_monitor();
 
     let mut flow = TestFlow::new(
         telemetry_subscription,
@@ -433,22 +439,17 @@ async fn test_decision_common() -> anyhow::Result<()> {
     })
     .await?;
 
-    // decision context remains a zero definition for test
-    // let event = flow.recv_policy_event().await?;
-    // tracing::info!(?event, "DMR: TESTING policy event for context change");
-    // claim::assert_matches!(event, elements::PolicyFilterEvent::ContextChanged(_));
-
     tracing::info!(
         "DMR: pushing metrics padding - req metrics subscriptions fields not used in test."
     );
     flow.push_telemetry(make_test_item_padding()).await?;
 
-    let ts = *DT_1 + chrono::Duration::hours(1);
-    let item = make_test_item(&ts, std::f64::consts::PI, 1);
+    let item = make_test_item(std::f64::consts::PI, 1);
     tracing::warn!(?item, "DMR-A.1: created item to push.");
 
     flow.push_telemetry(item).await?;
     let event = &*flow.recv_policy_event().await?;
+    tracing::error!("DMR: EVENT = {event:?}");
     claim::assert_matches!(event, &elements::PolicyFilterEvent::ItemPassed(_, _));
     tracing::info!("DMR-waiting for *first* item to reach sink...");
     assert!(
@@ -456,14 +457,14 @@ async fn test_decision_common() -> anyhow::Result<()> {
             .await?
     );
 
-    let item = make_test_item(&ts, std::f64::consts::E, 2);
+    let item = make_test_item(std::f64::consts::E, 2);
     flow.push_telemetry(item).await?;
     let event = &*flow.recv_policy_event().await?;
     tracing::info!(?event, "DMR-2: TESTING policy event for blockage");
     claim::assert_matches!(event, &elements::PolicyFilterEvent::ItemBlocked(_, _));
     tracing::warn!(?event, "DMR-C: item dropped confirmed");
 
-    let item = make_test_item(&ts, std::f64::consts::LN_2, 1);
+    let item = make_test_item(std::f64::consts::LN_2, 1);
     tracing::warn!(?item, "DMR-D.1: created item to push.");
     flow.push_telemetry(item).await?;
     tracing::info!("waiting for item to reach sink...");
@@ -472,11 +473,11 @@ async fn test_decision_common() -> anyhow::Result<()> {
             .await?
     );
 
-    let actual: Vec<DecisionResult<Data>> = flow.close().await?;
+    let actual: Vec<Env<DecisionResult<DataT>>> = flow.close().await?;
     tracing::warn!(?actual, "DMR: 08. Verify final accumulation...");
     let actual_vals: Vec<(f64, &'static str)> = actual
         .into_iter()
-        .map(|a| match a {
+        .map(|a| match a.into_inner() {
             DecisionResult::ScaleUp(item) => (item.flow.records_in_per_sec, "up"),
             DecisionResult::ScaleDown(item) => (item.flow.records_in_per_sec, "down"),
             DecisionResult::NoAction(item) => (item.flow.records_in_per_sec, "no action"),

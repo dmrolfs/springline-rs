@@ -12,7 +12,7 @@ use proctor::elements::QueryPolicy;
 use crate::{ExplorerState, MenuAction, Result, THEME};
 
 mod make_policy;
-mod populate;
+pub mod populate;
 
 pub use make_policy::*;
 use populate::*;

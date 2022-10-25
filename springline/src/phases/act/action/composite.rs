@@ -1,7 +1,8 @@
 use std::time::Duration;
 
+use crate::Env;
 use async_trait::async_trait;
-use proctor::AppData;
+use proctor::{AppData, Correlation};
 use tracing::Instrument;
 
 use super::{ActionSession, ScaleAction};
@@ -44,13 +45,13 @@ where
         false
     }
 
-    fn check_preconditions(&self, _session: &ActionSession) -> Result<(), ActError> {
+    fn check_preconditions(&self, _session: &Env<ActionSession>) -> Result<(), ActError> {
         Ok(())
     }
 
     #[tracing::instrument(level = "info", name = "CompositeAction::execute", skip(self))]
     async fn execute<'s>(
-        &mut self, plan: &'s Self::Plan, session: &'s mut ActionSession,
+        &mut self, plan: &'s Self::Plan, session: &'s mut Env<ActionSession>,
     ) -> Result<(), ActError> {
         let composite_label = self.label().to_string();
         let composite_timer = act::start_rescale_timer(&composite_label);
@@ -134,7 +135,7 @@ where
 {
     #[tracing::instrument(level = "warn", skip(plan, session))]
     async fn handle_error_on_execute<'s>(
-        label: &str, track: &str, error: ActError, plan: &'s P, session: &'s mut ActionSession,
+        label: &str, track: &str, error: ActError, plan: &'s P, session: &'s mut Env<ActionSession>,
     ) -> Result<(), ActError> {
         tracing::error!(
             ?error, ?plan, ?session, correlation=?session.correlation(), %track,

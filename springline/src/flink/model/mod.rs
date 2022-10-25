@@ -13,7 +13,6 @@ use std::time::Duration;
 
 use crate::math;
 use either::Either;
-use pretty_snowflake::Id;
 use proctor::elements::telemetry::{TableType, TableValue};
 use proctor::elements::{TelemetryType, TelemetryValue, Timestamp};
 use proctor::ProctorIdGenerator;
@@ -24,7 +23,7 @@ use strum_macros::Display;
 use super::FlinkError;
 use super::MetricCatalog;
 
-pub type CorrelationId = Id<MetricCatalog>;
+pub type CorrelationId = crate::CorrelationId;
 pub type CorrelationGenerator = ProctorIdGenerator<MetricCatalog>;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

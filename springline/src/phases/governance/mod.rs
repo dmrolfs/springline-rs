@@ -1,32 +1,28 @@
 mod context;
-mod policy;
-mod result;
-mod stage;
-
+use crate::phases::plan::PlanningOutcomeT;
+use crate::phases::{self, plan::PlanningOutcome};
+use crate::settings::GovernanceSettings;
+use crate::{Env, Result};
 pub use context::GovernanceContext;
 use proctor::elements::PolicyFilterEvent;
 use proctor::graph::{Connect, SourceShape};
 use proctor::phases::sense::{ClearinghouseSubscriptionAgent, SubscriptionChannel};
-pub use stage::GovernanceStage;
 
-use crate::phases::{self, plan::PlanningOutcome};
-use crate::settings::GovernanceSettings;
-use crate::Result;
+mod policy;
+mod result;
+mod stage;
+
+pub use stage::GovernanceStage;
 
 pub type GovernanceOutcome = PlanningOutcome;
 
-// pub type GovernanceApi =
-//     proctor::elements::PolicyFilterApi<GovernanceContext, GovernanceTemplateData>;
-pub type GovernanceMonitor<T> = proctor::elements::PolicyFilterMonitor<T, GovernanceContext>;
+pub type GovernanceMonitor<T> =
+    proctor::elements::PolicyFilterMonitor<Env<T>, Env<GovernanceContext>>;
 pub type GovernancePhase = (
-    Box<GovernanceStage<PlanningOutcome>>,
+    Box<GovernanceStage<PlanningOutcomeT>>,
     SubscriptionChannel<GovernanceContext>,
 );
-// pub type GovernancePhase = (
-//     Box<PolicyPhase<PlanningOutcome, GovernanceOutcome, GovernanceContext, GovernanceTemplateData>>,
-//     SubscriptionChannel<GovernanceContext>,
-// );
-pub type GovernanceEvent = PolicyFilterEvent<PlanningOutcome, GovernanceContext>;
+pub type GovernanceEvent<T> = PolicyFilterEvent<Env<T>, Env<GovernanceContext>>;
 
 #[tracing::instrument(level = "trace", skip(agent))]
 pub async fn make_governance_phase<A>(
@@ -42,15 +38,3 @@ where
     (context_channel.outlet(), governance.context_inlet()).connect().await;
     Ok((governance, context_channel))
 }
-// {
-//     let name = "governance";
-//     let policy = GovernancePolicy::new(settings);
-//     let subscription = policy.subscription(name, &settings.policy);
-//     // todo: inject a "monitor relay" that captures gov's policy_filter events and passes along blocked,
-//     // BUT holds Passed until data passes transform, when it sends the Passed event.
-//     // May need to intro "builder" to policy phase to access filter's monitor to decorate.
-//     let governance =
-//         Box::new(PolicyPhase::with_transform(name, policy, make_governance_transform(name)).await?);
-//     let channel = phases::subscribe_policy_phase(subscription, &governance, agent).await?;
-//     Ok((governance, channel))
-// }

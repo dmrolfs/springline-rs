@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::marker::PhantomData;
 use std::time::Duration;
 
+use crate::Env;
 use async_trait::async_trait;
 use either::{Either, Left, Right};
 use futures_util::stream::FuturesUnordered;
@@ -9,7 +10,7 @@ use futures_util::{FutureExt, StreamExt, TryFutureExt};
 use http::{Method, StatusCode};
 use once_cell::sync::Lazy;
 use proctor::error::UrlError;
-use proctor::AppData;
+use proctor::{AppData, Correlation};
 use prometheus::{IntCounter, Opts};
 use tracing_futures::Instrument;
 use url::Url;
@@ -51,7 +52,7 @@ impl<P> RestartJobs<P> {
 #[async_trait]
 impl<P> ScaleAction for RestartJobs<P>
 where
-    P: AppData + ScaleActionPlan,
+    P: AppData + ScaleActionPlan + Correlation,
 {
     type Plan = P;
 
@@ -59,7 +60,7 @@ where
         ACTION_LABEL
     }
 
-    fn check_preconditions(&self, session: &ActionSession) -> Result<(), ActError> {
+    fn check_preconditions(&self, session: &Env<ActionSession>) -> Result<(), ActError> {
         match &session.savepoints {
             None => Err(ActError::ActionPrecondition {
                 action: self.label().to_string(),
@@ -98,7 +99,7 @@ where
         skip(self, plan,)
     )]
     async fn execute<'s>(
-        &mut self, plan: &'s Self::Plan, session: &'s mut ActionSession,
+        &mut self, plan: &'s Self::Plan, session: &'s mut Env<ActionSession>,
     ) -> Result<(), ActError> {
         let parallelism = self.parallelism_from_plan_session(plan, session);
 
@@ -170,13 +171,13 @@ where
 
 impl<P> RestartJobs<P>
 where
-    P: AppData + ScaleActionPlan,
+    P: AppData + ScaleActionPlan + Correlation,
 {
     /// Returns the parallelism to use for the restart. In the case of a scale up, this will most
     /// likely be the new parallelism. In the case of a scale down, this will most likely be the
     /// current parallelism. Discrepancies between the two cases are due to rescaling the cluster
     /// partially completed within budgeted time.
-    fn parallelism_from_plan_session(&self, plan: &P, session: &ActionSession) -> Parallelism {
+    fn parallelism_from_plan_session(&self, plan: &P, session: &Env<ActionSession>) -> Parallelism {
         let mut parallelism = plan.target_job_parallelism();
 
         if let Some(nr_tm_confirmed) = session.nr_confirmed_rescaled_taskmanagers {
@@ -213,7 +214,7 @@ where
 
     async fn try_jar_restarts_for_parallelism<'s>(
         &self, parallelism: Parallelism, jars: &[JarId], mut locations: HashSet<SavepointLocation>,
-        plan: &'s P, session: &'s ActionSession,
+        plan: &'s P, session: &'s Env<ActionSession>,
     ) -> Vec<(JarId, SavepointLocation, ActError)> {
         use crate::flink::JobState as JS;
 
@@ -300,7 +301,7 @@ where
     #[tracing::instrument(level = "trace", skip(session))]
     async fn try_all_jar_restarts(
         &self, jars: &[JarId], locations: &mut HashSet<SavepointLocation>,
-        parallelism: Parallelism, session: &ActionSession,
+        parallelism: Parallelism, session: &Env<ActionSession>,
     ) -> Result<Vec<(JobId, JarId, SavepointLocation)>, FlinkError> {
         let mut pairings = Vec::with_capacity(jars.len());
         let correlation = session.correlation();
@@ -330,7 +331,7 @@ where
     #[tracing::instrument(level = "trace", skip(session))]
     async fn try_jar_restart(
         &self, jar: &JarId, locations: HashSet<SavepointLocation>, parallelism: Parallelism,
-        session: &ActionSession,
+        session: &Env<ActionSession>,
     ) -> Result<Option<(JobId, SavepointLocation)>, FlinkError> {
         let mut job_savepoint = None;
         let correlation = session.correlation();
@@ -360,7 +361,7 @@ where
     #[tracing::instrument(level = "trace", skip(session))]
     async fn try_jar_restart_for_location(
         &self, jar: &JarId, location: &SavepointLocation, parallelism: Parallelism,
-        session: &ActionSession,
+        session: &Env<ActionSession>,
     ) -> Result<Either<JobId, StatusCode>, FlinkError> {
         let correlation = session.correlation();
         let step_label = super::action_step(self.label(), "try_restart_jar_for_location");
@@ -452,7 +453,7 @@ where
         fields(correlation = %session.correlation()),
     )]
     async fn block_until_all_jobs_restarted(
-        &self, jobs: &[JobId], session: &ActionSession,
+        &self, jobs: &[JobId], session: &Env<ActionSession>,
     ) -> Vec<(JobId, Result<JobState, FlinkError>)> {
         let mut tasks = jobs
             .iter()
@@ -473,15 +474,15 @@ where
 
     #[tracing::instrument(level = "trace", skip(session), fields(correlation = %session.correlation()))]
     async fn wait_on_job_restart(
-        &self, job_id: &JobId, session: &ActionSession,
+        &self, job_id: &JobId, session: &Env<ActionSession>,
     ) -> Result<JobState, FlinkError> {
         use crate::flink::JobState as JS;
 
-        let correlation = session.correlation();
+        let correlation_id = session.correlation().relabel();
 
         let task = async {
             loop {
-                match session.flink.query_job_details(job_id, &correlation).await {
+                match session.flink.query_job_details(job_id, &correlation_id).await {
                     Ok(detail) if detail.state.is_engaged() => {
                         tracing::debug!(?detail, "job restart succeeded: job is {}", detail.state);
                         break detail.state;
@@ -530,7 +531,7 @@ where
     }
 
     #[allow(clippy::cognitive_complexity)]
-    fn locations_from(session: &ActionSession) -> Option<HashSet<SavepointLocation>> {
+    fn locations_from(session: &Env<ActionSession>) -> Option<HashSet<SavepointLocation>> {
         let nr_savepoints = session.savepoints.as_ref().map(|s| s.completed.len()).unwrap_or(0);
         let mut jobs = HashSet::with_capacity(nr_savepoints);
         let mut locations = HashSet::with_capacity(nr_savepoints);
@@ -546,7 +547,7 @@ where
         }
     }
 
-    fn check_savepoint_jobs(completed_jobs: HashSet<JobId>, session: &ActionSession) -> bool {
+    fn check_savepoint_jobs(completed_jobs: HashSet<JobId>, session: &Env<ActionSession>) -> bool {
         let correlation = session.correlation();
 
         if completed_jobs.is_empty() {
@@ -579,7 +580,7 @@ where
 
     #[tracing::instrument(level = "warn", skip(self, plan, session))]
     async fn handle_error_on_restart_requests<'s>(
-        &self, error: FlinkError, plan: &'s P, session: &'s ActionSession,
+        &self, error: FlinkError, plan: &'s P, session: &'s Env<ActionSession>,
     ) -> Result<HashMap<JobId, (JarId, SavepointLocation)>, FlinkError> {
         flink::track_flink_errors("restart_jobs::restart", &error);
         let track = format!("{}::restart_requests", self.label());
@@ -593,7 +594,7 @@ where
 
     #[tracing::instrument(level = "warn", skip(self, plan, session))]
     async fn handle_error_on_restart_confirm<'s>(
-        &self, error: FlinkError, plan: &'s P, session: &'s ActionSession,
+        &self, error: FlinkError, plan: &'s P, session: &'s Env<ActionSession>,
     ) -> Result<(), FlinkError> {
         flink::track_flink_errors("restart_jobs::confirm", &error);
         let track = format!("{}::restart_confirm", self.label());
@@ -608,7 +609,7 @@ where
     #[tracing::instrument(level = "warn", skip(self, job, location, job_state, plan, session))]
     async fn handle_failed_job_restart<'s>(
         &self, job: JobId, location: &SavepointLocation, job_state: JobState, plan: &'s P,
-        session: &'s ActionSession,
+        session: &'s Env<ActionSession>,
     ) -> Result<(), ActError> {
         let track = format!("{}::failed_job_restart", self.label());
         tracing::error!(
@@ -628,7 +629,7 @@ where
     #[tracing::instrument(level = "warn", skip(self, plan, session))]
     async fn handle_remaining_restart_failures<'s>(
         &self, repeat_failures: Vec<(JarId, SavepointLocation, ActError)>,
-        initial_failures: HashMap<JarId, ActError>, plan: &'s P, session: &'s ActionSession,
+        initial_failures: HashMap<JarId, ActError>, plan: &'s P, session: &'s Env<ActionSession>,
     ) -> Result<(), ActError> {
         use ActError as ActE;
 

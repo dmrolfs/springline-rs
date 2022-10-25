@@ -1,7 +1,8 @@
 use std::marker::PhantomData;
 
+use crate::Env;
 use async_trait::async_trait;
-use proctor::AppData;
+use proctor::{AppData, Correlation};
 use tracing::Instrument;
 
 use super::{ActionSession, ScaleAction};
@@ -38,15 +39,15 @@ where
         ACTION_LABEL
     }
 
-    fn check_preconditions(&self, _session: &ActionSession) -> Result<(), ActError> {
+    fn check_preconditions(&self, _session: &Env<ActionSession>) -> Result<(), ActError> {
         Ok(())
     }
 
     #[tracing::instrument(level = "info", name = "PrepareData::execute", skip(self, plan))]
     async fn execute<'s>(
-        &mut self, plan: &'s Self::Plan, session: &'s mut ActionSession,
+        &mut self, plan: &'s Self::Plan, session: &'s mut Env<ActionSession>,
     ) -> Result<(), ActError> {
-        let correlation = session.correlation();
+        let correlation = session.correlation().relabel();
 
         let query_active_jobs = session
             .flink
@@ -94,7 +95,7 @@ where
 {
     #[tracing::instrument(level = "warn", skip(self, plan, session))]
     async fn handle_error_on_query_active_jobs<'s>(
-        &self, error: FlinkError, plan: &'s P, session: &'s mut ActionSession,
+        &self, error: FlinkError, plan: &'s P, session: &'s mut Env<ActionSession>,
     ) -> Result<Vec<JobId>, FlinkError> {
         let track = format!("{}::query_active_jobs", self.label());
         tracing::error!(
@@ -107,7 +108,7 @@ where
 
     #[tracing::instrument(level = "warn", skip(self, plan, session))]
     async fn handle_error_on_query_uploaded_jars<'s>(
-        &self, error: FlinkError, plan: &'s P, session: &'s mut ActionSession,
+        &self, error: FlinkError, plan: &'s P, session: &'s mut Env<ActionSession>,
     ) -> Result<Vec<JarId>, FlinkError> {
         let track = format!("{}::query_uploaded_jars", self.label());
         tracing::error!(

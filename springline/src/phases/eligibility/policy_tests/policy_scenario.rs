@@ -1,4 +1,5 @@
 use super::*;
+use proctor::MetaData;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PolicyScenario {
@@ -25,27 +26,29 @@ impl PolicyScenario {
 
     #[tracing::instrument(level = "info")]
     pub fn run(&self) -> Result<QueryResult, PolicyError> {
-        let context = EligibilityContext {
-            correlation_id: Id::direct(
-                <EligibilityContext as Label>::labeler().label(),
-                0,
-                "test_doesnt_crash",
+        let context = Env::from_parts(
+            MetaData::from_parts(
+                Id::direct(
+                    <EligibilityContext as Label>::labeler().label(),
+                    0,
+                    "test_doesnt_crash",
+                ),
+                Timestamp::now(),
             ),
-            recv_timestamp: Timestamp::now(),
-            job: JobStatus { last_failure: self.last_failure },
-            cluster: ClusterStatus {
-                is_deploying: self.is_deploying,
-                is_rescaling: self.is_rescaling,
-                last_deployment: self.last_deployment,
+            EligibilityContext {
+                job: JobStatus { last_failure: self.last_failure },
+                cluster: ClusterStatus {
+                    is_deploying: self.is_deploying,
+                    is_rescaling: self.is_rescaling,
+                    last_deployment: self.last_deployment,
+                },
+                all_sinks_healthy: true,
+                custom: HashMap::default(),
             },
-            all_sinks_healthy: true,
-            custom: HashMap::default(),
-        };
-
-        let item = AppDataWindow::from_time_window(
-            make_metric_catalog(self.nr_active_jobs),
-            Duration::from_secs(600),
         );
+
+        let item = make_metric_catalog(self.nr_active_jobs)
+            .flat_map(|mc| AppDataWindow::from_time_window(mc, Duration::from_secs(600)));
 
         let policy = EligibilityPolicy::new(&EligibilitySettings {
             policies: vec![

@@ -12,7 +12,8 @@ use proctor::elements::Timestamp;
 use proctor::graph::stage::{self, WithApi, WithMonitor};
 use proctor::graph::{Connect, Graph, SinkShape, SourceShape};
 use proctor::phases::plan::{Plan, PlanEvent, Planning};
-use proctor::ProctorResult;
+use proctor::ReceivedAt;
+use proctor::{MetaData, ProctorResult};
 use springline::flink::{
     AppDataWindow, ClusterMetrics, FlowMetrics, JobHealthMetrics, MetricCatalog, Parallelism,
 };
@@ -26,14 +27,15 @@ use springline::phases::plan::{
     FlinkPlanning, LeastSquaresWorkloadForecaster, PerformanceRepositorySettings,
     PerformanceRepositoryType, ScalePlan, SpikeSettings,
 };
+use springline::Env;
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
 use crate::CORRELATION_ID;
 
-type InData = PlanningMeasurement;
+type InData = Env<PlanningMeasurement>;
 type InDecision = DecisionOutcome;
-type Out = ScalePlan;
+type Out = Env<ScalePlan>;
 #[allow(dead_code)]
 type ForecastBuilder = LeastSquaresWorkloadForecaster;
 type TestPlanning = FlinkPlanning<LeastSquaresWorkloadForecaster>;
@@ -44,7 +46,7 @@ struct TestFlow {
     pub graph_handle: JoinHandle<ProctorResult<()>>,
     pub tx_data_sensor_api: stage::ActorSourceApi<InData>,
     pub tx_decision_sensor_api: stage::ActorSourceApi<InDecision>,
-    pub tx_context_sensor_api: stage::ActorSourceApi<PlanningContext>,
+    pub tx_context_sensor_api: stage::ActorSourceApi<Env<PlanningContext>>,
     pub rx_planning_monitor: FlinkPlanningMonitor,
     pub tx_sink_api: stage::FoldApi<Vec<Out>>,
     pub rx_sink: Option<oneshot::Receiver<Vec<Out>>>,
@@ -61,7 +63,7 @@ impl TestFlow {
             stage::ActorSource::new("decision_sensor");
         let tx_decision_sensor_api = decision_sensor.tx_api();
 
-        let context_sensor: stage::ActorSource<PlanningContext> =
+        let context_sensor: stage::ActorSource<Env<PlanningContext>> =
             stage::ActorSource::new("context_sensor");
         let tx_context_sensor_api = context_sensor.tx_api();
 
@@ -97,8 +99,10 @@ impl TestFlow {
         })
     }
 
-    pub async fn push_data(&self, metrics: AppDataWindow<MetricCatalog>) -> anyhow::Result<()> {
-        let measurement: PlanningMeasurement = metrics.into();
+    pub async fn push_data(
+        &self, metrics: Env<AppDataWindow<Env<MetricCatalog>>>,
+    ) -> anyhow::Result<()> {
+        let measurement: Env<PlanningMeasurement> = metrics.map(|m| m.into());
         stage::ActorSourceCmd::push(&self.tx_data_sensor_api, measurement)
             .await
             .map_err(|err| err.into())
@@ -110,7 +114,7 @@ impl TestFlow {
             .map_err(|err| err.into())
     }
 
-    pub async fn push_context(&self, context: PlanningContext) -> anyhow::Result<()> {
+    pub async fn push_context(&self, context: Env<PlanningContext>) -> anyhow::Result<()> {
         stage::ActorSourceCmd::push(&self.tx_context_sensor_api, context)
             .await
             .map_err(|err| err.into())
@@ -190,61 +194,62 @@ const STEP: i64 = 15;
 fn make_test_data(
     start: Timestamp, tick: i64, parallelism: Parallelism, source_records_lag_max: u32,
     records_per_sec: f64,
-) -> AppDataWindow<MetricCatalog> {
+) -> Env<AppDataWindow<Env<MetricCatalog>>> {
     let job_source_max_parallelism = Parallelism::new(16);
     let timestamp = Utc.timestamp(start.as_secs() + tick * STEP, 0).into();
-    let corr_id = CORRELATION_ID.clone();
+    let _corr_id = CORRELATION_ID.clone();
     let forecasted_timestamp = timestamp + Duration::from_secs(STEP as u64);
-    let data = MetricCatalog {
-        correlation_id: corr_id,
-        recv_timestamp: timestamp,
-        health: JobHealthMetrics {
-            job_max_parallelism: Parallelism::max(job_source_max_parallelism, parallelism),
-            job_source_max_parallelism,
-            job_nonsource_max_parallelism: parallelism,
-            job_uptime_millis: Some(1_234_567),
-            job_nr_restarts: Some(3),
-            job_nr_completed_checkpoints: Some(12_345),
-            job_nr_failed_checkpoints: Some(7),
+    let data = Env::from_parts(
+        MetaData::default().with_recv_timestamp(timestamp),
+        MetricCatalog {
+            health: JobHealthMetrics {
+                job_max_parallelism: Parallelism::max(job_source_max_parallelism, parallelism),
+                job_source_max_parallelism,
+                job_nonsource_max_parallelism: parallelism,
+                job_uptime_millis: Some(1_234_567),
+                job_nr_restarts: Some(3),
+                job_nr_completed_checkpoints: Some(12_345),
+                job_nr_failed_checkpoints: Some(7),
+            },
+            flow: FlowMetrics {
+                records_in_per_sec: records_per_sec,
+                records_out_per_sec: records_per_sec,
+                idle_time_millis_per_sec: 222.2,
+                source_back_pressured_time_millis_per_sec: 127.0,
+                forecasted_timestamp: Some(forecasted_timestamp),
+                forecasted_records_in_per_sec: Some(records_per_sec),
+                source_records_lag_max: Some(source_records_lag_max),
+                source_assigned_partitions: Some(parallelism.as_u32()),
+                source_total_lag: Some(source_records_lag_max * parallelism.as_u32()),
+                source_records_consumed_rate: Some(
+                    (source_records_lag_max * parallelism.as_u32() * 2) as f64,
+                ),
+                source_millis_behind_latest: None,
+            },
+            cluster: ClusterMetrics {
+                nr_active_jobs: 1,
+                nr_task_managers: NrReplicas::new(parallelism.as_u32()),
+                free_task_slots: 0,
+                task_cpu_load: 0.65,
+                task_heap_memory_used: 92_987_f64,
+                task_heap_memory_committed: 103_929_920_f64,
+                task_nr_threads: 8,
+                task_network_input_queue_len: 12.,
+                task_network_input_pool_usage: 8.,
+                task_network_output_queue_len: 12.,
+                task_network_output_pool_usage: 5.,
+            },
+            custom: telemetry::TableType::default(),
         },
-        flow: FlowMetrics {
-            records_in_per_sec: records_per_sec,
-            records_out_per_sec: records_per_sec,
-            idle_time_millis_per_sec: 222.2,
-            source_back_pressured_time_millis_per_sec: 127.0,
-            forecasted_timestamp: Some(forecasted_timestamp),
-            forecasted_records_in_per_sec: Some(records_per_sec),
-            source_records_lag_max: Some(source_records_lag_max),
-            source_assigned_partitions: Some(parallelism.as_u32()),
-            source_total_lag: Some(source_records_lag_max * parallelism.as_u32()),
-            source_records_consumed_rate: Some(
-                (source_records_lag_max * parallelism.as_u32() * 2) as f64,
-            ),
-            source_millis_behind_latest: None,
-        },
-        cluster: ClusterMetrics {
-            nr_active_jobs: 1,
-            nr_task_managers: NrReplicas::new(parallelism.as_u32()),
-            free_task_slots: 0,
-            task_cpu_load: 0.65,
-            task_heap_memory_used: 92_987_f64,
-            task_heap_memory_committed: 103_929_920_f64,
-            task_nr_threads: 8,
-            task_network_input_queue_len: 12.,
-            task_network_input_pool_usage: 8.,
-            task_network_output_queue_len: 12.,
-            task_network_output_pool_usage: 5.,
-        },
-        custom: telemetry::TableType::default(),
-    };
+    );
 
-    AppDataWindow::from_size(data, 1, Duration::from_secs(120))
+    data.flat_map(|d| AppDataWindow::from_size(d, 1, Duration::from_secs(120)))
 }
 
 fn make_test_data_series(
     start: Timestamp, parallelism: Parallelism, source_records_lag_max: u32,
     mut gen: impl FnMut(i64) -> f64,
-) -> Vec<AppDataWindow<MetricCatalog>> {
+) -> Vec<Env<AppDataWindow<Env<MetricCatalog>>>> {
     let total = 30;
     (0..total)
         .into_iter()
@@ -274,11 +279,12 @@ fn make_decision(
         source_records_lag_max,
         records_per_sec,
     );
-    match decision {
-        DecisionType::Up => DecisionResult::ScaleUp(data),
-        DecisionType::Down => DecisionResult::ScaleDown(data),
-        DecisionType::NoAction => DecisionResult::NoAction(data),
-    }
+
+    data.map(|d| match decision {
+        DecisionType::Up => DecisionResult::ScaleUp(d),
+        DecisionType::Down => DecisionResult::ScaleDown(d),
+        DecisionType::NoAction => DecisionResult::NoAction(d),
+    })
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -337,7 +343,7 @@ async fn test_flink_planning_linear() {
         planning
             .update_performance_history(&make_decision(
                 DecisionType::Up,
-                last_data.recv_timestamp,
+                last_data.recv_timestamp(),
                 0,
                 Parallelism::new(2),
                 0,
@@ -350,7 +356,7 @@ async fn test_flink_planning_linear() {
         planning
             .update_performance_history(&make_decision(
                 DecisionType::Up,
-                last_data.recv_timestamp,
+                last_data.recv_timestamp(),
                 0,
                 Parallelism::new(4),
                 0,
@@ -363,7 +369,7 @@ async fn test_flink_planning_linear() {
         planning
             .update_performance_history(&make_decision(
                 DecisionType::Up,
-                last_data.recv_timestamp,
+                last_data.recv_timestamp(),
                 0,
                 Parallelism::new(10),
                 0,
@@ -396,9 +402,7 @@ async fn test_flink_planning_linear() {
     }
 
     tracing::info!("pushing decision...");
-    let decision = InDecision::ScaleUp(last_data);
-    let timestamp = decision.item().recv_timestamp;
-    let correlation_id = decision.item().correlation_id.clone();
+    let decision = last_data.map(DecisionResult::ScaleUp);
     assert_ok!(flow.push_decision(decision).await);
 
     tracing::info!("DMR-waiting for plan to reach sink...");
@@ -414,8 +418,6 @@ async fn test_flink_planning_linear() {
         assert_eq!(
             actual,
             vec![ScalePlan {
-                recv_timestamp: timestamp,
-                correlation_id: correlation_id.clone(),
                 current_job_parallelism: Parallelism::new(2),
                 target_job_parallelism: Parallelism::new(6),
                 current_nr_taskmanagers: NrReplicas::new(2),
@@ -429,8 +431,6 @@ async fn test_flink_planning_linear() {
         assert_eq!(
             actual,
             vec![ScalePlan {
-                recv_timestamp: timestamp,
-                correlation_id,
                 current_job_parallelism: Parallelism::new(2),
                 target_job_parallelism: Parallelism::new(5),
                 current_nr_taskmanagers: NrReplicas::new(2),
@@ -439,9 +439,7 @@ async fn test_flink_planning_linear() {
             }]
         )
     }
-
     // todo: assert performance history updated for 2 => 29. once extensible api design is worked
-    // out
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -491,20 +489,17 @@ async fn test_flink_planning_sine() {
         .await
     );
 
-    let _context = assert_ok!(
-        planning
-            .patch_context(PlanningContext {
-                correlation_id: Id::direct("planning_context", 123, "ctx"),
-                recv_timestamp: Timestamp::now(),
-                min_scaling_step: Some(min_scaling_step),
-                total_task_slots: 2,
-                free_task_slots: 0,
-                rescale_restart: HashMap::new(),
-                max_catch_up: None,
-                recovery_valid: None,
-            })
-            .await
-    );
+    let _context = assert_ok!(planning.patch_context(Env::from_parts(
+        MetaData::from_parts(Id::direct("planning_context", 123, "ctx"), Timestamp::now(),),
+        PlanningContext {
+            min_scaling_step: Some(min_scaling_step),
+            total_task_slots: 2,
+            free_task_slots: 0,
+            rescale_restart: HashMap::new(),
+            max_catch_up: None,
+            recovery_valid: None,
+        }
+    )));
 
     let start: DateTime<Utc> = fake::faker::chrono::raw::DateTimeBefore(EN, Utc::now()).fake();
     let data = make_test_data_series(start.into(), Parallelism::new(2), 1000, |tick| {
@@ -517,7 +512,7 @@ async fn test_flink_planning_sine() {
         planning
             .update_performance_history(&make_decision(
                 DecisionType::Up,
-                last_data.recv_timestamp,
+                last_data.recv_timestamp(),
                 1,
                 Parallelism::new(2),
                 0,
@@ -530,7 +525,7 @@ async fn test_flink_planning_sine() {
         planning
             .update_performance_history(&make_decision(
                 DecisionType::Up,
-                last_data.recv_timestamp,
+                last_data.recv_timestamp(),
                 2,
                 Parallelism::new(4),
                 0,
@@ -543,7 +538,7 @@ async fn test_flink_planning_sine() {
         planning
             .update_performance_history(&make_decision(
                 DecisionType::Up,
-                last_data.recv_timestamp,
+                last_data.recv_timestamp(),
                 3,
                 Parallelism::new(10),
                 0,
@@ -575,8 +570,7 @@ async fn test_flink_planning_sine() {
     }
 
     tracing::info!("pushing decision...");
-    let decision = InDecision::ScaleUp(last_data);
-    let timestamp = decision.item().recv_timestamp;
+    let decision = last_data.map(DecisionResult::ScaleUp);
     assert_ok!(flow.push_decision(decision).await);
 
     tracing::info!("DMR-waiting for plan to reach sink...");
@@ -592,8 +586,6 @@ async fn test_flink_planning_sine() {
         assert_eq!(
             actual,
             vec![ScalePlan {
-                recv_timestamp: timestamp,
-                correlation_id: CORRELATION_ID.clone(),
                 current_job_parallelism: Parallelism::new(2),
                 target_job_parallelism: Parallelism::new(8),
                 current_nr_taskmanagers: NrReplicas::new(2),
@@ -606,8 +598,6 @@ async fn test_flink_planning_sine() {
         assert_eq!(
             actual,
             vec![ScalePlan {
-                recv_timestamp: timestamp,
-                correlation_id: CORRELATION_ID.clone(),
                 current_job_parallelism: Parallelism::new(2),
                 target_job_parallelism: Parallelism::new(9),
                 current_nr_taskmanagers: NrReplicas::new(2),
@@ -618,7 +608,6 @@ async fn test_flink_planning_sine() {
     }
 
     // todo: assert performance history updated for 2 => 29. once extensible api design is worked
-    // out
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -681,7 +670,7 @@ async fn test_flink_planning_context_change() {
         planning
             .update_performance_history(&make_decision(
                 DecisionType::Up,
-                penultimate_data.recv_timestamp,
+                penultimate_data.recv_timestamp(),
                 1,
                 Parallelism::new(2),
                 0,
@@ -694,7 +683,7 @@ async fn test_flink_planning_context_change() {
         planning
             .update_performance_history(&make_decision(
                 DecisionType::Up,
-                last_data.recv_timestamp,
+                last_data.recv_timestamp(),
                 2,
                 Parallelism::new(4),
                 0,
@@ -707,7 +696,7 @@ async fn test_flink_planning_context_change() {
         planning
             .update_performance_history(&make_decision(
                 DecisionType::Up,
-                last_data.recv_timestamp,
+                last_data.recv_timestamp(),
                 3,
                 Parallelism::new(10),
                 0,
@@ -738,8 +727,7 @@ async fn test_flink_planning_context_change() {
     }
 
     tracing::info!("pushing penultimate decision...");
-    let decision = InDecision::ScaleUp(penultimate_data);
-    let penultimate_timestamp = decision.item().recv_timestamp;
+    let decision = penultimate_data.map(DecisionResult::ScaleUp);
     assert_ok!(flow.push_decision(decision).await);
 
     assert_matches!(
@@ -749,19 +737,20 @@ async fn test_flink_planning_context_change() {
 
     tracing::info!("DMR: pushing new context");
     assert_ok!(
-        flow.push_context(PlanningContext {
-            correlation_id: CORRELATION_ID.relabel::<PlanningContext>(),
-            recv_timestamp: Timestamp::now(),
-            total_task_slots: nr_taskmanagers.as_u32(),
-            free_task_slots: 0,
-            min_scaling_step: Some(100),
-            rescale_restart: maplit::hashmap! {
-                ScaleDirection::Up => Duration::from_millis(1),
-                ScaleDirection::Down => Duration::from_millis(1),
-            },
-            max_catch_up: Some(Duration::from_millis(2)),
-            recovery_valid: Some(Duration::from_millis(3)),
-        })
+        flow.push_context(Env::from_parts(
+            MetaData::default(),
+            PlanningContext {
+                total_task_slots: nr_taskmanagers.as_u32(),
+                free_task_slots: 0,
+                min_scaling_step: Some(100),
+                rescale_restart: maplit::hashmap! {
+                    ScaleDirection::Up => Duration::from_millis(1),
+                    ScaleDirection::Down => Duration::from_millis(1),
+                },
+                max_catch_up: Some(Duration::from_millis(2)),
+                recovery_valid: Some(Duration::from_millis(3)),
+            }
+        ))
         .await
     );
 
@@ -783,8 +772,8 @@ async fn test_flink_planning_context_change() {
     };
 
     tracing::info!("pushing last decision...");
-    let decision = InDecision::ScaleUp(last_data);
-    let _last_timestamp = decision.item().recv_timestamp;
+    let decision = last_data.map(DecisionResult::ScaleUp);
+    let _last_timestamp = decision.recv_timestamp();
     assert_ok!(flow.push_decision(decision).await);
 
     tracing::info!("DMR-waiting for plan to reach sink...");
@@ -800,8 +789,6 @@ async fn test_flink_planning_context_change() {
         assert_eq!(
             actual[0],
             ScalePlan {
-                recv_timestamp: penultimate_timestamp,
-                correlation_id: CORRELATION_ID.clone(),
                 current_job_parallelism: Parallelism::new(2),
                 target_job_parallelism: Parallelism::new(8),
                 current_nr_taskmanagers: NrReplicas::new(2),
@@ -815,8 +802,6 @@ async fn test_flink_planning_context_change() {
             assert_eq!(
                 actual[0],
                 ScalePlan {
-                    recv_timestamp: penultimate_timestamp,
-                    correlation_id: CORRELATION_ID.clone(),
                     current_job_parallelism: Parallelism::new(2),
                     target_job_parallelism: Parallelism::new(9),
                     current_nr_taskmanagers: NrReplicas::new(2),
@@ -829,8 +814,6 @@ async fn test_flink_planning_context_change() {
             assert_eq!(
                 actual[0],
                 ScalePlan {
-                    recv_timestamp: penultimate_timestamp,
-                    correlation_id: CORRELATION_ID.clone(),
                     current_job_parallelism: Parallelism::new(2),
                     target_job_parallelism: Parallelism::new(7),
                     current_nr_taskmanagers: NrReplicas::new(2),

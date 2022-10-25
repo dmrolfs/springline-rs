@@ -15,7 +15,8 @@ use proctor::{Ack, AppData, ProctorResult, ReceivedAt};
 use sysinfo::{ProcessExt, ProcessRefreshKind, System, SystemExt};
 use tokio::sync::{mpsc, oneshot};
 
-use crate::flink::{AppDataWindow, MetricCatalog, UpdateWindowMetrics, Window};
+use crate::flink::{UpdateWindowMetrics, Window};
+use crate::phases::{PhaseData, WindowData};
 use crate::settings::EngineSettings;
 
 pub type WindowApi = mpsc::UnboundedSender<WindowCmd>;
@@ -64,7 +65,7 @@ impl<In, Out> Debug for CollectMetricWindow<In, Out> {
     }
 }
 
-impl CollectMetricWindow<MetricCatalog, AppDataWindow<MetricCatalog>> {
+impl CollectMetricWindow<PhaseData, WindowData> {
     pub fn new(
         name: impl Into<String>, evaluation_duration: Option<Duration>, settings: &EngineSettings,
         system: Option<System>,

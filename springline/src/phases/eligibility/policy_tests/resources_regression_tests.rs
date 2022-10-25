@@ -53,7 +53,7 @@ fn test_eligibility_policy_nr_active_jobs_ae1d6126() {
     )
 }
 
-#[ignore]
+#[ignore = "work in progress"]
 #[test]
 fn test_eligibility_datetime() {
     let dt = Utc.ymd(21199, 11, 31);

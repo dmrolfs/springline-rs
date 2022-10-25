@@ -1,21 +1,22 @@
+use crate::phases::plan::PlanningMeasurement;
+use proctor::elements::{Point, RecordsPerSecond, Timestamp};
 use proctor::error::PlanError;
+use proctor::ReceivedAt;
+use serde::{Deserialize, Serialize};
+use std::cmp::Ordering;
+use std::fmt::Debug;
+
+#[cfg(test)]
+use mockall::{automock, predicate::*};
 
 mod calculator;
 mod least_squares;
 mod regression;
 mod ridge_regression;
 
-use std::cmp::Ordering;
-use std::fmt::Debug;
-
+use crate::Env;
 pub use calculator::{ForecastCalculator, ForecastInputs};
 pub use least_squares::{LeastSquaresWorkloadForecaster, SpikeSettings};
-#[cfg(test)]
-use mockall::{automock, predicate::*};
-use proctor::elements::{Point, RecordsPerSecond, Timestamp};
-use serde::{Deserialize, Serialize};
-
-use crate::phases::plan::PlanningMeasurement;
 
 #[cfg_attr(test, automock)]
 pub trait Forecaster: Debug + Sync + Send {
@@ -47,10 +48,10 @@ impl PartialOrd for WorkloadMeasurement {
     }
 }
 
-impl From<super::PlanningMeasurement> for WorkloadMeasurement {
-    fn from(measurement: PlanningMeasurement) -> Self {
+impl From<Env<PlanningMeasurement>> for WorkloadMeasurement {
+    fn from(measurement: Env<PlanningMeasurement>) -> Self {
         Self {
-            timestamp_secs: measurement.recv_timestamp.into(),
+            timestamp_secs: measurement.recv_timestamp().into(),
             workload: measurement.records_in_per_sec,
         }
     }

@@ -2,19 +2,8 @@ use std::fmt::Debug;
 use std::sync::Arc;
 use std::time::Duration;
 
-use async_trait::async_trait;
-use once_cell::sync::Lazy;
-use proctor::elements::{RecordsPerSecond, Timestamp};
-use proctor::error::PlanError;
-use proctor::graph::{Outlet, Port};
-use proctor::phases::plan::{PlanEvent, Planning};
-use prometheus::core::{AtomicU64, GenericGauge};
-use prometheus::Opts;
-use tokio::sync::{broadcast, Mutex};
-
-use crate::flink::{AppDataWindow, MetricCatalog, Parallelism};
-use crate::math;
-use crate::phases::decision::{DecisionOutcome, DecisionResult};
+use crate::flink::Parallelism;
+use crate::phases::decision::{DecisionDataT, DecisionOutcome, DecisionResult};
 use crate::phases::plan::benchmark::Benchmark;
 use crate::phases::plan::clipping::ClippingHandling;
 use crate::phases::plan::context::PlanningContext;
@@ -23,29 +12,32 @@ use crate::phases::plan::model::{ScaleParameters, ScalePlan};
 use crate::phases::plan::performance_history::PerformanceHistory;
 use crate::phases::plan::performance_repository::PerformanceRepository;
 use crate::phases::plan::{
-    BenchmarkRange, ClippingHandlingSettings, PlanningMeasurement,
+    BenchmarkRange, ClippingHandlingSettings, PlanningMeasurement, PlanningOutcome,
     PLANNING_CTX_FORECASTING_MAX_CATCH_UP_SECS, PLANNING_CTX_FORECASTING_RECOVERY_VALID_SECS,
     PLANNING_CTX_FORECASTING_RESTART_SECS, PLANNING_CTX_MIN_SCALING_STEP,
     PLANNING_FORECASTED_WORKLOAD,
 };
+use crate::phases::WindowDataT;
 use crate::settings::Settings;
-
-// todo: this needs to be worked into Plan stage...  Need to determine best design
-// todo: pub type FlinkPlanningApi = mpsc::UnboundedSender<FlinkPlanningCmd>;
-
-// todo: this needs to be worked into Plan stage...  Need to determine best design
-// todo: #[derive(Debug)]
-// todo: pub enum FlinkPlanningCmd {
-// todo:     GetHistory(oneshot::Sender<PerformanceHistory>),
-// todo: }
+use crate::{math, Env};
+use async_trait::async_trait;
+use once_cell::sync::Lazy;
+use pretty_snowflake::Label;
+use proctor::elements::{RecordsPerSecond, Timestamp};
+use proctor::error::PlanError;
+use proctor::graph::{Outlet, Port};
+use proctor::phases::plan::{PlanEvent, Planning};
+use proctor::ReceivedAt;
+use prometheus::core::{AtomicU64, GenericGauge};
+use prometheus::Opts;
+use tokio::sync::{broadcast, Mutex};
 
 pub type FlinkPlanningMonitor = broadcast::Receiver<Arc<FlinkPlanningEvent>>;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Label, PartialEq)]
 pub enum FlinkPlanningEvent {
-    // ContextChanged(Option<PlanningContext>),
     ObservationAdded {
-        observation: PlanningMeasurement,
+        observation: Env<PlanningMeasurement>,
         next_forecast: Option<(Timestamp, RecordsPerSecond)>,
     },
 }
@@ -95,10 +87,8 @@ pub struct FlinkPlanning<F: Forecaster> {
     pub forecast_calculator: ForecastCalculator<F>,
     performance_history: PerformanceHistory,
     performance_repository: Box<dyn PerformanceRepository>,
-    outlet: Option<Outlet<ScalePlan>>,
+    outlet: Option<Outlet<<Self as Planning>::Out>>,
     tx_monitor: broadcast::Sender<Arc<FlinkPlanningEvent>>,
-    // todo: tx_api: mpsc::UnboundedSender<FlinkPlanningCmd>,
-    // todo: rx_api: mpsc::UnboundedReceiver<FlinkPlanningCmd>,
 }
 
 impl<F: Forecaster> PartialEq for FlinkPlanning<F> {
@@ -127,8 +117,6 @@ impl<F: Forecaster> FlinkPlanning<F> {
             Self::initialize_performance_history(&name, performance_repository.as_ref(), &params)
                 .await?;
 
-        // todo: this needs to be worked into Plan stage...  Need to determine best design
-        // todo: let (tx_api, rx_api) = mpsc::unbounded_channel();
         let (tx_monitor, _) = broadcast::channel(num_cpus::get() * 2);
 
         Ok(Self {
@@ -143,11 +131,136 @@ impl<F: Forecaster> FlinkPlanning<F> {
             performance_repository,
             outlet: None,
             tx_monitor,
-            // todo: tx_api,
-            // todo: rx_api,
         })
     }
 
+    #[inline]
+    pub fn rx_monitor(&self) -> FlinkPlanningMonitor {
+        self.tx_monitor.subscribe()
+    }
+
+    #[tracing::instrument(level = "trace", skip(self, decision), fields(%decision))]
+    pub async fn update_performance_history(
+        &mut self, decision: &DecisionOutcome,
+    ) -> Result<(), PlanError> {
+        use crate::phases::decision::DecisionResult as DR;
+
+        let update_repository = match decision.as_ref() {
+            DR::NoAction(_) => false,
+            DR::ScaleUp(data) => {
+                let b = self.benchmark_from_data(data);
+                self.performance_history.add_upper_benchmark(b);
+                true
+            },
+            DR::ScaleDown(data) => {
+                let b = self.benchmark_from_data(data);
+                self.performance_history.add_lower_benchmark(b);
+                true
+            },
+        };
+
+        if update_repository {
+            Self::update_performance_history_metrics(&self.performance_history);
+
+            if let Err(err) = self
+                .performance_repository
+                .save(self.name.as_str(), &self.performance_history)
+                .await
+            {
+                tracing::error!(error=?err, job=%self.name, "failed to save planning history.");
+            }
+        }
+
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl<F: Forecaster> Planning for FlinkPlanning<F> {
+    type Context = Env<PlanningContext>;
+    type Decision = Env<DecisionResult<DecisionDataT>>;
+    type Observation = Env<PlanningMeasurement>;
+    type Out = PlanningOutcome;
+
+    fn set_outlet(&mut self, outlet: Outlet<Self::Out>) {
+        self.outlet = Some(outlet);
+    }
+
+    fn add_observation(&mut self, observation: Self::Observation) {
+        self.forecast_calculator.add_observation(observation.clone());
+        let next_forecast = self
+            .forecast_calculator
+            .calculate_next_workload(observation.recv_timestamp())
+            .map(|forecast| {
+                tracing::debug!(forecast_ts=%forecast.0, forecast_val=%forecast.1, "next observation forecasted.");
+                forecast
+            })
+            .map_err(|err| {
+                let (needed, window) = self.forecast_calculator.observations_needed();
+                match &err {
+                    PlanError::NotEnoughData { supplied, need } => {
+                        tracing::info!(
+                            supplied=%supplied, need=%need,
+                            "not enough data to forecast next observation - need: {needed} of {window}."
+                        );
+                    },
+                    e => {
+                        tracing::warn!(error = ?e, "error while forecasting next observation.");
+                    },
+                };
+
+                err
+            })
+            .ok();
+
+        let event = Arc::new(FlinkPlanningEvent::ObservationAdded { observation, next_forecast });
+        if let Err(err) = self.tx_monitor.send(event.clone()) {
+            tracing::warn!(error=?err, ?event, "failed to publish ObservationAdded event")
+        }
+    }
+
+    #[tracing::instrument(level = "trace", skip(self))]
+    fn patch_context(
+        &mut self, context: Self::Context,
+    ) -> Result<Option<PlanEvent<Self>>, PlanError> {
+        context.patch_inputs(&mut self.forecast_calculator.inputs);
+        self.total_task_slots = Some(context.total_task_slots);
+        self.free_task_slots = Some(context.free_task_slots);
+        tracing::debug!(
+            ?context, forecast_inputs=?self.forecast_calculator.inputs,
+            total_task_slots=?self.total_task_slots, free_task_slots=?self.free_task_slots,
+            "patched planning context inputs."
+        );
+
+        self.update_metrics();
+
+        Ok(Some(PlanEvent::ContextChanged(context)))
+    }
+
+    #[tracing::instrument(level = "trace", skip(self))]
+    async fn handle_decision(
+        &mut self, decision: Self::Decision,
+    ) -> Result<PlanEvent<Self>, PlanError> {
+        self.update_performance_history(&decision).await?;
+
+        if let DecisionResult::NoAction(_) = decision.as_ref() {
+            self.handle_do_not_scale_decision(decision)
+        } else {
+            self.handle_plan_for_scale_decision(decision).await
+        }
+    }
+
+    async fn close(self) -> Result<(), PlanError> {
+        tracing::trace!("closing flink planning.");
+        self.performance_repository.close().await?;
+        if let Some(mut o) = self.outlet {
+            o.close().await;
+        }
+        Ok(())
+    }
+}
+
+impl<F: Forecaster> FlinkPlanning<F> {
     #[tracing::instrument(level = "info", skip(repository, parameters))]
     async fn initialize_performance_history(
         name: &str, repository: &dyn PerformanceRepository, parameters: &PlanningParameters,
@@ -199,11 +312,6 @@ impl<F: Forecaster> FlinkPlanning<F> {
         PLANNING_PERFORMANCE_HISTORY_ENTRY_COUNT.set(nr_entries);
     }
 
-    #[inline]
-    pub fn rx_monitor(&self) -> FlinkPlanningMonitor {
-        self.tx_monitor.subscribe()
-    }
-
     fn update_metrics(&self) {
         PLANNING_CTX_MIN_SCALING_STEP.set(u64::from(self.min_scaling_step));
 
@@ -220,70 +328,36 @@ impl<F: Forecaster> FlinkPlanning<F> {
         }
     }
 
-    #[tracing::instrument(level = "trace", skip(self, decision), fields(%decision))]
-    pub async fn update_performance_history(
-        &mut self, decision: &DecisionOutcome,
-    ) -> Result<(), PlanError> {
-        use crate::phases::decision::DecisionResult as DR;
-
-        let update_repository = match decision {
-            DR::NoAction(_) => false,
-            DR::ScaleUp(data) => {
-                let b = self.benchmark_from_data(data);
-                self.performance_history.add_upper_benchmark(b);
-                true
-            },
-            DR::ScaleDown(data) => {
-                let b = self.benchmark_from_data(data);
-                self.performance_history.add_lower_benchmark(b);
-                true
-            },
-        };
-
-        if update_repository {
-            Self::update_performance_history_metrics(&self.performance_history);
-
-            if let Err(err) = self
-                .performance_repository
-                .save(self.name.as_str(), &self.performance_history)
-                .await
-            {
-                tracing::error!(error=?err, job=%self.name, "failed to save planning history.");
-            }
-        }
-
-        Ok(())
-    }
-
-    fn benchmark_from_data(&self, data: &AppDataWindow<MetricCatalog>) -> Benchmark {
+    fn benchmark_from_data(&self, data: &DecisionDataT) -> Benchmark {
         self.evaluation_window
             .map(|eval_window| Benchmark::from_window(data, eval_window))
             .unwrap_or_else(|| data.latest().into())
     }
 
-    #[tracing::instrument(level = "trace", skip(self, _metrics))]
+    #[tracing::instrument(level = "trace", skip(self))]
     fn handle_do_not_scale_decision(
-        &mut self, _metrics: &MetricCatalog,
-    ) -> Result<Option<ScalePlan>, PlanError> {
+        &mut self, decision: <Self as Planning>::Decision,
+    ) -> Result<PlanEvent<Self>, PlanError> {
         tracing::debug!("Decision made not scale cluster up or down.");
-        Ok(None)
+        Ok(PlanEvent::DecisionIgnored(decision))
     }
 
     #[tracing::instrument(
-        level = "debug",
-        skip(self, decision),
-        fields(planning_name=%self.name, ?decision),
+    level = "debug",
+    skip(self, decision),
+    fields(planning_name=%self.name, ?decision),
     )]
-    async fn plan_for_scale_decision(
-        &mut self, decision: DecisionOutcome,
-    ) -> Result<Option<ScalePlan>, PlanError> {
-        let plan = if self.forecast_calculator.have_enough_data() {
+    async fn handle_plan_for_scale_decision(
+        &mut self, decision: <Self as Planning>::Decision,
+    ) -> Result<PlanEvent<Self>, PlanError> {
+        let event = if self.forecast_calculator.have_enough_data() {
             let history = &self.performance_history;
-            let buffered_records = Self::buffered_lag_score(decision.item());
-            let current_job_parallelism = decision.item().health.job_nonsource_max_parallelism;
+            let decision_item = decision.item();
+            let buffered_records = Self::buffered_lag_score(decision_item);
+            let current_job_parallelism = decision_item.health.job_nonsource_max_parallelism;
 
             let forecasted_workload = self.forecast_calculator.calculate_target_rate(
-                decision.item().recv_timestamp,
+                decision.recv_timestamp(),
                 &decision.direction(),
                 buffered_records,
             )?;
@@ -304,26 +378,29 @@ impl<F: Forecaster> FlinkPlanning<F> {
             let params = ScaleParameters {
                 calculated_job_parallelism: required_job_parallelism,
                 clipping_point,
-                nr_task_managers: decision.item().cluster.nr_task_managers,
+                nr_task_managers: decision_item.cluster.nr_task_managers,
                 total_task_slots: self.total_task_slots,
                 free_task_slots: self.free_task_slots,
                 min_scaling_step: self.min_scaling_step,
             };
-            if let Some(plan) = ScalePlan::new(decision, params) {
+
+            let decision_plan = decision.clone().map(|d| ScalePlan::new(d, params)).transpose();
+            if let Some(plan) = decision_plan {
                 if let Some(ref mut outlet) = self.outlet {
                     tracing::info!(?plan, "pushing scale plan.");
                     outlet.send(plan.clone()).await?;
                 } else {
                     tracing::warn!(outlet=?self.outlet, ?plan, "wanted to push plan but could not since planning outlet is not set.");
                 }
-                Some(plan)
+
+                PlanEvent::DecisionPlanned(decision, plan)
             } else {
                 tracing::warn!(
                     ?required_job_parallelism, %current_job_parallelism,
                     "planning performance history suggests no change in job parallelism needed in spite of decision."
                 );
                 // todo: should we clear some of the history????
-                None
+                PlanEvent::DecisionIgnored(decision)
             }
         } else {
             tracing::debug!(
@@ -331,10 +408,10 @@ impl<F: Forecaster> FlinkPlanning<F> {
                 required=%self.forecast_calculator.observations_needed().1,
                 "passing on planning decision since more observations are required to forecast workflow."
             );
-            None
+            PlanEvent::DecisionIgnored(decision)
         };
 
-        Ok(plan)
+        Ok(event)
     }
 
     /// Assess and tune the job's clipping level, and return the current effective clipping point to
@@ -376,7 +453,7 @@ impl<F: Forecaster> FlinkPlanning<F> {
     /// different units; however the planning calculation, if the lag score is of a consistent type,
     /// remains the same.
     #[allow(clippy::missing_const_for_fn)]
-    fn buffered_lag_score(item: &MetricCatalog) -> f64 {
+    fn buffered_lag_score(item: &WindowDataT) -> f64 {
         // todo: how to support other options?
         match (
             item.flow.source_records_lag_max,
@@ -386,93 +463,6 @@ impl<F: Forecaster> FlinkPlanning<F> {
             (None, Some(lag)) => f64::from(lag),
             (None, None) => 0_f64,
         }
-    }
-}
-
-#[async_trait]
-impl<F: Forecaster> Planning for FlinkPlanning<F> {
-    type Context = PlanningContext;
-    type Decision = DecisionOutcome;
-    type Observation = PlanningMeasurement;
-    type Out = ScalePlan;
-
-    fn set_outlet(&mut self, outlet: Outlet<Self::Out>) {
-        self.outlet = Some(outlet);
-    }
-
-    fn add_observation(&mut self, observation: Self::Observation) {
-        self.forecast_calculator.add_observation(observation.clone());
-        let next_forecast = self
-            .forecast_calculator
-            .calculate_next_workload(observation.recv_timestamp)
-            .map(|forecast| {
-                tracing::debug!(forecast_ts=%forecast.0, forecast_val=%forecast.1, "next observation forecasted.");
-                forecast
-            })
-            .map_err(|err| {
-                let (needed, window) = self.forecast_calculator.observations_needed();
-                match &err {
-                    PlanError::NotEnoughData { supplied, need } => {
-                        tracing::info!(
-                            supplied=%supplied, need=%need,
-                            "not enough data to forecast next observation - need: {needed} of {window}."
-                        );
-                    },
-                    e => {
-                        tracing::warn!(error = ?e, "error while forecasting next observation.");
-                    },
-                };
-
-                err
-            })
-            .ok();
-
-        let event = Arc::new(FlinkPlanningEvent::ObservationAdded { observation, next_forecast });
-        if let Err(err) = self.tx_monitor.send(event.clone()) {
-            tracing::warn!(error=?err, ?event, "failed to publish ObservationAdded event")
-        }
-    }
-
-    #[tracing::instrument(level = "trace", skip(self))]
-    async fn patch_context(
-        &mut self, context: Self::Context,
-    ) -> Result<Option<PlanEvent<Self>>, PlanError> {
-        context.patch_inputs(&mut self.forecast_calculator.inputs);
-        self.total_task_slots = Some(context.total_task_slots);
-        self.free_task_slots = Some(context.free_task_slots);
-        tracing::debug!(
-            ?context, forecast_inputs=?self.forecast_calculator.inputs,
-            total_task_slots=?self.total_task_slots, free_task_slots=?self.free_task_slots,
-            "patched planning context inputs."
-        );
-
-        self.update_metrics();
-
-        Ok(Some(PlanEvent::<Self>::ContextChanged(context)))
-    }
-
-    #[tracing::instrument(level = "trace", skip(self))]
-    async fn handle_decision(
-        &mut self, decision: Self::Decision,
-    ) -> Result<Option<ScalePlan>, PlanError> {
-        self.update_performance_history(&decision).await?;
-
-        let plan = if let DecisionResult::NoAction(ref catalog) = decision {
-            self.handle_do_not_scale_decision(catalog)?
-        } else {
-            self.plan_for_scale_decision(decision).await?
-        };
-
-        Ok(plan)
-    }
-
-    async fn close(self) -> Result<(), PlanError> {
-        tracing::trace!("closing flink planning.");
-        self.performance_repository.close().await?;
-        if let Some(mut o) = self.outlet {
-            o.close().await;
-        }
-        Ok(())
     }
 }
 
@@ -493,20 +483,23 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
 
-    use chrono::{DateTime, TimeZone, Utc};
+    use crate::phases::plan::tests::{setup_signal_history, SignalType, NOW};
+    use chrono::{DateTime, Utc};
     use claim::*;
     use once_cell::sync::Lazy;
     use pretty_assertions::assert_eq;
     use pretty_snowflake::Id;
-    use proctor::elements::{telemetry, Timestamp};
-    use proctor::graph;
+    use proctor::elements::telemetry;
+    use proctor::{graph, MetaData};
     use tokio::sync::mpsc;
     use tokio::sync::mpsc::Receiver;
     use tokio::sync::Mutex;
     use tokio_test::block_on;
 
     use super::*;
-    use crate::flink::{ClusterMetrics, FlowMetrics, JobHealthMetrics};
+    use crate::flink::{
+        AppDataWindow, ClusterMetrics, FlowMetrics, JobHealthMetrics, MetricCatalog,
+    };
     use crate::model::NrReplicas;
     use crate::phases::plan::benchmark::*;
     use crate::phases::plan::forecast::*;
@@ -517,52 +510,58 @@ mod tests {
     #[allow(dead_code)]
     type Calculator = ForecastCalculator<LeastSquaresWorkloadForecaster>;
 
-    const STEP: i64 = 15;
-    const NOW: i64 = 1624061766 + (30 * STEP);
-
     static CORRELATION: Lazy<Id<MetricCatalog>> =
         Lazy::new(|| Id::direct("MetricCatalog", 13, "ABC"));
-    static METRICS: Lazy<MetricCatalog> = Lazy::new(|| MetricCatalog {
-        correlation_id: CORRELATION.clone(),
-        recv_timestamp: Utc.timestamp(NOW, 0).into(),
-        health: JobHealthMetrics {
-            job_nonsource_max_parallelism: Parallelism::new(4),
-            ..JobHealthMetrics::default()
-        },
-        flow: FlowMetrics {
-            // input_records_lag_max: 314.15926535897932384264,
-            source_records_lag_max: Some(314),
-            ..FlowMetrics::default()
-        },
-        cluster: ClusterMetrics {
-            nr_active_jobs: 1,
-            nr_task_managers: NrReplicas::new(4),
-            ..ClusterMetrics::default()
-        },
-        custom: telemetry::TableType::default(),
-    });
-    static SCALE_UP: Lazy<DecisionOutcome> = Lazy::new(|| {
-        DecisionResult::ScaleUp(AppDataWindow::from_size(
-            METRICS.clone(),
-            1,
-            Duration::from_secs(120),
-        ))
-    });
-    static SCALE_DOWN: Lazy<DecisionOutcome> = Lazy::new(|| {
-        DecisionResult::ScaleDown(AppDataWindow::from_size(
-            METRICS.clone(),
-            1,
-            Duration::from_secs(120),
-        ))
-    });
 
-    enum SignalType {
-        Sine,
-        Linear,
+    static META_DATA: Lazy<MetaData<MetricCatalog>> =
+        Lazy::new(|| MetaData::from_parts(CORRELATION.clone(), NOW.into()));
+
+    fn envelope_for<T: Label + Send>(content: T) -> Env<T> {
+        Env::from_parts(META_DATA.clone().relabel(), content)
     }
 
+    static METRICS: Lazy<Env<MetricCatalog>> = Lazy::new(|| {
+        Env::from_parts(
+            META_DATA.clone(),
+            MetricCatalog {
+                // correlation_id: CORRELATION.clone(),
+                // recv_timestamp: Utc.timestamp(NOW, 0).into(),
+                health: JobHealthMetrics {
+                    job_nonsource_max_parallelism: Parallelism::new(4),
+                    ..JobHealthMetrics::default()
+                },
+                flow: FlowMetrics {
+                    // input_records_lag_max: 314.15926535897932384264,
+                    source_records_lag_max: Some(314),
+                    ..FlowMetrics::default()
+                },
+                cluster: ClusterMetrics {
+                    nr_active_jobs: 1,
+                    nr_task_managers: NrReplicas::new(4),
+                    ..ClusterMetrics::default()
+                },
+                custom: telemetry::TableType::default(),
+            },
+        )
+    });
+    static SCALE_UP: Lazy<DecisionOutcome> = Lazy::new(|| {
+        envelope_for(DecisionResult::ScaleUp(AppDataWindow::from_size(
+            METRICS.clone(),
+            1,
+            Duration::from_secs(120),
+        )))
+    });
+    static SCALE_DOWN: Lazy<DecisionOutcome> = Lazy::new(|| {
+        envelope_for(DecisionResult::ScaleDown(AppDataWindow::from_size(
+            METRICS.clone(),
+            1,
+            Duration::from_secs(120),
+        )))
+    });
+
+    #[tracing::instrument(level = "info")]
     async fn setup_planning(
-        planning_name: &str, outlet: Outlet<ScalePlan>, signal_type: SignalType,
+        planning_name: &str, outlet: Outlet<Env<ScalePlan>>, signal_type: SignalType,
         total_task_slots: u32,
     ) -> anyhow::Result<TestPlanning> {
         let mut calc = ForecastCalculator::new(
@@ -581,31 +580,12 @@ mod tests {
         )
         .unwrap();
 
-        let points: Vec<(DateTime<Utc>, f64)> = match signal_type {
-            SignalType::Linear => {
-                let total = 30;
-                (1..=total)
-                    .into_iter()
-                    .map(|tick| {
-                        let x = Utc.timestamp(NOW - (total - tick) * STEP, 0);
-                        let y = tick as f64;
-                        (x, y)
-                    })
-                    .collect()
-            },
+        let points: Vec<(DateTime<Utc>, f64)> = setup_signal_history(signal_type);
 
-            SignalType::Sine => {
-                let total = 30;
-                (1..=total)
-                    .into_iter()
-                    .map(|tick| {
-                        let x = Utc.timestamp(NOW - (total - tick) * STEP, 0);
-                        let y = 1000. * ((tick as f64) / 15.).sin();
-                        (x, y)
-                    })
-                    .collect()
-            },
-        };
+        tracing::info!(
+            points=?points.iter().map(|(x, y)| (x.timestamp(), y)).collect::<Vec<_>>(),
+            "observations prepared"
+        );
 
         points.into_iter().for_each(|(ts, value)| {
             calc.add_observation(WorkloadMeasurement {
@@ -638,7 +618,7 @@ mod tests {
     #[tracing::instrument(level = "info", skip(planning, probe_rx))]
     async fn assert_scale_decision_scenario(
         label: &str, decision: &DecisionOutcome, planning: Arc<Mutex<TestPlanning>>,
-        probe_rx: &mut Receiver<ScalePlan>, expected: ScalePlan,
+        probe_rx: &mut Receiver<Env<ScalePlan>>, expected: Env<ScalePlan>,
     ) -> anyhow::Result<()> {
         tracing::warn!("testing {}...", label);
 
@@ -647,7 +627,7 @@ mod tests {
 
         let handle = tokio::spawn(async move {
             let p = &mut *planning_2.lock().await;
-            assert_ok!(p.plan_for_scale_decision(decision).await);
+            assert_ok!(p.handle_plan_for_scale_decision(decision).await);
         });
         assert_ok!(handle.await);
 
@@ -670,13 +650,13 @@ mod tests {
         let mut outlet_2 = outlet.clone();
         block_on(async move { outlet_2.attach("plan_outlet".into(), probe_tx).await });
 
-        let recv_timestamp = METRICS.recv_timestamp;
+        let recv_timestamp = METRICS.recv_timestamp();
         let block: anyhow::Result<()> = block_on(async move {
             let planning = Arc::new(Mutex::new(assert_ok!(
                 setup_planning(
                     "planning_1",
                     outlet,
-                    SignalType::Linear,
+                    SignalType::Linear { slope: 1.0 },
                     METRICS.cluster.nr_task_managers.as_u32()
                 )
                 .await
@@ -689,16 +669,17 @@ mod tests {
                     &SCALE_UP,
                     Arc::clone(&planning),
                     &mut probe_rx,
-                    ScalePlan {
-                        recv_timestamp,
-                        correlation_id: CORRELATION.clone(),
-                        current_job_parallelism: METRICS.health.job_nonsource_max_parallelism,
-                        target_job_parallelism: min_step
-                            + METRICS.health.job_nonsource_max_parallelism,
-                        target_nr_taskmanagers: min_step + METRICS.cluster.nr_task_managers,
-                        current_nr_taskmanagers: METRICS.cluster.nr_task_managers,
-                        task_slots_per_taskmanager: 1.0,
-                    },
+                    Env::from_parts(
+                        MetaData::from_parts(CORRELATION.relabel(), recv_timestamp),
+                        ScalePlan {
+                            current_job_parallelism: METRICS.health.job_nonsource_max_parallelism,
+                            target_job_parallelism: min_step
+                                + METRICS.health.job_nonsource_max_parallelism,
+                            target_nr_taskmanagers: min_step + METRICS.cluster.nr_task_managers,
+                            current_nr_taskmanagers: METRICS.cluster.nr_task_managers,
+                            task_slots_per_taskmanager: 1.0,
+                        }
+                    ),
                 )
                 .await
             );
@@ -709,16 +690,19 @@ mod tests {
                     &SCALE_DOWN,
                     Arc::clone(&planning),
                     &mut probe_rx,
-                    ScalePlan {
-                        recv_timestamp,
-                        correlation_id: CORRELATION.clone(),
-                        current_job_parallelism: METRICS.health.job_nonsource_max_parallelism,
-                        target_job_parallelism: METRICS.health.job_nonsource_max_parallelism
-                            - min_step,
-                        target_nr_taskmanagers: METRICS.cluster.nr_task_managers - min_step,
-                        current_nr_taskmanagers: METRICS.cluster.nr_task_managers,
-                        task_slots_per_taskmanager: 1.0
-                    },
+                    Env::from_parts(
+                        MetaData::from_parts(CORRELATION.relabel(), recv_timestamp),
+                        ScalePlan {
+                            // recv_timestamp,
+                            // correlation_id: CORRELATION.clone(),
+                            current_job_parallelism: METRICS.health.job_nonsource_max_parallelism,
+                            target_job_parallelism: METRICS.health.job_nonsource_max_parallelism
+                                - min_step,
+                            target_nr_taskmanagers: METRICS.cluster.nr_task_managers - min_step,
+                            current_nr_taskmanagers: METRICS.cluster.nr_task_managers,
+                            task_slots_per_taskmanager: 1.0
+                        }
+                    ),
                 )
                 .await
             );
@@ -732,15 +716,16 @@ mod tests {
                     &SCALE_DOWN,
                     Arc::clone(&planning),
                     &mut probe_rx,
-                    ScalePlan {
-                        recv_timestamp,
-                        correlation_id: CORRELATION.clone(),
-                        current_job_parallelism: METRICS.health.job_nonsource_max_parallelism,
-                        target_job_parallelism: Parallelism::MIN,
-                        target_nr_taskmanagers: NrReplicas::new(Parallelism::MIN.as_u32()),
-                        current_nr_taskmanagers: METRICS.cluster.nr_task_managers,
-                        task_slots_per_taskmanager: 1.0,
-                    },
+                    Env::from_parts(
+                        MetaData::from_parts(CORRELATION.relabel(), recv_timestamp),
+                        ScalePlan {
+                            current_job_parallelism: METRICS.health.job_nonsource_max_parallelism,
+                            target_job_parallelism: Parallelism::MIN,
+                            target_nr_taskmanagers: NrReplicas::new(Parallelism::MIN.as_u32()),
+                            current_nr_taskmanagers: METRICS.cluster.nr_task_managers,
+                            task_slots_per_taskmanager: 1.0,
+                        }
+                    ),
                 )
                 .await
             );
@@ -754,9 +739,9 @@ mod tests {
     }
 
     #[test]
-    fn test_flink_planning_handle_scale_decision() -> anyhow::Result<()> {
+    fn test_flink_linear_planning_handle_scale_decision() -> anyhow::Result<()> {
         once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
-        let main_span = tracing::info_span!("test_flink_planning_handle_scale_decision");
+        let main_span = tracing::info_span!("test_flink_linear_planning_handle_scale_decision");
         let _main_span_guard = main_span.enter();
 
         let (probe_tx, mut probe_rx) = mpsc::channel(8);
@@ -764,7 +749,133 @@ mod tests {
         let mut outlet_2 = outlet.clone();
         block_on(async move { outlet_2.attach("plan_outlet".into(), probe_tx).await });
 
-        let recv_timestamp = METRICS.recv_timestamp;
+        let recv_timestamp = METRICS.recv_timestamp();
+
+        let block: anyhow::Result<()> = block_on(async move {
+            let planning = Arc::new(Mutex::new(assert_ok!(
+                setup_planning(
+                    "planning_2",
+                    outlet,
+                    SignalType::Linear { slope: 1.0 },
+                    METRICS.cluster.nr_task_managers.as_u32()
+                )
+                .await
+            )));
+
+            let mut performance_history = PerformanceHistory::default();
+            performance_history
+                .add_upper_benchmark(Benchmark::new(Parallelism::new(1), 55.0.into()));
+            performance_history
+                .add_upper_benchmark(Benchmark::new(Parallelism::new(10), 1500.0.into()));
+            performance_history
+                .add_upper_benchmark(Benchmark::new(Parallelism::new(15), 2000.0.into()));
+            performance_history
+                .add_upper_benchmark(Benchmark::new(Parallelism::new(20), 5000.0.into()));
+            planning.lock().await.performance_history = performance_history;
+
+            assert_ok!(
+                assert_scale_decision_scenario(
+                    "scale-up with some history",
+                    &SCALE_UP,
+                    Arc::clone(&planning),
+                    &mut probe_rx,
+                    Env::from_parts(
+                        MetaData::from_parts(CORRELATION.relabel(), recv_timestamp),
+                        ScalePlan {
+                            current_job_parallelism: METRICS.health.job_nonsource_max_parallelism,
+                            target_job_parallelism: Parallelism::new(12),
+                            target_nr_taskmanagers: NrReplicas::new(12),
+                            current_nr_taskmanagers: METRICS.cluster.nr_task_managers,
+                            task_slots_per_taskmanager: 1.0,
+                        },
+                    ),
+                )
+                .await
+            );
+
+            Ok(())
+        });
+
+        block?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_flink_constant_planning_handle_scale_decision() -> anyhow::Result<()> {
+        once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
+        let main_span = tracing::info_span!("test_flink_constant_planning_handle_scale_decision");
+        let _main_span_guard = main_span.enter();
+
+        let (probe_tx, mut probe_rx) = mpsc::channel(8);
+        let outlet = Outlet::new("plan outlet", graph::PORT_DATA);
+        let mut outlet_2 = outlet.clone();
+        block_on(async move { outlet_2.attach("plan_outlet".into(), probe_tx).await });
+
+        let recv_timestamp = METRICS.recv_timestamp();
+
+        let block: anyhow::Result<()> = block_on(async move {
+            let planning = Arc::new(Mutex::new(assert_ok!(
+                setup_planning(
+                    "planning_2",
+                    outlet,
+                    SignalType::Constant { rate: 1472.0 },
+                    METRICS.cluster.nr_task_managers.as_u32()
+                )
+                .await
+            )));
+
+            let mut performance_history = PerformanceHistory::default();
+            performance_history
+                .add_upper_benchmark(Benchmark::new(Parallelism::new(1), 55.0.into()));
+            performance_history
+                .add_upper_benchmark(Benchmark::new(Parallelism::new(10), 1500.0.into()));
+            performance_history
+                .add_upper_benchmark(Benchmark::new(Parallelism::new(15), 2000.0.into()));
+            performance_history
+                .add_upper_benchmark(Benchmark::new(Parallelism::new(20), 5000.0.into()));
+            planning.lock().await.performance_history = performance_history;
+
+            assert_ok!(
+                assert_scale_decision_scenario(
+                    "scale-up with some history",
+                    &SCALE_UP,
+                    Arc::clone(&planning),
+                    &mut probe_rx,
+                    Env::from_parts(
+                        MetaData::from_parts(CORRELATION.relabel(), recv_timestamp),
+                        ScalePlan {
+                            current_job_parallelism: METRICS.health.job_nonsource_max_parallelism,
+                            target_job_parallelism: Parallelism::new(12),
+                            target_nr_taskmanagers: NrReplicas::new(12),
+                            current_nr_taskmanagers: METRICS.cluster.nr_task_managers,
+                            task_slots_per_taskmanager: 1.0,
+                        },
+                    ),
+                )
+                .await
+            );
+
+            Ok(())
+        });
+
+        block?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_flink_sine_planning_handle_scale_decision() -> anyhow::Result<()> {
+        once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
+        let main_span = tracing::info_span!("test_flink_sine_planning_handle_scale_decision");
+        let _main_span_guard = main_span.enter();
+
+        let (probe_tx, mut probe_rx) = mpsc::channel(8);
+        let outlet = Outlet::new("plan outlet", graph::PORT_DATA);
+        let mut outlet_2 = outlet.clone();
+        block_on(async move { outlet_2.attach("plan_outlet".into(), probe_tx).await });
+
+        let recv_timestamp = METRICS.recv_timestamp();
 
         let block: anyhow::Result<()> = block_on(async move {
             let planning = Arc::new(Mutex::new(assert_ok!(
@@ -794,15 +905,16 @@ mod tests {
                     &SCALE_UP,
                     Arc::clone(&planning),
                     &mut probe_rx,
-                    ScalePlan {
-                        recv_timestamp,
-                        correlation_id: CORRELATION.clone(),
-                        current_job_parallelism: METRICS.health.job_nonsource_max_parallelism,
-                        target_job_parallelism: Parallelism::new(16),
-                        target_nr_taskmanagers: NrReplicas::new(16),
-                        current_nr_taskmanagers: METRICS.cluster.nr_task_managers,
-                        task_slots_per_taskmanager: 1.0,
-                    },
+                    Env::from_parts(
+                        MetaData::from_parts(CORRELATION.relabel(), recv_timestamp),
+                        ScalePlan {
+                            current_job_parallelism: METRICS.health.job_nonsource_max_parallelism,
+                            target_job_parallelism: Parallelism::new(16),
+                            target_nr_taskmanagers: NrReplicas::new(16),
+                            current_nr_taskmanagers: METRICS.cluster.nr_task_managers,
+                            task_slots_per_taskmanager: 1.0,
+                        },
+                    ),
                 )
                 .await
             );
@@ -847,18 +959,16 @@ mod tests {
                 ..expected
             };
 
-            let context = PlanningContext {
-                correlation_id: Id::direct("planning", 17, "ABS"),
-                recv_timestamp: Timestamp::now(),
+            let context = Env::new(PlanningContext {
                 total_task_slots: 11,
                 free_task_slots: 3,
                 min_scaling_step: None,
                 rescale_restart: expected.direction_restart.clone(),
                 max_catch_up: None,
                 recovery_valid: Some(expected.valid_offset),
-            };
+            });
 
-            let event = assert_some!(assert_ok!(planning.patch_context(context.clone()).await));
+            let event = assert_some!(assert_ok!(planning.patch_context(context.clone())));
             assert_eq!(event, PlanEvent::ContextChanged(context));
             assert_eq!(planning.forecast_calculator.inputs, expected);
             assert_eq!(assert_some!(planning.total_task_slots), 11);

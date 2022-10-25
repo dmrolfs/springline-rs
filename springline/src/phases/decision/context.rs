@@ -2,22 +2,18 @@ use std::collections::HashSet;
 use std::fmt::{self, Debug};
 
 use oso::PolarClass;
-use pretty_snowflake::{Id, Label};
+use pretty_snowflake::Label;
 use proctor::elements::telemetry::UpdateMetricsFn;
-use proctor::elements::{telemetry, Telemetry, Timestamp};
+use proctor::elements::{telemetry, Telemetry};
 use proctor::error::DecisionError;
 use proctor::phases::sense::SubscriptionRequirements;
-use proctor::{Correlation, ProctorContext};
+use proctor::ProctorContext;
 use serde::{Deserialize, Serialize};
 
 use crate::metrics::UpdateMetrics;
 
 #[derive(PolarClass, Label, Clone, Serialize, Deserialize)]
 pub struct DecisionContext {
-    // auto-filled
-    pub correlation_id: Id<Self>,
-    pub recv_timestamp: Timestamp,
-
     #[polar(attribute)]
     #[serde(flatten)] // flatten enables sense of extra properties
     pub custom: telemetry::TableType,
@@ -25,19 +21,7 @@ pub struct DecisionContext {
 
 impl Debug for DecisionContext {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("DecisionContext")
-            .field("correlation_id", &self.correlation_id)
-            .field("recv_timestamp", &self.recv_timestamp.to_string())
-            .field("custom", &self.custom)
-            .finish()
-    }
-}
-
-impl Correlation for DecisionContext {
-    type Correlated = Self;
-
-    fn correlation(&self) -> &Id<Self::Correlated> {
-        &self.correlation_id
+        f.debug_struct("DecisionContext").field("custom", &self.custom).finish()
     }
 }
 
@@ -54,6 +38,7 @@ impl SubscriptionRequirements for DecisionContext {
 }
 
 impl ProctorContext for DecisionContext {
+    type ContextData = Self;
     type Error = DecisionError;
 
     fn custom(&self) -> telemetry::TableType {
@@ -99,8 +84,6 @@ mod tests {
     #[test]
     fn test_serde_flink_decision_context_token() {
         let context = DecisionContext {
-            correlation_id: Id::direct("DecisionContext", 0, "A"),
-            recv_timestamp: Timestamp::new(0, 0),
             custom: maplit::hashmap! {
                 "custom_foo".to_string() => "fred flintstone".into(),
                 "custom_bar".to_string() => "The Happy Barber".into(),
@@ -109,18 +92,6 @@ mod tests {
 
         let mut expected = vec![
             Token::Map { len: None },
-            Token::Str("correlation_id"),
-            Token::Struct { name: "Id", len: 2 },
-            Token::Str("snowflake"),
-            Token::I64(0),
-            Token::Str("pretty"),
-            Token::Str("A"),
-            Token::StructEnd,
-            Token::Str("recv_timestamp"),
-            Token::TupleStruct { name: "Timestamp", len: 2 },
-            Token::I64(0),
-            Token::U32(0),
-            Token::TupleStructEnd,
             Token::Str("custom_foo"),
             Token::Str("fred flintstone"),
             Token::Str("custom_bar"),
@@ -133,8 +104,8 @@ mod tests {
         });
 
         if result.is_err() {
-            expected.swap(13, 15);
-            expected.swap(14, 16);
+            expected.swap(1, 3);
+            expected.swap(2, 4);
             assert_tokens(&context, expected.as_slice());
         }
     }
@@ -144,8 +115,6 @@ mod tests {
         once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
 
         let data: Telemetry = maplit::hashmap! {
-            "correlation_id" => Id::<DecisionContext>::direct("DecisionContext", 0, "A").to_telemetry(),
-            "recv_timestamp" => Timestamp::new(0, 0).to_telemetry(),
             "foo" => "bar".to_telemetry(),
         }
         .into_iter()
@@ -156,8 +125,6 @@ mod tests {
         let actual = assert_ok!(data.try_into::<DecisionContext>());
         tracing::info!(?actual, "converted into FlinkDecisionContext");
         let expected = DecisionContext {
-            correlation_id: Id::direct("DecisionContext", 0, "A"),
-            recv_timestamp: Timestamp::new(0, 0),
             custom: maplit::hashmap! {"foo".to_string() => "bar".into(),},
         };
         tracing::info!("actual: {:?}", actual);

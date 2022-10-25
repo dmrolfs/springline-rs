@@ -3,9 +3,9 @@ use proctor::phases::policy_phase::PolicyPhase;
 use proctor::phases::sense::{ClearinghouseSubscriptionAgent, SubscriptionChannel};
 use proctor::SharedString;
 
-use crate::phases;
 use crate::settings::EligibilitySettings;
 use crate::Result;
+use crate::{phases, Env};
 
 #[cfg(test)]
 mod policy_tests;
@@ -26,24 +26,25 @@ pub use policy::{EligibilityPolicy, EligibilityTemplateData};
 
 use crate::flink::{AppDataWindow, MetricCatalog};
 
-pub type EligibilityData = AppDataWindow<MetricCatalog>;
-pub type EligibilityOutcome = EligibilityData;
+pub type EligibilityDataT = AppDataWindow<Env<MetricCatalog>>;
+pub type EligibilityData = Env<EligibilityDataT>;
+pub type EligibilityOutcome = Env<EligibilityDataT>;
 pub type EligibilityApi =
-    proctor::elements::PolicyFilterApi<EligibilityContext, EligibilityTemplateData>;
+    proctor::elements::PolicyFilterApi<Env<EligibilityContext>, EligibilityTemplateData>;
 pub type EligibilityMonitor =
-    proctor::elements::PolicyFilterMonitor<EligibilityData, EligibilityContext>;
+    proctor::elements::PolicyFilterMonitor<EligibilityData, Env<EligibilityContext>>;
 pub type EligibilityPhase = (
     Box<
         PolicyPhase<
             EligibilityData,
             EligibilityOutcome,
-            EligibilityContext,
+            Env<EligibilityContext>,
             EligibilityTemplateData,
         >,
     >,
     SubscriptionChannel<EligibilityContext>,
 );
-pub type EligibilityEvent = PolicyFilterEvent<EligibilityData, EligibilityContext>;
+pub type EligibilityEvent = PolicyFilterEvent<EligibilityData, Env<EligibilityContext>>;
 
 #[tracing::instrument(level = "trace", skip(agent))]
 pub async fn make_eligibility_phase<A>(

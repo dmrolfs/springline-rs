@@ -16,7 +16,6 @@ proptest! {
         scenario in PolicyScenario::builder()
         .template_data(prop::option::of(
             DecisionTemplateDataStrategyBuilder::default()
-            // .just_max_healthy_relative_lag_velocity(Some(0.5))
             .finish()
         ))
         .items(
@@ -25,8 +24,10 @@ proptest! {
                 arb_range_duration(30..=600),
                 arb_perturbed_duration(Duration::from_secs(15), 0.2),
                 |recv_ts| {
+                    arb_metadata(recv_ts)
+                    .prop_flat_map(|metadata| {
                     MetricCatalogStrategyBuilder::new()
-                        .just_recv_timestamp(recv_ts)
+                        .just_metadata(metadata)
                         .flow(
                             FlowMetricsStrategyBuilder::new()
                                 // .just_source_records_lag_max(Some(recv_ts.as_secs() as u32))
@@ -35,7 +36,7 @@ proptest! {
                                 .finish()
                         )
                         .finish()
-                        .boxed()
+                    }).boxed()
                 }
             )
         )

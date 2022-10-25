@@ -21,8 +21,6 @@ pub fn register_metrics(registry: &Registry) -> Result<()> {
     registry.register(Box::new(engine::ENGINE_SYSTEM_FREE_SWAP.clone()))?;
     registry.register(Box::new(engine::ENGINE_SYSTEM_USED_SWAP.clone()))?;
 
-    registry.register(Box::new(flink::METRIC_CATALOG_TIMESTAMP.clone()))?;
-
     registry.register(Box::new(flink::METRIC_CATALOG_JOB_HEALTH_UPTIME.clone()))?;
     registry.register(Box::new(
         flink::METRIC_CATALOG_JOB_HEALTH_NR_RESTARTS.clone(),

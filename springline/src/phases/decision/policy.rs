@@ -1,14 +1,15 @@
 use std::collections::{HashMap, HashSet};
 
+use crate::Env;
 use once_cell::sync::Lazy;
 use oso::{Oso, PolarClass, PolarValue};
 use proctor::elements::{
-    PolicyContributor, PolicySource, PolicySubscription, QueryPolicy, QueryResult, Telemetry,
-    Timestamp,
+    telemetry, PolicyContributor, PolicySource, PolicySubscription, QueryPolicy, QueryResult,
+    Telemetry,
 };
 use proctor::error::PolicyError;
 use proctor::phases::sense::TelemetrySubscription;
-use proctor::{ProctorContext, ProctorIdGenerator};
+use proctor::ProctorContext;
 use prometheus::{IntCounterVec, Opts};
 use serde::{Deserialize, Serialize};
 use validator::Validate;
@@ -17,7 +18,7 @@ use super::context::DecisionContext;
 use crate::flink::AppDataWindow;
 use crate::metrics::UpdateMetrics;
 use crate::phases::decision::result::DECISION_DIRECTION;
-use crate::phases::decision::DecisionData;
+use crate::phases::decision::{DecisionData, DecisionDataT};
 use crate::phases::REASON;
 use crate::settings::DecisionSettings;
 
@@ -145,8 +146,8 @@ impl PolicySubscription for DecisionPolicy {
 }
 
 impl QueryPolicy for DecisionPolicy {
-    type Args = (Self::Item, Self::Context, PolarValue, PolarValue);
-    type Context = DecisionContext;
+    type Args = (DecisionDataT, DecisionContext, PolarValue, PolarValue);
+    type Context = Env<DecisionContext>;
     type Item = DecisionData;
     type TemplateData = DecisionTemplateData;
 
@@ -185,8 +186,8 @@ impl QueryPolicy for DecisionPolicy {
 
     fn make_query_args(&self, item: &Self::Item, context: &Self::Context) -> Self::Args {
         (
-            item.clone(),
-            context.clone(),
+            item.as_ref().clone(),
+            context.as_ref().clone(),
             PolarValue::Variable(DECISION_DIRECTION.to_string()),
             PolarValue::Variable(REASON.to_string()),
         )
@@ -200,15 +201,9 @@ impl QueryPolicy for DecisionPolicy {
         if !self.required_subscription_fields.is_empty() {
             None
         } else {
-            // todo: context corr-id is generally created in clearinghouse, but this is special case,
-            // until consideration about how to pull in generator settings, use this to start.
-            let mut gen: ProctorIdGenerator<DecisionContext> = ProctorIdGenerator::default();
-
-            Some(Self::Context {
-                recv_timestamp: Timestamp::now(),
-                correlation_id: gen.next_id(),
-                custom: HashMap::default(),
-            })
+            Some(Env::new(DecisionContext {
+                custom: telemetry::TableType::default(),
+            }))
         }
     }
 }
