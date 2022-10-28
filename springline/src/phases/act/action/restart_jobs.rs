@@ -1,7 +1,3 @@
-use std::collections::{HashMap, HashSet};
-use std::marker::PhantomData;
-use std::time::Duration;
-
 use crate::Env;
 use async_trait::async_trait;
 use either::{Either, Left, Right};
@@ -9,9 +5,12 @@ use futures_util::stream::FuturesUnordered;
 use futures_util::{FutureExt, StreamExt, TryFutureExt};
 use http::{Method, StatusCode};
 use once_cell::sync::Lazy;
-use proctor::error::UrlError;
+use proctor::error::{MetricLabel, UrlError};
 use proctor::{AppData, Correlation};
 use prometheus::{IntCounter, Opts};
+use std::collections::{HashMap, HashSet};
+use std::marker::PhantomData;
+use std::time::Duration;
 use tracing_futures::Instrument;
 use url::Url;
 
@@ -26,6 +25,9 @@ use crate::settings::FlinkActionSettings;
 
 pub const ACTION_LABEL: &str = "restart_jobs";
 
+//todo: RestartJobs has grown way too complex for this structure. Refactor into an action that spawns
+// saga actors to manage state transitions as they progress through process, recoevery, etc. and
+// aggregate saga outcomes into final action outcome.
 #[derive(Debug)]
 pub struct RestartJobs<P> {
     pub restart_timeout: Duration,
@@ -120,7 +122,7 @@ where
                 if !remaining_sources.is_empty() {
                     tracing::warn!(
                         nr_restart_failures=%remaining_sources.len(), ?remaining_sources,
-                        nr_original_replicas=%plan.current_replicas(),
+                        nr_original_parallelism=%plan.current_job_parallelism(),
                         "Flink restart failures occurred - attempting to restart at original parallelism"
                     );
 
@@ -129,30 +131,36 @@ where
                     let mut initial_failures = HashMap::with_capacity(nr_initial_failures);
                     for (j, s, e) in remaining_sources {
                         initial_failures.insert(j, e);
-                        savepoints.insert(s);
+                        if let Some(s0) = s {
+                            savepoints.insert(s0);
+                        }
                     }
 
-                    let jars: Vec<_> = initial_failures.keys().cloned().collect();
-                    let restart_parallelism = Parallelism::new(plan.current_replicas().into());
-                    let repeat_failures = self
-                        .try_jar_restarts_for_parallelism(
-                            restart_parallelism,
-                            &jars,
-                            savepoints,
-                            plan,
-                            session,
-                        )
-                        .await;
-
-                    if !repeat_failures.is_empty() {
-                        outcome = self
-                            .handle_remaining_restart_failures(
-                                repeat_failures,
-                                initial_failures,
+                    if !savepoints.is_empty() {
+                        let jars: Vec<_> = initial_failures.keys().cloned().collect();
+                        let restart_parallelism = plan.current_job_parallelism();
+                        let repeat_failures = self
+                            .try_jar_restarts_for_parallelism(
+                                restart_parallelism,
+                                &jars,
+                                savepoints,
                                 plan,
                                 session,
                             )
                             .await;
+
+                        if !repeat_failures.is_empty() {
+                            outcome = self
+                                .handle_remaining_restart_failures(
+                                    repeat_failures,
+                                    initial_failures,
+                                    plan,
+                                    session,
+                                )
+                                .await;
+                        }
+                    } else {
+                        outcome = Err(ActError::NoSavepointForRestart { initial_failures });
                     }
                 }
             } else {
@@ -165,6 +173,7 @@ where
             };
         };
 
+        tracing::info!(?outcome, "final restart outcome");
         outcome
     }
 }
@@ -215,63 +224,59 @@ where
     async fn try_jar_restarts_for_parallelism<'s>(
         &self, parallelism: Parallelism, jars: &[JarId], mut locations: HashSet<SavepointLocation>,
         plan: &'s P, session: &'s Env<ActionSession>,
-    ) -> Vec<(JarId, SavepointLocation, ActError)> {
+    ) -> Vec<(JarId, Option<SavepointLocation>, ActError)> {
         use crate::flink::JobState as JS;
 
         let correlation = session.correlation();
-        let span =
-            tracing::info_span!("try_jar_restarts_for_parallelism", %parallelism, ?correlation);
 
-        let jar_restarts = self
-            .try_all_jar_restarts(jars, &mut locations, parallelism, session)
-            .instrument(span.clone())
+        let jar_restarts: Vec<(JarId, Either<(JobId, SavepointLocation), FlinkError>)> = self
+            .try_all_jar_restarts(jars, &mut locations, parallelism, plan, session)
+            .instrument(
+                tracing::info_span!("try_jar_restarts_for_parallelism", %parallelism, %correlation),
+            )
             .await;
 
-        let job_sources: HashMap<JobId, (JarId, SavepointLocation)> = match jar_restarts {
-            Ok(pairings) if pairings.is_empty() => {
-                let track = format!("{}::try_jar_restart::no_pairings", self.label());
-                tracing::warn!(
-                    %parallelism, jar_ids=?jars, savepoint_location=?locations, %track,
-                    "no successful restart found for jars, savepoint locations and parallelism - manual intervention may be necessary."
-                );
+        let mut failed: Vec<(JarId, Option<SavepointLocation>, ActError)> = Vec::new();
 
-                act::track_act_errors(
-                    &track,
-                    Option::<&ActError>::None,
-                    ActErrorDisposition::Ignored,
-                    plan,
-                );
-                HashMap::default()
-            },
-            Ok(pairings) => {
-                let job_pairings = pairings
-                    .into_iter()
-                    .map(|(job, jar, savepoint)| (job, (jar, savepoint)))
-                    .collect();
-                tracing::debug!(?job_pairings, "successful restart initiation for pairings.");
-                job_pairings
-            },
-            Err(err) => self
-                .handle_error_on_restart_requests(err, plan, session)
-                .await
-                .unwrap_or_else(|_err| HashMap::default()),
+        let restarted_jobs = self.do_handle_jar_restarts(jar_restarts, &mut failed);
+        if restarted_jobs.is_empty() {
+            let track = format!(
+                "{}::try_jar_restart::no_restart_jar_location_pairings",
+                self.label()
+            );
+            tracing::warn!(
+                %parallelism, jar_ids=?jars, savepoint_location=?locations, %track, ?failed, %correlation,
+                "no successful restart found for jars, savepoint locations and parallelism - manual intervention may be necessary."
+            );
+
+            act::track_act_errors(
+                &track,
+                Option::<&ActError>::None,
+                ActErrorDisposition::Failed,
+                plan,
+            );
         };
-        let jobs: Vec<JobId> = job_sources.keys().cloned().collect();
 
-        let restarted = self.block_until_all_jobs_restarted(&jobs, session).instrument(span).await;
-
-        let mut failed: Vec<(JarId, SavepointLocation, ActError)> = Vec::new();
+        let jobs: Vec<JobId> = restarted_jobs.keys().cloned().collect();
+        let restarted = self
+            .block_until_all_jobs_restarted(&jobs, session)
+            .instrument(
+                tracing::info_span!("block_until_all_jobs_restarted", ?jobs, %parallelism, %correlation),
+            )
+            .await;
         for (job, outcome) in restarted {
             match outcome {
                 Err(err) => {
                     if let Err(e) = self.handle_error_on_restart_confirm(err, plan, session).await {
-                        if let Some((jar_id, savepoint_location)) = job_sources.get(&job).cloned() {
-                            failed.push((jar_id, savepoint_location, e.into()));
+                        if let Some((jar_id, savepoint_location)) =
+                            restarted_jobs.get(&job).cloned()
+                        {
+                            failed.push((jar_id, Some(savepoint_location), e.into()));
                         }
                     }
                 },
                 Ok(state) if state == JS::Failing || state == JS::Failed => {
-                    if let Some((jar_id, savepoint_location)) = job_sources.get(&job) {
+                    if let Some((jar_id, savepoint_location)) = restarted_jobs.get(&job) {
                         if let Err(e) = self
                             .handle_failed_job_restart(
                                 job,
@@ -282,7 +287,7 @@ where
                             )
                             .await
                         {
-                            failed.push((jar_id.clone(), savepoint_location.clone(), e));
+                            failed.push((jar_id.clone(), Some(savepoint_location.clone()), e));
                         }
                     }
                 },
@@ -301,78 +306,103 @@ where
     #[tracing::instrument(level = "trace", skip(session))]
     async fn try_all_jar_restarts(
         &self, jars: &[JarId], locations: &mut HashSet<SavepointLocation>,
-        parallelism: Parallelism, session: &Env<ActionSession>,
-    ) -> Result<Vec<(JobId, JarId, SavepointLocation)>, FlinkError> {
-        let mut pairings = Vec::with_capacity(jars.len());
+        parallelism: Parallelism, plan: &P, session: &Env<ActionSession>,
+    ) -> Vec<(JarId, Either<(JobId, SavepointLocation), FlinkError>)> {
         let correlation = session.correlation();
+        let mut jar_restarts = Vec::with_capacity(jars.len());
 
         for jar_id in jars {
-            match self
-                .try_jar_restart(jar_id, locations.clone(), parallelism, session)
-                .await?
-            {
-                Some((job_id, used_location)) => {
+            tracing::warn!(
+                ?locations,
+                ?parallelism,
+                "DMR: attempting to restart jar: {jar_id:?}"
+            );
+            let restart_attempt =
+                self.try_jar_restart(jar_id, locations, parallelism, session).await;
+            match restart_attempt {
+                Ok(Some((job_id, used_location))) => {
                     locations.remove(&used_location);
-                    pairings.push((job_id, jar_id.clone(), used_location));
+                    tracing::warn!(
+                        ?used_location, ?jar_id, updated_locations=?locations, ?jar_restarts,
+                        "DMR: restarting jar with job_id={job_id:?}"
+                    );
+                    jar_restarts.push((jar_id.clone(), Left((job_id, used_location))));
                 },
-                None => {
+                Ok(None) => {
                     track_missed_jar_restarts();
                     tracing::warn!(
-                        ?locations, %parallelism, ?correlation,
+                        ?locations, %parallelism, %correlation,
                         "no savepoint locations match to restart jar -- manual intervention may be required for jar({jar_id}) if it corresponds to an active job."
                     );
+                },
+                Err(error) => {
+                    let track = format!("{}::jar_restart", error.label());
+                    tracing::error!(?error, ?jar_id, savepoint_locations=?locations, "failure requesting jar restart for savepoint.");
+                    act::track_act_errors(&track, Some(&error), ActErrorDisposition::Failed, plan);
+                    jar_restarts.push((jar_id.clone(), Right(error)));
                 },
             };
         }
 
-        Ok(pairings)
+        // tracing::warn!(?jar_restarts, "DMR: tried to restart jars.");
+        jar_restarts
     }
 
     #[tracing::instrument(level = "trace", skip(session))]
     async fn try_jar_restart(
-        &self, jar: &JarId, locations: HashSet<SavepointLocation>, parallelism: Parallelism,
+        &self, jar: &JarId, locations: &HashSet<SavepointLocation>, parallelism: Parallelism,
         session: &Env<ActionSession>,
     ) -> Result<Option<(JobId, SavepointLocation)>, FlinkError> {
-        let mut job_savepoint = None;
         let correlation = session.correlation();
-
+        let mut job_savepoint = None;
+        let mut restart_error = None;
         for location in locations {
             match self
-                .try_jar_restart_for_location(jar, &location, parallelism, session)
-                .await?
+                .try_jar_restart_for_location(jar, location, parallelism, session)
+                .await
             {
-                Left(job_id) => {
+                Ok(job_id) => {
                     tracing::info!(%job_id, %parallelism, ?correlation, "restarted job from jar({jar}) + savepoint({location}) pair.");
-                    job_savepoint = Some((job_id, location));
+                    job_savepoint = Some((job_id, location.clone()));
                     break;
                 },
-                Right(http_status) => {
-                    tracing::info!(
-                        %parallelism, ?correlation, ?http_status,
-                        "Flink rejected jar({jar}) + savepoint({location}) pair. Trying next savepoint location."
+                // Ok(Right(http_status)) => {
+                //     tracing::info!(
+                //         %parallelism, ?correlation, ?http_status,
+                //         "Flink rejected jar({jar}) + savepoint({location}) pair. Trying next savepoint location."
+                //     );
+                //     WORK HERBE PLACE ERROR client_error or server_error
+                // },
+                Err(error) => {
+                    tracing::error!(
+                        ?error,
+                        ?jar,
+                        ?location,
+                        "restart attempt failed for jar+location"
                     );
+                    restart_error = Some(error);
                 },
             }
         }
 
-        Ok(job_savepoint)
+        restart_error.map(Err).unwrap_or(Ok(job_savepoint))
     }
 
-    #[tracing::instrument(level = "trace", skip(session))]
+    #[tracing::instrument(level = "debug", skip(session))]
     async fn try_jar_restart_for_location(
         &self, jar: &JarId, location: &SavepointLocation, parallelism: Parallelism,
         session: &Env<ActionSession>,
-    ) -> Result<Either<JobId, StatusCode>, FlinkError> {
+    ) -> Result<JobId, FlinkError> {
         let correlation = session.correlation();
         let step_label = super::action_step(self.label(), "try_restart_jar_for_location");
         let url = Self::restart_jar_url_for(&session.flink, jar)?;
         let span = tracing::info_span!("act::restart_jobs - restart_jar", %url, ?correlation, %jar, %location, %parallelism);
 
-        let parallelism: u32 = parallelism.into();
         let body = restart::RestartJarRequestBody {
             savepoint_path: Some(location.clone()),
             parallelism: Some(
-                usize::try_from(parallelism).map_err(|err| FlinkError::Other(err.into()))?,
+                usize::try_from(parallelism.as_u32())
+                    .map_err(|err| FlinkError::Other(err.into()))?,
             ),
             allow_non_restored_state: self.allow_non_restored_state,
             entry_class: session.entry_class.clone(),
@@ -382,7 +412,7 @@ where
         };
         tracing::debug!(request_body=?body, ?correlation, ?url, "restarting jar({jar}) with savepoint({location:?})...");
 
-        let result: Result<Either<JobId, StatusCode>, FlinkError> = session
+        let restart_result = session
             .flink
             .client()
             .request(Method::POST, url.clone())
@@ -395,9 +425,9 @@ where
             .and_then(|response| {
                 let status = response.status();
                 if !status.is_success() {
-                    tracing::info!(
+                    tracing::warn!(
                         ?response,
-                        "jar+savepoint pair rejected by Flink - following error is informational only"
+                        "jar+savepoint pair rejected by Flink - see response detail in following log entry."
                     );
                 }
                 flink::log_response(&step_label, &url, &response);
@@ -406,7 +436,12 @@ where
                     .text()
                     .map(move |body: reqwest::Result<String>| {
                         body.map(|b| {
-                            tracing::debug!(body=%b, "Flink restart jar with savepoint response body.");
+                            if status.is_client_error() || status.is_server_error() {
+                                tracing::error!(?status, body=%b, "Flink restart jar failed with response body.");
+                            } else {
+                                tracing::debug!(?status, body=%b, "Flink restart jar with savepoint response body.");
+                            }
+
                             (b, status)
                         })
                     })
@@ -414,25 +449,34 @@ where
             })
             .instrument(span)
             .await
-            .and_then(|(body, status)| Self::do_assess_restart_response(body.as_str(), status));
+            .and_then(|(body, status)| Self::do_assess_restart_response(jar, location, parallelism, body.as_str(), status));
+
+        // tracing::warn!(?restart_result, "DMR: flink restart job post request");
 
         flink::track_result(
             "restart_jar",
-            result,
+            restart_result,
             "trying jar+savepoint pair",
-            &correlation,
+            correlation,
         )
     }
 
     fn do_assess_restart_response(
-        body: &str, status: StatusCode,
-    ) -> Result<Either<JobId, StatusCode>, FlinkError> {
-        if status.is_success() {
-            serde_json::from_str(body)
-                .map(|r: restart::RestartJarResponseBody| Left(r.job_id))
-                .map_err(|err| err.into())
-        } else {
-            Ok(Right(status))
+        jar_id: &JarId, location: &SavepointLocation, parallelism: Parallelism, body: &str,
+        status: StatusCode,
+    ) -> Result<JobId, FlinkError> {
+        match status {
+            s if s.is_success() => serde_json::from_str(body)
+                .map(|r: restart::RestartJarResponseBody| r.job_id)
+                .map_err(|err| err.into()),
+            s if s.is_client_error() || s.is_server_error() => Err(FlinkError::FailedJobRestart {
+                status,
+                jar_id: jar_id.clone(),
+                location: location.clone(),
+                parallelism,
+                cause: body.to_string(),
+            }),
+            _ => Err(FlinkError::UnsupportedRestartResponse { status, cause: body.to_string() }),
         }
     }
 
@@ -578,18 +622,27 @@ where
         }
     }
 
-    #[tracing::instrument(level = "warn", skip(self, plan, session))]
-    async fn handle_error_on_restart_requests<'s>(
-        &self, error: FlinkError, plan: &'s P, session: &'s Env<ActionSession>,
-    ) -> Result<HashMap<JobId, (JarId, SavepointLocation)>, FlinkError> {
-        flink::track_flink_errors("restart_jobs::restart", &error);
-        let track = format!("{}::restart_requests", self.label());
-        tracing::error!(
-            ?error, ?plan, ?session, correlation=?session.correlation(), %track,
-            "failure while trying to restart jobs -- may need manual intervention"
-        );
-        act::track_act_errors(&track, Some(&error), ActErrorDisposition::Failed, plan);
-        Err(error)
+    #[tracing::instrument(level = "warn", skip(self, pairings, failed_restarts))]
+    fn do_handle_jar_restarts<'s>(
+        &self, pairings: Vec<(JarId, Either<(JobId, SavepointLocation), FlinkError>)>,
+        failed_restarts: &mut Vec<(JarId, Option<SavepointLocation>, ActError)>,
+    ) -> HashMap<JobId, (JarId, SavepointLocation)> {
+        let restarted_jobs = pairings
+            .into_iter()
+            .filter_map(
+                |(jar, job_savepoint_or_error)| match job_savepoint_or_error {
+                    Left((job, savepoint)) => Some((job, (jar, savepoint))),
+                    Right(error) => {
+                        failed_restarts.push((jar, None, error.into()));
+                        tracing::debug!(?failed_restarts, "FAILED job and savepoint",);
+                        None
+                    },
+                },
+            )
+            .collect();
+
+        tracing::debug!(?restarted_jobs, ?failed_restarts, "job restart outcomes.");
+        restarted_jobs
     }
 
     #[tracing::instrument(level = "warn", skip(self, plan, session))]
@@ -628,7 +681,7 @@ where
 
     #[tracing::instrument(level = "warn", skip(self, plan, session))]
     async fn handle_remaining_restart_failures<'s>(
-        &self, repeat_failures: Vec<(JarId, SavepointLocation, ActError)>,
+        &self, repeat_failures: Vec<(JarId, Option<SavepointLocation>, ActError)>,
         initial_failures: HashMap<JarId, ActError>, plan: &'s P, session: &'s Env<ActionSession>,
     ) -> Result<(), ActError> {
         use ActError as ActE;
@@ -667,7 +720,9 @@ where
             );
             act::track_act_errors(&track, Some(&e2), ActErrorDisposition::Failed, plan);
             errors.push(e2.into());
-            jar_savepoints.push((j, s));
+            if let Some(s0) = s {
+                jar_savepoints.push((j, s0));
+            }
         }
 
         Err(ActE::JobRestart {

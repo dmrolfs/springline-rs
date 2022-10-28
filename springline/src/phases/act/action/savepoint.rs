@@ -156,7 +156,7 @@ where
             tasks.push(job_info);
         }
 
-        Self::block_for_all_savepoints(tasks, &session.correlation()).await
+        Self::block_for_all_savepoints(tasks, session.correlation()).await
     }
 
     #[tracing::instrument(level = "info", skip(self, job_triggers, session))]
@@ -175,7 +175,7 @@ where
             tasks.push(cancelled);
         }
 
-        Self::block_for_all_cancellations(tasks, &session.correlation())
+        Self::block_for_all_cancellations(tasks, session.correlation())
             .instrument(tracing::debug_span!("block for all job cancellations"))
             .await
             .map(|job_ids| job_ids.into_iter().collect())

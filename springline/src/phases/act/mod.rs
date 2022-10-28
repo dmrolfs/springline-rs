@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::time::Duration;
 
 use either::{Either, Left, Right};
@@ -13,6 +14,7 @@ use crate::phases::plan::{PlanningOutcome, ScaleActionPlan};
 
 mod action;
 mod scale_actuator;
+use crate::flink::JarId;
 pub use action::ActionOutcome;
 pub use action::ACTION_TOTAL_DURATION;
 pub use action::FLINK_MISSED_JAR_RESTARTS;
@@ -38,6 +40,11 @@ pub enum ActError {
 
     #[error("Job failed during attempted restart.")]
     FailedJob(crate::flink::JobId, crate::flink::SavepointLocation),
+
+    #[error("no savepoint available for restart after initial attempts:{initial_failures:?}")]
+    NoSavepointForRestart {
+        initial_failures: HashMap<JarId, ActError>,
+    },
 
     #[error("failure restarting Flink savepoints for jars: {jar_savepoints:?}: {sources:?}")]
     JobRestart {
@@ -68,6 +75,7 @@ impl MetricLabel for ActError {
             Self::Flink(e) => Right(Box::new(e)),
             Self::Savepoint { .. } => Left("savepoint".into()),
             Self::FailedJob(_, _) => Left("restart::flink".into()),
+            Self::NoSavepointForRestart { .. } => Left("restart::no_savepoints".into()),
             Self::JobRestart { .. } => Left("restart::jar".into()),
             Self::Port(e) => Right(Box::new(e)),
             Self::ActionPrecondition { action, .. } => Left(action.into()),

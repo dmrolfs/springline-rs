@@ -308,7 +308,7 @@ impl<F: Forecaster> FlinkPlanning<F> {
     #[inline]
     fn update_performance_history_metrics(history: &PerformanceHistory) {
         let nr_entries: u64 = u64::try_from(history.len()).unwrap_or(u64::MAX);
-        tracing::warn!(?history, %nr_entries, "DMR: updating performance history entry count metric");
+        tracing::info!(?history, %nr_entries, "updating performance history entry count metric");
         PLANNING_PERFORMANCE_HISTORY_ENTRY_COUNT.set(nr_entries);
     }
 
@@ -366,14 +366,9 @@ impl<F: Forecaster> FlinkPlanning<F> {
             let required_job_parallelism =
                 history.job_parallelism_for_workload(forecasted_workload);
 
-            let dmr_prior_clipping_point = self.clipping_handling.lock().await.clipping_point();
+            let _dmr_prior_clipping_point = self.clipping_handling.lock().await.clipping_point();
             let clipping_point = self.assess_for_job_clipping(&decision).await;
-            let dmr_set_clipping_point = self.clipping_handling.lock().await.clipping_point();
-            tracing::warn!(
-                assessed_clipping_point=?clipping_point,
-                prior_clipping_point=?dmr_prior_clipping_point, set_clipping_point=?dmr_set_clipping_point,
-                "DMR: COMPARE ASSESSED TO PRIOR AND SET - assert SET=ASSESSED: {}", clipping_point == dmr_set_clipping_point
-            );
+            let _dmr_set_clipping_point = self.clipping_handling.lock().await.clipping_point();
 
             let params = ScaleParameters {
                 calculated_job_parallelism: required_job_parallelism,
@@ -436,15 +431,8 @@ impl<F: Forecaster> FlinkPlanning<F> {
         let mut handling = self.clipping_handling.lock().await;
         if is_clipping {
             handling.note_clipping(item.health.job_max_parallelism);
-            let effective_clipping_point = handling.clipping_point();
-            tracing::warn!(
-                ?effective_clipping_point, item_p=%item.health.job_max_parallelism,
-                "DMR: COMPARE HANDLING SAVED CLIPPING TO CELL ASSIGNMENT"
-            );
-            effective_clipping_point
-        } else {
-            handling.clipping_point()
         }
+        handling.clipping_point()
     }
 
     /// An attempt at cross-platform (wrt FlinkKafkaConsumer and FlinkKinesisConsumer at least)

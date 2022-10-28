@@ -367,6 +367,7 @@ impl Monitor {
         ActionFeedback { is_rescaling: true, ..ActionFeedback::default() }
     }
 
+    #[tracing::instrument(level = "debug", skip(self))]
     async fn do_handle_rescale_executed(
         &self, plan: &PlanningOutcome, outcomes: &[ActionOutcome], now: Timestamp,
     ) -> ActionFeedback {
@@ -386,39 +387,32 @@ impl Monitor {
             tracing::warn!(error=?err, correlation=%plan.correlation(), "failed to clear window on rescaling.");
         }
 
-        let rescale_restart = outcomes
+        let rescale_total_duration = outcomes.iter().find_map(|o| {
+            if o.label == ACTION_TOTAL_DURATION {
+                Some(o.duration)
+            } else {
+                None
+            }
+        });
+
+        let rescale_task_sum = outcomes
             .iter()
-            .find_map(|o| {
-                if o.label == ACTION_TOTAL_DURATION {
-                    Some(Some(o.duration))
-                } else {
-                    None
-                }
-            })
-            .unwrap_or_else(|| {
-                if !outcomes.is_empty() {
-                    let leaf_outcomes: Vec<&ActionOutcome> =
-                        outcomes.iter().filter(|o| o.is_leaf).collect();
-                    let leaf_total = leaf_outcomes.iter().map(|o| o.duration).sum();
-                    tracing::debug!(
-                        ?leaf_outcomes,
-                        "summing duration of leaf steps: {leaf_total:?}"
-                    );
-                    Some(leaf_total)
-                } else {
-                    tracing::warn!(
-                        ?outcomes,
-                        "cannot update restart time since no outcomes were recorded."
-                    );
-                    None
-                }
-            })
-            .map(|duration| maplit::hashmap! { plan.direction() => duration })
-            .unwrap_or_else(HashMap::new);
+            .filter_map(|o| if o.is_leaf { Some(o.duration) } else { None })
+            .sum();
+
+        let rescale_restart = maplit::hashmap! {
+            plan.direction() => rescale_total_duration.unwrap_or(rescale_task_sum),
+        };
+
+        let last_deployment = now.as_utc();
+        tracing::info!(
+            %last_deployment, ?rescale_restart, ?rescale_total_duration, ?rescale_task_sum,
+            "Feeding summary back into springline"
+        );
 
         ActionFeedback {
             is_rescaling: false,
-            last_deployment: Some(now.as_utc()),
+            last_deployment: Some(last_deployment),
             rescale_restart,
         }
     }

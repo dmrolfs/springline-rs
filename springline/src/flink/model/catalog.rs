@@ -213,7 +213,7 @@ impl Monoid for JobHealthMetrics {
             job_max_parallelism: Parallelism::new(0),
             job_source_max_parallelism: Parallelism::new(0),
             job_nonsource_max_parallelism: Parallelism::new(0),
-            ..JobHealthMetrics::default()
+            ..Self::default()
         }
     }
 }
