@@ -312,19 +312,19 @@ where
         let mut jar_restarts = Vec::with_capacity(jars.len());
 
         for jar_id in jars {
-            tracing::warn!(
+            tracing::info!(
                 ?locations,
                 ?parallelism,
-                "DMR: attempting to restart jar: {jar_id:?}"
+                "attempting to restart jar: {jar_id:?}"
             );
             let restart_attempt =
                 self.try_jar_restart(jar_id, locations, parallelism, session).await;
             match restart_attempt {
                 Ok(Some((job_id, used_location))) => {
                     locations.remove(&used_location);
-                    tracing::warn!(
+                    tracing::info!(
                         ?used_location, ?jar_id, updated_locations=?locations, ?jar_restarts,
-                        "DMR: restarting jar with job_id={job_id:?}"
+                        "restarting jar with job_id={job_id:?}"
                     );
                     jar_restarts.push((jar_id.clone(), Left((job_id, used_location))));
                 },
@@ -344,7 +344,6 @@ where
             };
         }
 
-        // tracing::warn!(?jar_restarts, "DMR: tried to restart jars.");
         jar_restarts
     }
 

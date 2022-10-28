@@ -73,25 +73,15 @@ impl Debug for GovernanceContext {
 
 impl GovernanceContext {
     #[inline]
-    pub fn cluster_size_in_bounds(&self, cluster_size: NrReplicas) -> NrReplicas {
+    pub fn clamp_cluster_size(&self, cluster_size: NrReplicas) -> NrReplicas {
         let above_min = NrReplicas::max(self.min_cluster_size, cluster_size);
-        let result = NrReplicas::min(above_min, self.max_cluster_size);
-        tracing::warn!(
-            ?self,
-            "DMR: cluster_size_in_bounds({cluster_size}) = {result}"
-        );
-        result
+        NrReplicas::min(above_min, self.max_cluster_size)
     }
 
     #[inline]
-    pub fn parallelism_in_bounds(&self, parallelism: Parallelism) -> Parallelism {
+    pub fn clamp_parallelism(&self, parallelism: Parallelism) -> Parallelism {
         let above_min = Parallelism::max(self.min_parallelism, parallelism);
-        let result = Parallelism::min(above_min, self.max_parallelism);
-        tracing::warn!(
-            ?self,
-            "DMR: parallelism_in_bounds({parallelism}) = {result}"
-        );
-        result
+        Parallelism::min(above_min, self.max_parallelism)
     }
 }
 

@@ -152,7 +152,6 @@ where
 
                 Some(incoming_context) = self.context_inlet.recv() => {
                     self.handle_context(&mut context, incoming_context)?;
-                    tracing::warn!("DMR: AFTER HANDLE CONTEXT: {context:?}");
                 },
 
                 else => {
@@ -310,35 +309,35 @@ where
         D: fmt::Debug + fmt::Display + Copy + PartialOrd + Ord + SaturatingSub + Into<u32>,
     {
         let mut adjusted_target = target;
-        tracing::debug!("DMR: AAA - adjusted_target={adjusted_target}");
+        tracing::debug!("AAA - adjusted_target={adjusted_target}");
 
         let min_step = context.min_scaling_step;
         let max_step = context.max_scaling_step;
         let diff = Self::abs_diff(current, adjusted_target);
         let effective_step = if diff < min_step {
-            tracing::debug!(prior_step_adj_target=%adjusted_target, "DMR: BBB.1 - diff[{diff}] < min_step[{min_step}] => min_step");
+            tracing::debug!(prior_step_adj_target=%adjusted_target, "BBB.1 - diff[{diff}] < min_step[{min_step}] => min_step");
             min_step
         } else if max_step < diff {
-            tracing::debug!(prior_step_adj_target=%adjusted_target, "DMR: BBB.2 - max_step[{max_step}] < diff[{diff}] => max_step");
+            tracing::debug!(prior_step_adj_target=%adjusted_target, "BBB.2 - max_step[{max_step}] < diff[{diff}] => max_step");
             max_step
         } else {
-            tracing::debug!(prior_step_adj_target=%adjusted_target, "DMR: BBB.3 - => diff[{diff}]");
+            tracing::debug!(prior_step_adj_target=%adjusted_target, "BBB.3 - => diff[{diff}]");
             diff
         };
-        tracing::debug!(%effective_step, %adjusted_target, "DMR: CCC");
+        tracing::debug!(%effective_step, %adjusted_target, "CCC");
         adjusted_target = from_current(effective_step);
 
         tracing::debug!(
-            "DMR: DDD - max(min_bound[{min_bound}, adjusted_target[{adjusted_target}] = {}",
+            "DDD - max(min_bound[{min_bound}, adjusted_target[{adjusted_target}] = {}",
             D::max(min_bound, adjusted_target)
         );
         adjusted_target = D::max(min_bound, adjusted_target);
         tracing::debug!(
-            "DMR: EEE - min(adjusted_target[{adjusted_target}, max_bound[{max_bound}] = {}",
+            "EEE - min(adjusted_target[{adjusted_target}, max_bound[{max_bound}] = {}",
             D::min(adjusted_target, max_bound)
         );
         adjusted_target = D::min(adjusted_target, max_bound);
-        tracing::debug!("DMR: FFF - final adjusted_target={adjusted_target}");
+        tracing::debug!("FFF - final adjusted_target={adjusted_target}");
         adjusted_target
     }
 
@@ -359,7 +358,7 @@ where
 
             let adjusted_target_nr_taskmanagers = proposed
                 .replicas_for_parallelism(proposed.target_job_parallelism())
-                .map(|nr| context.cluster_size_in_bounds(nr))
+                .map(|nr| context.clamp_cluster_size(nr))
                 .unwrap_or_else(|| {
                     Self::fit_target_into_constraints(
                         proposed.current_replicas(),
@@ -401,7 +400,7 @@ where
 
             let adjusted_target_nr_taskmanagers = proposed
                 .replicas_for_parallelism(proposed.target_job_parallelism())
-                .map(|nr| context.cluster_size_in_bounds(nr))
+                .map(|nr| context.clamp_cluster_size(nr))
                 .unwrap_or_else(|| {
                     Self::fit_target_into_constraints(
                         proposed.current_replicas(),

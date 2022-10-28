@@ -355,7 +355,7 @@ impl Monitor {
 
         if let Some(ref tx) = self.tx_feedback {
             tracing::debug!(?action_feedback, "feedback springline per scale action");
-            let action_telemetry = action_feedback.into();
+            let action_telemetry: Telemetry = action_feedback.into();
             let push_cmd = ActorSourceCmd::push(tx, action_telemetry.clone())
                 .instrument(tracing::debug_span!(
                     "push_action_feedback_to_springline",

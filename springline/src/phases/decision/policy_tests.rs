@@ -194,7 +194,6 @@ proptest! {
         let main_span = tracing::info_span!("test_arb_timestamp_window", ?timestamps, nr_timestamps=%timestamps.len(), ?window);
         let _main_span_guard = main_span.enter();
 
-        tracing::info!(?timestamps, ?window, "DMR: timestamp window[{}]", timestamps.len());
         let mut last = None;
         if let Some((first, last)) = timestamps.first().zip(timestamps.last()) {
             let diff = *last - *first;

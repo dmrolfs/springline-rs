@@ -246,11 +246,11 @@ impl MetricCatalogStrategyBuilder {
         let cluster = self.cluster.unwrap_or_else(|| arb_cluster_metrics().boxed());
         let custom = self.custom.unwrap_or_else(|| arb_telemetry_table_type().boxed());
 
-        (metadata, health, flow, cluster, custom)
-            .prop_map(|(metadata, health, flow, cluster, custom)| {
-                tracing::info!(%metadata, ?health, ?flow, ?cluster, ?custom, "DMR: making metric catalog...");
-                Env::from_parts(metadata, MetricCatalog { health, flow, cluster, custom, })
-            })
+        (metadata, health, flow, cluster, custom).prop_map(
+            |(metadata, health, flow, cluster, custom)| {
+                Env::from_parts(metadata, MetricCatalog { health, flow, cluster, custom })
+            },
+        )
     }
 }
 

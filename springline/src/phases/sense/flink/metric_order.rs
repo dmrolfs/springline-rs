@@ -203,14 +203,8 @@ impl MetricOrder {
                 ))
                 .map_err(|err| SenseError::Stage(err.into()))?;
 
-                // let dmr_name = name.clone();
-                // let dmr_spec = spec.clone();
                 Box::new(move |candidate| {
                     let pos_match = pos_spec.matches(&candidate.position);
-                    // tracing::trace!(?candidate, "DMR: operator[{}]::[{}] position match = {pos_match}", dmr_name, dmr_spec.metric);
-                    // let regex_match = regex.is_match(candidate.metric);
-                    // tracing::warn!(?regex, candidate=%candidate.metric, "DMR: operator[{}]::[{}] regex match = {regex_match}", dmr_name, dmr_spec.metric);
-
                     pos_match && regex.is_match(candidate.metric)
                 })
             },

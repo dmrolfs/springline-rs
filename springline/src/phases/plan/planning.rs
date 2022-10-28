@@ -366,9 +366,7 @@ impl<F: Forecaster> FlinkPlanning<F> {
             let required_job_parallelism =
                 history.job_parallelism_for_workload(forecasted_workload);
 
-            let _dmr_prior_clipping_point = self.clipping_handling.lock().await.clipping_point();
             let clipping_point = self.assess_for_job_clipping(&decision).await;
-            let _dmr_set_clipping_point = self.clipping_handling.lock().await.clipping_point();
 
             let params = ScaleParameters {
                 calculated_job_parallelism: required_job_parallelism,

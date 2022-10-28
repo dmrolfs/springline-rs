@@ -137,7 +137,6 @@ impl DecisionTemplateDataStrategyBuilder {
     }
 
     pub fn finish(self) -> impl Strategy<Value = DecisionTemplateData> {
-        tracing::info!(?self, "DMR: building DecisionTemplateData strategy");
         let basis = Just(self.basis.unwrap_or("decision_basis".to_string()));
         let max_healthy_relative_lag_velocity = self
             .max_healthy_relative_lag_velocity
