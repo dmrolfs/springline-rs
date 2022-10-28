@@ -1,19 +1,3 @@
-use std::collections::HashMap;
-use std::sync::Arc;
-use std::time::Duration;
-
-use chrono::{DateTime, Utc};
-use enumflags2::BitFlags;
-use once_cell::sync::Lazy;
-use proctor::elements::telemetry::TableType;
-use proctor::elements::{RecordsPerSecond, Telemetry, Timestamp, FORMAT};
-use proctor::graph::stage::{ActorSourceApi, ActorSourceCmd};
-use proctor::phases::plan::{PlanEvent, PlanMonitor};
-use proctor::phases::sense::{ClearinghouseApi, ClearinghouseCmd};
-use proctor::Correlation;
-use prometheus::core::{AtomicU64, GenericGauge};
-use prometheus::{IntCounter, IntGauge, Opts};
-
 use crate::engine::service::{EngineCmd, EngineServiceApi, Health};
 use crate::engine::{PhaseFlag, PhaseFlags};
 use crate::flink;
@@ -31,6 +15,21 @@ use crate::phases::plan::{
     PlanningStrategy,
 };
 use crate::phases::{decision, WindowApi, WindowCmd};
+use chrono::{DateTime, Utc};
+use enumflags2::BitFlags;
+use once_cell::sync::Lazy;
+use proctor::elements::telemetry::TableType;
+use proctor::elements::{RecordsPerSecond, Telemetry, Timestamp, FORMAT};
+use proctor::graph::stage::{ActorSourceApi, ActorSourceCmd};
+use proctor::phases::plan::{PlanEvent, PlanMonitor};
+use proctor::phases::sense::{ClearinghouseApi, ClearinghouseCmd};
+use proctor::Correlation;
+use prometheus::core::{AtomicU64, GenericGauge};
+use prometheus::{IntCounter, IntGauge, Opts};
+use std::collections::HashMap;
+use std::sync::Arc;
+use std::time::Duration;
+use tracing::Instrument;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct PlanningFeedback {
@@ -338,7 +337,7 @@ impl Monitor {
         }
     }
 
-    #[tracing::instrument(level = "trace", skip(self, _loaded))]
+    #[tracing::instrument(level = "debug", skip(self, _loaded))]
     async fn handle_action_event(
         &self, event: Arc<ActEvent<PlanningOutcome>>, _loaded: &mut BitFlags<PhaseFlag>,
     ) {
@@ -355,8 +354,15 @@ impl Monitor {
         };
 
         if let Some(ref tx) = self.tx_feedback {
-            tracing::trace!(?action_feedback, "feedback springline per scale action");
-            if let Err(err) = ActorSourceCmd::push(tx, action_feedback.into()).await {
+            tracing::debug!(?action_feedback, "feedback springline per scale action");
+            let action_telemetry = action_feedback.into();
+            let push_cmd = ActorSourceCmd::push(tx, action_telemetry.clone())
+                .instrument(tracing::debug_span!(
+                    "push_action_feedback_to_springline",
+                    ?action_telemetry
+                ))
+                .await;
+            if let Err(err) = push_cmd {
                 tracing::error!(error=?err, "failed to send scale deployment notification from monitor -- may impact future eligibility determination.");
             }
         }
@@ -407,7 +413,7 @@ impl Monitor {
         let last_deployment = now.as_utc();
         tracing::info!(
             %last_deployment, ?rescale_restart, ?rescale_total_duration, ?rescale_task_sum,
-            "Feeding summary back into springline"
+            "Feeding act summary back into springline"
         );
 
         ActionFeedback {

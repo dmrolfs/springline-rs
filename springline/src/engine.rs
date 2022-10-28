@@ -191,8 +191,8 @@ impl AutoscaleEngine<Building> {
             .map(|s| s(settings))
             .collect::<Vec<_>>();
 
-        let tx_feedback = self.inner.feedback_factory.as_ref().map(|f| {
-            let (source, tx) = f(settings);
+        let tx_feedback = self.inner.feedback_factory.as_ref().map(|make_feedback_api_from| {
+            let (source, tx) = make_feedback_api_from(settings);
             sensors.push(source);
             tx
         });
