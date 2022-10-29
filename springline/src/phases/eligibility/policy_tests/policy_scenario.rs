@@ -96,7 +96,7 @@ impl PolicyScenarioBuilder {
     }
 
     #[tracing::instrument(level = "info", skip(nr_active_jobs))]
-    pub fn nr_active_jobs(self, nr_active_jobs: impl Strategy<Value = u32> + 'static) -> Self {
+    pub fn nr_active_jobs(mut self, nr_active_jobs: impl Strategy<Value = u32> + 'static) -> Self {
         self.nr_active_jobs = Some(nr_active_jobs.boxed());
         self
     }
