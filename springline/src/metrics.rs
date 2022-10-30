@@ -167,6 +167,7 @@ pub fn register_metrics(registry: &Registry) -> Result<()> {
     registry.register(Box::new(engine::PLAN_TARGET_NR_TASK_MANAGERS.clone()))?;
     registry.register(Box::new(engine::GOVERNANCE_PLAN_ACCEPTED.clone()))?;
 
+    registry.register(Box::new(act::ACT_IS_RESCALING.clone()))?;
     registry.register(Box::new(act::ACT_RESCALE_ACTION_TIME.clone()))?;
     registry.register(Box::new(act::ACT_RESCALE_ACTION_COUNT.clone()))?;
     registry.register(Box::new(act::PHASE_ACT_ERRORS.clone()))?;

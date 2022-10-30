@@ -332,7 +332,7 @@ where
                 api_model::build_telemetry(
                     &metric_order::PlanPositionCandidate::Any,
                     metric_response,
-                    &order_matchers,
+                    order_matchers,
                     &self.derivative_orders,
                 )
                     // this is only needed because async_trait forcing me to parameterize this stage

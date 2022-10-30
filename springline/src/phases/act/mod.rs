@@ -1,20 +1,20 @@
-use std::collections::HashMap;
-use std::time::Duration;
-
+use crate::flink::JarId;
+use crate::phases::plan::{PlanningOutcome, ScaleActionPlan};
 use either::{Either, Left, Right};
 use once_cell::sync::Lazy;
 use proctor::error::MetricLabel;
 use proctor::graph::stage::{self, SinkStage};
+use prometheus::core::{AtomicU64, GenericGauge};
 use prometheus::{HistogramOpts, HistogramTimer, HistogramVec, IntCounterVec, Opts};
 pub use protocol::{ActEvent, ActMonitor};
+use std::collections::HashMap;
+use std::time::Duration;
 use strum_macros::Display;
 use thiserror::Error;
 
-use crate::phases::plan::{PlanningOutcome, ScaleActionPlan};
-
 mod action;
 mod scale_actuator;
-use crate::flink::JarId;
+
 pub use action::ActionOutcome;
 pub use action::ACTION_TOTAL_DURATION;
 pub use action::FLINK_MISSED_JAR_RESTARTS;
@@ -119,6 +119,17 @@ mod protocol {
         }
     }
 }
+
+pub static ACT_IS_RESCALING: Lazy<GenericGauge<AtomicU64>> = Lazy::new(|| {
+    GenericGauge::with_opts(
+        Opts::new(
+            "act_is_rescaling",
+            "1 to indicate cluster is actively rescaling; 0 otherwise",
+        )
+        .const_labels(proctor::metrics::CONST_LABELS.clone()),
+    )
+    .expect("failed creating act_is_rescaling metric")
+});
 
 #[inline]
 fn start_rescale_timer(action: &str) -> HistogramTimer {

@@ -3,7 +3,7 @@ use crate::engine::{PhaseFlag, PhaseFlags};
 use crate::flink;
 use crate::phases::act::{
     ActErrorDisposition, ActEvent, ActMonitor, ActionOutcome, ACTION_TOTAL_DURATION,
-    ACT_RESCALE_ACTION_COUNT, PHASE_ACT_ERRORS,
+    ACT_IS_RESCALING, ACT_RESCALE_ACTION_COUNT, PHASE_ACT_ERRORS,
 };
 use crate::phases::decision::{
     DecisionContext, DecisionEvent, DecisionMonitor, DecisionResult, ScaleDirection,
@@ -352,6 +352,8 @@ impl Monitor {
                 Self::do_handle_rescale_failed(plan, error_metric_label, now)
             },
         };
+
+        ACT_IS_RESCALING.set(if action_feedback.is_rescaling { 1 } else { 0 });
 
         if let Some(ref tx) = self.tx_feedback {
             tracing::debug!(?action_feedback, "feedback springline per scale action");
