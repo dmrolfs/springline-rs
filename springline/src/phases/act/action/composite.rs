@@ -1,7 +1,8 @@
 use std::time::Duration;
 
+use crate::Env;
 use async_trait::async_trait;
-use proctor::AppData;
+use proctor::{AppData, Correlation};
 use tracing::Instrument;
 
 use super::{ActionSession, ScaleAction};
@@ -44,17 +45,19 @@ where
         false
     }
 
-    fn check_preconditions(&self, _session: &ActionSession) -> Result<(), ActError> {
+    fn check_preconditions(&self, _session: &Env<ActionSession>) -> Result<(), ActError> {
         Ok(())
     }
 
     #[tracing::instrument(level = "info", name = "CompositeAction::execute", skip(self))]
     async fn execute<'s>(
-        &mut self, plan: &'s Self::Plan, session: &'s mut ActionSession,
+        &mut self, plan: &'s Self::Plan, session: &'s mut Env<ActionSession>,
     ) -> Result<(), ActError> {
         let composite_label = self.label().to_string();
         let composite_timer = act::start_rescale_timer(&composite_label);
-        let mut composite_outcome = ActionStatus::Failure;
+
+        let mut final_outcome = Ok(());
+        let mut composite_status = ActionStatus::Failure;
 
         for action in self.actions.iter_mut() {
             let action_label = format!("{}::{}", composite_label, action.label());
@@ -69,7 +72,9 @@ where
 
             let execute_outcome = action
                 .execute(plan, session)
-                .instrument(tracing::info_span!("act::action::composite", action=%action_label))
+                .instrument(
+                    tracing::info_span!("act::action::composite::step", action=%action_label),
+                )
                 .await;
 
             let outcome = match execute_outcome {
@@ -96,6 +101,11 @@ where
             };
 
             let action_step_duration = Duration::from_secs_f64(action_step_timer.stop_and_record());
+            tracing::info!(
+                ?outcome, is_leaf=%action.is_leaf(), action=%action_label, ?status, ?action_step_duration,
+                "action exited with status and duration"
+            );
+
             session.mark_completion(
                 &action_label,
                 status,
@@ -105,13 +115,14 @@ where
 
             match outcome {
                 Ok(_) => {
-                    composite_outcome = status;
+                    composite_status = status;
                 },
                 Err(err) => {
-                    composite_outcome = ActionStatus::Failure;
+                    composite_status = ActionStatus::Failure;
                     let track = format!("{}::action_step", self.label());
                     tracing::warn!(error=?err, %track, "failed in composite step: {}", action_label);
                     act::track_act_errors(&track, Some(&err), ActErrorDisposition::Failed, plan);
+                    final_outcome = Err(err);
                     break;
                 },
             }
@@ -120,11 +131,12 @@ where
         let composite_duration = Duration::from_secs_f64(composite_timer.stop_and_record());
         session.mark_completion(
             composite_label,
-            composite_outcome,
+            composite_status,
             composite_duration,
             self.is_leaf(),
         );
-        Ok(())
+
+        final_outcome
     }
 }
 
@@ -134,7 +146,7 @@ where
 {
     #[tracing::instrument(level = "warn", skip(plan, session))]
     async fn handle_error_on_execute<'s>(
-        label: &str, track: &str, error: ActError, plan: &'s P, session: &'s mut ActionSession,
+        label: &str, track: &str, error: ActError, plan: &'s P, session: &'s mut Env<ActionSession>,
     ) -> Result<(), ActError> {
         tracing::error!(
             ?error, ?plan, ?session, correlation=?session.correlation(), %track,

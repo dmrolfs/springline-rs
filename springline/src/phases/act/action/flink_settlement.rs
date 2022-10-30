@@ -2,16 +2,16 @@ use std::marker::PhantomData;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use proctor::AppData;
+use proctor::{AppData, Correlation};
 use tokio::time::Instant;
 
 use super::{ActionSession, ScaleAction};
 use crate::flink::FlinkContext;
-use crate::math;
 use crate::model::NrReplicas;
 use crate::phases::act;
 use crate::phases::act::{ActError, ActErrorDisposition};
 use crate::phases::plan::ScaleActionPlan;
+use crate::{math, Env};
 
 pub const ACTION_LABEL: &str = "flink_settlement";
 
@@ -48,7 +48,7 @@ impl<P> FlinkSettlement<P> {
 #[async_trait]
 impl<P> ScaleAction for FlinkSettlement<P>
 where
-    P: AppData + ScaleActionPlan,
+    P: AppData + ScaleActionPlan + Correlation,
 {
     type Plan = P;
 
@@ -56,13 +56,13 @@ where
         self.label.as_str()
     }
 
-    fn check_preconditions(&self, _session: &ActionSession) -> Result<(), ActError> {
+    fn check_preconditions(&self, _session: &Env<ActionSession>) -> Result<(), ActError> {
         Ok(())
     }
 
     #[tracing::instrument(level = "info", name = "FlinkSettlement::execute", skip(self, plan,), fields(label=%self.label()))]
     async fn execute<'s>(
-        &mut self, plan: &'s Self::Plan, session: &'s mut ActionSession,
+        &mut self, plan: &'s Self::Plan, session: &'s mut Env<ActionSession>,
     ) -> Result<(), ActError> {
         let confirmed_nr_taskmanagers =
             self.block_for_rescaled_taskmanagers(plan, &session.flink).await;
@@ -74,7 +74,7 @@ where
 
 impl<P> FlinkSettlement<P>
 where
-    P: AppData + ScaleActionPlan,
+    P: AppData + ScaleActionPlan + Correlation,
 {
     #[tracing::instrument(
     level = "info",

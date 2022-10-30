@@ -156,58 +156,29 @@ where
         Ok(())
     }
 
-    fn pluralize_scope(scope: FlinkScope) -> String {
-        format!("{scope}s")
-    }
+    async fn do_run(&mut self) -> Result<(), SenseError> {
+        let order_matchers = self.order_matchers.iter().collect();
 
-    fn extend_url_for(&self, metrics: &[impl AsRef<str>], agg: &[Aggregation]) -> Url {
-        let scope_rep = Self::pluralize_scope(self.scope).to_lowercase();
-        let mut url = self.context.base_url();
-        url.path_segments_mut().unwrap().push(&scope_rep).push("metrics");
+        while self.trigger.recv().await.is_some() {
+            let _stage_timer = stage::start_stage_eval_time(self.name());
 
-        if !metrics.is_empty() || !agg.is_empty() {
-            url.query_pairs_mut().clear();
+            let correlation = self.correlation_gen.next_id();
+
+            let (metrics, metric_orders) = self.distill_metric_orders().await?;
+            if let Some(url) =
+                self.do_make_metrics_url(metrics.as_slice(), metric_orders.as_slice())
+            {
+                let send_telemetry: Result<(), SenseError> = self
+                    .outlet
+                    .reserve_send::<_, SenseError>(async { self.do_query_scope_metrics(url, &order_matchers).await } )
+                    .instrument(tracing::debug_span!("collect Flink scope sensor telemetry", scope=%self.scope, ?correlation))
+                    .await;
+
+                let _ = super::identity_or_track_error(self.scope, send_telemetry);
+            }
         }
 
-        if !metrics.is_empty() {
-            let metrics_query = metrics.iter().map(|m| m.as_ref()).join(",");
-            url.query_pairs_mut().append_pair("get", &metrics_query);
-        }
-
-        if !agg.is_empty() {
-            url.query_pairs_mut()
-                .append_pair("agg", agg.iter().copied().join(",").as_str());
-        }
-
-        url
-    }
-
-    #[tracing::instrument(level = "debug", skip(self))]
-    async fn get_scope_metrics(
-        &self, metrics: &[&MetricOrder], aggs: &[Aggregation],
-    ) -> Result<FlinkMetricResponse, SenseError> {
-        let metric_ids: Vec<&str> = metrics.iter().map(|o| o.metric()).collect();
-        let url = self.extend_url_for(metric_ids.as_slice(), aggs);
-        let flink_metrics: Result<FlinkMetricResponse, SenseError> = self
-            .context
-            .client()
-            .request(Method::GET, url.clone())
-            .send()
-            .map_err(|err| err.into())
-            .and_then(|response| {
-                flink::log_response(&format!("{} scope response", self.scope), &url, &response);
-                response.text().map(|body| {
-                    body.map_err(|err| err.into()).and_then(|b| {
-                        let result = serde_json::from_str(&b).map_err(|err| err.into());
-                        tracing::debug!(body=%b, response=?result, "flink {} scope metrics response body", self.scope);
-                        result
-                    })
-                })
-            })
-            .instrument(tracing::debug_span!("Flink REST API - scope metrics", scope=%self.scope))
-            .await;
-
-        super::identity_or_track_error(self.scope, flink_metrics)
+        Ok(())
     }
 
     #[tracing::instrument(level = "info", skip(self))]
@@ -250,8 +221,37 @@ where
         Ok((requested_metrics.into_iter().collect(), available_orders))
     }
 
-    async fn do_run(&mut self) -> Result<(), SenseError> {
-        let (metrics, metric_orders) = self.distill_metric_orders().await?;
+    #[tracing::instrument(level = "debug", skip(self))]
+    async fn get_scope_metrics(
+        &self, metrics: &[&MetricOrder], aggs: &[Aggregation],
+    ) -> Result<FlinkMetricResponse, SenseError> {
+        let metric_ids: Vec<&str> = metrics.iter().map(|o| o.metric()).collect();
+        let url = self.extend_url_for(metric_ids.as_slice(), aggs);
+        let flink_metrics: Result<FlinkMetricResponse, SenseError> = self
+            .context
+            .client()
+            .request(Method::GET, url.clone())
+            .send()
+            .map_err(|err| err.into())
+            .and_then(|response| {
+                flink::log_response(&format!("{} scope response", self.scope), &url, &response);
+                response.text().map(|body| {
+                    body.map_err(|err| err.into()).and_then(|b| {
+                        let result = serde_json::from_str(&b).map_err(|err| err.into());
+                        tracing::debug!(body=%b, response=?result, "flink {} scope metrics response body", self.scope);
+                        result
+                    })
+                })
+            })
+            .instrument(tracing::debug_span!("Flink REST API - scope metrics", scope=%self.scope))
+            .await;
+
+        super::identity_or_track_error(self.scope, flink_metrics)
+    }
+
+    fn do_make_metrics_url(
+        &self, metrics: &[String], metric_orders: &[&MetricOrder],
+    ) -> Option<Url> {
         let agg_span: HashSet<Aggregation> = metric_orders.iter().map(|o| o.agg()).collect();
         tracing::debug!(
             requested_metrics=?metrics, ?metric_orders, aggregations=?agg_span,
@@ -259,74 +259,88 @@ where
         );
 
         if metrics.is_empty() || metric_orders.is_empty() {
-            // todo: best to end this useless stage or do nothing in loop? I hope end is best.
-            tracing::warn!(stage=%self.name(), "no flink metric orders for scope - possibly unnecessary {} sensor stage.", self.scope);
-            // return Ok(()); -- don't stop: case where this pops up is Flink started but has ZERO running or completed jobs before springline is started; e.g., flink started without a job or a stopped job "aged" out of flink memory.
+            tracing::warn!(stage=%self.name(), "no flink metric orders for scope, {}.", self.scope);
+            return None;
         }
 
-        let scope_rep = self.scope.to_string().to_lowercase();
         let url = self.extend_url_for(
-            metrics.as_slice(),
+            metrics,
             agg_span.iter().copied().collect::<Vec<_>>().as_slice(),
         );
         tracing::debug!(?metrics, ?agg_span, "flink sensing url = {:?}", url);
 
-        let order_matchers: HashMap<&MetricOrder, &MetricOrderMatcher> =
-            self.order_matchers.iter().collect();
+        Some(url)
+    }
 
-        while self.trigger.recv().await.is_some() {
-            let _stage_timer = stage::start_stage_eval_time(self.name());
+    fn extend_url_for(&self, metrics: &[impl AsRef<str>], agg: &[Aggregation]) -> Url {
+        let scope_rep = Self::pluralize_scope(self.scope).to_lowercase();
+        let mut url = self.context.base_url();
+        url.path_segments_mut().unwrap().push(&scope_rep).push("metrics");
 
-            let correlation = self.correlation_gen.next_id();
-            let send_telemetry: Result<(), SenseError> = self
-                .outlet
-                .reserve_send::<_, SenseError>(async {
-                    // timer spans all retries
-                    let _flink_timer = super::start_flink_sensor_timer(&self.scope);
-
-                    let out: Result<Out, SenseError> = self
-                        .context
-                        .client()
-                        .request(Method::GET, url.clone())
-                        .send()
-                        .map_err(|error| { error.into() })
-                        .and_then(|response| {
-                            flink::log_response(&format!("{} scope response", scope_rep), &url, &response);
-                            response
-                                .text()
-                                .map(|body| {
-                                    body
-                                        .map_err(|err| err.into())
-                                        .and_then(|b| {
-                                            let result = serde_json::from_str(&b).map_err(|err| err.into());
-                                            tracing::debug!(body=%b, response=?result, "Flink {} scope metrics response body", self.scope);
-                                            result
-                                        })
-                                })
-                        })
-                        .instrument(tracing::debug_span!("Flink REST API - scope metrics", scope=%self.scope))
-                        .await
-                        .and_then(|metric_response: FlinkMetricResponse| {
-                            api_model::build_telemetry(
-                                &metric_order::PlanPositionCandidate::Any,
-                                metric_response,
-                                &order_matchers,
-                                &self.derivative_orders,
-                            )
-                                // this is only needed because async_trait forcing me to parameterize this stage
-                                .and_then(|telemetry| Out::unpack(telemetry))
-                                .map_err(|err| err.into())
-                        });
-
-                    super::identity_or_track_error(self.scope, out).or_else(|_err| Ok(Out::default()))
-                })
-                .instrument(tracing::debug_span!("collect Flink scope sensor telemetry", scope=%self.scope, ?correlation))
-                .await;
-
-            let _ = super::identity_or_track_error(self.scope, send_telemetry);
+        if !metrics.is_empty() || !agg.is_empty() {
+            url.query_pairs_mut().clear();
         }
 
-        Ok(())
+        if !metrics.is_empty() {
+            let metrics_query = metrics.iter().map(|m| m.as_ref()).join(",");
+            url.query_pairs_mut().append_pair("get", &metrics_query);
+        }
+
+        if !agg.is_empty() {
+            url.query_pairs_mut()
+                .append_pair("agg", agg.iter().copied().join(",").as_str());
+        }
+
+        url
+    }
+
+    #[inline]
+    fn pluralize_scope(scope: FlinkScope) -> String {
+        format!("{scope}s")
+    }
+
+    #[tracing::instrument(level = "debug", skip(self, order_matchers))]
+    async fn do_query_scope_metrics(
+        &self, url: Url, order_matchers: &HashMap<&MetricOrder, &MetricOrderMatcher>,
+    ) -> Result<Out, SenseError> {
+        // timer spans all retries
+        let _flink_timer = super::start_flink_sensor_timer(&self.scope);
+
+        let out: Result<Out, SenseError> = self
+            .context
+            .client()
+            .request(Method::GET, url.clone())
+            .send()
+            .map_err(|error| { error.into() })
+            .and_then(|response| {
+                flink::log_response(&format!("{} scope response", self.scope), &url, &response);
+                response
+                    .text()
+                    .map(|body| {
+                        body
+                            .map_err(|err| err.into())
+                            .and_then(|b| {
+                                let result = serde_json::from_str(&b).map_err(|err| err.into());
+                                tracing::debug!(body=%b, response=?result, "Flink {} scope metrics response body", self.scope);
+                                result
+                            })
+                    })
+            })
+            .instrument(tracing::debug_span!("Flink REST API - scope metrics", scope=%self.scope))
+            .await
+            .and_then(|metric_response: FlinkMetricResponse| {
+                api_model::build_telemetry(
+                    &metric_order::PlanPositionCandidate::Any,
+                    metric_response,
+                    order_matchers,
+                    &self.derivative_orders,
+                )
+                    // this is only needed because async_trait forcing me to parameterize this stage
+                    .and_then(|telemetry| Out::unpack(telemetry))
+                    .map_err(|err| err.into())
+            });
+
+        super::identity_or_track_error(self.scope, out).or_else(|_err| Ok(Out::default()))
     }
 
     async fn do_close(mut self: Box<Self>) -> Result<(), SenseError> {
@@ -453,7 +467,7 @@ mod tests {
             Mock::given(method("GET"))
                 .and(path("/jobs/metrics"))
                 .respond_with(ResponseTemplate::new(200).set_body_json(make_jobs_query_list()))
-                .expect(1)
+                .expect(2)
                 .mount(&mock_server)
                 .await;
 
@@ -572,7 +586,7 @@ mod tests {
                 .and(path("/jobs/metrics"))
                 .and(EmptyQueryParamMatcher)
                 .respond_with(ResponseTemplate::new(200).set_body_json(make_jobs_query_list()))
-                .expect(1)
+                .expect(2)
                 .mount(&mock_server)
                 .await;
 
@@ -647,7 +661,7 @@ mod tests {
                 .and(path("/jobs/metrics"))
                 .and(EmptyQueryParamMatcher)
                 .respond_with(ResponseTemplate::new(200).set_body_json(make_jobs_query_list()))
-                .expect(1)
+                .expect(2)
                 .mount(&mock_server)
                 .await;
 
@@ -777,7 +791,7 @@ mod tests {
             Mock::given(method("GET"))
                 .and(path("/taskmanagers/metrics"))
                 .respond_with(ResponseTemplate::new(200).set_body_json(tm_available_metrics))
-                .expect(1)
+                .expect(2)
                 .mount(&mock_server)
                 .await;
 

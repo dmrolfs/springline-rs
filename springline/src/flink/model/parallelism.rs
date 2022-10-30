@@ -139,6 +139,7 @@ impl SaturatingSub for Parallelism {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 pub fn arb_parallelism() -> impl proptest::strategy::Strategy<Value = Parallelism> {
     use proptest::prelude::*;
     any::<u32>().prop_map(Parallelism::new)

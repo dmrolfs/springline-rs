@@ -1,9 +1,10 @@
 use either::{Either, Left, Right};
+use http::StatusCode;
 use proctor::elements::{TelemetryType, TelemetryValue};
 use proctor::error::MetricLabel;
 use thiserror::Error;
 
-use crate::flink::{FailureCause, JobId, SavepointStatus};
+use crate::flink::{FailureCause, JarId, JobId, Parallelism, SavepointLocation, SavepointStatus};
 
 #[derive(Debug, Error)]
 pub enum FlinkError {
@@ -37,6 +38,18 @@ pub enum FlinkError {
     #[error("Flink savepoint operation failed for job {job_id}: {cause}")]
     Savepoint { job_id: JobId, cause: FailureCause },
 
+    #[error("Flink rejected job restart request with status[{status}] for (jar[{jar_id}], location[{location}], parallelism[{parallelism}] for client-side reason: {cause}.")]
+    FailedJobRestart {
+        status: StatusCode,
+        jar_id: JarId,
+        location: SavepointLocation,
+        parallelism: Parallelism,
+        cause: String,
+    },
+
+    #[error("Unsupported Flink response (status[{status}]) to restart request: {cause}")]
+    UnsupportedRestartResponse { status: StatusCode, cause: String },
+
     // #[error("Flink restarts could not be initiated for jars:{jars:?} and savepoint-locations:{locations:?}")]
     // RestartInitiation { jars: Vec<JarId>, locations: Vec<SavepointLocation>, },
     #[error("Flink API operation {0} failed to complete within timeout of {1:?}")]
@@ -63,6 +76,8 @@ impl MetricLabel for FlinkError {
             Self::UnexpectedValue { .. } => Left("http::unexpected".into()),
             Self::UnexpectedSavepointStatus(..) => Left("savepoint".into()),
             Self::Savepoint { .. } => Left("savepoint".into()),
+            Self::FailedJobRestart { .. } => Left("restart".into()),
+            Self::UnsupportedRestartResponse { .. } => Left("restart::unsupported".into()),
             Self::Timeout(..) => Left("http::timeout".into()),
             Self::Other(_) => Left("other".into()),
         }

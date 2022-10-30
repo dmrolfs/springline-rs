@@ -3,10 +3,14 @@ mod metrics_exporter;
 mod monitor;
 mod service;
 
-use std::fmt;
-use std::sync::Arc;
-use std::time::Duration;
-
+use crate::engine::service::{EngineCmd, EngineServiceApi, Health, Service};
+use crate::flink::{FlinkContext, MetricCatalog};
+use crate::metrics::UpdateMetrics;
+use crate::phases::act::ActMonitor;
+use crate::phases::governance::{self, GovernanceOutcome};
+use crate::phases::{act, decision, eligibility, plan, sense};
+use crate::settings::Settings;
+use crate::Result;
 use cast_trait_object::DynCastExt;
 use enumflags2::{bitflags, BitFlags};
 use futures::{future::FutureExt, pin_mut};
@@ -19,7 +23,9 @@ use proctor::graph::{Connect, Graph, SinkShape, SourceShape};
 use proctor::ProctorResult;
 use prometheus::core::{AtomicU64, GenericGauge, GenericGaugeVec};
 use prometheus::{Opts, Registry};
-pub use service::EngineApiError;
+use std::fmt;
+use std::sync::Arc;
+use std::time::Duration;
 use strum_macros::Display;
 use sysinfo::SystemExt;
 use tokio::sync::RwLock;
@@ -35,15 +41,7 @@ pub use self::monitor::{
     DECISION_RESCALE_DECISION, ELIGIBILITY_IS_ELIGIBLE_FOR_SCALING, GOVERNANCE_PLAN_ACCEPTED,
     PLAN_OBSERVATION_COUNT, PLAN_TARGET_NR_TASK_MANAGERS,
 };
-use crate::engine::service::{EngineCmd, EngineServiceApi, Health, Service};
-use crate::flink::{FlinkContext, MetricCatalog};
-use crate::metrics::UpdateMetrics;
-use crate::phases::act::ActMonitor;
-use crate::phases::decision::{DecisionOutcome, DecisionResult};
-use crate::phases::governance::{self, GovernanceOutcome};
-use crate::phases::{act, decision, eligibility, plan, sense};
-use crate::settings::Settings;
-use crate::Result;
+pub use service::EngineApiError;
 
 pub struct Autoscaler;
 impl Autoscaler {
@@ -193,8 +191,8 @@ impl AutoscaleEngine<Building> {
             .map(|s| s(settings))
             .collect::<Vec<_>>();
 
-        let tx_feedback = self.inner.feedback_factory.as_ref().map(|f| {
-            let (source, tx) = f(settings);
+        let tx_feedback = self.inner.feedback_factory.as_ref().map(|make_feedback_api_from| {
+            let (source, tx) = make_feedback_api_from(settings);
             sensors.push(source);
             tx
         });
@@ -256,14 +254,16 @@ impl AutoscaleEngine<Building> {
         let tx_collect_window_api = collect_window.tx_api();
 
         //todo: maybe place this between governance and action?
-        let _reduce_window = proctor::graph::stage::Map::new(
-            "catalog_from_window",
-            |decision_window: DecisionOutcome| match decision_window {
-                DecisionResult::ScaleUp(p) => DecisionResult::ScaleUp(p.latest().clone()),
-                DecisionResult::ScaleDown(p) => DecisionResult::ScaleDown(p.latest().clone()),
-                DecisionResult::NoAction(p) => DecisionResult::NoAction(p.latest().clone()),
-            },
-        );
+        // let _reduce_window = proctor::graph::stage::Map::new(
+        //     "catalog_from_window",
+        //     |decision_window: DecisionOutcome| {
+        //         decision_window.map(|window| match &window {
+        //             DecisionResult::ScaleUp(p) => DecisionResult::ScaleUp(p.latest().clone()),
+        //             DecisionResult::ScaleDown(p) => DecisionResult::ScaleDown(p.latest().clone()),
+        //             DecisionResult::NoAction(p) => DecisionResult::NoAction(p.latest().clone()),
+        //         })
+        //     },
+        // );
         // let reduce_window = reduce_window.with_block_logging();
 
         let tx_clearinghouse_api = sense.tx_api();
@@ -283,12 +283,8 @@ impl AutoscaleEngine<Building> {
         (eligibility_phase.outlet(), decision_phase.inlet()).connect().await;
 
         // (decision_phase.outlet(), reduce_window.inlet()).connect().await;
-        // (
-        //     reduce_window.outlet(),
-        //     planning_phase.phase.decision_inlet(),
-        // )
-        //     .connect()
-        //     .await;
+        // (reduce_window.outlet(), planning_phase.phase.decision_inlet()).connect().await;
+
         (
             decision_phase.outlet(),
             planning_phase.phase.decision_inlet(),

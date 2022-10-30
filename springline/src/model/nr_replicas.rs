@@ -139,6 +139,7 @@ impl SaturatingSub for NrReplicas {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 pub fn arb_nr_replicas() -> impl proptest::strategy::Strategy<Value = NrReplicas> {
     use proptest::prelude::*;
     any::<u32>().prop_map(NrReplicas::new)

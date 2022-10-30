@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use futures_util::{FutureExt, TryFutureExt};
 use http::Method;
+use pretty_snowflake::Id;
 use proctor::error::UrlError;
 use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
 use reqwest_retry::policies::ExponentialBackoff;
@@ -115,8 +116,8 @@ impl FlinkContext {
     }
 
     #[tracing::instrument(level = "trace", skip(self))]
-    pub async fn query_taskmanagers(
-        &self, correlation: &CorrelationId,
+    pub async fn query_taskmanagers<P>(
+        &self, correlation: &Id<P>,
     ) -> Result<TaskManagerDetail, FlinkError> {
         self.inner.query_taskmanagers(correlation).await
     }
@@ -320,8 +321,8 @@ impl FlinkContextRef {
         )
     }
 
-    pub async fn query_taskmanagers(
-        &self, correlation: &CorrelationId,
+    pub async fn query_taskmanagers<C>(
+        &self, correlation: &Id<C>,
     ) -> Result<TaskManagerDetail, FlinkError> {
         let _timer = flink::start_flink_query_taskmanager_admin_timer(self.cluster_label.as_str());
 

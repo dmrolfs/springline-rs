@@ -56,6 +56,10 @@ impl AppMenu {
     }
 
     pub fn explore_eligibility_policy(state: &mut ExplorerState) -> Result<()> {
+        assert_impl_all!(
+            springline::Env<springline::flink::AppDataWindow<springline::Env<springline::flink::MetricCatalog>>>:
+            crate::policy::populate::PopulateData
+        );
         ExplorePolicy::<EligibilityPolicy>::new("eligibility").interact(state)
     }
 

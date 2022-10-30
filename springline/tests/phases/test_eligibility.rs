@@ -1,16 +1,12 @@
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
-
 use chrono::{DateTime, Utc};
 use claim::*;
 use lazy_static::lazy_static;
-use once_cell::sync::Lazy;
 use pretty_assertions::assert_eq;
-use proctor::elements::{self, telemetry, PolicyFilterEvent, PolicySource, Timestamp, ToTelemetry};
+use proctor::elements::{self, telemetry, PolicyFilterEvent, PolicySource, ToTelemetry};
 use proctor::graph::stage::{self, WithApi, WithMonitor};
 use proctor::graph::{Connect, Graph, SinkShape, SourceShape};
 use proctor::phases::policy_phase::PolicyPhase;
-use proctor::ProctorIdGenerator;
+use proctor::MetaData;
 use springline::flink::{
     AppDataWindow, ClusterMetrics, FlowMetrics, JobHealthMetrics, MetricCatalog,
 };
@@ -19,11 +15,14 @@ use springline::phases::eligibility::{
     EligibilityContext, EligibilityPolicy, EligibilityTemplateData,
 };
 use springline::settings::EligibilitySettings;
+use springline::Env;
+use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
-type Data = AppDataWindow<MetricCatalog>;
-type Context = EligibilityContext;
+type Data = Env<AppDataWindow<Env<MetricCatalog>>>;
+type Context = Env<EligibilityContext>;
 
 lazy_static! {
     static ref DT_1: DateTime<Utc> =
@@ -45,6 +44,7 @@ struct TestFlow {
     pub rx_sink: Option<oneshot::Receiver<Vec<Data>>>,
 }
 
+#[allow(dead_code)]
 impl TestFlow {
     pub async fn new(
         stage: PolicyPhase<Data, Data, Context, EligibilityTemplateData>,
@@ -130,7 +130,6 @@ impl TestFlow {
         Ok(self.rx_stage_monitor.recv().await?)
     }
 
-    #[allow(dead_code)]
     pub async fn inspect_policy_context(
         &self,
     ) -> anyhow::Result<elements::PolicyFilterDetail<Context, EligibilityTemplateData>> {
@@ -537,36 +536,31 @@ async fn test_flink_eligibility_block_on_rescaling() -> anyhow::Result<()> {
     Ok(())
 }
 
-static ID_GENERATOR: Lazy<Mutex<ProctorIdGenerator<()>>> =
-    Lazy::new(|| Mutex::new(ProctorIdGenerator::default()));
-
 pub fn make_context(
     last_failure: Option<DateTime<Utc>>, is_deploying: bool, is_rescaling: bool,
     last_deployment: DateTime<Utc>, custom: telemetry::TableType,
 ) -> Context {
-    let mut gen = ID_GENERATOR.lock().unwrap();
-
-    EligibilityContext {
-        recv_timestamp: Timestamp::now(),
-        correlation_id: gen.next_id().relabel(),
-        all_sinks_healthy: true,
-        job: JobStatus { last_failure },
-        cluster: ClusterStatus { is_deploying, is_rescaling, last_deployment },
-        custom,
-    }
+    Env::from_parts(
+        MetaData::default(),
+        EligibilityContext {
+            all_sinks_healthy: true,
+            job: JobStatus { last_failure },
+            cluster: ClusterStatus { is_deploying, is_rescaling, last_deployment },
+            custom,
+        },
+    )
 }
 
 pub fn make_test_item(custom: telemetry::TableType) -> Data {
-    let mut gen = ID_GENERATOR.lock().unwrap();
+    let catalog = Env::from_parts(
+        MetaData::default(),
+        MetricCatalog {
+            health: JobHealthMetrics::default(),
+            flow: FlowMetrics::default(),
+            cluster: ClusterMetrics { nr_active_jobs: 1, ..ClusterMetrics::default() },
+            custom,
+        },
+    );
 
-    let catalog = MetricCatalog {
-        recv_timestamp: Timestamp::now(),
-        correlation_id: gen.next_id().relabel(),
-        health: JobHealthMetrics::default(),
-        flow: FlowMetrics::default(),
-        cluster: ClusterMetrics { nr_active_jobs: 1, ..ClusterMetrics::default() },
-        custom,
-    };
-
-    AppDataWindow::from_size(catalog, 60, Duration::from_secs(10))
+    catalog.flat_map(|c| AppDataWindow::from_size(c, 60, Duration::from_secs(10)))
 }

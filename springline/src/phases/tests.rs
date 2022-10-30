@@ -2,6 +2,7 @@ mod window {
     use std::collections::{HashMap, HashSet};
     use std::time::Duration;
 
+    use crate::Env;
     use approx::assert_relative_eq;
     use async_trait::async_trait;
     use claim::*;
@@ -19,7 +20,7 @@ mod window {
     use proctor::graph::{Connect, Port, SinkShape, SourceShape};
     use proctor::phases::policy_phase::PolicyPhase;
     use proctor::phases::sense::SubscriptionRequirements;
-    use proctor::{Correlation, ProctorContext};
+    use proctor::{MetaData, ProctorContext};
     use serde::{Deserialize, Serialize};
     use tokio::sync::mpsc;
     use tokio_test::block_on;
@@ -31,26 +32,30 @@ mod window {
     use crate::phases::CollectMetricWindow;
     use crate::settings::EngineSettings;
 
-    fn make_test_catalog(ts: Timestamp, value: u32) -> MetricCatalog {
-        MetricCatalog {
-            correlation_id: Id::direct(
-                <MetricCatalog as Label>::labeler().label(),
-                ts.as_secs(),
-                ts.as_secs_f64().to_string(),
+    fn make_test_catalog(ts: Timestamp, value: u32) -> Env<MetricCatalog> {
+        Env::from_parts(
+            MetaData::from_parts(
+                Id::direct(
+                    <MetricCatalog as Label>::labeler().label(),
+                    ts.as_secs(),
+                    ts.as_secs_f64().to_string(),
+                ),
+                ts,
             ),
-            recv_timestamp: ts,
-            health: JobHealthMetrics::default(),
-            flow: FlowMetrics {
-                source_records_lag_max: Some(value),
-                records_in_per_sec: value as f64,
-                ..FlowMetrics::default()
+            MetricCatalog {
+                health: JobHealthMetrics::default(),
+                flow: FlowMetrics {
+                    source_records_lag_max: Some(value),
+                    records_in_per_sec: value as f64,
+                    ..FlowMetrics::default()
+                },
+                cluster: ClusterMetrics {
+                    task_cpu_load: value as f64,
+                    ..ClusterMetrics::default()
+                },
+                custom: HashMap::new(),
             },
-            cluster: ClusterMetrics {
-                task_cpu_load: value as f64,
-                ..ClusterMetrics::default()
-            },
-            custom: HashMap::new(),
-        }
+        )
     }
 
     #[test]
@@ -64,7 +69,7 @@ mod window {
         tracing::info!("NOW = {now:?} == {now}");
         tracing::info!("START = {start:?} == {start}");
 
-        let data: Vec<MetricCatalog> = (0..20)
+        let data: Vec<_> = (0..20)
             .map(|i: u32| {
                 let value = if i < 10 { i + 1 } else { 20 - i };
                 make_test_catalog(start + Duration::from_secs(i as u64), value)
@@ -143,7 +148,7 @@ mod window {
         tracing::info!("NOW = {now:?} == {now}");
         tracing::info!("START = {start:?} == {start}");
 
-        let data: Vec<MetricCatalog> = (0..20)
+        let data: Vec<_> = (0..20)
             .map(|i: u32| {
                 let value = if i < 10 { i + 1 } else { 20 - i };
                 make_test_catalog(start + Duration::from_secs(i as u64), value)
@@ -217,8 +222,6 @@ mod window {
 
     #[test]
     fn test_basic_window_rolling_change_rate() {
-        // unimplemented!("test_basic_window_rolling_average");
-
         once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
         let main_span = tracing::info_span!("test_basic_window_rolling_change_rate");
         let _main_span_guard = main_span.enter();
@@ -228,7 +231,7 @@ mod window {
         tracing::info!("NOW = {now:?} == {now}");
         tracing::info!("START = {start:?} == {start}");
 
-        let data: Vec<MetricCatalog> = (0..20)
+        let data: Vec<_> = (0..20)
             .map(|i: u32| {
                 let value = if i < 10 { i + 1 } else { 20 - i };
                 make_test_catalog(start + Duration::from_secs(i as u64), value)
@@ -300,10 +303,7 @@ mod window {
     }
 
     #[derive(PolarClass, Label, Debug, Clone, Serialize, Deserialize)]
-    struct TestContext {
-        pub recv_timestamp: Timestamp,
-        pub correlation_id: Id<Self>,
-    }
+    struct TestContext;
 
     impl PartialEq for TestContext {
         fn eq(&self, _other: &Self) -> bool {
@@ -311,16 +311,9 @@ mod window {
         }
     }
 
-    impl Correlation for TestContext {
-        type Correlated = Self;
-
-        fn correlation(&self) -> &Id<Self::Correlated> {
-            &self.correlation_id
-        }
-    }
-
     #[async_trait]
     impl ProctorContext for TestContext {
+        type ContextData = Self;
         type Error = ProctorError;
 
         fn custom(&self) -> telemetry::TableType {
@@ -341,8 +334,8 @@ mod window {
 
     impl QueryPolicy for TestPolicy {
         type Args = (Self::Item, Self::Context);
-        type Context = TestContext;
-        type Item = AppDataWindow<MetricCatalog>;
+        type Context = Env<TestContext>;
+        type Item = Env<AppDataWindow<Env<MetricCatalog>>>;
         type TemplateData = ();
 
         fn base_template_name() -> &'static str {
@@ -390,7 +383,7 @@ mod window {
         tracing::info!("NOW = {now:?} == {now}");
         tracing::info!("START = {start:?} == {start}");
 
-        let data: Vec<MetricCatalog> = (0..20)
+        let data: Vec<_> = (0..20)
             .map(|i: u32| {
                 let value = if i < 10 { i + 1 } else { 20 - i };
                 make_test_catalog(start + Duration::from_secs(i as u64), value)
@@ -461,10 +454,13 @@ mod window {
 
             assert_ok!(
                 tx_ctx_in
-                    .send(TestContext {
-                        recv_timestamp: Timestamp::now(),
-                        correlation_id: Id::direct("text_context", 123, "abc"),
-                    })
+                    .send(Env::from_parts(
+                        MetaData::from_parts(
+                            Id::direct("text_context", 123, "abc"),
+                            Timestamp::now()
+                        ),
+                        TestContext
+                    ))
                     .await
             );
 
@@ -484,8 +480,7 @@ mod window {
                             &PolicyFilterEvent::ItemPassed(_, _)
                         );
 
-                        let actual: PolicyOutcome<AppDataWindow<MetricCatalog>, TestContext> =
-                            assert_some!(rx_out.recv().await);
+                        let actual: PolicyOutcome<_, _> = assert_some!(rx_out.recv().await);
 
                         assert_eq!(
                             (i, assert_some!(actual.item.flow.source_records_lag_max)),

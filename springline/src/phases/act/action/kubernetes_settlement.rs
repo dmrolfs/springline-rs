@@ -2,16 +2,16 @@ use std::marker::PhantomData;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use proctor::AppData;
+use proctor::{AppData, Correlation};
 use tokio::time::Instant;
 
 use super::{ActionSession, ScaleAction};
 use crate::kubernetes::{FlinkComponent, KubernetesContext, RUNNING_STATUS};
-use crate::math;
 use crate::model::NrReplicas;
 use crate::phases::act;
 use crate::phases::act::{ActError, ActErrorDisposition};
 use crate::phases::plan::ScaleActionPlan;
+use crate::{math, Env};
 
 pub const ACTION_LABEL: &str = "kubernetes_settlement";
 
@@ -46,7 +46,7 @@ impl<P> KubernetesSettlement<P> {
 #[async_trait]
 impl<P> ScaleAction for KubernetesSettlement<P>
 where
-    P: AppData + ScaleActionPlan,
+    P: AppData + ScaleActionPlan + Correlation,
 {
     type Plan = P;
 
@@ -54,7 +54,7 @@ where
         self.label.as_str()
     }
 
-    fn check_preconditions(&self, session: &ActionSession) -> Result<(), ActError> {
+    fn check_preconditions(&self, session: &Env<ActionSession>) -> Result<(), ActError> {
         session
             .nr_target_replicas
             .map(|_| ())
@@ -71,7 +71,7 @@ where
         fields(label=%self.label()),
     )]
     async fn execute<'s>(
-        &mut self, plan: &'s Self::Plan, session: &'s mut ActionSession,
+        &mut self, plan: &'s Self::Plan, session: &'s mut Env<ActionSession>,
     ) -> Result<(), ActError> {
         let nr_confirmed_taskmanagers = self.block_for_rescaled_taskmanagers(plan, session).await;
         let nr_target_taskmanagers = Self::target_replicas(plan, session);
@@ -79,7 +79,7 @@ where
         if nr_confirmed_taskmanagers != nr_target_taskmanagers {
             let track = format!("{}::settlement_confirmation", self.label());
             tracing::error!(
-                %nr_confirmed_taskmanagers, %nr_target_taskmanagers, coreelation=?session.correlation, %track,
+                %nr_confirmed_taskmanagers, %nr_target_taskmanagers, correlation=?session.correlation(), %track,
                 "{}: could not confirm rescaled taskmanager pods {RUNNING_STATUS} in kubernetes within {:?} settle timeout - continuing with next action.",
                 self.label(), self.timeout
             );
@@ -93,10 +93,10 @@ where
 
 impl<P> KubernetesSettlement<P>
 where
-    P: AppData + ScaleActionPlan,
+    P: AppData + ScaleActionPlan + Correlation,
 {
     fn target_replicas<'s>(
-        plan: &'s <Self as ScaleAction>::Plan, session: &'s ActionSession,
+        plan: &'s <Self as ScaleAction>::Plan, session: &'s Env<ActionSession>,
     ) -> NrReplicas {
         session.nr_target_replicas.unwrap_or_else(|| plan.target_replicas())
     }
@@ -108,7 +108,7 @@ where
         fields(label=%self.label()),
     )]
     async fn block_for_rescaled_taskmanagers(
-        &self, plan: &<Self as ScaleAction>::Plan, session: &ActionSession,
+        &self, plan: &<Self as ScaleAction>::Plan, session: &Env<ActionSession>,
     ) -> NrReplicas {
         let correlation = plan.correlation();
         let nr_target_taskmanagers = Self::target_replicas(plan, session);

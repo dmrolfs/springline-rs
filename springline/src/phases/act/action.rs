@@ -3,13 +3,14 @@ use std::marker::PhantomData;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use pretty_snowflake::Label;
 use proctor::AppData;
 use strum_macros::Display;
 
 use crate::flink::{FlinkContext, JarId, JobId, JobSavepointReport};
 use crate::kubernetes::KubernetesContext;
 use crate::phases::act::ActError;
-use crate::CorrelationId;
+use crate::Env;
 
 mod composite;
 mod cull;
@@ -42,10 +43,10 @@ pub trait ScaleAction: Debug + Send + Sync {
         true
     }
 
-    fn check_preconditions(&self, session: &ActionSession) -> Result<(), ActError>;
+    fn check_preconditions(&self, session: &Env<ActionSession>) -> Result<(), ActError>;
 
     async fn execute<'s>(
-        &mut self, plan: &'s Self::Plan, session: &'s mut ActionSession,
+        &mut self, plan: &'s Self::Plan, session: &'s mut Env<ActionSession>,
     ) -> Result<(), ActError>;
 }
 
@@ -73,12 +74,12 @@ where
         NO_ACTION_LABEL
     }
 
-    fn check_preconditions(&self, _session: &ActionSession) -> Result<(), ActError> {
+    fn check_preconditions(&self, _session: &Env<ActionSession>) -> Result<(), ActError> {
         Ok(())
     }
 
     async fn execute<'s>(
-        &mut self, _plan: &'s Self::Plan, _session: &'s mut ActionSession,
+        &mut self, _plan: &'s Self::Plan, _session: &'s mut Env<ActionSession>,
     ) -> Result<(), ActError> {
         Ok(())
     }
@@ -115,9 +116,9 @@ pub enum ActionStatus {
     Failure,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Label)]
 pub struct ActionSession {
-    pub correlation: CorrelationId,
+    // pub correlation: Id<PhaseDataT>,
     pub history: Vec<ActionOutcome>,
     pub kube: KubernetesContext,
     pub flink: FlinkContext,
@@ -130,9 +131,10 @@ pub struct ActionSession {
 }
 
 impl ActionSession {
-    pub fn new(correlation: CorrelationId, kube: KubernetesContext, flink: FlinkContext) -> Self {
+    // pub fn new(correlation: Id<PhaseDataT>, kube: KubernetesContext, flink: FlinkContext) -> Self {
+    pub fn new(kube: KubernetesContext, flink: FlinkContext) -> Self {
         Self {
-            correlation,
+            // correlation,
             history: Default::default(),
             kube,
             flink,
@@ -145,9 +147,9 @@ impl ActionSession {
         }
     }
 
-    pub fn correlation(&self) -> CorrelationId {
-        self.correlation.clone()
-    }
+    // pub fn correlation(&self) -> CorrelationId {
+    //     self.correlation.clone()
+    // }
 
     pub fn mark_completion(
         &mut self, label: impl AsRef<str>, status: ActionStatus, duration: Duration, is_leaf: bool,
@@ -164,7 +166,8 @@ impl ActionSession {
 impl Debug for ActionSession {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut debug = f.debug_struct("ActionSession");
-        debug.field("correlation", &format!("{}", self.correlation)).field(
+        // debug.field("correlation", &format!("{}", self.correlation))
+        debug.field(
             "history",
             &self.history.iter().map(|o| o.to_string()).collect::<Vec<_>>(),
         );

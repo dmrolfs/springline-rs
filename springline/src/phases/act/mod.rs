@@ -1,19 +1,20 @@
-use std::time::Duration;
-
+use crate::flink::JarId;
+use crate::phases::plan::{PlanningOutcome, ScaleActionPlan};
 use either::{Either, Left, Right};
 use once_cell::sync::Lazy;
 use proctor::error::MetricLabel;
 use proctor::graph::stage::{self, SinkStage};
+use prometheus::core::{AtomicU64, GenericGauge};
 use prometheus::{HistogramOpts, HistogramTimer, HistogramVec, IntCounterVec, Opts};
 pub use protocol::{ActEvent, ActMonitor};
+use std::collections::HashMap;
+use std::time::Duration;
 use strum_macros::Display;
 use thiserror::Error;
 
-use crate::phases::governance::GovernanceOutcome;
-use crate::phases::plan::ScaleActionPlan;
-
 mod action;
 mod scale_actuator;
+
 pub use action::ActionOutcome;
 pub use action::ACTION_TOTAL_DURATION;
 pub use action::FLINK_MISSED_JAR_RESTARTS;
@@ -27,8 +28,6 @@ pub enum ActError {
     #[error("failure into kubernetes: {0}")]
     Kubernetes(#[from] crate::kubernetes::KubernetesError),
 
-    // #[error("failure in kubernetes client: {0}")]
-    // Kube(#[from] kube::Error),
     #[error("failure while calling Flink API: {0}")]
     Flink(#[from] crate::flink::FlinkError),
 
@@ -41,6 +40,11 @@ pub enum ActError {
 
     #[error("Job failed during attempted restart.")]
     FailedJob(crate::flink::JobId, crate::flink::SavepointLocation),
+
+    #[error("no savepoint available for restart after initial attempts:{initial_failures:?}")]
+    NoSavepointForRestart {
+        initial_failures: HashMap<JarId, ActError>,
+    },
 
     #[error("failure restarting Flink savepoints for jars: {jar_savepoints:?}: {sources:?}")]
     JobRestart {
@@ -68,11 +72,10 @@ impl MetricLabel for ActError {
         match self {
             Self::Timeout(..) => Left("timeout".into()),
             Self::Kubernetes(_) => Left("kubernetes".into()),
-            // Self::Kube(_) => Left("kubernetes".into()),
-            // Self::KubeApi(e) => Left(format!("kubernetes::{}", e.reason).into()),
             Self::Flink(e) => Right(Box::new(e)),
             Self::Savepoint { .. } => Left("savepoint".into()),
             Self::FailedJob(_, _) => Left("restart::flink".into()),
+            Self::NoSavepointForRestart { .. } => Left("restart::no_savepoints".into()),
             Self::JobRestart { .. } => Left("restart::jar".into()),
             Self::Port(e) => Right(Box::new(e)),
             Self::ActionPrecondition { action, .. } => Left(action.into()),
@@ -82,13 +85,10 @@ impl MetricLabel for ActError {
 }
 
 mod protocol {
-    use std::sync::Arc;
-
-    use tokio::sync::broadcast;
-
     use crate::phases::act::action::ActionOutcome;
     use crate::phases::plan::ScaleActionPlan;
-    use crate::CorrelationId;
+    use std::sync::Arc;
+    use tokio::sync::broadcast;
 
     pub type ActMonitor<P> = broadcast::Receiver<Arc<ActEvent<P>>>;
 
@@ -105,7 +105,10 @@ mod protocol {
         },
     }
 
-    impl<P: ScaleActionPlan> ActEvent<P> {
+    impl<P> ActEvent<P>
+    where
+        P: ScaleActionPlan, // + Correlation,
+    {
         #[allow(clippy::missing_const_for_fn)]
         pub fn plan(&self) -> &P {
             match self {
@@ -114,12 +117,19 @@ mod protocol {
                 Self::PlanFailed { plan, .. } => plan,
             }
         }
-
-        pub fn correlation(&self) -> &CorrelationId {
-            self.plan().correlation()
-        }
     }
 }
+
+pub static ACT_IS_RESCALING: Lazy<GenericGauge<AtomicU64>> = Lazy::new(|| {
+    GenericGauge::with_opts(
+        Opts::new(
+            "act_is_rescaling",
+            "1 to indicate cluster is actively rescaling; 0 otherwise",
+        )
+        .const_labels(proctor::metrics::CONST_LABELS.clone()),
+    )
+    .expect("failed creating act_is_rescaling metric")
+});
 
 #[inline]
 fn start_rescale_timer(action: &str) -> HistogramTimer {
@@ -157,15 +167,7 @@ pub(crate) static PHASE_ACT_ERRORS: Lazy<IntCounterVec> = Lazy::new(|| {
     IntCounterVec::new(
         Opts::new("phase_act_errors", "Count of errors executing scale plans")
             .const_labels(proctor::metrics::CONST_LABELS.clone()),
-        &[
-            "action",
-            "error_type",
-            "disposition",
-            // "current_job_parallelism",
-            // "target_job_parallelism",
-            // "current_nr_task_managers",
-            // "target_nr_task_managers",
-        ],
+        &["action", "error_type", "disposition"],
     )
     .expect("failed creating phase_act_errors metric")
 });
@@ -191,19 +193,15 @@ pub(crate) fn track_act_errors<'p, E, P>(
             action,
             error_type.as_str(),
             disposition.to_string().as_str(),
-            // plan.current_job_parallelism().to_string().as_str(),
-            // plan.target_job_parallelism().to_string().as_str(),
-            // plan.current_replicas().to_string().as_str(),
-            // plan.target_replicas().to_string().as_str(),
         ])
         .inc()
 }
 
 #[tracing::instrument(level = "trace")]
-pub fn make_logger_act_phase() -> Box<dyn SinkStage<GovernanceOutcome>> {
+pub fn make_logger_act_phase() -> Box<dyn SinkStage<PlanningOutcome>> {
     Box::new(stage::Foreach::new(
         "logging_act",
-        |plan: GovernanceOutcome| {
+        |plan: PlanningOutcome| {
             ACT_RESCALE_ACTION_COUNT
                 .with_label_values(&[
                     plan.current_nr_taskmanagers.to_string().as_str(),

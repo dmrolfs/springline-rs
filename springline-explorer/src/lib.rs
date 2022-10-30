@@ -1,3 +1,6 @@
+#[macro_use]
+extern crate static_assertions;
+
 pub mod app_menu;
 pub mod policy;
 pub mod settings;

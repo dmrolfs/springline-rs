@@ -12,22 +12,16 @@ lazy_static! {
     pub static ref DT_1_TS: i64 = DT_1.timestamp();
 }
 
-pub fn make_test_item(
-    _timestamp: &DateTime<Utc>, records_in_per_sec: f64, inbox_lag: i64,
-) -> Telemetry {
-    let item = maplit::hashmap! {
-        // "timestamp".to_string() => Timestamp::from_datetime(&timestamp).into(),
+pub fn make_test_item(records_in_per_sec: f64, inbox_lag: i64) -> Telemetry {
+    maplit::hashmap! {
         MC_FLOW__RECORDS_IN_PER_SEC.to_string() => records_in_per_sec.into(),
         "flow.source_records_lag_max".to_string() => inbox_lag.into(),
     }
-    .into_iter()
-    .collect();
-
-    item
+    .into()
 }
 
 pub fn make_test_item_padding() -> Telemetry {
-    let padding = maplit::hashmap! {
+    maplit::hashmap! {
         "health.job_max_parallelism".to_string() => 16.into(),
         "health.job_source_max_parallelism".to_string() => 16.into(),
         "health.job_nonsource_max_parallelism".to_string() => 16.into(),
@@ -49,8 +43,5 @@ pub fn make_test_item_padding() -> Telemetry {
         "cluster.task_network_output_queue_len".to_string() => (0).into(),
         "cluster.task_network_output_pool_usage".to_string() => (0).into(),
     }
-    .into_iter()
-    .collect();
-
-    padding
+    .into()
 }

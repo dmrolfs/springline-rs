@@ -1,33 +1,26 @@
-use std::collections::HashSet;
-use std::fmt;
-use std::ops::Add;
-
+use crate::flink::model::window::WindowEntry;
 use crate::flink::Parallelism;
+use crate::metrics::UpdateMetrics;
+use crate::model::NrReplicas;
 use frunk::{Monoid, Semigroup};
 use once_cell::sync::{Lazy, OnceCell};
 use oso::{Oso, PolarClass};
-use pretty_snowflake::{Id, Label, Labeling};
+use pretty_snowflake::Label;
 use proctor::elements::telemetry::UpdateMetricsFn;
 use proctor::elements::{telemetry, PolicyContributor, Telemetry, Timestamp};
 use proctor::error::{PolicyError, ProctorError};
 use proctor::phases::sense::SubscriptionRequirements;
-use proctor::{Correlation, ReceivedAt};
 use prometheus::core::{AtomicU64, GenericGauge};
-use prometheus::{Gauge, IntGauge, Opts};
+use prometheus::{Gauge, Opts};
 use serde::{Deserialize, Serialize};
-
-use crate::metrics::UpdateMetrics;
-use crate::model::NrReplicas;
+use std::collections::HashSet;
+use std::fmt;
+use std::ops::Add;
 
 pub static SUPPLEMENTAL_TELEMETRY: OnceCell<HashSet<String>> = OnceCell::new();
 
 #[derive(PolarClass, Label, PartialEq, Clone, Serialize, Deserialize)]
 pub struct MetricCatalog {
-    pub correlation_id: Id<Self>,
-
-    #[polar(attribute)]
-    pub recv_timestamp: Timestamp,
-
     #[polar(attribute)]
     #[serde(flatten)] // current subscription mechanism only supports flatten keys
     pub health: JobHealthMetrics,
@@ -48,8 +41,6 @@ pub struct MetricCatalog {
 impl fmt::Debug for MetricCatalog {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("MetricCatalog")
-            .field("correlation", &self.correlation_id)
-            .field("recv_timestamp", &self.recv_timestamp.to_string())
             .field("health", &self.health)
             .field("flow", &self.flow)
             .field("cluster", &self.cluster)
@@ -58,17 +49,20 @@ impl fmt::Debug for MetricCatalog {
     }
 }
 
-impl Correlation for MetricCatalog {
-    type Correlated = Self;
+impl WindowEntry for MetricCatalog {
+    type Entry = (Self, Timestamp);
+    type Data = Self;
 
-    fn correlation(&self) -> &Id<Self::Correlated> {
-        &self.correlation_id
+    fn new(item: Self) -> Self::Entry {
+        (item, Timestamp::now())
     }
-}
 
-impl ReceivedAt for MetricCatalog {
-    fn recv_timestamp(&self) -> Timestamp {
-        self.recv_timestamp
+    fn into_data(entry: Self::Entry) -> Self::Data {
+        entry.0
+    }
+
+    fn data_of(entry: &Self::Entry) -> &Self::Data {
+        &entry.0
     }
 }
 
@@ -115,8 +109,6 @@ impl PolicyContributor for MetricCatalog {
 impl Monoid for MetricCatalog {
     fn empty() -> Self {
         Self {
-            correlation_id: Id::direct(<Self as Label>::labeler().label(), 0, "<undefined>"),
-            recv_timestamp: Timestamp::ZERO,
             health: JobHealthMetrics::empty(),
             flow: FlowMetrics::empty(),
             cluster: ClusterMetrics::empty(),
@@ -131,8 +123,6 @@ impl Semigroup for MetricCatalog {
         custom.extend(other.custom.clone());
 
         Self {
-            correlation_id: other.correlation_id.clone(),
-            recv_timestamp: other.recv_timestamp,
             health: self.health.combine(&other.health),
             flow: self.flow.combine(&other.flow),
             cluster: self.cluster.combine(&other.cluster),
@@ -223,7 +213,7 @@ impl Monoid for JobHealthMetrics {
             job_max_parallelism: Parallelism::new(0),
             job_source_max_parallelism: Parallelism::new(0),
             job_nonsource_max_parallelism: Parallelism::new(0),
-            ..JobHealthMetrics::default()
+            ..Self::default()
         }
     }
 }
@@ -670,8 +660,6 @@ impl UpdateMetrics for MetricCatalog {
             .try_into::<Self>()
         {
             Ok(catalog) => {
-                METRIC_CATALOG_TIMESTAMP.set(catalog.recv_timestamp.as_secs());
-
                 if let Some(job_uptime_millis) = catalog.health.job_uptime_millis {
                     METRIC_CATALOG_JOB_HEALTH_UPTIME.set(job_uptime_millis.into());
                 }
@@ -757,17 +745,6 @@ impl UpdateMetrics for MetricCatalog {
         Box::new(update_fn)
     }
 }
-
-pub static METRIC_CATALOG_TIMESTAMP: Lazy<IntGauge> = Lazy::new(|| {
-    IntGauge::with_opts(
-        Opts::new(
-            "metric_catalog_timestamp",
-            "UNIX timestamp in seconds of last operational reading",
-        )
-        .const_labels(proctor::metrics::CONST_LABELS.clone()),
-    )
-    .expect("failed creating metric_catalog_timestamp metric")
-});
 
 pub static METRIC_CATALOG_JOB_HEALTH_UPTIME: Lazy<GenericGauge<AtomicU64>> = Lazy::new(|| {
     GenericGauge::with_opts(

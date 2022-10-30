@@ -134,7 +134,10 @@ impl<F: Forecaster> ForecastCalculator<F> {
 
         let total_records =
             self.total_records_between(&*forecast, trigger_point, recovery)? + buffered_records;
-        tracing::debug!(total_records_at_valid_time=%total_records, "estimated total records to process before valid time");
+        tracing::debug!(
+            total_records_at_valid_time=%total_records,
+            "estimated total records to process before valid time; between start[{trigger_point}] and recovery[{recovery}]"
+        );
 
         let recovery_rate = self.recovery_rate(total_records);
         PLANNING_RECOVERY_WORKLOAD_RATE.set(*recovery_rate.as_ref());
@@ -174,7 +177,6 @@ impl<F: Forecaster> ForecastCalculator<F> {
         &self, forecast: &dyn WorkloadForecast, start: Timestamp, end: Timestamp,
     ) -> Result<f64, PlanError> {
         let total = forecast.total_records_between(start, end)?;
-        tracing::debug!("total records between [{}, {}] = {}", start, end, total);
         Ok(total)
     }
 
@@ -351,4 +353,42 @@ mod tests {
         assert_relative_eq!(actual, RecordsPerSecond::new(314.159), epsilon = 1.0e-10);
         Ok(())
     }
+
+    // #[test]
+    // fn test_calculate_constant_scenario() -> anyhow::Result<()> {
+    //     once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
+    //     let main_span = tracing::info_span!("test_calculate_linear_scenario");
+    //     let _main_span_guard = main_span.enter();
+    //
+    //     let calc = ForecastCalculator::new(
+    //         LeastSquaresWorkloadForecaster::new(
+    //             20,
+    //             SpikeSettings { influence: 0.25, ..SpikeSettings::default() },
+    //         ),
+    //         ForecastInputs {
+    //             direction_restart: maplit::hashmap! {
+    //                 ScaleDirection::Up => Duration::from_secs(2 * 60),
+    //                 ScaleDirection::Down => Duration::from_secs(2 * 60),
+    //             },
+    //             max_catch_up: Duration::from_secs(13 * 60),
+    //             valid_offset: Duration::from_secs(5 * 60),
+    //         },
+    //     )
+    //     .unwrap();
+    //
+    //     let points = setup_signal_history(SignalType::Constant { rate: 10.0 });
+    //     points.into_iter().for_each(|(ts, value)| {
+    //         calc.add_observation(WorkloadMeasurement {
+    //             timestamp_secs: ts.timestamp(),
+    //             workload: value.into(),
+    //         })
+    //     });
+    //
+    //     let trigger_point: Timestamp = todo!();
+    //     let direction = ScaleDirection::Up;
+    //     let buffered_records = 314.;
+    //
+    //     let forecasted_workload =
+    //         calc.calculate_target_rate(trigger_point, direction, buffered_records);
+    // }
 }

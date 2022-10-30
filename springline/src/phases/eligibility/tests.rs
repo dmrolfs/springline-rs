@@ -1,5 +1,4 @@
 use once_cell::sync::Lazy;
-use pretty_snowflake::Id;
 
 use crate::phases::eligibility::{ClusterStatus, EligibilityContext, JobStatus};
 
@@ -7,7 +6,7 @@ mod context {
     use chrono::{DateTime, Utc};
     use claim::*;
     use proctor::elements::telemetry::ToTelemetry;
-    use proctor::elements::{Telemetry, Timestamp, NANOS_KEY, SECS_KEY};
+    use proctor::elements::{Telemetry, NANOS_KEY, SECS_KEY};
     use serde_test::{assert_tokens, Token};
 
     use super::*;
@@ -18,11 +17,9 @@ mod context {
     static DT_2_STR: Lazy<String> = Lazy::new(|| format!("{}", DT_2.format("%+")));
 
     #[test]
-    #[ignore]
+    #[ignore = "asserting a map is difficult given random ordering for each run"]
     fn test_serde_flink_eligibility_context() {
         let context = EligibilityContext {
-            correlation_id: Id::direct("EligibilityContext", 0, "A"),
-            recv_timestamp: Timestamp::new(0, 0),
             all_sinks_healthy: true,
             job: JobStatus { last_failure: Some(DT_1.clone()) },
             cluster: ClusterStatus {
@@ -31,27 +28,12 @@ mod context {
                 last_deployment: DT_2.clone(),
             },
             custom: maplit::hashmap! {
-                "custom_foo".to_string() => "fred flintstone".into(),
                 "custom_bar".to_string() => "The Happy Barber".into(),
             },
         };
 
         let mut expected = vec![
             Token::Map { len: None },
-            Token::Str("correlation_id"),
-            Token::Struct { name: "Id", len: 2 },
-            Token::Str("snowflake"),
-            Token::I64(0),
-            Token::Str("pretty"),
-            Token::Str("A"),
-            Token::StructEnd,
-            Token::Str("recv_timestamp"),
-            Token::TupleStruct { name: "Timestamp", len: 2 },
-            Token::I64(0),
-            Token::U32(0),
-            Token::TupleStructEnd,
-            Token::Str("all_sinks_healthy"),
-            Token::Bool(true),
             Token::Str("task.last_failure"),
             Token::Some,
             Token::Map { len: Some(2) },
@@ -62,6 +44,8 @@ mod context {
             Token::MapEnd,
             Token::Str("cluster.is_deploying"),
             Token::Bool(false),
+            Token::Str("cluster.is_rescaling"),
+            Token::Bool(false),
             Token::Str("cluster.last_deployment"),
             Token::Map { len: Some(2) },
             Token::Str(SECS_KEY),
@@ -69,8 +53,8 @@ mod context {
             Token::Str(NANOS_KEY),
             Token::I64(DT_2.timestamp_subsec_nanos() as i64),
             Token::MapEnd,
-            Token::Str("custom_foo"),
-            Token::Str("fred flintstone"),
+            Token::Str("all_sinks_healthy"),
+            Token::Bool(true),
             Token::Str("custom_bar"),
             Token::Str("The Happy Barber"),
             Token::MapEnd,
@@ -114,8 +98,6 @@ mod context {
         once_cell::sync::Lazy::force(&proctor::tracing::TEST_TRACING);
 
         let data: Telemetry = maplit::hashmap! {
-            "correlation_id" => Id::<EligibilityContext>::direct("EligibilityContext", 0, "A").to_telemetry(),
-            "recv_timestamp" => Timestamp::new(0, 0).to_telemetry(),
             "all_sinks_healthy" => false.to_telemetry(),
             "task.last_failure" => DT_1_STR.as_str().to_telemetry(),
             "cluster.is_deploying" => false.to_telemetry(),
@@ -130,8 +112,6 @@ mod context {
         let actual = assert_ok!(data.try_into::<EligibilityContext>());
         tracing::info!(?actual, "converted into FlinkEligibilityContext");
         let expected = EligibilityContext {
-            correlation_id: Id::direct("EligibilityContext", 0, "A"),
-            recv_timestamp: Timestamp::new(0, 0),
             all_sinks_healthy: false,
             job: JobStatus { last_failure: Some(DT_1.clone()) },
             cluster: ClusterStatus {

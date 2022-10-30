@@ -1,55 +1,26 @@
-use std::str::FromStr;
-use std::time::Duration;
-
 use dialoguer::FuzzySelect;
-use once_cell::sync::Lazy;
-use pretty_snowflake::{AlphabetCodec, Id, IdPrettifier, Label, Labeling};
-use proctor::elements::Timestamp;
-use proctor::ProctorIdGenerator;
-use springline::flink::{AppDataWindow, ClusterMetrics, FlowMetrics, JobHealthMetrics};
+use springline::flink::{ClusterMetrics, FlowMetrics, JobHealthMetrics};
 use springline::model::NrReplicas;
+use std::str::FromStr;
 use tailcall::tailcall;
 use trim_margin::MarginTrimmable;
 
 use super::*;
 use crate::THEME;
 
-impl PopulateData for AppDataWindow<MetricCatalog> {
-    fn make(now: DateTime<Utc>, settings: &Settings) -> Result<Self>
-    where
-        Self: Sized,
-    {
-        <MetricCatalog as PopulateData>::make(now, settings)
-            .map(|catalog| AppDataWindow::from_time_window(catalog, Duration::from_secs(600)))
-    }
-}
-
 impl PopulateData for MetricCatalog {
-    fn make(now: DateTime<Utc>, _settings: &Settings) -> Result<Self>
+    fn make(_now: DateTime<Utc>, _settings: &Settings) -> Result<Self>
     where
         Self: Sized,
     {
-        let mut id_gen = ProctorIdGenerator::default();
         let baseline = MetricCatalog {
-            recv_timestamp: now.into(),
-            correlation_id: id_gen.next_id(),
             health: JobHealthMetrics::default(),
             flow: FlowMetrics::default(),
             cluster: ClusterMetrics::default(),
             custom: HashMap::default(),
         };
 
-        let facets: [(&str, Option<MetricCatalogLens>); 21] = [
-            (
-                "correlation_id",
-                Some(MetricCatalogLens::Root(
-                    MetricCatalogRootLens::CorrelationId,
-                )),
-            ),
-            (
-                "timestamp",
-                Some(MetricCatalogLens::Root(MetricCatalogRootLens::Timestamp)),
-            ),
+        let facets: [(&str, Option<MetricCatalogLens>); 19] = [
             (
                 "health.job_uptime_millis",
                 Some(MetricCatalogLens::Health(JobHealthLens::UptimeMillis)),
@@ -184,7 +155,6 @@ trait Lens {
 }
 
 enum MetricCatalogLens {
-    Root(MetricCatalogRootLens),
     Health(JobHealthLens),
     Flow(FlowLens),
     Cluster(ClusterLens),
@@ -195,7 +165,6 @@ impl Lens for MetricCatalogLens {
 
     fn get(&self, telemetry: &Self::T) -> String {
         match self {
-            Self::Root(lens) => lens.get(telemetry),
             Self::Health(lens) => lens.get(&telemetry.health),
             Self::Flow(lens) => lens.get(&telemetry.flow),
             Self::Cluster(lens) => lens.get(&telemetry.cluster),
@@ -204,48 +173,10 @@ impl Lens for MetricCatalogLens {
 
     fn set(&self, telemetry: &mut Self::T, value_rep: impl AsRef<str>) -> anyhow::Result<()> {
         match self {
-            Self::Root(lens) => lens.set(telemetry, value_rep),
             Self::Health(lens) => lens.set(&mut telemetry.health, value_rep),
             Self::Flow(lens) => lens.set(&mut telemetry.flow, value_rep),
             Self::Cluster(lens) => lens.set(&mut telemetry.cluster, value_rep),
         }
-    }
-}
-
-enum MetricCatalogRootLens {
-    CorrelationId,
-    Timestamp,
-}
-
-static METRIC_CATALOG_LABEL: Lazy<String> =
-    Lazy::new(|| <MetricCatalog as Label>::labeler().label().to_string());
-
-impl Lens for MetricCatalogRootLens {
-    type T = MetricCatalog;
-
-    fn get(&self, telemetry: &Self::T) -> String {
-        match self {
-            Self::CorrelationId => format!("{:#}", telemetry.correlation_id),
-            Self::Timestamp => format!("{:#}", telemetry.recv_timestamp),
-        }
-    }
-
-    fn set(&self, telemetry: &mut Self::T, value_rep: impl AsRef<str>) -> anyhow::Result<()> {
-        match self {
-            Self::CorrelationId => {
-                let snowflake = i64::from_str(value_rep.as_ref())?;
-                telemetry.correlation_id = Id::new(
-                    &*METRIC_CATALOG_LABEL,
-                    snowflake,
-                    &IdPrettifier::<AlphabetCodec>::default(),
-                );
-            },
-            Self::Timestamp => {
-                telemetry.recv_timestamp = Timestamp::from_str(value_rep.as_ref())?;
-            },
-        }
-
-        Ok(())
     }
 }
 
@@ -407,14 +338,5 @@ impl Lens for ClusterLens {
         }
 
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    #[ignore]
-    #[test]
-    fn test_metric_catalog_populate_data() {
-        todo!()
     }
 }

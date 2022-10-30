@@ -4,17 +4,17 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use k8s_openapi::api::core::v1::Pod;
-use proctor::AppData;
+use proctor::{AppData, Correlation};
 use tokio::time::Instant;
 use tracing_futures::Instrument;
 
 use super::{ActionSession, ScaleAction};
 use crate::kubernetes::{self, FlinkComponent, KubernetesContext, KubernetesError};
-use crate::math;
 use crate::model::NrReplicas;
 use crate::phases::act;
 use crate::phases::act::{ActError, ActErrorDisposition};
 use crate::phases::plan::{ScaleActionPlan, ScaleDirection};
+use crate::{math, Env};
 
 pub const ACTION_LABEL: &str = "patch_replicas";
 
@@ -40,7 +40,7 @@ impl<P> PatchReplicas<P> {
 #[async_trait]
 impl<P> ScaleAction for PatchReplicas<P>
 where
-    P: AppData + ScaleActionPlan,
+    P: AppData + ScaleActionPlan + Correlation,
 {
     type Plan = P;
 
@@ -48,16 +48,16 @@ where
         ACTION_LABEL
     }
 
-    fn check_preconditions(&self, _session: &ActionSession) -> Result<(), ActError> {
+    fn check_preconditions(&self, _session: &Env<ActionSession>) -> Result<(), ActError> {
         Ok(())
     }
 
     #[tracing::instrument(level = "info", name = "PatchReplicas::execute", skip(self, plan))]
     async fn execute<'s>(
-        &mut self, plan: &'s Self::Plan, session: &'s mut ActionSession,
+        &mut self, plan: &'s Self::Plan, session: &'s mut Env<ActionSession>,
     ) -> Result<(), ActError> {
-        let correlation = session.correlation();
         let nr_target_replicas = plan.target_replicas();
+        let correlation = session.correlation().relabel();
 
         let original_nr_replicas =
             session.kube.taskmanager().deploy.get_scale(&correlation).await?;
@@ -89,7 +89,7 @@ where
 
 impl<P> PatchReplicas<P>
 where
-    P: AppData + ScaleActionPlan,
+    P: AppData + ScaleActionPlan + Correlation,
 {
     #[tracing::instrument(
         level = "info",
@@ -217,7 +217,7 @@ where
 
     #[tracing::instrument(level = "warn", skip(self, plan, session))]
     async fn handle_error_on_patch_scale<'s>(
-        &self, error: KubernetesError, plan: &'s P, session: &'s mut ActionSession,
+        &self, error: KubernetesError, plan: &'s P, session: &'s mut Env<ActionSession>,
     ) -> Result<Option<NrReplicas>, KubernetesError> {
         let track = format!("{}::patch_scale", self.label());
         tracing::error!(
@@ -230,7 +230,7 @@ where
 
     #[tracing::instrument(level = "warn", skip(self, plan, session))]
     async fn handle_error_on_patch_block<'s>(
-        &self, error: ActError, plan: &'s P, session: &'s mut ActionSession,
+        &self, error: ActError, plan: &'s P, session: &'s mut Env<ActionSession>,
     ) -> Result<(), ActError> {
         let track = format!("{}::patch_block", self.label());
         match error {

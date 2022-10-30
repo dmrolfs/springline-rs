@@ -2,6 +2,7 @@ use super::*;
 use crate::phases::decision::{DecisionContext, DecisionPolicy};
 use crate::phases::policy_test_fixtures::prepare_policy_engine;
 use crate::settings::DecisionSettings;
+use crate::Env;
 use claim::*;
 use pretty_snowflake::{Id, Label, Labeling};
 use proctor::elements::{PolicySource, QueryPolicy, QueryResult};
@@ -13,7 +14,7 @@ use std::fmt;
 pub struct PolicyScenario {
     #[serde(default)]
     pub template_data: Option<DecisionTemplateData>,
-    pub item: AppDataWindow<MetricCatalog>,
+    pub item: Env<AppDataWindow<Env<MetricCatalog>>>,
 }
 
 impl PolicyScenario {
@@ -31,15 +32,17 @@ impl PolicyScenario {
 
     #[tracing::instrument(level = "debug")]
     pub fn run(&self) -> Result<QueryResult, PolicyError> {
-        let context = DecisionContext {
-            correlation_id: Id::direct(
-                <DecisionContext as Label>::labeler().label(),
-                0,
-                "test_doesnt_crash",
+        let context = Env::from_parts(
+            MetaData::from_parts(
+                Id::direct(
+                    <DecisionContext as Label>::labeler().label(),
+                    0,
+                    "test_doesnt_crash",
+                ),
+                Timestamp::now(),
             ),
-            recv_timestamp: Timestamp::now(),
-            custom: Default::default(),
-        };
+            DecisionContext { custom: Default::default() },
+        );
 
         let policy = DecisionPolicy::new(&DecisionSettings {
             policies: vec![
@@ -72,7 +75,7 @@ impl fmt::Debug for PolicyScenario {
 pub struct PolicyScenarioBuilder {
     basis: Option<String>,
     template_data: Option<BoxedStrategy<Option<DecisionTemplateData>>>,
-    item: Option<BoxedStrategy<AppDataWindow<MetricCatalog>>>,
+    item: Option<BoxedStrategy<Env<AppDataWindow<Env<MetricCatalog>>>>>,
 }
 
 #[allow(dead_code)]
@@ -103,7 +106,7 @@ impl PolicyScenarioBuilder {
 
     #[tracing::instrument(level = "debug", skip(items))]
     pub fn items(
-        self, items: impl Strategy<Value = AppDataWindow<MetricCatalog>> + 'static,
+        self, items: impl Strategy<Value = Env<AppDataWindow<Env<MetricCatalog>>>> + 'static,
     ) -> Self {
         let items = items.boxed();
         tracing::info!("items={items:?}");
@@ -113,17 +116,19 @@ impl PolicyScenarioBuilder {
         new
     }
 
-    pub fn just_items(self, items: impl Into<AppDataWindow<MetricCatalog>>) -> Self {
+    pub fn just_items(self, items: impl Into<Env<AppDataWindow<Env<MetricCatalog>>>>) -> Self {
         self.items(Just(items.into()))
     }
 
     #[tracing::instrument(level = "debug", skip(item, window))]
     pub fn one_item(
-        self, item: impl Strategy<Value = MetricCatalog> + 'static,
+        self, item: impl Strategy<Value = Env<MetricCatalog>> + 'static,
         window: impl Strategy<Value = Duration> + 'static,
     ) -> Self {
         let items = (item, window)
-            .prop_map(|(item, window)| AppDataWindow::from_time_window(item, window))
+            .prop_map(|(item, window)| {
+                item.flat_map(|i| AppDataWindow::from_time_window(i, window))
+            })
             .boxed();
 
         let mut new = self;
@@ -132,7 +137,7 @@ impl PolicyScenarioBuilder {
     }
 
     pub fn just_one_item(
-        self, item: impl Into<MetricCatalog>, window: impl Into<Duration>,
+        self, item: impl Into<Env<MetricCatalog>>, window: impl Into<Duration>,
     ) -> Self {
         self.one_item(Just(item.into()), Just(window.into()))
     }
@@ -155,14 +160,19 @@ impl PolicyScenarioBuilder {
                 arb_perturbed_duration(Duration::from_secs(15), 0.2),
             ),
             |recv_ts| {
-                MetricCatalogStrategyBuilder::new()
-                    .just_recv_timestamp(recv_ts)
-                    .finish()
+                arb_metadata(recv_ts)
+                    .prop_flat_map(|metadata| {
+                        MetricCatalogStrategyBuilder::new()
+                            .just_metadata(metadata)
+                            .finish()
+                            .boxed()
+                    })
                     .boxed()
             },
         );
 
         let item = self.item.unwrap_or(data.boxed());
+
         (template_data, item).prop_map(|(template_data, item)| {
             tracing::info!(?template_data, ?item, "making scenario...");
             PolicyScenario { template_data, item }

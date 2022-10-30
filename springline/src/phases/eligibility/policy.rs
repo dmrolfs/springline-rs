@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
+use crate::Env;
 use once_cell::sync::Lazy;
 use oso::{Oso, PolarClass, PolarValue};
 use proctor::elements::{
@@ -14,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use super::context::{ClusterStatus, EligibilityContext, JobStatus};
 use crate::flink::AppDataWindow;
 use crate::metrics::UpdateMetrics;
-use crate::phases::eligibility::EligibilityData;
+use crate::phases::eligibility::{EligibilityData, EligibilityDataT};
 use crate::phases::REASON;
 use crate::settings::EligibilitySettings;
 
@@ -62,14 +63,33 @@ impl PolicySubscription for EligibilityPolicy {
     }
 }
 
-// const ELIGIBLE: &str = "eligible";
 const INELIGIBLE: &str = "ineligible";
 
 impl QueryPolicy for EligibilityPolicy {
-    type Args = (Self::Item, Self::Context, PolarValue);
-    type Context = EligibilityContext;
     type Item = EligibilityData;
+    type Context = Env<EligibilityContext>;
+    type Args = (EligibilityDataT, EligibilityContext, PolarValue);
     type TemplateData = EligibilityTemplateData;
+
+    fn base_template_name() -> &'static str {
+        "eligibility"
+    }
+
+    fn policy_template_data(&self) -> Option<&Self::TemplateData> {
+        self.template_data.as_ref()
+    }
+
+    fn policy_template_data_mut(&mut self) -> Option<&mut Self::TemplateData> {
+        self.template_data.as_mut()
+    }
+
+    fn sources(&self) -> &[PolicySource] {
+        self.sources.as_slice()
+    }
+
+    fn sources_mut(&mut self) -> &mut Vec<PolicySource> {
+        &mut self.sources
+    }
 
     fn initialize_policy_engine(&self, oso: &mut Oso) -> Result<(), PolicyError> {
         Telemetry::register_with_policy_engine(oso)?;
@@ -104,8 +124,8 @@ impl QueryPolicy for EligibilityPolicy {
 
     fn make_query_args(&self, item: &Self::Item, context: &Self::Context) -> Self::Args {
         (
-            item.clone(),
-            context.clone(),
+            item.clone().into_inner(),
+            context.clone().into_inner(),
             PolarValue::Variable(REASON.to_string()),
         )
     }
@@ -135,26 +155,6 @@ impl QueryPolicy for EligibilityPolicy {
                 query_result
             })
         }
-    }
-
-    fn base_template_name() -> &'static str {
-        "eligibility"
-    }
-
-    fn policy_template_data(&self) -> Option<&Self::TemplateData> {
-        self.template_data.as_ref()
-    }
-
-    fn policy_template_data_mut(&mut self) -> Option<&mut Self::TemplateData> {
-        self.template_data.as_mut()
-    }
-
-    fn sources(&self) -> &[PolicySource] {
-        self.sources.as_slice()
-    }
-
-    fn sources_mut(&mut self) -> &mut Vec<PolicySource> {
-        &mut self.sources
     }
 }
 

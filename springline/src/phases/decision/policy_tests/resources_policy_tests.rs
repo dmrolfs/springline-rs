@@ -16,7 +16,6 @@ proptest! {
         scenario in PolicyScenario::builder()
         .template_data(prop::option::of(
             DecisionTemplateDataStrategyBuilder::default()
-            // .just_max_healthy_relative_lag_velocity(Some(0.5))
             .finish()
         ))
         .items(
@@ -25,8 +24,10 @@ proptest! {
                 arb_range_duration(30..=600),
                 arb_perturbed_duration(Duration::from_secs(15), 0.2),
                 |recv_ts| {
+                    arb_metadata(recv_ts)
+                    .prop_flat_map(|metadata| {
                     MetricCatalogStrategyBuilder::new()
-                        .just_recv_timestamp(recv_ts)
+                        .just_metadata(metadata)
                         .flow(
                             FlowMetricsStrategyBuilder::new()
                                 // .just_source_records_lag_max(Some(recv_ts.as_secs() as u32))
@@ -35,7 +36,7 @@ proptest! {
                                 .finish()
                         )
                         .finish()
-                        .boxed()
+                    }).boxed()
                 }
             )
         )
@@ -67,12 +68,12 @@ proptest! {
                         total_lag=?scenario.item.flow.source_total_lag,
                         rec_lag_max=?scenario.item.flow.source_records_lag_max,
                         assigned_partitions=?scenario.item.flow.source_assigned_partitions,
-                        "DMR - CCC - decision:no"
+                        "CCC - decision:no"
                     );
                     prop_assert!(result.bindings.is_empty());
                 },
                 None => {
-                    tracing::error!("DMR - BBB - no template data");
+                    tracing::error!("BBB - no template data");
                     prop_assert!(result.bindings.contains_key(REASON));
                     let reasons = assert_some!(result.bindings.get(REASON));
                     prop_assert!(!reasons.into_iter().contains(&TelemetryValue::from(RELATIVE_LAG_VELOCITY)));
@@ -82,7 +83,7 @@ proptest! {
                         ?max_relative_lag,
                         actual_rel_lag=?scenario.item.flow_source_relative_lag_velocity(eval_secs),
                         %eval_secs,
-                        "DMR - AAA decision:yes:  unhealthy rel lag"
+                        "AAA decision:yes:  unhealthy rel lag"
                     );
                     prop_assert!(result.passed);
                     prop_assert!(result.bindings.contains_key(REASON));
@@ -90,12 +91,12 @@ proptest! {
                     prop_assert!(reasons.into_iter().contains(&TelemetryValue::from(RELATIVE_LAG_VELOCITY)));
                 },
                 Some(_) if result.bindings.contains_key(REASON) => {
-                    tracing::error!("DMR - DDD - decision:yes rel lag healthy");
+                    tracing::error!("DDD - decision:yes rel lag healthy");
                     let reasons = assert_some!(result.bindings.get(REASON));
                     prop_assert!(!reasons.into_iter().contains(&TelemetryValue::from(RELATIVE_LAG_VELOCITY)));
                 },
 
-                Some(_) => { tracing::error!("DMR - EEE unknown!!!"); }
+                Some(_) => { tracing::error!("EEE unknown!!!"); }
             }
         }
     }

@@ -6,10 +6,8 @@ use crate::flink::MC_CLUSTER__FREE_TASK_SLOTS;
 use crate::phases::decision::DECISION_DIRECTION;
 use crate::phases::plan::{ForecastInputs, ScaleDirection};
 use once_cell::sync::Lazy;
-use pretty_snowflake::{Id, Label};
-use proctor::elements::Timestamp;
+use pretty_snowflake::Label;
 use proctor::phases::sense::SubscriptionRequirements;
-use proctor::Correlation;
 use prometheus::core::{AtomicU64, GenericGauge, GenericGaugeVec};
 use prometheus::Opts;
 use serde::{Deserialize, Serialize};
@@ -27,10 +25,6 @@ pub const DURATION_SECS: &str = "duration_secs";
 #[serde_as]
 #[derive(Label, Clone, Serialize, Deserialize)]
 pub struct PlanningContext {
-    // auto-filled
-    pub correlation_id: Id<Self>,
-    pub recv_timestamp: Timestamp,
-
     /// Allowed cluster size change in a rescaling action.
     #[serde(default, rename = "planning.min_scaling_step")]
     pub min_scaling_step: Option<u32>,
@@ -74,8 +68,6 @@ pub struct PlanningContext {
 impl Debug for PlanningContext {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("PlanningContext")
-            .field("correlation_id", &self.correlation_id)
-            .field("recv_timestamp", &self.recv_timestamp.to_string())
             .field("min_scaling_step", &self.min_scaling_step)
             .field("total_task_slots", &self.total_task_slots)
             .field("free_task_slots", &self.free_task_slots)
@@ -83,14 +75,6 @@ impl Debug for PlanningContext {
             .field("max_catch_up", &self.max_catch_up)
             .field("recovery_valid", &self.recovery_valid)
             .finish()
-    }
-}
-
-impl Correlation for PlanningContext {
-    type Correlated = Self;
-
-    fn correlation(&self) -> &Id<Self::Correlated> {
-        &self.correlation_id
     }
 }
 
@@ -202,11 +186,7 @@ mod tests {
 
     #[test]
     fn test_planning_context_serde_tokens() {
-        let now = Timestamp::now();
-        let corr = Id::direct("PlanningContext", 17, "ABC");
         let context = PlanningContext {
-            recv_timestamp: now,
-            correlation_id: corr.clone(),
             total_task_slots: 1,
             free_task_slots: 0,
             min_scaling_step: None,
@@ -220,19 +200,7 @@ mod tests {
         assert_tokens(
             &context,
             &vec![
-                Token::Struct { name: "PlanningContext", len: 8 },
-                Token::Str("correlation_id"),
-                Token::Struct { name: "Id", len: 2 },
-                Token::Str("snowflake"),
-                Token::I64(17),
-                Token::Str("pretty"),
-                Token::Str("ABC"),
-                Token::StructEnd,
-                Token::Str("recv_timestamp"),
-                Token::TupleStruct { name: "Timestamp", len: 2 },
-                Token::I64(now.as_pair().0),
-                Token::U32(now.as_pair().1),
-                Token::TupleStructEnd,
+                Token::Struct { name: "PlanningContext", len: 6 },
                 Token::Str("planning.min_scaling_step"),
                 Token::None,
                 Token::Str("cluster.total_task_slots"),

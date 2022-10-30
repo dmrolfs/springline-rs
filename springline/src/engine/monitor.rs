@@ -1,7 +1,20 @@
-use std::collections::HashMap;
-use std::sync::Arc;
-use std::time::Duration;
-
+use crate::engine::service::{EngineCmd, EngineServiceApi, Health};
+use crate::engine::{PhaseFlag, PhaseFlags};
+use crate::flink;
+use crate::phases::act::{
+    ActErrorDisposition, ActEvent, ActMonitor, ActionOutcome, ACTION_TOTAL_DURATION,
+    ACT_IS_RESCALING, ACT_RESCALE_ACTION_COUNT, PHASE_ACT_ERRORS,
+};
+use crate::phases::decision::{
+    DecisionContext, DecisionEvent, DecisionMonitor, DecisionResult, ScaleDirection,
+};
+use crate::phases::eligibility::{EligibilityContext, EligibilityEvent, EligibilityMonitor};
+use crate::phases::governance::{GovernanceContext, GovernanceEvent, GovernanceMonitor};
+use crate::phases::plan::{
+    self, FlinkPlanningEvent, FlinkPlanningMonitor, PlanningOutcome, PlanningOutcomeT,
+    PlanningStrategy,
+};
+use crate::phases::{decision, WindowApi, WindowCmd};
 use chrono::{DateTime, Utc};
 use enumflags2::BitFlags;
 use once_cell::sync::Lazy;
@@ -13,25 +26,10 @@ use proctor::phases::sense::{ClearinghouseApi, ClearinghouseCmd};
 use proctor::Correlation;
 use prometheus::core::{AtomicU64, GenericGauge};
 use prometheus::{IntCounter, IntGauge, Opts};
-
-use crate::engine::service::{EngineCmd, EngineServiceApi, Health};
-use crate::engine::{PhaseFlag, PhaseFlags};
-use crate::flink;
-use crate::phases::act::{
-    ActErrorDisposition, ActEvent, ActMonitor, ActionOutcome, ACTION_TOTAL_DURATION,
-    ACT_RESCALE_ACTION_COUNT, PHASE_ACT_ERRORS,
-};
-use crate::phases::decision::{
-    DecisionContext, DecisionEvent, DecisionMonitor, DecisionResult, ScaleDirection,
-};
-use crate::phases::eligibility::{EligibilityContext, EligibilityEvent, EligibilityMonitor};
-use crate::phases::governance::{
-    GovernanceContext, GovernanceEvent, GovernanceMonitor, GovernanceOutcome,
-};
-use crate::phases::plan::{
-    self, FlinkPlanningEvent, FlinkPlanningMonitor, PlanningStrategy, ScalePlan,
-};
-use crate::phases::{decision, WindowApi, WindowCmd};
+use std::collections::HashMap;
+use std::sync::Arc;
+use std::time::Duration;
+use tracing::Instrument;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct PlanningFeedback {
@@ -114,8 +112,8 @@ pub struct Monitor {
     pub rx_decision_monitor: DecisionMonitor,
     pub rx_plan_monitor: PlanMonitor<PlanningStrategy>,
     pub rx_flink_planning_monitor: FlinkPlanningMonitor,
-    pub rx_governance_monitor: GovernanceMonitor<GovernanceOutcome>,
-    pub rx_action_monitor: ActMonitor<GovernanceOutcome>,
+    pub rx_governance_monitor: GovernanceMonitor<PlanningOutcomeT>,
+    pub rx_action_monitor: ActMonitor<PlanningOutcome>,
     pub tx_feedback: Option<ActorSourceApi<Telemetry>>,
     pub tx_engine: EngineServiceApi,
     pub tx_clearinghouse_api: ClearinghouseApi,
@@ -193,7 +191,7 @@ impl Monitor {
     async fn handle_eligibility_event(
         &self, event: Arc<EligibilityEvent>, loaded: &mut BitFlags<PhaseFlag>,
     ) {
-        match &*event {
+        match event.as_ref() {
             EligibilityEvent::ItemPassed(item, query_result) => {
                 tracing::debug!(?event, ?query_result, correlation=%item.correlation(), "eligibility outcome: data item passed eligibility");
                 ELIGIBILITY_IS_ELIGIBLE_FOR_SCALING.set(true as i64)
@@ -219,7 +217,7 @@ impl Monitor {
     async fn handle_decision_event(
         &self, event: Arc<DecisionEvent>, loaded: &mut BitFlags<PhaseFlag>,
     ) {
-        match &*event {
+        match event.as_ref() {
             DecisionEvent::ItemPassed(item, query_result) => {
                 decision::log_outcome_with_common_criteria(
                     "PASSED",
@@ -263,36 +261,34 @@ impl Monitor {
     async fn handle_plan_event(
         &self, event: Arc<PlanEvent<PlanningStrategy>>, loaded: &mut BitFlags<PhaseFlag>,
     ) {
-        match &*event {
-            PlanEvent::DecisionPlanned(decision, plan) => match decision {
+        match event.as_ref() {
+            PlanEvent::DecisionPlanned(decision, plan) => match decision.as_ref() {
                 DecisionResult::ScaleUp(_) | DecisionResult::ScaleDown(_) => {
-                    tracing::info!(?event, correlation=%decision.item().correlation(), "plan outcome: planning for scaling decision");
+                    tracing::info!(?event, ?decision, "plan outcome: planning for scaling decision");
                     PLAN_TARGET_NR_TASK_MANAGERS.set(plan.target_nr_taskmanagers.into());
                 },
-                _no_action => {
-                    tracing::debug!(?event, correlation=%decision.item().correlation(), "plan outcome: no planning action by decision");
-                },
+                _no_action => tracing::debug!(?event, "plan outcome: no planning action by decision"),
             },
             PlanEvent::DecisionIgnored(decision) => {
-                tracing::debug!(?event, correlation=%decision.item().correlation(), "plan outcome: planning is ignoring decision result.");
+                tracing::debug!(?event, ?decision, "plan outcome: planning is ignoring decision result.");
             },
 
             PlanEvent::ContextChanged(context) if !loaded.contains(PhaseFlag::Plan) => {
-                tracing::info!(?event, ?context, correlation=%context.correlation(), "Plan Phase initial context loaded!");
+                tracing::info!(?event, ?context, "Plan Phase initial context loaded!");
                 loaded.toggle(PhaseFlag::Plan);
                 self.update_health(loaded).await;
             },
             PlanEvent::ContextChanged(context) => {
-                tracing::trace!(?context, correlation=%context.correlation(), "Flink Planning context changed.");
+                tracing::trace!(?event, ?context, "Flink Planning context changed.");
             },
         }
     }
 
     #[allow(clippy::cognitive_complexity)]
     async fn handle_flink_planning_event(&self, event: Arc<FlinkPlanningEvent>) {
-        match &*event {
+        match event.as_ref() {
             FlinkPlanningEvent::ObservationAdded { observation, next_forecast } => {
-                tracing::debug!(?observation, correlation=?observation.correlation_id, "observation added to planning");
+                tracing::debug!(?observation, "observation added to planning");
                 PLAN_OBSERVATION_COUNT.inc();
 
                 if let Some((tx, (forecast_ts, forecast_val))) =
@@ -303,13 +299,10 @@ impl Monitor {
                         forecasted_records_in_per_sec: forecast_val,
                     };
 
-                    tracing::debug!(
-                        %forecast_ts, %forecast_val, correlation=?observation.correlation_id,
-                        "planning feedback of next forecast back into springline system"
-                    );
+                    tracing::debug!(%forecast_ts, %forecast_val, "planning feedback of next forecast back into springline system");
                     if let Err(err) = ActorSourceCmd::push(tx, feedback.into()).await {
                         tracing::error!(
-                            error=?err, %forecast_ts, %forecast_val, correlation=?observation.correlation_id,
+                            error=?err, %forecast_ts, %forecast_val,
                             "failed to feed forecasted workflow back into system."
                         )
                     }
@@ -320,37 +313,37 @@ impl Monitor {
 
     #[allow(clippy::cognitive_complexity)]
     async fn handle_governance_event(
-        &self, event: Arc<GovernanceEvent>, loaded: &mut BitFlags<PhaseFlag>,
+        &self, event: Arc<GovernanceEvent<PlanningOutcomeT>>, loaded: &mut BitFlags<PhaseFlag>,
     ) {
-        match &*event {
-            GovernanceEvent::ItemPassed(item, query_result) => {
-                tracing::info!(?event, ?query_result, correlation=%item.correlation(), "governance outcome: data item passed governance");
+        match event.as_ref() {
+            GovernanceEvent::ItemPassed(_item, query_result) => {
+                tracing::info!(?event, ?query_result, "governance outcome: data item passed governance");
                 GOVERNANCE_PLAN_ACCEPTED.set(true as i64)
             },
-            GovernanceEvent::ItemBlocked(item, query_result) => {
-                tracing::info!(?event, ?query_result, correlation=%item.correlation(), "governance outcome: data item blocked in governance");
+            GovernanceEvent::ItemBlocked(_item, query_result) => {
+                tracing::info!(?event, ?query_result, "governance outcome: data item blocked in governance");
                 GOVERNANCE_PLAN_ACCEPTED.set(false as i64)
             },
-            GovernanceEvent::ContextChanged(Some(ctx))
+            GovernanceEvent::ContextChanged(Some(_ctx))
                 if !loaded.contains(PhaseFlag::Governance) =>
             {
-                tracing::info!(?event, correlation=%ctx.correlation(), "Governance Phase initial context loaded!");
+                tracing::info!(?event, "Governance Phase initial context loaded!");
                 loaded.toggle(PhaseFlag::Governance);
                 self.update_health(loaded).await;
             },
             GovernanceEvent::ContextChanged(context) => {
-                tracing::info!(?context, correlation=?context.as_ref().map(|c| c.correlation().to_string()), "Governance context changed.");
+                tracing::info!(?context, "Governance context changed.");
             },
         }
     }
 
-    #[tracing::instrument(level="trace", skip(self, _loaded), fields(correlation=%event.correlation()))]
+    #[tracing::instrument(level = "debug", skip(self, _loaded))]
     async fn handle_action_event(
-        &self, event: Arc<ActEvent<GovernanceOutcome>>, _loaded: &mut BitFlags<PhaseFlag>,
+        &self, event: Arc<ActEvent<PlanningOutcome>>, _loaded: &mut BitFlags<PhaseFlag>,
     ) {
         let now = Timestamp::now();
 
-        let action_feedback = match &*event {
+        let action_feedback = match event.as_ref() {
             ActEvent::PlanActionStarted(plan) => Self::do_handle_rescale_started(plan),
             ActEvent::PlanExecuted { plan, outcomes } => {
                 self.do_handle_rescale_executed(plan, outcomes, now).await
@@ -360,21 +353,31 @@ impl Monitor {
             },
         };
 
+        ACT_IS_RESCALING.set(if action_feedback.is_rescaling { 1 } else { 0 });
+
         if let Some(ref tx) = self.tx_feedback {
-            tracing::trace!(?action_feedback, "feedback springline per scale action");
-            if let Err(err) = ActorSourceCmd::push(tx, action_feedback.into()).await {
+            tracing::debug!(?action_feedback, "feedback springline per scale action");
+            let action_telemetry: Telemetry = action_feedback.into();
+            let push_cmd = ActorSourceCmd::push(tx, action_telemetry.clone())
+                .instrument(tracing::debug_span!(
+                    "push_action_feedback_to_springline",
+                    ?action_telemetry
+                ))
+                .await;
+            if let Err(err) = push_cmd {
                 tracing::error!(error=?err, "failed to send scale deployment notification from monitor -- may impact future eligibility determination.");
             }
         }
     }
 
-    fn do_handle_rescale_started(plan: &ScalePlan) -> ActionFeedback {
-        tracing::info!(?plan, correlation=%plan.correlation(), "act outcome: rescale action started");
+    fn do_handle_rescale_started(plan: &PlanningOutcome) -> ActionFeedback {
+        tracing::info!(?plan, correlation=%plan.correlation(), "rescale action started");
         ActionFeedback { is_rescaling: true, ..ActionFeedback::default() }
     }
 
+    #[tracing::instrument(level = "debug", skip(self))]
     async fn do_handle_rescale_executed(
-        &self, plan: &ScalePlan, outcomes: &[ActionOutcome], now: Timestamp,
+        &self, plan: &PlanningOutcome, outcomes: &[ActionOutcome], now: Timestamp,
     ) -> ActionFeedback {
         tracing::info!(%now, ?plan, correlation=%plan.correlation(), ?outcomes, "act outcome: rescale executed");
         ACT_RESCALE_ACTION_COUNT
@@ -392,45 +395,38 @@ impl Monitor {
             tracing::warn!(error=?err, correlation=%plan.correlation(), "failed to clear window on rescaling.");
         }
 
-        let rescale_restart = outcomes
+        let rescale_total_duration = outcomes.iter().find_map(|o| {
+            if o.label == ACTION_TOTAL_DURATION {
+                Some(o.duration)
+            } else {
+                None
+            }
+        });
+
+        let rescale_task_sum = outcomes
             .iter()
-            .find_map(|o| {
-                if o.label == ACTION_TOTAL_DURATION {
-                    Some(Some(o.duration))
-                } else {
-                    None
-                }
-            })
-            .unwrap_or_else(|| {
-                if !outcomes.is_empty() {
-                    let leaf_outcomes: Vec<&ActionOutcome> =
-                        outcomes.iter().filter(|o| o.is_leaf).collect();
-                    let leaf_total = leaf_outcomes.iter().map(|o| o.duration).sum();
-                    tracing::debug!(
-                        ?leaf_outcomes,
-                        "summing duration of leaf steps: {leaf_total:?}"
-                    );
-                    Some(leaf_total)
-                } else {
-                    tracing::warn!(
-                        ?outcomes,
-                        "cannot update restart time since no outcomes were recorded."
-                    );
-                    None
-                }
-            })
-            .map(|duration| maplit::hashmap! { plan.direction() => duration })
-            .unwrap_or_else(HashMap::new);
+            .filter_map(|o| if o.is_leaf { Some(o.duration) } else { None })
+            .sum();
+
+        let rescale_restart = maplit::hashmap! {
+            plan.direction() => rescale_total_duration.unwrap_or(rescale_task_sum),
+        };
+
+        let last_deployment = now.as_utc();
+        tracing::info!(
+            %last_deployment, ?rescale_restart, ?rescale_total_duration, ?rescale_task_sum,
+            "Feeding act summary back into springline"
+        );
 
         ActionFeedback {
             is_rescaling: false,
-            last_deployment: Some(now.as_utc()),
+            last_deployment: Some(last_deployment),
             rescale_restart,
         }
     }
 
     fn do_handle_rescale_failed(
-        plan: &ScalePlan, error_metric_label: &str, _now: Timestamp,
+        plan: &PlanningOutcome, error_metric_label: &str, _now: Timestamp,
     ) -> ActionFeedback {
         tracing::warn!(%error_metric_label, ?plan, correlation=%plan.correlation(), "act outcome: rescale action during act phase failed.");
         PHASE_ACT_ERRORS
@@ -438,10 +434,6 @@ impl Monitor {
                 "monitor::act",
                 error_metric_label,
                 ActErrorDisposition::Failed.to_string().as_str(),
-                // plan.current_job_parallelism.to_string().as_str(),
-                // plan.target_job_parallelism.to_string().as_str(),
-                // plan.current_nr_task_managers.to_string().as_str(),
-                // plan.target_nr_task_managers.to_string().as_str(),
             ])
             .inc();
 
@@ -459,14 +451,6 @@ pub static ELIGIBILITY_IS_ELIGIBLE_FOR_SCALING: Lazy<IntGauge> = Lazy::new(|| {
     )
     .expect("failed creating eligibility_is_eligible_for_scaling metric")
 });
-
-// pub static DECISION_SHOULD_PLAN_FOR_SCALING: Lazy<IntGauge> = Lazy::new(|| {
-//     IntGauge::with_opts(Opts::new(
-//         "decision_should_plan_for_scaling",
-//         "Should plan for scaling the cluster",
-//     ).const_labels(proctor::metrics::CONST_LABELS.clone()))
-//     .expect("failed creating decision_should_plan_for_scaling metric")
-// });
 
 pub static DECISION_RESCALE_DECISION: Lazy<IntGauge> = Lazy::new(|| {
     IntGauge::with_opts(
@@ -518,7 +502,6 @@ mod tests {
     use crate::phases::plan::PlanningContext;
     use claim::*;
     use pretty_assertions::assert_eq;
-    use pretty_snowflake::Id;
     use proctor::elements::TelemetryValue;
     use std::time::Duration;
 
@@ -547,10 +530,6 @@ mod tests {
         );
 
         // extend to plan context
-        let corr_id = Id::direct("PlanningContext", 123, "abs");
-        let recv = Timestamp::now();
-        actual.insert("correlation_id".to_string(), corr_id.clone().into());
-        actual.insert("recv_timestamp".to_string(), recv.into());
         actual.insert("cluster.total_task_slots".to_string(), 16.into());
         actual.insert("cluster.free_task_slots".to_string(), 0.into());
 
@@ -559,8 +538,6 @@ mod tests {
         assert_eq!(
             actual_context,
             PlanningContext {
-                correlation_id: corr_id,
-                recv_timestamp: recv,
                 min_scaling_step: None,
                 total_task_slots: 16,
                 free_task_slots: 0,

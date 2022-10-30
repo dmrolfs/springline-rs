@@ -1,18 +1,14 @@
-use num_traits::{SaturatingAdd, SaturatingSub};
-use std::fmt;
-
-use oso::PolarClass;
-use pretty_snowflake::Id;
-use proctor::elements::Timestamp;
-use proctor::Correlation;
-use serde::{Deserialize, Serialize};
-
-use crate::flink::{MetricCatalog, Parallelism};
-use crate::math;
+use crate::flink::Parallelism;
 use crate::model::NrReplicas;
-use crate::phases::decision::DecisionOutcome;
+use crate::phases::decision::{DecisionDataT, DecisionResult};
 use crate::phases::plan::ScaleDirection;
-use crate::CorrelationId;
+use crate::{math, Env};
+use num_traits::{SaturatingAdd, SaturatingSub};
+use oso::PolarClass;
+use pretty_snowflake::Label;
+use serde::{Deserialize, Serialize};
+use std::fmt;
+use std::ops::Deref;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct ScaleParameters {
@@ -34,8 +30,6 @@ impl ScaleParameters {
 }
 
 pub trait ScaleActionPlan {
-    fn correlation(&self) -> &CorrelationId;
-    fn recv_timestamp(&self) -> Timestamp;
     fn direction(&self) -> ScaleDirection;
     fn current_job_parallelism(&self) -> Parallelism;
     fn target_job_parallelism(&self) -> Parallelism;
@@ -48,13 +42,53 @@ pub trait ScaleActionPlan {
     fn replicas_for_parallelism(&self, parallelism: Parallelism) -> Option<NrReplicas>;
 }
 
-#[derive(PolarClass, Clone, PartialEq, Serialize, Deserialize)]
+impl<P> ScaleActionPlan for Env<P>
+where
+    P: Label + ScaleActionPlan,
+{
+    fn direction(&self) -> ScaleDirection {
+        self.deref().direction()
+    }
+
+    fn current_job_parallelism(&self) -> Parallelism {
+        self.deref().current_job_parallelism()
+    }
+
+    fn target_job_parallelism(&self) -> Parallelism {
+        self.deref().target_job_parallelism()
+    }
+
+    fn set_target_job_parallelism(&mut self, parallelism: Parallelism) {
+        self.as_mut().set_target_job_parallelism(parallelism)
+    }
+
+    fn current_replicas(&self) -> NrReplicas {
+        self.deref().current_replicas()
+    }
+
+    fn target_replicas(&self) -> NrReplicas {
+        self.deref().target_replicas()
+    }
+
+    fn set_target_replicas(&mut self, nr_replicas: NrReplicas) {
+        self.as_mut().set_target_replicas(nr_replicas)
+    }
+
+    fn parallelism_factor(&self) -> Option<f64> {
+        self.deref().parallelism_factor()
+    }
+
+    fn parallelism_for_replicas(&self, nr_replicas: NrReplicas) -> Option<Parallelism> {
+        self.deref().parallelism_for_replicas(nr_replicas)
+    }
+
+    fn replicas_for_parallelism(&self, parallelism: Parallelism) -> Option<NrReplicas> {
+        self.deref().replicas_for_parallelism(parallelism)
+    }
+}
+
+#[derive(PolarClass, Label, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ScalePlan {
-    pub correlation_id: CorrelationId,
-
-    #[polar(attribute)]
-    pub recv_timestamp: Timestamp,
-
     #[polar(attribute)]
     pub current_job_parallelism: Parallelism,
 
@@ -73,8 +107,6 @@ pub struct ScalePlan {
 impl fmt::Debug for ScalePlan {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ScalePlan")
-            .field("correlation_id", &self.correlation_id)
-            .field("recv_timestamp", &format!("{}", self.recv_timestamp))
             .field(
                 "job_parallelism_plan",
                 &format!(
@@ -97,17 +129,11 @@ impl fmt::Debug for ScalePlan {
     }
 }
 
-impl Correlation for ScalePlan {
-    type Correlated = MetricCatalog;
-
-    fn correlation(&self) -> &Id<Self::Correlated> {
-        &self.correlation_id
-    }
-}
-
 impl ScalePlan {
     #[tracing::instrument(level = "trace", name = "ScalePlan::new", skip())]
-    pub fn new(decision: DecisionOutcome, parameters: ScaleParameters) -> Option<Self> {
+    pub fn new(
+        decision: DecisionResult<DecisionDataT>, parameters: ScaleParameters,
+    ) -> Option<Self> {
         let task_slots_per_taskmanager = parameters.task_slots_per_taskmanager();
         let taskmanagers_for_parallelism =
             |p: Parallelism| Self::calculate_taskmanagers(p, task_slots_per_taskmanager);
@@ -120,8 +146,6 @@ impl ScalePlan {
 
                 let clip_it = |p| apply_clipping(parameters.clipping_point, p);
 
-                let recv_timestamp = decision.item().recv_timestamp;
-                let correlation_id = decision.item().correlation_id.clone();
                 let (target_job_parallelism, target_nr_taskmanagers) = match direction {
                     ScaleDirection::Up => {
                         let min_target_parallelism = current_job_parallelism
@@ -168,8 +192,6 @@ impl ScalePlan {
                 };
 
                 Some(Self {
-                    correlation_id,
-                    recv_timestamp,
                     current_job_parallelism,
                     target_job_parallelism,
                     current_nr_taskmanagers,
@@ -224,31 +246,7 @@ impl ScalePlan {
     }
 }
 
-// impl<T: ScaleActionPlan> TryFrom<T> for ScalePlan {
-//     type Error = ();
-//
-//     fn try_from(plan: T) -> Result<Self, Self::Error> {
-//         let task_slots_per_taskmanager = plan.parallelism_factor().unwrap();
-//         Ok(Self {
-//             correlation_id: plan.correlation().clone(),
-//             recv_timestamp: plan.recv_timestamp(),
-//             current_job_parallelism: u32::try_from(plan.current_job_parallelism())?,
-//             target_job_parallelism: u32::try_from(plan.target_job_parallelism())?,
-//             current_nr_taskmanagers: u32::try_from(plan.current_replicas())?,
-//             target_nr_taskmanagers: u32::try_from(plan.target_replicas())?,
-//             task_slots_per_taskmanager,
-//         })
-//     }
-// }
 impl ScaleActionPlan for ScalePlan {
-    fn correlation(&self) -> &CorrelationId {
-        &self.correlation_id
-    }
-
-    fn recv_timestamp(&self) -> Timestamp {
-        self.recv_timestamp
-    }
-
     fn direction(&self) -> ScaleDirection {
         self.direction()
     }
@@ -305,7 +303,7 @@ mod tests {
     use crate::flink::{
         AppDataWindow, ClusterMetrics, FlowMetrics, JobHealthMetrics, MetricCatalog,
     };
-    use crate::phases::decision::DecisionResult;
+    use crate::phases::decision::{DecisionOutcome, DecisionResult};
     use crate::phases::plan::ScaleDirection;
     use pretty_assertions::assert_eq;
     use std::cell::RefCell;
@@ -314,6 +312,7 @@ mod tests {
     use crate::phases::plan::clipping::{ClippingHandling, TemporaryLimitCell};
     use pretty_snowflake::{Id, Label, Labeling};
     use proctor::elements::Timestamp;
+    use proctor::{Correlation, MetaData, ReceivedAt};
     use proptest::prelude::*;
 
     fn arb_direction_strategy() -> impl Strategy<Value = ScaleDirection> {
@@ -324,6 +323,7 @@ mod tests {
         ]
     }
 
+    #[allow(dead_code)]
     fn arb_clipping_handling() -> impl Strategy<Value = ClippingHandling> {
         prop_oneof![
             Just(ClippingHandling::Ignore),
@@ -336,6 +336,7 @@ mod tests {
         ]
     }
 
+    #[allow(dead_code)]
     fn arb_duration() -> impl Strategy<Value = Duration> {
         any::<u64>().prop_map(Duration::from_secs)
     }
@@ -364,12 +365,6 @@ mod tests {
         current_nr_task_managers: NrReplicas,
     ) -> DecisionOutcome {
         let data = MetricCatalog {
-            correlation_id: Id::direct(
-                <MetricCatalog as Label>::labeler().label(),
-                0,
-                "<undefined>",
-            ),
-            recv_timestamp: Timestamp::now(),
             health: JobHealthMetrics {
                 job_nonsource_max_parallelism: current_job_parallelism.into(),
                 ..JobHealthMetrics::default()
@@ -382,8 +377,20 @@ mod tests {
             custom: Default::default(),
         };
 
-        let data = AppDataWindow::from_size(data, 1, Duration::from_secs(120));
-        DecisionResult::from_direction(data, direction)
+        let data = Env::from_parts(
+            MetaData::from_parts(
+                Id::direct(
+                    <MetricCatalog as Label>::labeler().label(),
+                    0,
+                    "<undefined>",
+                ),
+                Timestamp::now(),
+            ),
+            data,
+        );
+        let data = data.flat_map(|d| AppDataWindow::from_size(d, 1, Duration::from_secs(120)));
+        let data = data.map(|d| DecisionResult::from_direction(d, direction));
+        data
     }
 
     fn test_scenario(
@@ -414,9 +421,7 @@ mod tests {
             free_task_slots: Some(0),
             min_scaling_step,
         };
-        if let Some(actual) = ScalePlan::new(decision.clone(), parameters) {
-            assert_eq!(&actual.correlation_id, &decision.item().correlation_id);
-            assert_eq!(actual.recv_timestamp, decision.item().recv_timestamp);
+        if let Some(actual) = ScalePlan::new(decision.clone().into_inner(), parameters) {
             assert_eq!(actual.current_job_parallelism, current_job_parallelism);
             assert_eq!(actual.current_nr_taskmanagers, current_nr_task_managers);
 
@@ -458,13 +463,10 @@ mod tests {
                     let current = clip_it(actual.current_job_parallelism);
                     let target = clip_it(actual.target_job_parallelism);
                     tracing::debug!(?actual, %current, %target, "checking actual plan for Up.");
-                    // assert!(current <= target);
-                    // prop_assert!(actual.current_nr_task_managers <= actual.target_nr_task_managers);
                 },
 
                 ScaleDirection::Down => {
                     assert!(actual.target_job_parallelism <= actual.current_job_parallelism);
-                    // prop_assert!(actual.target_nr_task_managers <= actual.current_nr_task_managers);
                 },
 
                 ScaleDirection::None => {
@@ -543,7 +545,6 @@ mod tests {
                     let expected = clip_it(expected);
                     tracing::info!(?actual, expected_target=%expected,  "FFF: DOWN");
                     assert_eq!(actual.target_job_parallelism, expected);
-                    // prop_assert_eq!(actual.target_nr_task_managers, actual.target_job_parallelism);
                 },
 
                 ScaleDirection::Down
@@ -557,7 +558,6 @@ mod tests {
                     let expected = clip_it(expected);
                     tracing::info!(?actual, expected_target=%expected,  "GGG: DOWN");
                     assert_eq!(actual.target_job_parallelism, expected);
-                    // prop_assert_eq!(actual.target_nr_task_managers, current_nr_task_managers);
                 },
 
                 ScaleDirection::Down => {
@@ -568,7 +568,6 @@ mod tests {
                     let expected = clip_it(expected);
                     tracing::info!(?actual, expected_target=%expected,  "HHH: DOWN");
                     assert_eq!(actual.target_job_parallelism, expected);
-                    // prop_assert_eq!(actual.target_nr_task_managers, actual.target_job_parallelism);
                 },
 
                 ScaleDirection::None => {
@@ -586,24 +585,7 @@ mod tests {
 
     proptest! {
         #[test]
-        // fn test_scale_plan(
-        //     (direction, current_nr_task_managers, current_job_parallelism, calculated_parallelism) in
-        //         (arb_direction_strategy(), (0_u32..=100), (Parallelism::MIN..=200)).prop_flat_map(|(d, cur_tm, cur_p)| {
-        //         (Just(d), Just(cur_tm), Just(cur_p), arb_calculated_parallelism_strategy(d, cur_p))
-        //     }),
-        //     min_scaling_step in (0_u32..=10)
-        // ) {
         fn test_scale_plan(
-            // (direction, current_nr_task_managers, current_job_parallelism, calculated_parallelism, clipping_point) in
-            //     (arb_direction_strategy(), (Parallelism::MIN..)).prop_flat_map(|(d, cur_p)| {
-            //     (
-            //         Just(d),
-            //         (cur_p..),
-            //         Just(cur_p),
-            //         arb_calculated_parallelism_strategy(d, cur_p),
-            //         prop::option::of(1_u32..)
-            //     )
-            // }),
             (direction, current_nr_task_managers, current_job_parallelism, calculated_parallelism, clipping_point) in
                 (arb_direction_strategy(), (Parallelism::MIN.as_u32()..100)).prop_flat_map(|(d, cur_p)| {
                 (
@@ -632,9 +614,10 @@ mod tests {
                 free_task_slots: Some(0),
                 min_scaling_step,
             };
-            if let Some(actual) = ScalePlan::new(decision.clone(), parameters) {
-                prop_assert_eq!(&actual.correlation_id, &decision.item().correlation_id);
-                prop_assert_eq!(actual.recv_timestamp, decision.item().recv_timestamp);
+            if let Some(actual) = decision.clone().map(|d| ScalePlan::new(d, parameters)).transpose() {
+                prop_assert_eq!(&actual.correlation().num(), &decision.correlation().num());
+                prop_assert_eq!(&actual.correlation().pretty(), &decision.correlation().pretty());
+                prop_assert_eq!(actual.recv_timestamp(), decision.recv_timestamp());
                 prop_assert_eq!(actual.current_job_parallelism, current_job_parallelism);
                 prop_assert_eq!(actual.current_nr_taskmanagers, current_nr_task_managers);
 
@@ -663,13 +646,10 @@ mod tests {
                         let current = clip_it(actual.current_job_parallelism);
                         let target = clip_it(actual.target_job_parallelism);
                         tracing::debug!(?actual, %current, %target, "checking actual plan for Up.");
-                        // prop_assert!(actual.current_job_parallelism < actual.target_job_parallelism);
-                        // prop_assert!(actual.current_nr_task_managers <= actual.target_nr_task_managers);
                     },
 
                     ScaleDirection::Down => {
                         prop_assert!(actual.target_job_parallelism <= actual.current_job_parallelism);
-                        // prop_assert!(actual.target_nr_task_managers <= actual.current_nr_task_managers);
                     },
 
                     ScaleDirection::None => {
@@ -791,9 +771,13 @@ mod tests {
             free_task_slots: None,
             min_scaling_step,
         };
-        if let Some(actual) = ScalePlan::new(decision.clone(), parameters) {
-            assert_eq!(&actual.correlation_id, &decision.item().correlation_id);
-            assert_eq!(actual.recv_timestamp, decision.item().recv_timestamp);
+        if let Some(actual) = decision.clone().map(|d| ScalePlan::new(d, parameters)).transpose() {
+            assert_eq!(&actual.correlation().num(), &decision.correlation().num());
+            assert_eq!(
+                &actual.correlation().pretty(),
+                &decision.correlation().pretty()
+            );
+            assert_eq!(actual.recv_timestamp(), decision.recv_timestamp());
             assert_eq!(actual.current_job_parallelism, current_job_parallelism);
             assert_eq!(actual.current_nr_taskmanagers, current_nr_task_managers);
 

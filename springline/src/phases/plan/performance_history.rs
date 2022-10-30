@@ -35,7 +35,7 @@ impl PerformanceHistory {
             self.0.insert(entry.job_parallelism, entry);
         }
 
-        tracing::warn!(added=?b, history=?self, "DMR: added LOWER benchmark to history")
+        tracing::info!(added=?b, history=?self, "added LOWER benchmark to history")
         // todo: dropped clearing performance history inconsistencies (see todo at file bottom)
         // self.clear_inconsistencies_for_new_lo(&b);
     }
@@ -49,7 +49,7 @@ impl PerformanceHistory {
             self.0.insert(entry.job_parallelism, entry);
         }
 
-        tracing::warn!(added=?b, history=?self, "DMR: added UPPER benchmark to history")
+        tracing::info!(added=?b, history=?self, "added UPPER benchmark to history")
         // todo: dropped clearing performance history inconsistencies (see todo at file bottom)
         // self.clear_inconsistencies_for_new_hi(b);
     }

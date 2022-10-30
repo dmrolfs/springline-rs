@@ -5,12 +5,12 @@ use chrono::{DateTime, Utc};
 use frunk::{Monoid, Semigroup};
 use once_cell::sync::Lazy;
 use oso::PolarClass;
-use pretty_snowflake::{Id, Label, Labeling};
+use pretty_snowflake::Label;
 use proctor::elements::telemetry::UpdateMetricsFn;
 use proctor::elements::{telemetry, Telemetry, Timestamp};
 use proctor::error::{EligibilityError, ProctorError};
 use proctor::phases::sense::SubscriptionRequirements;
-use proctor::{Correlation, ProctorContext};
+use proctor::ProctorContext;
 use prometheus::{IntGauge, Opts};
 use serde::{Deserialize, Serialize};
 
@@ -18,10 +18,6 @@ use crate::metrics::UpdateMetrics;
 
 #[derive(PolarClass, Label, Clone, Serialize, Deserialize)]
 pub struct EligibilityContext {
-    // auto-filled
-    pub correlation_id: Id<Self>,
-    pub recv_timestamp: Timestamp,
-
     #[polar(attribute)]
     #[serde(flatten)] // current subscription mechanism only supports flatten keys
     pub job: JobStatus,
@@ -41,8 +37,6 @@ pub struct EligibilityContext {
 impl Debug for EligibilityContext {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("EligibilityContext")
-            .field("correlation_id", &self.correlation_id)
-            .field("recv_timestamp", &self.recv_timestamp.to_string())
             .field("job", &self.job)
             .field("cluster", &self.cluster)
             .field("all_sinks_healthy", &self.all_sinks_healthy)
@@ -50,19 +44,10 @@ impl Debug for EligibilityContext {
             .finish()
     }
 }
-impl Correlation for EligibilityContext {
-    type Correlated = Self;
-
-    fn correlation(&self) -> &Id<Self::Correlated> {
-        &self.correlation_id
-    }
-}
 
 impl Monoid for EligibilityContext {
     fn empty() -> Self {
         Self {
-            correlation_id: Id::direct(<Self as Label>::labeler().label(), 0, "<undefined>"),
-            recv_timestamp: Timestamp::ZERO,
             job: JobStatus::empty(),
             cluster: ClusterStatus::empty(),
             all_sinks_healthy: true,
@@ -77,8 +62,6 @@ impl Semigroup for EligibilityContext {
         custom.extend(other.custom.clone());
 
         Self {
-            correlation_id: other.correlation_id.clone(),
-            recv_timestamp: other.recv_timestamp,
             job: self.job.combine(&other.job),
             cluster: self.cluster.combine(&other.cluster),
             all_sinks_healthy: other.all_sinks_healthy,
@@ -112,6 +95,7 @@ impl SubscriptionRequirements for EligibilityContext {
 }
 
 impl ProctorContext for EligibilityContext {
+    type ContextData = Self;
     type Error = EligibilityError;
 
     fn custom(&self) -> telemetry::TableType {

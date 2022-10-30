@@ -1,22 +1,20 @@
 use std::collections::HashSet;
 
 use once_cell::sync::Lazy;
-use pretty_snowflake::{Id, Label};
-use proctor::elements::{RecordsPerSecond, Timestamp};
+use pretty_snowflake::Label;
+use proctor::elements::RecordsPerSecond;
 use proctor::graph::{Connect, SinkShape, SourceShape};
-use proctor::phases::plan::{Plan, Planning};
+use proctor::phases::plan::Plan;
 use proctor::phases::sense::{
     ClearinghouseSubscriptionAgent, SubscriptionChannel, SubscriptionRequirements,
 };
-use proctor::{Correlation, ReceivedAt};
 use prometheus::{Gauge, Opts};
 use serde::{Deserialize, Serialize};
 
 use crate::flink::{AppDataWindow, MetricCatalog, MC_FLOW__RECORDS_IN_PER_SEC};
-use crate::phases;
-pub use crate::phases::decision::ScaleDirection;
 use crate::settings::Settings;
 use crate::Result;
+use crate::{phases, Env};
 
 mod benchmark;
 mod clipping;
@@ -27,6 +25,7 @@ mod performance_history;
 mod performance_repository;
 mod planning;
 
+pub use crate::phases::decision::ScaleDirection;
 pub use benchmark::BenchmarkRange;
 pub use clipping::{
     ClippingHandlingSettings, PLANNING_PARALLELISM_CLIPPING_POINT,
@@ -52,8 +51,9 @@ pub use planning::{
     PLANNING_PERFORMANCE_HISTORY_ENTRY_COUNT,
 };
 
-pub type PlanningStrategy = planning::FlinkPlanning<forecast::LeastSquaresWorkloadForecaster>;
-pub type PlanningOutcome = <PlanningStrategy as Planning>::Out;
+pub type PlanningStrategy = FlinkPlanning<LeastSquaresWorkloadForecaster>;
+pub type PlanningOutcomeT = ScalePlan;
+pub type PlanningOutcome = Env<ScalePlan>;
 
 pub struct PlanningPhase {
     pub phase: Box<Plan<PlanningStrategy>>,
@@ -64,8 +64,6 @@ pub struct PlanningPhase {
 
 #[derive(Debug, Label, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PlanningMeasurement {
-    pub correlation_id: Id<Self>,
-    pub recv_timestamp: Timestamp,
     #[serde(rename = "flow.records_in_per_sec")]
     pub records_in_per_sec: RecordsPerSecond,
 }
@@ -73,18 +71,14 @@ pub struct PlanningMeasurement {
 impl From<MetricCatalog> for PlanningMeasurement {
     fn from(metrics: MetricCatalog) -> Self {
         Self {
-            correlation_id: metrics.correlation_id.relabel(),
-            recv_timestamp: metrics.recv_timestamp,
             records_in_per_sec: metrics.flow.records_in_per_sec.into(),
         }
     }
 }
 
-impl From<AppDataWindow<MetricCatalog>> for PlanningMeasurement {
-    fn from(data: AppDataWindow<MetricCatalog>) -> Self {
+impl From<AppDataWindow<Env<MetricCatalog>>> for PlanningMeasurement {
+    fn from(data: AppDataWindow<Env<MetricCatalog>>) -> Self {
         Self {
-            correlation_id: data.correlation().relabel(),
-            recv_timestamp: data.recv_timestamp(),
             records_in_per_sec: data.flow.records_out_per_sec.into(),
         }
     }
@@ -162,4 +156,60 @@ async fn do_make_planning_strategy(name: &str, settings: &Settings) -> Result<Pl
     let params = PlanningParameters::from_settings(settings)?;
     let planning = PlanningStrategy::new(name, forecaster, repository, params).await?;
     Ok(planning)
+}
+
+#[cfg(test)]
+pub(crate) mod tests {
+    use chrono::{DateTime, TimeZone, Utc};
+
+    pub const STEP: i64 = 15;
+    pub const NOW: i64 = 1624000000 + (30 * STEP);
+
+    #[derive(Debug, PartialEq)]
+    pub enum SignalType {
+        Sine,
+        Linear { slope: f64 },
+        Constant { rate: f64 },
+    }
+
+    #[tracing::instrument(level = "info")]
+    pub fn setup_signal_history(signal_type: SignalType) -> Vec<(DateTime<Utc>, f64)> {
+        match signal_type {
+            SignalType::Constant { rate } => {
+                let total = 30;
+                (1..=total)
+                    .into_iter()
+                    .map(|tick| {
+                        let x = Utc.timestamp(NOW - (total - tick) * STEP, 0);
+                        let y = rate;
+                        (x, y)
+                    })
+                    .collect()
+            },
+
+            SignalType::Linear { slope } => {
+                let total = 30;
+                (1..=total)
+                    .into_iter()
+                    .map(|tick| {
+                        let x = Utc.timestamp(NOW - (total - tick) * STEP, 0);
+                        let y = tick as f64 * (STEP as f64 * slope);
+                        (x, y)
+                    })
+                    .collect()
+            },
+
+            SignalType::Sine => {
+                let total = 30;
+                (1..=total)
+                    .into_iter()
+                    .map(|tick| {
+                        let x = Utc.timestamp(NOW - (total - tick) * STEP, 0);
+                        let y = 1000. * ((tick as f64) / (STEP as f64)).sin();
+                        (x, y)
+                    })
+                    .collect()
+            },
+        }
+    }
 }

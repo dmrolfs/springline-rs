@@ -10,6 +10,7 @@ pub use claim::*;
 use fake::{Fake, Faker};
 use pretty_snowflake::{Id, Label, Labeling};
 use proctor::error::PolicyError;
+use proctor::MetaData;
 use proptest::prelude::*;
 use std::collections::HashMap;
 use std::time::Duration;
@@ -21,6 +22,7 @@ pub use crate::flink::{AppDataWindow, AppDataWindowBuilder, MetricCatalog};
 use crate::model::NrReplicas;
 pub use crate::phases::policy_test_fixtures::{arb_date_time, prepare_policy_engine};
 pub use crate::settings::EligibilitySettings;
+use crate::Env;
 pub use proctor::elements::telemetry::TelemetryValue;
 pub use proctor::elements::{PolicySource, QueryPolicy, QueryResult, Timestamp};
 
@@ -41,54 +43,58 @@ fn arb_policy_template_data() -> impl Strategy<Value = EligibilityTemplateData> 
     })
 }
 
-fn make_metric_catalog(nr_active_jobs: u32) -> MetricCatalog {
+fn make_metric_catalog(nr_active_jobs: u32) -> Env<MetricCatalog> {
     let job_source_max_parallelism = Parallelism::new(Faker.fake());
     let job_nonsource_max_parallelism = Parallelism::new(Faker.fake());
     let job_max_parallelism =
         Parallelism::max(job_source_max_parallelism, job_nonsource_max_parallelism);
 
-    MetricCatalog {
-        correlation_id: Id::direct(
-            <MetricCatalog as Label>::labeler().label(),
-            0,
-            "test_metric_catalog",
+    Env::from_parts(
+        MetaData::from_parts(
+            Id::direct(
+                <MetricCatalog as Label>::labeler().label(),
+                0,
+                "test_metric_catalog",
+            ),
+            Timestamp::now(),
         ),
-        recv_timestamp: Timestamp::now(),
-        health: JobHealthMetrics {
-            job_max_parallelism,
-            job_source_max_parallelism,
-            job_nonsource_max_parallelism,
-            job_uptime_millis: Faker.fake(),
-            job_nr_restarts: Faker.fake(),
-            job_nr_completed_checkpoints: Faker.fake(),
-            job_nr_failed_checkpoints: Faker.fake(),
+        MetricCatalog {
+            health: JobHealthMetrics {
+                job_max_parallelism,
+                job_source_max_parallelism,
+                job_nonsource_max_parallelism,
+                job_uptime_millis: Faker.fake(),
+                job_nr_restarts: Faker.fake(),
+                job_nr_completed_checkpoints: Faker.fake(),
+                job_nr_failed_checkpoints: Faker.fake(),
+            },
+            flow: FlowMetrics {
+                records_in_per_sec: Faker.fake(),
+                records_out_per_sec: Faker.fake(),
+                idle_time_millis_per_sec: Faker.fake(),
+                source_back_pressured_time_millis_per_sec: Faker.fake(),
+                forecasted_timestamp: None,
+                forecasted_records_in_per_sec: None,
+                source_records_lag_max: None,
+                source_assigned_partitions: None,
+                source_records_consumed_rate: None,
+                source_total_lag: None,
+                source_millis_behind_latest: None,
+            },
+            cluster: ClusterMetrics {
+                nr_active_jobs,
+                nr_task_managers: NrReplicas::new(Faker.fake()),
+                free_task_slots: Faker.fake(),
+                task_cpu_load: Faker.fake(),
+                task_heap_memory_used: Faker.fake(),
+                task_heap_memory_committed: Faker.fake(),
+                task_nr_threads: Faker.fake(),
+                task_network_input_queue_len: Faker.fake(),
+                task_network_input_pool_usage: Faker.fake(),
+                task_network_output_queue_len: Faker.fake(),
+                task_network_output_pool_usage: Faker.fake(),
+            },
+            custom: HashMap::default(),
         },
-        flow: FlowMetrics {
-            records_in_per_sec: Faker.fake(),
-            records_out_per_sec: Faker.fake(),
-            idle_time_millis_per_sec: Faker.fake(),
-            source_back_pressured_time_millis_per_sec: Faker.fake(),
-            forecasted_timestamp: None,
-            forecasted_records_in_per_sec: None,
-            source_records_lag_max: None,
-            source_assigned_partitions: None,
-            source_records_consumed_rate: None,
-            source_total_lag: None,
-            source_millis_behind_latest: None,
-        },
-        cluster: ClusterMetrics {
-            nr_active_jobs,
-            nr_task_managers: NrReplicas::new(Faker.fake()),
-            free_task_slots: Faker.fake(),
-            task_cpu_load: Faker.fake(),
-            task_heap_memory_used: Faker.fake(),
-            task_heap_memory_committed: Faker.fake(),
-            task_nr_threads: Faker.fake(),
-            task_network_input_queue_len: Faker.fake(),
-            task_network_input_pool_usage: Faker.fake(),
-            task_network_output_queue_len: Faker.fake(),
-            task_network_output_pool_usage: Faker.fake(),
-        },
-        custom: HashMap::default(),
-    }
+    )
 }
