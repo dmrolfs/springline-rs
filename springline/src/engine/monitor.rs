@@ -327,11 +327,19 @@ impl Monitor {
     ) {
         match event.as_ref() {
             GovernanceEvent::ItemPassed(_item, query_result) => {
-                tracing::info!(?event, ?query_result, "governance outcome: data item passed governance");
+                tracing::info!(
+                    ?event,
+                    ?query_result,
+                    "governance outcome: data item passed governance"
+                );
                 GOVERNANCE_PLAN_ACCEPTED.set(true as i64)
             },
             GovernanceEvent::ItemBlocked(_item, query_result) => {
-                tracing::info!(?event, ?query_result, "governance outcome: data item blocked in governance");
+                tracing::info!(
+                    ?event,
+                    ?query_result,
+                    "governance outcome: data item blocked in governance"
+                );
                 GOVERNANCE_PLAN_ACCEPTED.set(false as i64)
             },
             GovernanceEvent::ContextChanged(Some(_ctx))
