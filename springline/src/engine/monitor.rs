@@ -264,13 +264,23 @@ impl Monitor {
         match event.as_ref() {
             PlanEvent::DecisionPlanned(decision, plan) => match decision.as_ref() {
                 DecisionResult::ScaleUp(_) | DecisionResult::ScaleDown(_) => {
-                    tracing::info!(?event, ?decision, "plan outcome: planning for scaling decision");
+                    tracing::info!(
+                        ?event,
+                        ?decision,
+                        "plan outcome: planning for scaling decision"
+                    );
                     PLAN_TARGET_NR_TASK_MANAGERS.set(plan.target_nr_taskmanagers.into());
                 },
-                _no_action => tracing::debug!(?event, "plan outcome: no planning action by decision"),
+                _no_action => {
+                    tracing::debug!(?event, "plan outcome: no planning action by decision")
+                },
             },
             PlanEvent::DecisionIgnored(decision) => {
-                tracing::debug!(?event, ?decision, "plan outcome: planning is ignoring decision result.");
+                tracing::debug!(
+                    ?event,
+                    ?decision,
+                    "plan outcome: planning is ignoring decision result."
+                );
             },
 
             PlanEvent::ContextChanged(context) if !loaded.contains(PhaseFlag::Plan) => {
