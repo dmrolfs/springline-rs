@@ -621,7 +621,7 @@ where
         }
     }
 
-    #[tracing::instrument(level = "warn", skip(self, pairings, failed_restarts))]
+    #[tracing::instrument(level = "debug", skip(self, pairings, failed_restarts))]
     fn do_handle_jar_restarts<'s>(
         &self, pairings: Vec<(JarId, Either<(JobId, SavepointLocation), FlinkError>)>,
         failed_restarts: &mut Vec<(JarId, Option<SavepointLocation>, ActError)>,
@@ -644,7 +644,7 @@ where
         restarted_jobs
     }
 
-    #[tracing::instrument(level = "warn", skip(self, plan, session))]
+    #[tracing::instrument(level = "debug", skip(self, plan, session))]
     async fn handle_error_on_restart_confirm<'s>(
         &self, error: FlinkError, plan: &'s P, session: &'s Env<ActionSession>,
     ) -> Result<(), FlinkError> {
@@ -658,7 +658,7 @@ where
         Err(error)
     }
 
-    #[tracing::instrument(level = "warn", skip(self, job, location, job_state, plan, session))]
+    #[tracing::instrument(level = "debug", skip(self, job, location, job_state, plan, session))]
     async fn handle_failed_job_restart<'s>(
         &self, job: JobId, location: &SavepointLocation, job_state: JobState, plan: &'s P,
         session: &'s Env<ActionSession>,
@@ -678,7 +678,7 @@ where
         Err(ActError::FailedJob(job, location.clone()))
     }
 
-    #[tracing::instrument(level = "warn", skip(self, plan, session))]
+    #[tracing::instrument(level = "debug", skip(self, plan, session))]
     async fn handle_remaining_restart_failures<'s>(
         &self, repeat_failures: Vec<(JarId, Option<SavepointLocation>, ActError)>,
         initial_failures: HashMap<JarId, ActError>, plan: &'s P, session: &'s Env<ActionSession>,
