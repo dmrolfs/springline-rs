@@ -1,0 +1,79 @@
+---
+imagePullSecrets:
+  - name: "olp-pm-readonly-pull-secret"
+#service:
+#  dnsTail: -api-dev.plm.platform.in.here.com
+deployment:
+  log:
+    level: "info,springline::flink=debug,springline::phases::plan=debug,springline::phases::act=debug"
+    polar: "info"
+    backtrace: "1"
+
+resources:
+  requests:
+    cpu: 5m
+    memory: 256Mi
+  limits:
+    cpu: 10m
+    memory: 1024Mi
+
+application:
+  sensor:
+    flink:
+      metric_orders:
+        flow:
+          source:
+            name: "cm-request-source-cm-service-intake-stg"
+
+  eligibility:
+    template_data:
+      cooling_secs: 900
+
+  decision:
+    template_data:
+      basis: chart_decision_basis
+      max_healthy_relative_lag_velocity: 25.0
+      max_health_lag: 10000000
+      min_task_utilization: 0.25
+      max_healthy_cpu_load: 0.9
+      max_healthy_heap_memory_load: 0.85
+      max_healthy_network_io_utilization: 0.8
+      evaluate_duration_secs: 120
+      min_idle_source_back_pressured_time_millis_per_sec: 150.0
+
+  plan:
+    clipping_handling:
+      temporary_limit:
+        reset_timeout_secs: 14400 # 4 hours
+
+  governance:
+    rules:
+      min_parallelism: 1
+      max_parallelism: 16
+      min_cluster_size: 1
+      max_cluster_size: 16
+      min_scaling_step: 1
+      max_scaling_step: 16
+
+  action:
+    taskmanager:
+      cull_ratio: 1.0
+      kubernetes_api:
+        api_timeout_secs: 450
+    flink:
+      entry_class: com.here.onemap.drivefilteringservice.RWODrivePackager
+      polling_interval_secs: 3
+      savepoint:
+        operation_timeout_secs: 1200
+      restart:
+        operation_timeout_secs: 300
+
+global:
+  realm: "olp-here"
+  pipeline: {}
+#    id: "7de2037f-4fe3-466d-b2d7-ab92954f966c"
+#    versionId: "0413b904-e4cb-45eb-bd8d-fc147d86d00c"
+#    templateId: "4e1bd730-d3e1-43ac-8319-773f80cdb929"
+#    jobId: "732218bb-c165-490b-b70b-b2513592caff"
+#    customerBillingTag: "2460zDz92553"
+#    billingClientAppId: "patappid"
