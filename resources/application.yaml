@@ -106,7 +106,34 @@ sensor:
     metrics_interval_secs: 15
 
     # User can add metrics to be collected from Flink beyond the default set. Each metric is defined
-    # as an "order" of the form:
+    # as an "order" of the form found via the [Flink metrics API](https://nightlies.apache.org/flink/flink-docs-release-1.16/docs/ops/metrics/)
+    # A list of [Flink Scope]: [Metric Order structure] items, where
+    # Flink Scope is one of the supported Flink scopes: `Job`, `TaskManager`, `Task`, `Operator`,
+    # and (experimental) `Derivative`.
+    # `Job` and `TaskManager` scopes define a simple `MetricSpec`, aggregated over the cluster, of
+    # the form:
+    #   - metric: name of the metric exposed by Flink. It should match exactly and be sure to watch
+    # out for inconsistent conventions used within Flink.
+    #   - agg: one of value, max, min, sum, avg. This specifies how Flink aggregates the metric (see
+    # Flink documentation. The exception is `value`, which is used to identify single value metrics.
+    #   - telemetry_path: Specifies the springline telemetry identifier used in both telemetry
+    # subscriptions for both the main data metric catalog and springline planning contexts.
+    #   - telemetry_type: One of Boolean, Integer, Float, Text, Seq, or Table.
+    # Metrics in these scopes are usually best applied per specific parts of the job's plan; e.g.,
+    # Kafka's `records-lag-max` metric should summed for source operators and it is best to isolate
+    # the average of non-source `idleTimeMsPerSecond` measurements since source operators have a
+    # very different profile.  Both `Task` and `Operator` further qualify the metric order to
+    # support a job plan position specification that enables the targeting of metrics at specific
+    # positions in the job. It can be one of:
+    # `any`, `source`, `not_source`, `sink`, `not_sink`, and `through`.
+    # The `Operator` order further supports filtering to specifically named operators. For example,
+    # if you have a source operator named, "Data Input stream", you may isolate metrics
+    # (e.g., `records-lag-max`). Springline will look to isolate metrics from source operators that
+    # *begin* with that name. (Starting with strategy is applied since Flink may fuse operators
+    # into a single vertex.) Similarly, `sink` would look for operators ending with the specified
+    # name; and, `through` would look for operators that contain the name.
+    # The `Derivative` order type supports a basic combination (e.g., product or sum) of two
+    # springline telemetry entries. This is highly experimental and subject to change.
     metric_orders:
 #      - Operator:
 #          name: "Data Input stream"
