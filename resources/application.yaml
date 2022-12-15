@@ -182,7 +182,10 @@ eligibility:
         is_template: true
   template_data:
     policy_extension: eligibility_ext
+
+    # How long to wait after starting the job or rescaling before another rescale is considered.
     cooling_secs: 900
+
     stable_secs: 300
 
 decision:
@@ -197,39 +200,50 @@ decision:
         is_template: true
   template_data:
     # policy template that is pulled into the base decision policy template, which forms the basis
-    #of the business criteria to scale job.
+    # of the business criteria to scale job.
     basis: decision_basis
 
-    # Optional threshold representing the maximum ratio the total_lag rate / consumed_records_rate
-    # that is healthy. This value represents how much the workload is increasing (positive) or
-    # decreasing (negative). This value is used for scale up decisions and not scale down decisions.
-    max_healthy_relative_lag_velocity: 3.0
+    #
+    # Relative Lag Velocity is a derived metric representing the maximum ratio the
+    # total_lag rate / consumed_records_rate that is healthy. In other words, it measures the extent
+    # the job is falling behind or ahead of the workload. It is a unit-less ratio where positive
+    # values mean the workload is outpacing the pipeline's ability to process and negative values
+    # mean the pipeline is working down the lag. For example, a relative lag velocity of 3.0 means
+    # the workload is coming in at 3x the pipeline's processing rate. Because of the massive swing
+    # in measuring this metric, a threshold of 25.0 over a 2-minute rolling average is a decent
+    # starting point.
+    # This value is used for scale up decisions and not scale down decisions.
+    max_healthy_relative_lag_velocity: 25.0
 
-    # Optional threshold representing the maximum total_lag that is healthy. This factor does not
+    # Optional threshold representing the estimated maximum `total_lag`
+    # (`records-lag-max` * `assigned-partitions`) that is healthy. This factor does not
     # consider the workload, so its usefulness may be limited compared to the
     # `max_healthy_relative_lag_velocity`. This could be used to define a cap to `total_lag` as a
     # supplemental rule to the relative lag velocity.
     # max_healthy_lag:
 
     # Optional threshold on the target task utilization, which is calculated based on the
-    # `idle_time_millis_per_sec`. This value is used for scale down decisions and is typically
-    # coupled with a check that the total_lag is 0 -- meaning the application is caught up on
-    #workload and underutilized.
+    # `idle_time_millis_per_sec` of *non-source* job operators. This value is used for scale down
+    # decisions and is typically coupled with a check that the `total_lag` is 0 -- meaning the
+    # application is caught up on workload and underutilized.
     min_task_utilization: 0.6
 
-    # Optional threshold that may scale up the application if the CPU load is too high. High
-    # resource utilization (CPU, Memory, Network)) may suggest the application is destabilizing,
-    #which scaling up may help.
+    # Optional threshold that may scale up the application if the CPU load is too high.
+    # High resource load (CPU, memory, network) may indicate instability, especially if accompanied
+    # by low utilization, which rescaling up might help. It's not unusual to see an effective job
+    # running at 80% or more while working through data.
     # max_healthy_cpu_load:
 
     # Optional threshold that may scale up the application if the heap memory load is too high.
-    # High resource utilization (CPU, Memory, Network) may suggest the application is destabilizing,
-    # which scaling up may help.
+    # High resource load (CPU, memory, network) may indicate instability, especially if accompanied
+    # by low utilization, which rescaling up might help. It's not unusual to see an effective job
+    # running at 80% or more while working through data.
     # max_healthy_heap_memory_load:
 
     # Optional threshold that may scale up the application if network IO is too high.
-    # High resource utilization (CPU, Memory, Network) may suggest the application is destabilizing,
-    #which scaling up may help.
+    # High resource load (CPU, memory, network) may indicate instability, especially if accompanied
+    # by low utilization, which rescaling up might help. It's not unusual to see an effective job
+    # running at 80% or more while working through data.
     # max_healthy_network_io_utilization:
 
     # Optional threshold, among possibly others, that may indicate an application is idle. If this
