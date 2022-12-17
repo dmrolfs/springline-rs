@@ -1,0 +1,62 @@
+@startuml
+!include <c4/C4_Context.puml>
+!include <c4/C4_Container.puml>
+
+!define KubernetesPuml https://raw.githubusercontent.com/dcasati/kubernetes-PlantUML/master/dist
+
+!includeurl KubernetesPuml/kubernetes_Context.puml
+!includeurl KubernetesPuml/kubernetes_Simplified.puml
+
+!includeurl KubernetesPuml/OSS/KubernetesApi.puml
+!includeurl KubernetesPuml/OSS/KubernetesIng.puml
+!includeurl KubernetesPuml/OSS/KubernetesPod.puml
+
+title Springline Pipeline System Diagram
+
+System_Boundary(flink, "Flink CLuster") {
+  Container(jm, "Job Manager", "JVM")
+  Container(tm, "Task Managers", "JVM")
+
+  jm -> tm: distributes work across
+}
+
+System_Boundary(springline, "Springline Engine") {
+  Container(settings_sensor, "Settings Telemetry Sensor", "yaml")
+  Container(flink_metrics_sensor, "Flink Metrics Telemetry Sensor", "REST")
+  Container(monitor_sensor, "Springline Monitor Telemetry Sensor", "REST")
+  Container(clearinghouse, "Sensor Telemetry Clearinghouse", "stage")
+  Container(throttle, "Data Throttle", "stage")
+  Container(collection, "History Collection", "stage")
+  Container(eligibility, "Eligibility Phase", "phase stage")
+  Container(decision, "Decision Phase", "phase stage")
+  Container(planning, "Forecast Planning Phase", "phase stage")
+  Container(governance, "Governance Phase", "phase stage")
+  Container(act, "Act Phase", "phase stage")
+  Container(monitor, "Springline Event Monitor", "observer")
+
+  settings_sensor -up-> clearinghouse: Inject predefined telemetry from settings
+  flink_metrics_sensor -up-> clearinghouse: periodically query Flink Metrics API telemetry
+  monitor_sensor -up-> clearinghouse: Push telemetry feedback from springline monitoring
+
+  clearinghouse -left-> throttle: push metric catalog telemetry with new data
+  throttle -left-> collection: collect rolling history of metric catalogs
+  collection -down-> eligibility: metric catalog
+  eligibility -right-> decision: passed eligibility check, proceed with decision evaluation
+  decision -right-> planning: rescale decision made, record benchmark, forecast workload and plan rescale accordingly
+  planning -right-> governance: rescale plan defined, apply governance rules
+  governance -right-> act: execute finalized rescale plan
+
+  clearinghouse -> eligibility: eligibility phase context subscription
+  clearinghouse -> decision: decision phase context subscription
+  clearinghouse -> planning: planning phase context subscription
+  clearinghouse -> governance: governance phase context subscription
+
+  clearinghouse -> planning: data observation subscription
+
+  flink_metrics_sensor -> jm: Flink Metrics API
+  act -down-> jm: cancel job with savepoint
+  act -down-> tm: patch task manager replicas
+  act -down-> jm: restart job from savepoint
+}
+
+@enduml
