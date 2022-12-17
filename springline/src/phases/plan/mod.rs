@@ -92,6 +92,7 @@ impl SubscriptionRequirements for PlanningMeasurement {
     }
 }
 
+/// Build the plan phase stage and its corresponding context telemetry subscription
 #[tracing::instrument(level = "trace", skip(settings, agent))]
 pub async fn make_plan_phase<A>(settings: &Settings, agent: &mut A) -> Result<PlanningPhase>
 where

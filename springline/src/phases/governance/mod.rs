@@ -24,6 +24,7 @@ pub type GovernancePhase = (
 );
 pub type GovernanceEvent<T> = PolicyFilterEvent<Env<T>, Env<GovernanceContext>>;
 
+/// Build the plan governance phase stage and its corresponding context telemetry subscription
 #[tracing::instrument(level = "trace", skip(agent))]
 pub async fn make_governance_phase<A>(
     _settings: &GovernanceSettings, agent: &mut A,

@@ -46,6 +46,7 @@ pub type EligibilityPhase = (
 );
 pub type EligibilityEvent = PolicyFilterEvent<EligibilityData, Env<EligibilityContext>>;
 
+/// Build the eligibility phase stage and its corresponding context telemetry subscription
 #[tracing::instrument(level = "trace", skip(agent))]
 pub async fn make_eligibility_phase<A>(
     settings: &EligibilitySettings, agent: &mut A,

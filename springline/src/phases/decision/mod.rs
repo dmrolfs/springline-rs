@@ -49,6 +49,7 @@ pub type DecisionPhase = (
     SubscriptionChannel<DecisionContext>,
 );
 
+/// Build the decision phase stage and its corresponding context telemetry subscription
 #[tracing::instrument(level = "trace", skip(agent))]
 pub async fn make_decision_phase<A>(
     settings: &DecisionSettings, agent: &mut A,

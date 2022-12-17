@@ -117,6 +117,8 @@ impl AutoscaleEngine<Building> {
         }
     }
 
+    /// Sets the action factory closure used to build the act phase stage upon springline engine
+    /// start
     pub fn with_action_factory<F>(self, action_factory: F) -> Self
     where
         F: Fn(&Settings) -> ActionWithMonitor + Send + Sync + 'static,
@@ -144,7 +146,8 @@ impl AutoscaleEngine<Building> {
     //            },
     //        }
     //    }
-    //
+
+    /// Add a sensor factory closure, which builds the sensor upon engine start.
     pub async fn add_sensor_factory<F>(self, sensor_factory: F) -> Self
     where
         F: Fn(&Settings) -> BoxedTelemetrySource + Send + Sync + 'static,
@@ -155,6 +158,8 @@ impl AutoscaleEngine<Building> {
         self
     }
 
+    /// Add a monitor feedback factory closure, which builds the monitor feedback sensor upon engine
+    /// start.
     pub fn add_monitor_feedback_factory<F>(mut self, feedback_factory: F) -> Self
     where
         F: Fn(&Settings) -> FeedbackSource + Send + Sync + 'static,
@@ -163,6 +168,7 @@ impl AutoscaleEngine<Building> {
         self
     }
 
+    /// Sets the prometheus registry with the springline engine.
     pub fn with_metrics_registry(self, registry: &'static Registry) -> Self {
         tracing::trace!(?registry, "added metrics registry to autoscale engine.");
         Self {
@@ -170,18 +176,23 @@ impl AutoscaleEngine<Building> {
         }
     }
 
+    /// Returns [sysinfo::System] including the memory usage view.
     fn tap_system() -> sysinfo::System {
         sysinfo::System::new_with_specifics(sysinfo::RefreshKind::new().with_memory())
     }
 
+    /// Finish the engine set up with the final build of the springline autoscale engine.
     #[tracing::instrument(level = "trace", skip(self, settings))]
     pub async fn finish(
         self, sensor_flink: FlinkContext, settings: &Settings,
     ) -> Result<AutoscaleEngine<Ready>> {
+        // used for correlation id generation
         let machine_node = MachineNode::new(settings.engine.machine_id, settings.engine.node_id)?;
 
+        // used to monitor memory usage
         let system = Self::tap_system();
 
+        // build the set of engine sensors
         let mut sensors = self
             .inner
             .sensors
@@ -191,12 +202,15 @@ impl AutoscaleEngine<Building> {
             .map(|s| s(settings))
             .collect::<Vec<_>>();
 
+        // build the monitor feedback sensor and add it to the sensors, return the sensor tx_api for the monitor
         let tx_feedback = self.inner.feedback_factory.as_ref().map(|make_feedback_api_from| {
             let (source, tx) = make_feedback_api_from(settings);
             sensors.push(source);
             tx
         });
 
+        // with the sensors and flink client, create the sense phase builder. Final build is delayed until after all
+        // phases are built and their subscriptions registered, if needed.
         let (mut sense_builder, tx_stop_flink_sensor) = sense::make_sense_phase(
             "data",
             sensor_flink,
@@ -205,6 +219,7 @@ impl AutoscaleEngine<Building> {
             machine_node,
         )
         .await?;
+
         let (eligibility_phase, eligibility_channel) =
             eligibility::make_eligibility_phase(&settings.eligibility, &mut sense_builder).await?;
         let rx_eligibility_monitor = eligibility_phase.rx_monitor();
@@ -221,6 +236,8 @@ impl AutoscaleEngine<Building> {
             governance::make_governance_phase(&settings.governance, &mut sense_builder).await?;
         let rx_governance_monitor = governance_phase.rx_monitor();
 
+        // build act phase stage from action factory. If no action factory is available, default
+        // to logging the rescale decision plan.
         let (act, rx_action_monitor): ActionWithMonitor =
             self.inner.action_factory.as_ref().map(|f| f(settings)).unwrap_or_else(|| {
                 let stage = act::make_logger_act_phase();
@@ -228,6 +245,8 @@ impl AutoscaleEngine<Building> {
                 (stage, rx)
             });
 
+        // build the sense phase. Prometheus metrics are updated for telemetry updates as directed by
+        // [MetricCatalog::update_metrics_for].
         let sense = sense_builder
             .build_for_out_w_metrics(MetricCatalog::update_metrics_for(&format!(
                 "{}_{}",
@@ -235,16 +254,21 @@ impl AutoscaleEngine<Building> {
             )))
             .await?;
 
+        // Used batch telemetry data into an aggregated time window defined by the given interval
         let data_throttle = proctor::graph::stage::ReduceWithin::new(
             "data_throttle",
             Duration::ZERO,
             settings.sensor.flink.metrics_interval,
         );
 
+        // Define the evaluation collection history retained to support evaluation windows, such as
+        // rolling averages.
+        // Directs how much metric_catalog history should be retained
         let evaluation_duration = settings.decision.template_data.as_ref().and_then(|td| {
             td.evaluate_duration_secs.map(|secs| Duration::from_secs(u64::from(secs)))
         });
 
+        // build the metric_catalog collection history stage.
         let collect_window = crate::phases::CollectMetricWindow::new(
             "collect_window",
             evaluation_duration,
@@ -266,6 +290,7 @@ impl AutoscaleEngine<Building> {
         // );
         // let reduce_window = reduce_window.with_block_logging();
 
+        // build the springline adin service API.
         let tx_clearinghouse_api = sense.tx_api();
 
         let service = Service::new(
@@ -277,6 +302,7 @@ impl AutoscaleEngine<Building> {
         let tx_service_api = service.tx_api();
         let service_handle = tokio::spawn(async move { service.run().await });
 
+        // connection stages and build up execution graph
         (sense.outlet(), data_throttle.inlet()).connect().await;
         (data_throttle.outlet(), collect_window.inlet()).connect().await;
         (collect_window.outlet(), eligibility_phase.inlet()).connect().await;

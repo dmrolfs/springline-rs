@@ -41,15 +41,18 @@ fn main() -> Result<()> {
                 let settings = Settings::load(&options)?;
                 tracing::info!(?options, ?settings, %app_environment, "loaded settings via CLI options");
 
+                // set up flink clients used in sense and act phases
                 let sensor_flink = FlinkContext::from_settings("sensor", &FlinkSettings { max_retries: 0, ..settings.flink.clone() } )?;
                 sensor_flink.check().await?;
                 let action_flink = FlinkContext::from_settings("action", &settings.flink)?;
                 action_flink.check().await?;
 
+                // set up k8s client used in act phase
                 let kube = KubernetesContext::from_settings("action", &settings).await?;
                 kube.check().await?;
                 let action_kube = kube; //todo will clone once kube incorporated in sensing
 
+                // build core springline autoscale engine
                 let engine_builder = Autoscaler::builder("springline")
                     .add_sensor_factory(make_settings_sensor)
                     .await
@@ -191,6 +194,24 @@ fn main() -> Result<()> {
     outcome
 }
 
+/// Inject telemetry from settings. Current settings => telemetry include:
+/// # Governance
+/// - governance.rules.min_parallelism => min_parallelism
+/// - governance.rules.max_parallelism => max_parallelism
+/// - governance.rules.min_scaling_step => min_scaling_step
+/// - governance.rules.max_scaling_step => max_scaling_step
+/// - governance.rules.min_cluster_size => min_cluster_size
+/// - governance.rules.max_cluster_size => max_cluster_size
+/// # Planning
+/// - plan.min_scaling_step => planning.min_scaling_step
+/// - plan.direction_restart_secs => planning.rescale_restart_secs // table: key:secs
+/// - plan.max_catch_up_secs => planning.max_catch_up_secs
+/// - plan.recovery_valid_secs => planning.recovery_valid_secs
+/// # environment conditions
+/// some of these are defaults, updated during operation, others are placeholders for future.
+/// - context_stub.all_sinks_healthy => all_sinks_healthy: placeholder
+/// - => cluster.is_deploying: false default
+/// - => cluster.last_deployment: now timestamp default
 fn make_settings_sensor(settings: &Settings) -> BoxedTelemetrySource {
     let mut settings_telemetry: proctor::elements::telemetry::TableType = maplit::hashmap! {
         "min_parallelism".to_string() => settings.governance.rules.min_parallelism.into(),
@@ -237,12 +258,17 @@ fn make_settings_sensor(settings: &Settings) -> BoxedTelemetrySource {
     ))
 }
 
+/// makes a sensor the springline monitor uses to feed telemetry back into the sense phase.
+/// # Returns
+/// a tuple of the source stage and the tx_api used to push telemetry
 fn make_monitor_sensor_and_api(_settings: &Settings) -> FeedbackSource {
     let src = proctor::graph::stage::ActorSource::new("monitor_sensor");
     let tx_api = src.tx_api();
     (Box::new(src), tx_api)
 }
 
+/// Start the pipelne closure wihtin the async runtime, which is set to a thread pool matching the
+/// number of CPUs.
 #[tracing::instrument(level="trace", skip(future), fields(worker_threads=num_cpus::get()))]
 fn start_pipeline<F>(future: F) -> Result<()>
 where
