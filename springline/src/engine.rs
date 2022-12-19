@@ -43,6 +43,7 @@ pub use self::monitor::{
 };
 pub use service::EngineApiError;
 
+/// Defines the access to the springline autoscaler builder.
 pub struct Autoscaler;
 impl Autoscaler {
     pub fn builder(name: impl Into<String>) -> AutoscaleEngine<Building> {
@@ -50,8 +51,12 @@ impl Autoscaler {
     }
 }
 
+/// The springline AutoscaleEngine encapsulates the build and execution of the graph autoscaler
+/// graph, [Monitor], and admin API. The engine goes through a simple lifecycle of [Building],
+/// [Ready], [Running] that insures the engine is properly built before starting. Factory closures
+/// are typically provided to support
 #[derive(Debug, Clone)]
-pub struct AutoscaleEngine<S: EngineState> {
+pub struct AutoscaleEngine<S: EngineLifecycle> {
     inner: S,
 }
 
@@ -63,6 +68,9 @@ impl Default for AutoscaleEngine<Building> {
 
 pub type PhaseFlags = BitFlags<PhaseFlag>;
 
+/// Bitset is used to flag the readiness of corresponding springline autoscaler phases. A phase is
+/// marked as ready by the springline [Monitor] based on phase events occurring, such as initial
+/// context loaded.
 #[bitflags(default = Sense | Plan | Act)]
 #[repr(u8)]
 #[derive(Debug, Display, Copy, Clone, PartialEq, Eq)]
@@ -75,8 +83,8 @@ pub enum PhaseFlag {
     Act = 1 << 5,
 }
 
-/// Represents Autoscaler state.
-pub trait EngineState {}
+/// Represents Autoscaler lifecycle state.
+pub trait EngineLifecycle {}
 
 pub type BoxedTelemetrySource = Box<dyn SourceStage<Telemetry>>;
 pub type BoxedSourceFactory =
@@ -99,7 +107,7 @@ pub struct Building {
     feedback_factory: Option<Arc<BoxedFeedbackFactory>>,
 }
 
-impl EngineState for Building {}
+impl EngineLifecycle for Building {}
 
 impl fmt::Debug for Building {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -376,7 +384,7 @@ pub struct Ready {
     tx_service_api: EngineServiceApi,
 }
 
-impl EngineState for Ready {}
+impl EngineLifecycle for Ready {}
 
 impl fmt::Debug for Ready {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -420,7 +428,7 @@ pub struct Running {
     metrics_registry: Option<&'static Registry>,
 }
 
-impl EngineState for Running {}
+impl EngineLifecycle for Running {}
 
 impl fmt::Debug for Running {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
