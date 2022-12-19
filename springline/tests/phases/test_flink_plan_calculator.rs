@@ -1,6 +1,6 @@
 use approx::assert_relative_eq;
 use chrono::{DateTime, TimeZone, Utc};
-use claim::{assert_err, assert_ok};
+use claim::{assert_err, assert_ok, assert_some};
 use proctor::elements::RecordsPerSecond;
 use proctor::error::PlanError;
 use springline::phases::plan::{Forecaster, LeastSquaresWorkloadForecaster};
@@ -62,7 +62,7 @@ fn test_flink_plan_calculator() -> anyhow::Result<()> {
     );
 
     for (i, (workload, expected)) in expected_workload.into_iter().enumerate() {
-        let ts = Utc.timestamp(now + (i as i64) * step, 0);
+        let ts = assert_some!(Utc.timestamp_opt(now + (i as i64) * step, 0).single());
         tracing::info!(
             "i:{}-timestamp:{:?} ==> actual:{} expected:{:?}",
             i,

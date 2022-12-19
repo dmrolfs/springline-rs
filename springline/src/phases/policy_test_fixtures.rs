@@ -81,24 +81,16 @@ pub fn arb_date_time() -> impl Strategy<Value = DateTime<Utc>> {
         0_u32..24,
         0_u32..60,
         0_u32..60,
-        0_u32..1_000_000_000,
     )
-        .prop_flat_map(|(yr, mnth, h, m, s, n): (i32, u32, u32, u32, u32, u32)| {
+        .prop_flat_map(|(yr, mnth, h, m, s): (i32, u32, u32, u32, u32)| {
             let day = 1_u32..=last_day_of_month(yr, mnth);
-            (
-                Just(yr),
-                Just(mnth),
-                day,
-                Just(h),
-                Just(m),
-                Just(s),
-                Just(n),
-            )
+            (Just(yr), Just(mnth), day, Just(h), Just(m), Just(s))
         })
-        .prop_map(
-            |(yr, mnth, day, h, m, s, n): (i32, u32, u32, u32, u32, u32, u32)| {
-                // tracing::info!("DMR: yr:{yr} mnth:{mnth} day:{day} h:{h} m:{m} s:{s} n:{n}");
-                Utc.ymd(yr, mnth, day).and_hms_nano(h, m, s, n)
+        .prop_filter_map(
+            "invalid date_time",
+            |(yr, mnth, day, h, m, s): (i32, u32, u32, u32, u32, u32)| {
+                // tracing::info!("DMR: yr:{yr} mnth:{mnth} day:{day} h:{h} m:{m} s:{s}");
+                Utc.with_ymd_and_hms(yr, mnth, day, h, m, s).single()
             },
         )
 }

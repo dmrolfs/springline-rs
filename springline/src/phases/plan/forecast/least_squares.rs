@@ -209,7 +209,7 @@ impl std::ops::Add<WorkloadMeasurement> for LeastSquaresWorkloadForecaster {
 mod tests {
     use approx::assert_relative_eq;
     use chrono::{DateTime, TimeZone, Utc};
-    use claim::{assert_err, assert_ok};
+    use claim::{assert_err, assert_ok, assert_some};
     use pretty_assertions::assert_eq;
 
     use super::*;
@@ -466,7 +466,7 @@ mod tests {
         let mut forecast_builder = LeastSquaresWorkloadForecaster::new(20, spike_settings);
 
         for (i, (workload, expected)) in workload_expected.into_iter().enumerate() {
-            let ts = Utc.timestamp(now + (i as i64) * step, 0);
+            let ts = assert_some!(Utc.timestamp_opt(now + (i as i64) * step, 0).single());
             tracing::info!(
                 "i:{}-timestamp:{:?} ==> test_workload:{} expected:{:?}",
                 i,
@@ -508,7 +508,7 @@ mod tests {
         let step = 15;
         let mut index = 0;
         while index < 100 {
-            let ts = Utc.timestamp(now + index * step, 0);
+            let ts = assert_some!(Utc.timestamp_opt(now + index * step, 0).single());
             forecast_builder.add_observation(make_measurement(ts, index as f64));
             index += 1;
             let expected_len = index.min(forecast_builder.window_size as i64) as usize;

@@ -310,7 +310,8 @@ mod catalog {
 
     #[test]
     fn test_metric_catalog_serde() {
-        let ts: Timestamp = Utc.ymd(1988, 5, 30).and_hms(9, 1, 17).into();
+        let ts: Timestamp =
+            assert_some!(Utc.with_ymd_and_hms(1988, 5, 30, 9, 1, 17).single()).into();
         let (ts_secs, ts_nsecs) = ts.as_pair();
         let metrics = Env::from_parts(
             MetaData::from_parts(CORR_ID.clone(), ts),
@@ -460,7 +461,7 @@ mod catalog {
         let main_span = tracing::info_span!("test_telemetry_from_metric_catalog");
         let _main_span_guard = main_span.enter();
 
-        let ts = Utc.ymd(1988, 5, 30).and_hms(9, 1, 17).into();
+        let ts = assert_some!(Utc.with_ymd_and_hms(1988, 5, 30, 9, 1, 17).single()).into();
         let corr_id = Id::direct("MetricCatalog", 17, "AB");
         let metrics = Env::from_parts(
             MetaData::from_parts(corr_id.clone(), ts),

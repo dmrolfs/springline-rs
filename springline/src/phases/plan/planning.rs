@@ -356,15 +356,15 @@ impl<F: Forecaster> FlinkPlanning<F> {
             let buffered_records = Self::buffered_lag_score(decision_item);
             let current_job_parallelism = decision_item.health.job_nonsource_max_parallelism;
 
-            let forecasted_workload = self.forecast_calculator.calculate_target_rate(
+            let workload_forecast = self.forecast_calculator.calculate_target_rate(
                 decision.recv_timestamp(),
                 &decision.direction(),
                 buffered_records,
             )?;
-            PLANNING_FORECASTED_WORKLOAD.set(*forecasted_workload.as_ref());
+            PLANNING_FORECASTED_WORKLOAD.set(*workload_forecast.1.as_ref());
 
             let required_job_parallelism =
-                history.job_parallelism_for_workload(forecasted_workload);
+                history.job_parallelism_for_workload(workload_forecast.1);
 
             let clipping_point = self.assess_for_job_clipping(&decision).await;
 
@@ -386,7 +386,7 @@ impl<F: Forecaster> FlinkPlanning<F> {
                     tracing::warn!(outlet=?self.outlet, ?plan, "wanted to push plan but could not since planning outlet is not set.");
                 }
 
-                PlanEvent::DecisionPlanned { decision, plan }
+                PlanEvent::DecisionPlanned { decision, plan, workload_forecast }
             } else {
                 tracing::warn!(
                     ?required_job_parallelism, %current_job_parallelism,

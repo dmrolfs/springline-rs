@@ -196,7 +196,8 @@ fn make_test_data(
     records_per_sec: f64,
 ) -> Env<AppDataWindow<Env<MetricCatalog>>> {
     let job_source_max_parallelism = Parallelism::new(16);
-    let timestamp = Utc.timestamp(start.as_secs() + tick * STEP, 0).into();
+    let timestamp =
+        assert_some!(Utc.timestamp_opt(start.as_secs() + tick * STEP, 0).single()).into();
     let _corr_id = CORRELATION_ID.clone();
     let forecasted_timestamp = timestamp + Duration::from_secs(STEP as u64);
     let data = Env::from_parts(
@@ -732,7 +733,7 @@ async fn test_flink_planning_context_change() {
 
     assert_matches!(
         assert_ok!(rx_plan_monitor.recv().await).as_ref(),
-        PlanEvent::<TestPlanning>::DecisionPlanned(_, _)
+        PlanEvent::<TestPlanning>::DecisionPlanned { .. }
     );
 
     tracing::info!("DMR: pushing new context");

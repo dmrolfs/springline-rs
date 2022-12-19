@@ -600,7 +600,7 @@ mod tests {
             )))
             .with_template_data(DecisionTemplateData {
                 basis: "decision_basis".to_string(),
-                max_healthy_relative_lag_velocity: Some(3.0),
+                max_healthy_relative_lag_velocity: Some(25.0),
                 min_task_utilization: Some(0.6),
                 evaluate_duration_secs: Some(60),
                 min_idle_source_back_pressured_time_millis_per_sec: Some(200.0),

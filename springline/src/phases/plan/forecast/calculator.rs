@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 use std::time::Duration;
 
-use proctor::elements::{RecordsPerSecond, Timestamp};
+use proctor::elements::{RatePoint, RecordsPerSecond, Timestamp};
 use proctor::error::PlanError;
 
 use super::{Forecaster, WorkloadForecast, WorkloadMeasurement};
@@ -121,10 +121,23 @@ impl<F: Forecaster> ForecastCalculator<F> {
             .map(|workload| (next.into(), workload))
     }
 
+    /// Calculates the target throughput rate estimated for a healthy pipeline at the valid time.
+    /// There are two measures that are considered to determine this target throughput.
+    ///
+    /// The first is the throughput required to workdown the lag at rescale in addition to the lag
+    /// accumulated during the rescale process, particularly when the job is inactive.
+    ///
+    /// The second is the throughput calculated to achieved the *predicted* workload at the *valid*
+    /// time. The valid time is the point in time the job should be operating normally, free from
+    /// the affects of rescaling. The valid is at a pre-defined duration after recovery (the point
+    /// the job is active/restarted after rescale). The forecast calculator uses the `Forecaster`
+    /// algorithm to predict the workload at that valid timestamp.
+    ///
+    /// The target rate is then the throughput to handle the needs of these workloads.
     #[tracing::instrument(level="debug", skip(self), fields(inputs=?self.inputs,))]
     pub fn calculate_target_rate(
         &mut self, trigger_point: Timestamp, direction: &ScaleDirection, buffered_records: f64,
-    ) -> Result<RecordsPerSecond, PlanError> {
+    ) -> Result<RatePoint, PlanError> {
         let recovery = self.calculate_recovery_timestamp_from(trigger_point, direction);
         let valid = self.calculate_valid_timestamp_after_recovery(recovery);
         tracing::debug!( recovery=?recovery.as_utc(), valid=?valid.as_utc(), "cluster scaling timestamp markers estimated." );
@@ -154,7 +167,7 @@ impl<F: Forecaster> ForecastCalculator<F> {
             "target rate calculated as max of recovery and workload (at valid time) rates."
         );
 
-        Ok(target_rate)
+        Ok(RatePoint(valid, target_rate))
     }
 
     fn calculate_recovery_timestamp_from(
@@ -343,14 +356,14 @@ mod tests {
             inputs.clone()
         ));
         let actual = assert_ok!(c1.calculate_target_rate(now.into(), &ScaleDirection::Up, 333.));
-        assert_relative_eq!(actual, RecordsPerSecond::new(0.5551282), epsilon = 1.0e-7);
+        assert_relative_eq!(actual.1, RecordsPerSecond::new(0.5551282), epsilon = 1.0e-7);
 
         let mut c2 = assert_ok!(ForecastCalculator::new(
             mock_workload_calc_builder(314.159.into()),
             inputs
         ));
         let actual = assert_ok!(c2.calculate_target_rate(now.into(), &ScaleDirection::Up, 333.));
-        assert_relative_eq!(actual, RecordsPerSecond::new(314.159), epsilon = 1.0e-10);
+        assert_relative_eq!(actual.1, RecordsPerSecond::new(314.159), epsilon = 1.0e-10);
         Ok(())
     }
 

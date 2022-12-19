@@ -162,6 +162,7 @@ async fn do_make_planning_strategy(name: &str, settings: &Settings) -> Result<Pl
 #[cfg(test)]
 pub(crate) mod tests {
     use chrono::{DateTime, TimeZone, Utc};
+    use claim::assert_some;
 
     pub const STEP: i64 = 15;
     pub const NOW: i64 = 1624000000 + (30 * STEP);
@@ -181,7 +182,9 @@ pub(crate) mod tests {
                 (1..=total)
                     .into_iter()
                     .map(|tick| {
-                        let x = Utc.timestamp(NOW - (total - tick) * STEP, 0);
+                        let x = assert_some!(Utc
+                            .timestamp_opt(NOW - (total - tick) * STEP, 0)
+                            .single());
                         let y = rate;
                         (x, y)
                     })
@@ -193,7 +196,9 @@ pub(crate) mod tests {
                 (1..=total)
                     .into_iter()
                     .map(|tick| {
-                        let x = Utc.timestamp(NOW - (total - tick) * STEP, 0);
+                        let x = assert_some!(Utc
+                            .timestamp_opt(NOW - (total - tick) * STEP, 0)
+                            .single());
                         let y = tick as f64 * (STEP as f64 * slope);
                         (x, y)
                     })
@@ -205,7 +210,9 @@ pub(crate) mod tests {
                 (1..=total)
                     .into_iter()
                     .map(|tick| {
-                        let x = Utc.timestamp(NOW - (total - tick) * STEP, 0);
+                        let x = assert_some!(Utc
+                            .timestamp_opt(NOW - (total - tick) * STEP, 0)
+                            .single());
                         let y = 1000. * ((tick as f64) / (STEP as f64)).sin();
                         (x, y)
                     })

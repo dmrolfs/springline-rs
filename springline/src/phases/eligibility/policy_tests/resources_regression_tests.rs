@@ -25,7 +25,7 @@ fn test_eligibility_policy_doesnt_crash_5691360e9c41174fbc7e() {
         nr_active_jobs: 0,
         is_deploying: false,
         is_rescaling: false,
-        last_deployment: Utc.ymd(0, 1, 1).and_hms_nano(0, 0, 0, 0),
+        last_deployment: assert_some!(Utc.with_ymd_and_hms(0, 1, 1, 0, 0, 0).single()),
         last_failure: None,
     };
 
@@ -39,7 +39,7 @@ fn test_eligibility_policy_nr_active_jobs_ae1d6126() {
         nr_active_jobs: 0,
         is_deploying: false,
         is_rescaling: false,
-        last_deployment: Utc.ymd(0, 1, 1).and_hms_nano(0, 0, 0, 0),
+        last_deployment: assert_some!(Utc.with_ymd_and_hms(0, 1, 1, 0, 0, 0).single()),
         last_failure: None,
     };
 
@@ -51,13 +51,4 @@ fn test_eligibility_policy_nr_active_jobs_ae1d6126() {
             bindings: maplit::hashmap! { REASON.to_string() => vec![NO_ACTIVE_JOBS.into()] },
         }
     )
-}
-
-#[ignore = "work in progress"]
-#[test]
-fn test_eligibility_datetime() {
-    let dt = Utc.ymd(21199, 11, 31);
-    // let dt = Utc.ymd(9981,2,29).and_hms_nano(16,34,58,931874908);
-    // let dt = Utc.ymd(9981,2,29).and_hms_nano(16,34,58,931874908);
-    assert_eq!(dt.to_string(), "");
 }
