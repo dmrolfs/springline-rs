@@ -262,18 +262,21 @@ impl Monitor {
         &self, event: Arc<PlanEvent<PlanningStrategy>>, loaded: &mut BitFlags<PhaseFlag>,
     ) {
         match event.as_ref() {
-            PlanEvent::DecisionPlanned(decision, plan) => match decision.as_ref() {
-                DecisionResult::ScaleUp(_) | DecisionResult::ScaleDown(_) => {
-                    tracing::info!(
-                        ?event,
-                        ?decision,
-                        "plan outcome: planning for scaling decision"
-                    );
-                    PLAN_TARGET_NR_TASK_MANAGERS.set(plan.target_nr_taskmanagers.into());
-                },
-                _no_action => {
-                    tracing::debug!(?event, "plan outcome: no planning action by decision")
-                },
+            PlanEvent::DecisionPlanned { decision, plan, workload_forecast } => {
+                match decision.as_ref() {
+                    DecisionResult::ScaleUp(_) | DecisionResult::ScaleDown(_) => {
+                        tracing::info!(
+                            ?event,
+                            ?decision,
+                            ?workload_forecast,
+                            "plan outcome: planning for scaling decision"
+                        );
+                        PLAN_TARGET_NR_TASK_MANAGERS.set(plan.target_nr_taskmanagers.into());
+                    },
+                    _no_action => {
+                        tracing::debug!(?event, "plan outcome: no planning action by decision")
+                    },
+                }
             },
             PlanEvent::DecisionIgnored(decision) => {
                 tracing::debug!(

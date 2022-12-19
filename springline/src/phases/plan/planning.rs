@@ -386,7 +386,7 @@ impl<F: Forecaster> FlinkPlanning<F> {
                     tracing::warn!(outlet=?self.outlet, ?plan, "wanted to push plan but could not since planning outlet is not set.");
                 }
 
-                PlanEvent::DecisionPlanned(decision, plan)
+                PlanEvent::DecisionPlanned { decision, plan }
             } else {
                 tracing::warn!(
                     ?required_job_parallelism, %current_job_parallelism,
